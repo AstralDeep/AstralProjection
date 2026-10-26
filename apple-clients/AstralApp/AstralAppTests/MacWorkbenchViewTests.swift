@@ -360,6 +360,343 @@
             }
         }
 
+        func testActivityPanelShowsToolRowsBesideTheConversationWithoutASheet() async throws {
+            let (model, suite) = try activityModel()
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            let entries = MacTranscriptEntry.build(turns: model.visibleTurns, activity: model.activity)
+            XCTAssertEqual(entries.map(\.id), ["u", "tool-steps-1", "a"])
+            let (view, window) = try mountWorkbench(model, width: 1440, activity: true)
+            defer { window.close() }
+            try await settle()
+            XCTAssertNil(window.attachedSheet)
+            let lines = try recognizedLines(view)
+            let text = lines.joined(separator: "\n")
+            for expected in ["Activity", "Approval waiting", "Exit 0", "Open TextEdit and type", "Finished typing"] {
+                XCTAssertTrue(text.contains(expected), "Missing \(expected) in \(lines)")
+            }
+            XCTAssertGreaterThanOrEqual(lines.filter { $0.contains("notes.txt") }.count, 2, "\(lines)")
+            XCTAssertFalse(text.contains("No activity"))
+            try attach(view, name: "workbench-activity-panel")
+            let (compact, compactWindow) = try mountWorkbench(model, width: 390, activity: true)
+            defer { compactWindow.close() }
+            try await settle()
+            XCTAssertTrue(try recognizedText(compact).contains("notes.txt"))
+            try attach(compact, name: "workbench-activity-panel-overlay")
+        }
+
+        func testActivityRowsAndToggleKeepAccessibleLabelsAndValues() async throws {
+            let (model, suite) = try activityModel()
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            let (_, window, _) = try mount(model, width: 1440)
+            defer { window.close() }
+            try await settle()
+            let initial = try XCTUnwrap(
+                WorkbenchAccessibility.snapshot(windowTitle: window.title),
+                "Missing test window in the accessibility tree")
+            let toggle = try XCTUnwrap(initial.elements.first { $0.identifier == "workbench-activity-toggle" })
+            XCTAssertEqual(toggle.label, "Activity")
+            XCTAssertEqual(toggle.value, "Hidden")
+            XCTAssertNil(initial.elements.first { $0.identifier == "workbench-activity-panel" })
+            let inline = try XCTUnwrap(initial.elements.first { $0.identifier == "conversation-tool-step-command" })
+            XCTAssertEqual(inline.label, "run command, wc -l notes.txt")
+            XCTAssertEqual(inline.value, "Done, Exit 0")
+            XCTAssertTrue(
+                WorkbenchAccessibility.press(identifier: "workbench-activity-toggle", windowTitle: window.title))
+            try await settle()
+            let elements = try XCTUnwrap(WorkbenchAccessibility.snapshot(windowTitle: window.title)).elements
+            XCTAssertNotNil(elements.first { $0.identifier == "workbench-activity-panel" })
+            XCTAssertNotNil(elements.first { $0.identifier == "chat-composer-input" })
+            let click = try XCTUnwrap(elements.first { $0.identifier == "activity-row-step-click" })
+            XCTAssertEqual(click.label, "click, at 10, 20")
+            XCTAssertEqual(click.value, "Approval waiting, Running")
+            XCTAssertEqual(elements.first { $0.identifier == "workbench-activity-close" }?.label, "Hide activity")
+            XCTAssertTrue(
+                WorkbenchAccessibility.press(identifier: "workbench-activity-close", windowTitle: window.title))
+            try await settle()
+            XCTAssertNil(
+                WorkbenchAccessibility.snapshot(windowTitle: window.title)?.elements.first {
+                    $0.identifier == "workbench-activity-panel"
+                })
+        }
+
+        func testCutCopyStaysOffTheWorkbenchAndTheCanvasHeaderShowsTheResultTitle() async throws {
+            let (model, suite) = try panelModel()
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            model.outboundTap = { _ in }
+            model.history = []
+            model.historyLoaded = true
+            model.activeChatId = "copy-chat"
+            model.workspaceStarted = true
+            model.consoleDashboardVisible = false
+            model.turns = [.init(id: "u", role: "user", text: "Summarize the rolls")]
+            model.canvas = [
+                try XCTUnwrap(
+                    AstralComponent(
+                        json: .object([
+                            "type": .string("card"), "component_id": .string("copy-result"),
+                            "title": .string("Roll Summary"), "source_agent": .string("dice"),
+                            "content": .array([.object(["type": .string("text"), "content": .string("Total 18")])]),
+                        ])))
+            ]
+            XCTAssertEqual(model.consoleResultTitle, "Roll Summary")
+            XCTAssertEqual(model.consoleResultAgent, "Dice Roller")
+            XCTAssertEqual(model.consoleResultAccessibilityLabel, "Roll Summary, Dice Roller")
+            let (view, window) = try mountWorkbench(model, width: 1440, activity: true)
+            defer { window.close() }
+            try await settle()
+            let lines = try recognizedLines(view)
+            let text = lines.joined(separator: "\n")
+            XCTAssertGreaterThanOrEqual(lines.filter { $0.contains("Roll Summary") }.count, 2, "\(lines)")
+            for cut in [
+                "AstralDeep", "No chats", "No activity", "Interface", "Specialist", "Click to interact",
+                "Multi-agent orchestrator and server-driven UI workspace", "Ask anything", "How can I help?",
+                "More examples", "Your generated interface appears here",
+            ] {
+                XCTAssertFalse(text.contains(cut), "Unexpected cut copy: \(cut)")
+            }
+            try attach(view, name: "workbench-cut-copy")
+            model.canvas = [
+                AstralComponent(
+                    type: "text", raw: .object(["content": .string("Untitled"), "source_agent": .string("dice")]))
+            ]
+            XCTAssertEqual(model.consoleResultTitle, "Dice Roller")
+            XCTAssertEqual(model.consoleResultAccessibilityLabel, "Dice Roller")
+            model.canvas = [AstralComponent(type: "text", raw: .object(["content": .string("Untitled")]))]
+            XCTAssertEqual(model.consoleResultTitle, "")
+            XCTAssertEqual(model.consoleResultAccessibilityLabel, "Canvas")
+        }
+
+        func testStopAppearsOnlyDuringAComputerTaskAndCancelsTheTurnWithTheSession() async throws {
+            let computer = try MacComputerLifecycleFixture()
+            defer { computer.close() }
+            let suite = "MacWorkbenchViewTests.\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            let model = AppModel(
+                conversationResumeStore: ConversationResumeStore(defaults: defaults),
+                tokenStore: InMemoryTokenStore(), defaults: defaults, computerHost: computer.host)
+            model.signedIn = true
+            model.connected = true
+            model.chromeMenu = try XCTUnwrap(ChromeMenuModel.fromJSON(fixture("chrome-console")))
+            model.activeChatId = "stop-chat"
+            var sent: [JSONValue] = []
+            model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+            try computer.enable()
+            let (view, window) = try mountWorkbench(model, width: 1440, activity: false)
+            defer { window.close() }
+            try await settle()
+            XCTAssertNil(try stopControl(view))
+            computer.host.consume(try computer.session())
+            XCTAssertEqual(computer.host.session?.state, "active")
+            model.turnActive = true
+            try await settle()
+            let stop = try XCTUnwrap(try stopControl(view))
+            try attach(view, name: "workbench-stop")
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                window.sendEvent(
+                    try XCTUnwrap(
+                        NSEvent.mouseEvent(
+                            with: type, location: stop, modifierFlags: [],
+                            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                            context: nil, eventNumber: 0, clickCount: 1, pressure: 1)))
+            }
+            try await settle()
+            XCTAssertNil(computer.host.session)
+            XCTAssertEqual(sent.filter { $0["action"] == .string("cancel_task") }.count, 1)
+            XCTAssertNil(try stopControl(view))
+        }
+
+        func testEscapeCancelsOnlyOutsideTextEditingSheetsAndBlockedSurfaces() throws {
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 320, height: 200), styleMask: [.titled], backing: .buffered,
+                defer: false)
+            window.isReleasedWhenClosed = false
+            let field = NSTextView(frame: NSRect(x: 0, y: 0, width: 200, height: 40))
+            let container = NSView(frame: window.contentLayoutRect)
+            container.addSubview(field)
+            window.contentView = container
+            window.orderBack(nil)
+            defer { window.close() }
+            func key(_ code: UInt16, _ flags: NSEvent.ModifierFlags = [], in target: NSWindow? = nil) throws
+                -> NSEvent
+            {
+                try XCTUnwrap(
+                    NSEvent.keyEvent(
+                        with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0,
+                        windowNumber: (target ?? window).windowNumber, context: nil, characters: "\u{1b}",
+                        charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: code))
+            }
+            var cancels = 0
+            let cancel: () -> Bool = {
+                cancels += 1
+                return true
+            }
+            let escape = try key(53)
+            XCTAssertNil(MacWorkbenchEscapeMonitor.consume(escape, in: window, blocked: false, cancel: cancel))
+            XCTAssertEqual(cancels, 1)
+            XCTAssertNotNil(MacWorkbenchEscapeMonitor.consume(escape, in: window, blocked: true, cancel: cancel))
+            XCTAssertNotNil(MacWorkbenchEscapeMonitor.consume(escape, in: nil, blocked: false, cancel: cancel))
+            XCTAssertNotNil(
+                MacWorkbenchEscapeMonitor.consume(try key(53, .shift), in: window, blocked: false, cancel: cancel))
+            XCTAssertNotNil(MacWorkbenchEscapeMonitor.consume(try key(36), in: window, blocked: false, cancel: cancel))
+            XCTAssertNotNil(MacWorkbenchEscapeMonitor.consume(escape, in: window, blocked: false) { false })
+            XCTAssertEqual(cancels, 1)
+            XCTAssertTrue(window.makeFirstResponder(field))
+            XCTAssertNil(MacWorkbenchEscapeMonitor.consume(escape, in: window, blocked: false, cancel: cancel))
+            XCTAssertEqual(cancels, 2)
+            field.string = "Unsent draft"
+            XCTAssertNotNil(MacWorkbenchEscapeMonitor.consume(escape, in: window, blocked: false, cancel: cancel))
+            field.string = ""
+            field.setMarkedText(
+                "か", selectedRange: NSRange(location: 1, length: 0),
+                replacementRange: NSRange(location: 0, length: 0))
+            XCTAssertTrue(field.hasMarkedText())
+            XCTAssertNotNil(MacWorkbenchEscapeMonitor.consume(escape, in: window, blocked: false, cancel: cancel))
+            field.unmarkText()
+            let other = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 100, height: 100), styleMask: [.titled], backing: .buffered,
+                defer: false)
+            other.isReleasedWhenClosed = false
+            other.orderBack(nil)
+            defer { other.close() }
+            XCTAssertNotNil(
+                MacWorkbenchEscapeMonitor.consume(try key(53, in: other), in: window, blocked: false, cancel: cancel))
+            XCTAssertEqual(cancels, 2)
+        }
+
+        func testBrowserPaneTakesTheCanvasSlotWhenPresentedAndSignOutUnbindsIt() async throws {
+            let (model, suite) = try panelModel()
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            model.outboundTap = { _ in }
+            model.activeChatId = "browser-chat"
+            model.workspaceStarted = true
+            model.consoleDashboardVisible = false
+            model.turns = [.init(id: "u", role: "user", text: "Open the fixture page")]
+            model.canvas = [
+                AstralComponent(
+                    type: "card",
+                    raw: .object([
+                        "type": .string("card"), "component_id": .string("browser-result"), "title": .string("Notes"),
+                        "content": .array([.object(["type": .string("text"), "content": .string("Kept result")])]),
+                    ]))
+            ]
+            XCTAssertFalse(model.macBrowser.isEnabled)
+            model.macBrowser.setPaneEnabled(true)
+            XCTAssertFalse(model.macBrowser.isEnabled)
+            model.macBrowser.bind(owner: "browser-owner")
+            model.macBrowser.setPaneEnabled(true)
+            XCTAssertTrue(model.macBrowser.isEnabled)
+            let (view, window) = try mountWorkbench(model, width: 1440, activity: false)
+            defer { window.close() }
+            try await settle()
+            let webView = model.macBrowser.pane.webView
+            XCTAssertNil(webView.window)
+            XCTAssertTrue(try recognizedText(view).contains("Kept result"))
+            model.macBrowser.isPresented = true
+            try await settle()
+            XCTAssertTrue(webView.window === window)
+            XCTAssertFalse(try recognizedText(view).contains("Kept result"))
+            try attach(view, name: "workbench-browser-slot")
+            model.macBrowser.isPresented = false
+            try await settle()
+            XCTAssertNil(webView.window)
+            XCTAssertTrue(try recognizedText(view).contains("Kept result"))
+            model.macBrowser.isPresented = true
+            window.close()
+            await model.signOut(revokeRemote: false)
+            XCTAssertFalse(model.macBrowser.accountBound)
+            XCTAssertFalse(model.macBrowser.isEnabled)
+            XCTAssertFalse(model.macBrowser.isPresented)
+            XCTAssertTrue(model.activityLog.isEmpty)
+        }
+
+        private func activityModel() throws -> (AppModel, String) {
+            let (model, suite) = try panelModel()
+            model.outboundTap = { _ in }
+            model.activeChatId = "activity-chat"
+            model.workspaceStarted = true
+            model.consoleDashboardVisible = false
+            model.turns = [.init(id: "u", role: "user", text: "Open TextEdit and type")]
+            for frame in [
+                ActivityFrames.step(
+                    "step-click", chat: "activity-chat", status: "in_progress",
+                    arguments: #"{"x":10,"y":20,"hwnd":5}"#),
+                ActivityFrames.step(
+                    "step-click", chat: "activity-chat", status: "completed",
+                    result: #"{"_data":{"status":"confirmation_required"}}"#),
+                ActivityFrames.step(
+                    "step-command", chat: "activity-chat", name: "run_command", status: "in_progress",
+                    arguments: #"{"command":"wc -l notes.txt"}"#),
+                ActivityFrames.step(
+                    "step-command", chat: "activity-chat", name: "run_command", status: "completed",
+                    result: #"{"exit_code":0,"stdout":"3 notes.txt"}"#),
+            ] {
+                model.handleFrame(frame)
+            }
+            model.turns.append(.init(id: "a", role: "assistant", text: "Finished typing"))
+            return (model, suite)
+        }
+
+        private func mount(_ model: AppModel, width: Int) throws -> (NSHostingView<MountView>, NSWindow, MountState) {
+            let state = try MountState(model: model, fixture: fixture("mac-workbench"))
+            state.width = width
+            let view = NSHostingView(rootView: MountView(state: state))
+            return (view, host(view, model: model, width: width), state)
+        }
+
+        private func mountWorkbench(_ model: AppModel, width: Int, activity: Bool) throws -> (
+            NSHostingView<AnyView>, NSWindow
+        ) {
+            let state = try MountState(model: model, fixture: fixture("mac-workbench"))
+            state.width = width
+            let console = try XCTUnwrap(model.console)
+            let presentation = try XCTUnwrap(model.consolePresentation)
+            let view = NSHostingView(
+                rootView: AnyView(
+                    MacWorkbenchView(
+                        console: console, presentation: presentation, workbench: try XCTUnwrap(presentation.workbench),
+                        activityPresented: activity
+                    )
+                    .environment(model).environment(model.themeStore)
+                    .font(ConsoleTypography.body).tint(model.themeStore.palette.primary)
+                    .preferredColorScheme(model.themeStore.colorScheme)))
+            return (view, host(view, model: model, width: width))
+        }
+
+        private func host(_ view: NSView, model: AppModel, width: Int) -> NSWindow {
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: width, height: 900),
+                styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.title = "Workbench mount \(UUID().uuidString)"
+            window.appearance = NSAppearance(named: model.themeStore.colorScheme == .dark ? .darkAqua : .aqua)
+            window.contentView = view
+            window.orderBack(nil)
+            return window
+        }
+
+        private func recognizedLines(_ view: NSView) throws -> [String] {
+            try recognizedText(view).components(separatedBy: "\n")
+        }
+
+        private func stopControl(_ view: NSView) throws -> CGPoint? {
+            let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            let scale = CGFloat(bitmap.pixelsWide) / view.bounds.width
+            var found: CGRect?
+            for y in 0..<Int(56 * scale) {
+                for x in stride(from: bitmap.pixelsWide / 2, to: bitmap.pixelsWide, by: 1) {
+                    guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB),
+                        color.redComponent > color.greenComponent + 0.25,
+                        color.redComponent > color.blueComponent + 0.2
+                    else { continue }
+                    let pixel = CGRect(x: x, y: y, width: 1, height: 1)
+                    found = found.map { $0.union(pixel) } ?? pixel
+                }
+            }
+            return found.map { CGPoint(x: $0.midX / scale, y: view.bounds.height - $0.midY / scale) }
+        }
+
         private func bubbleBounds(_ bitmap: NSBitmapImageRep, user: Bool) -> CGRect? {
             var result: CGRect?
             for y in stride(from: 0, to: bitmap.pixelsHigh, by: 2) {

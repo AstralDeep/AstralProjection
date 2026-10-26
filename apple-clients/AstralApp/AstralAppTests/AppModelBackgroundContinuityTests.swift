@@ -1,5 +1,5 @@
 // Tests for AppModel's background-task reduce logic: task_completed/notification frames for the open chat
-// reload it, frames for other chats banner instead, and reconnect reissues load_chat for the active chat.
+// reload it, task frames for other chats stay quiet, and reconnect reissues load_chat for the active chat.
 
 import AstralCore
 import XCTest
@@ -41,14 +41,13 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
         XCTAssertFalse(model.bannerIsError)
     }
 
-    func testTaskCompletedForOtherChatBannersWithoutReload() {
+    func testTaskCompletedForOtherChatStaysQuietWithoutReload() {
         let model = AppModel(tokenStore: InMemoryTokenStore())
         model.activeChatId = "c1"
         let log = record(model)
         reduce(model, #"{"type":"task_completed","payload":{"task_id":"t1","chat_id":"c2","status":"completed"}}"#)
         XCTAssertTrue(loadChats(log).isEmpty)
-        XCTAssertEqual(model.errorBanner, "Background task finished in another chat")
-        XCTAssertFalse(model.bannerIsError)
+        XCTAssertNil(model.errorBanner)
     }
 
     func testTaskCompletedWithoutChatIdKeepsIssuingSocketBehavior() {
@@ -69,14 +68,28 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
         XCTAssertNil(model.errorBanner)
     }
 
-    func testTaskStartedForOtherChatBannersInstead() {
+    func testTaskStartedForOtherChatStaysQuiet() {
         let model = AppModel(tokenStore: InMemoryTokenStore())
         model.activeChatId = "c1"
         reduce(model, #"{"type":"task_started","payload":{"task_id":"t1","chat_id":"c2","status":"queued"}}"#)
         XCTAssertNil(model.statusText)
         XCTAssertFalse(model.asyncDetached)
-        XCTAssertEqual(model.errorBanner, "Background task started in another chat")
-        XCTAssertFalse(model.bannerIsError)
+        XCTAssertNil(model.errorBanner)
+    }
+
+    func testAttachingAnExistingFileStagesItWithoutABannerSentence() {
+        let model = AppModel(tokenStore: InMemoryTokenStore())
+        model.signedIn = true
+        model.connected = true
+        model.screen = .surface
+        model.emit(
+            "attach_existing",
+            payload: [
+                "attachment_id": .string("att-1"), "filename": .string("notes.pdf"), "category": .string("document"),
+            ])
+        XCTAssertEqual(model.staged.map(\.attachmentId), ["att-1"])
+        XCTAssertEqual(model.screen, .chat)
+        XCTAssertNil(model.errorBanner)
     }
 
     func testNotificationForOpenChatBannersAndReloads() {

@@ -90,10 +90,10 @@ final class AppModelWorkspaceVerbTests: XCTestCase {
         XCTAssertTrue(model.canvas.isEmpty)
     }
 
-    func testComponentSavedShowsInfoBannerWithTitle() {
+    func testComponentSavedShowsInfoBannerWithoutRepeatingTheTitle() {
         let model = AppModel(tokenStore: InMemoryTokenStore())
         reduce(model, #"{"type":"component_saved","component":{"id":"row-1","title":"Budget"}}"#)
-        XCTAssertEqual(model.errorBanner, "Saved Budget")
+        XCTAssertEqual(model.errorBanner, "Component saved")
         XCTAssertFalse(model.bannerIsError)
     }
 

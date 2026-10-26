@@ -109,7 +109,7 @@
             share.tap()
             waitForRequests(2)
             app.buttons["new-chat-button"].tap()
-            XCTAssertTrue(app.staticTexts["How can I help?"].waitForExistence(timeout: 3))
+            XCTAssertTrue(app.buttons["Research brief"].waitForExistence(timeout: 3))
             let afterNewChat = UIPasteboard.general.changeCount
             peer.releaseHeldReplies()
             XCTAssertFalse(app.buttons["Save or share astraldeep-canvas.html"].waitForExistence(timeout: 1))
@@ -269,7 +269,7 @@
             waitForRequests(3)
             app.buttons["Close"].tap()
             app.buttons["new-chat-button"].tap()
-            XCTAssertTrue(app.staticTexts["How can I help?"].waitForExistence(timeout: 3))
+            XCTAssertTrue(app.buttons["Research brief"].waitForExistence(timeout: 3))
             let baseline = UIPasteboard.general.changeCount
             peer.releaseHeldReplies()
             XCTAssertFalse(app.buttons["Copy link"].waitForExistence(timeout: 1))
@@ -304,7 +304,7 @@
             app.buttons["Refine"].firstMatch.tap()
             XCTAssertTrue(app.staticTexts["Reconnect before changing this component."].waitForExistence(timeout: 3))
             app.buttons["new-chat-button"].tap()
-            XCTAssertTrue(app.staticTexts["How can I help?"].waitForExistence(timeout: 3))
+            XCTAssertTrue(app.buttons["Research brief"].waitForExistence(timeout: 3))
             peer.resumeSocketConnections()
             let reconnected = XCTNSPredicateExpectation(
                 predicate: NSPredicate { [weak self] _, _ in (self?.peer.registrations ?? 0) >= 2 }, object: nil)

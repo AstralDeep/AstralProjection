@@ -1,5 +1,6 @@
 // Presents the native Mac chat workbench using server chrome, shared components, and existing action fences.
-// A single canvas renderer retains generated work while the conversation and navigation adapt around it.
+// A single canvas renderer retains generated work while the conversation, browser pane and activity panel adapt
+// around it; Esc and Command-period cancel the current turn through AppModel.
 
 #if os(macOS)
     import AppKit
@@ -14,8 +15,21 @@
         let activity: () -> Void
         let conversation: () -> Void
         let canvas: () -> Void
+        let cancelTurn: () -> Void
         let hasCanvas: Bool
         let canNavigate: Bool
+        let canCancelTurn: Bool
+    }
+
+    private struct MacUpdateCoordinatorKey: EnvironmentKey {
+        static var defaultValue: UpdateCoordinator? { nil }
+    }
+
+    extension EnvironmentValues {
+        var astralUpdateCoordinator: UpdateCoordinator? {
+            get { self[MacUpdateCoordinatorKey.self] }
+            set { self[MacUpdateCoordinatorKey.self] = newValue }
+        }
     }
 
     private struct MacWorkbenchActionsKey: FocusedValueKey {
@@ -65,13 +79,19 @@
                     .keyboardShortcut("2").disabled(actions?.hasCanvas != true || actions?.canNavigate != true)
                 Button("Activity") { actions?.activity() }
                     .keyboardShortcut("3").disabled(actions == nil)
+                Divider()
+                Button("Cancel turn") { actions?.cancelTurn() }
+                    .keyboardShortcut(".", modifiers: .command).disabled(actions?.canCancelTurn != true)
             }
         }
     }
 
     struct MacWorkbenchView: View {
+        static let activityPanelWidth = 320.0
+        static let activityDockMinimumWidth = 720.0
         @Environment(AppModel.self) private var model
         @Environment(ThemeStore.self) private var theme
+        @Environment(\.astralUpdateCoordinator) private var updates
         let console: ConsoleModel
         let presentation: ConsolePresentation
         let workbench: ConsoleWorkbenchPresentation
@@ -81,8 +101,20 @@
         @State private var activityPresented = false
         @State private var agentsPresented = false
         @State private var networkMonitor: NWPathMonitor?
+
+        init(
+            console: ConsoleModel, presentation: ConsolePresentation, workbench: ConsoleWorkbenchPresentation,
+            activityPresented: Bool = false
+        ) {
+            self.console = console
+            self.presentation = presentation
+            self.workbench = workbench
+            _activityPresented = State(initialValue: activityPresented)
+        }
+
         private var p: AstralPalette { theme.palette }
-        private var hasCanvas: Bool { !model.workspaceCanvas.isEmpty || model.showSkeleton }
+        private var hasCanvas: Bool { !model.workspaceCanvas.isEmpty || model.showSkeleton || browserPresented }
+        private var browserPresented: Bool { model.macBrowser.isPresented }
         private var title: String {
             model.history.first { $0.id == model.activeChatId }?.displayTitle
                 ?? model.visibleTurns.first { $0.role == "user" }?.text
@@ -93,7 +125,10 @@
             GeometryReader { geometry in
                 let showsSidebar = sidebarVisible && presentation.navigationMode == .sidebar && !model.consoleFullscreen
                 let sidebarWidth = showsSidebar ? min(presentation.sidebarWidth, geometry.size.width) : 0
-                let contentWidth = max(0, geometry.size.width - sidebarWidth)
+                let available = max(0, geometry.size.width - sidebarWidth)
+                let activityDocked = activityPresented && available >= Self.activityDockMinimumWidth
+                let activityWidth = min(Self.activityPanelWidth, max(0, available - 32))
+                let contentWidth = activityDocked ? available - activityWidth : available
                 let pane = showsSidebar ? workbench.withSidebar : workbench.withoutSidebar
                 let layout = MacWorkbenchLayout.resolve(
                     width: contentWidth, pane: pane, hasCanvas: hasCanvas, selectedPane: selectedPane,
@@ -121,7 +156,7 @@
                                     .clipped().opacity(layout.conversationVisible ? 1 : 0)
                                     .allowsHitTesting(layout.conversationVisible)
                                     .accessibilityHidden(!layout.conversationVisible)
-                                MacWorkbenchCanvas()
+                                MacWorkbenchCanvasSlot(browserPresented: browserPresented)
                                     .frame(width: layout.canvasVisible ? layout.canvasWidth : contentWidth)
                                     .frame(width: layout.canvasWidth)
                                     .clipped().opacity(layout.canvasVisible ? 1 : 0)
@@ -136,6 +171,17 @@
                             .frame(maxWidth: .infinity)
                         }
                         .frame(width: contentWidth)
+                        if activityDocked {
+                            MacWorkbenchActivityPanel { activityPresented = false }
+                                .frame(width: activityWidth)
+                        }
+                    }
+                    .overlay(alignment: .trailing) {
+                        if activityPresented && !activityDocked {
+                            MacWorkbenchActivityPanel { activityPresented = false }
+                                .frame(width: activityWidth)
+                                .shadow(color: p.bg.opacity(0.5), radius: 24, x: -12)
+                        }
                     }
                     .blur(radius: model.screen == .surface ? 5 : 0)
                     .allowsHitTesting(model.screen != .surface)
@@ -152,23 +198,31 @@
                 }
             }
             .background(p.bg)
+            .background(
+                MacWorkbenchEscapeMonitor(
+                    blocked: commandsPresented || agentsPresented || model.screen == .surface,
+                    cancel: { model.cancelCurrentTurn() })
+            )
             .foregroundStyle(p.text)
             .focusedSceneValue(
                 \.astralWorkbench,
                 MacWorkbenchActions(
                     newChat: { model.newChat() }, commands: { commandsPresented = true },
-                    sidebar: toggleSidebar, activity: { activityPresented = true },
+                    sidebar: toggleSidebar, activity: { activityPresented.toggle() },
                     conversation: {
                         model.consoleFullscreen = false
                         selectedPane = .conversation
                     },
                     canvas: { selectedPane = .canvas },
-                    hasCanvas: hasCanvas, canNavigate: !model.mandatorySurface)
+                    cancelTurn: { model.cancelCurrentTurn() },
+                    hasCanvas: hasCanvas, canNavigate: !model.mandatorySurface, canCancelTurn: model.canCancelTurn)
             )
             .sheet(isPresented: $commandsPresented) { MacWorkbenchCommandPalette() }
-            .sheet(isPresented: $activityPresented) { MacWorkbenchActivity() }
             .popover(isPresented: $agentsPresented, arrowEdge: .top) { MacWorkbenchAgents(console: console) }
             .onChange(of: model.activeChatId) { _, _ in selectedPane = .conversation }
+            .onChange(of: browserPresented) { _, presented in
+                if presented { selectedPane = .canvas }
+            }
             .onChange(of: model.mandatorySurface) { _, mandatory in
                 if mandatory {
                     commandsPresented = false
@@ -238,13 +292,22 @@
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden)
                 .disabled(model.mandatorySurface).help("Workspace actions").accessibilityLabel("Workspace actions")
-                iconButton("waveform.path", label: "Activity") { activityPresented = true }
+                if let updates { UpdateStatusChip(coordinator: updates) }
+                iconButton("waveform.path", label: "Activity") { activityPresented.toggle() }
+                    .accessibilityValue(activityPresented ? "Shown" : "Hidden")
+                    .accessibilityIdentifier("workbench-activity-toggle")
+                if model.macBrowser.isEnabled {
+                    iconButton("globe", label: "Browser pane") { model.macBrowser.isPresented.toggle() }
+                        .accessibilityValue(browserPresented ? "Shown" : "Hidden")
+                        .accessibilityIdentifier("workbench-browser-toggle")
+                }
                 if model.macComputerHost.available {
                     iconButton("desktopcomputer", label: "Computer controls") { model.macComputerHost.showControls() }
-                    if model.macComputerHost.enabled {
-                        Button("Stop") { model.macComputerHost.stop() }
+                    if model.macComputerHost.taskActive {
+                        Button("Stop") { model.stopComputerTask() }
                             .font(ConsoleTypography.caption.weight(.semibold)).foregroundStyle(p.error)
                             .buttonStyle(.bordered).help("Stop this Mac computer session")
+                            .accessibilityIdentifier("workbench-stop")
                     }
                 }
                 iconButton("magnifyingglass", label: "Search commands (⌘K)") { commandsPresented = true }
@@ -304,8 +367,9 @@
             VStack(alignment: .leading, spacing: 16) {
                 HStack(spacing: 10) {
                     Image("AstralIcon").resizable().frame(width: 26, height: 26).clipShape(
-                        RoundedRectangle(cornerRadius: 7))
-                    Text("AstralDeep").font(ConsoleTypography.subheadline.weight(.semibold))
+                        RoundedRectangle(cornerRadius: 7)
+                    )
+                    .accessibilityLabel("AstralDeep")
                     Spacer(minLength: 0)
                     if model.consoleDrawerOpen {
                         Button {
@@ -340,9 +404,9 @@
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 3) {
                         if model.historyLoading { ProgressView().controlSize(.small).padding(8) }
-                        if chats.isEmpty && !model.historyLoading {
-                            Text(query.isEmpty ? "No chats" : "No matching chats")
-                                .font(ConsoleTypography.caption).foregroundStyle(p.muted).padding(8)
+                        if chats.isEmpty && !model.historyLoading && !query.isEmpty {
+                            Text("No matching chats").font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                                .padding(8)
                         }
                         ForEach(chats) { chat in
                             Button {
@@ -453,7 +517,7 @@
                 HStack(spacing: 4) {
                     Text(model.consoleResultTitle).font(ConsoleTypography.caption.weight(.semibold)).lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .accessibilityLabel("\(model.consoleResultTitle), \(model.consoleResultAgent)")
+                        .accessibilityLabel(model.consoleResultAccessibilityLabel)
                         .accessibilityIdentifier("workbench-canvas-title")
                     WorkspaceActionButtons()
                     Button {
@@ -560,43 +624,177 @@
         }
     }
 
-    private struct MacWorkbenchActivity: View {
+    struct MacWorkbenchActivityPanel: View {
         @Environment(AppModel.self) private var model
         @Environment(ThemeStore.self) private var theme
-        @Environment(\.dismiss) private var dismiss
+        let close: () -> Void
+        private var p: AstralPalette { theme.palette }
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 8) {
                     Text("Activity").font(ConsoleTypography.headline)
-                    Spacer()
-                    Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: 0)
+                    Button(action: close) {
+                        Image(systemName: "xmark").frame(width: 32, height: 40).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).foregroundStyle(p.muted).help("Hide activity")
+                    .accessibilityLabel("Hide activity").accessibilityIdentifier("workbench-activity-close")
                 }
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        if let status = model.statusText {
-                            StatusLine(text: status, showsActivity: model.statusShowsActivity)
-                        }
-                        ForEach(Array(model.stepTrail.enumerated()), id: \.offset) { index, step in
-                            HStack(alignment: .top, spacing: 12) {
-                                Text("\(index + 1)").monospacedDigit().foregroundStyle(theme.palette.muted)
-                                Text(step).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16).frame(height: 56)
+                .overlay(alignment: .bottom) { p.border.frame(height: 1) }
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 12) {
+                            if let status = model.statusText {
+                                StatusLine(text: status, showsActivity: model.statusShowsActivity)
+                            }
+                            ForEach(model.activity) { row in
+                                MacActivityRowView(row: row, compact: false)
+                                    .accessibilityIdentifier("activity-row-\(row.id)")
+                                    .id(row.id)
+                            }
+                            if model.macComputerHost.available {
+                                Divider().overlay(p.border)
+                                Label(model.macComputerHost.statusLabel, systemImage: "desktopcomputer")
+                                    .font(ConsoleTypography.caption).foregroundStyle(p.muted)
                             }
                         }
-                        if model.statusText == nil && model.stepTrail.isEmpty {
-                            Text("No activity").foregroundStyle(theme.palette.muted)
-                        }
-                        if model.macComputerHost.available {
-                            Divider()
-                            Label(model.macComputerHost.statusLabel, systemImage: "desktopcomputer")
-                        }
+                        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .onAppear { if let last = model.activity.last { proxy.scrollTo(last.id, anchor: .bottom) } }
+                    .onChange(of: model.activity.last?.id) { _, last in
+                        if let last { proxy.scrollTo(last, anchor: .bottom) }
+                    }
                 }
             }
-            .font(ConsoleTypography.subheadline).foregroundStyle(theme.palette.text)
-            .padding(24).background(theme.palette.surface)
-            .frame(minWidth: 280, idealWidth: 480, minHeight: 280, idealHeight: 440)
+            .font(ConsoleTypography.subheadline).foregroundStyle(p.text)
+            .frame(maxHeight: .infinity)
+            .background(p.surface)
+            .overlay(alignment: .leading) { p.border.frame(width: 1) }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Activity")
+            .accessibilityIdentifier("workbench-activity-panel")
+        }
+    }
+
+    private struct MacWorkbenchCanvasSlot: View {
+        @Environment(AppModel.self) private var model
+        let browserPresented: Bool
+
+        var body: some View {
+            ZStack {
+                MacWorkbenchCanvas()
+                    .opacity(browserPresented ? 0 : 1)
+                    .allowsHitTesting(!browserPresented).accessibilityHidden(browserPresented)
+                if browserPresented {
+                    MacWorkbenchBrowserSlot(driver: model.macBrowser)
+                }
+            }
+        }
+    }
+
+    private struct MacWorkbenchBrowserSlot: View {
+        @Environment(ThemeStore.self) private var theme
+        @Bindable var driver: MacBrowserDriver
+
+        var body: some View {
+            VStack(spacing: 0) {
+                HStack(spacing: 4) {
+                    Text(driver.pane.title).font(ConsoleTypography.caption.weight(.semibold)).lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button {
+                        driver.isPresented = false
+                    } label: {
+                        Image(systemName: "xmark").frame(width: 36, height: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).foregroundStyle(theme.palette.muted).help("Hide browser pane")
+                    .accessibilityLabel("Hide browser pane").accessibilityIdentifier("workbench-browser-close")
+                }
+                .padding(.horizontal, 14).frame(height: 56)
+                .overlay(alignment: .bottom) { theme.palette.border.frame(height: 1) }
+                MacBrowserPaneView(driver: driver)
+            }
+            .background(theme.palette.surface)
+            .overlay(alignment: .leading) { theme.palette.border.frame(width: 1) }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("workbench-browser-slot")
+        }
+    }
+
+    struct MacWorkbenchEscapeMonitor: NSViewRepresentable {
+        let blocked: Bool
+        let cancel: () -> Bool
+
+        static func cancels(
+            keyCode: UInt16, modifiers: NSEvent.ModifierFlags, editingText: Bool, sheetPresented: Bool, blocked: Bool
+        ) -> Bool {
+            keyCode == 53
+                && modifiers.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .function, .numericPad])
+                    .isEmpty
+                && !editingText && !sheetPresented && !blocked
+        }
+
+        static func editingText(_ responder: NSResponder?) -> Bool {
+            guard let text = responder as? NSTextView, text.isEditable else { return false }
+            return text.hasMarkedText() || !text.string.isEmpty
+        }
+
+        static func consume(_ event: NSEvent, in window: NSWindow?, blocked: Bool, cancel: () -> Bool) -> NSEvent? {
+            guard let window, event.window === window,
+                cancels(
+                    keyCode: event.keyCode, modifiers: event.modifierFlags,
+                    editingText: editingText(window.firstResponder),
+                    sheetPresented: window.attachedSheet != nil || NSApp.modalWindow != nil, blocked: blocked),
+                cancel()
+            else { return event }
+            return nil
+        }
+
+        func makeCoordinator() -> Coordinator { Coordinator() }
+
+        func makeNSView(context: Context) -> NSView {
+            let view = NSView()
+            context.coordinator.view = view
+            context.coordinator.update(blocked: blocked, cancel: cancel)
+            context.coordinator.start()
+            return view
+        }
+
+        func updateNSView(_ view: NSView, context: Context) {
+            context.coordinator.update(blocked: blocked, cancel: cancel)
+        }
+
+        static func dismantleNSView(_ view: NSView, coordinator: Coordinator) { coordinator.stop() }
+
+        @MainActor
+        final class Coordinator {
+            weak var view: NSView?
+            private var blocked = false
+            private var cancel: () -> Bool = { false }
+            private var monitor: Any?
+
+            func update(blocked: Bool, cancel: @escaping () -> Bool) {
+                self.blocked = blocked
+                self.cancel = cancel
+            }
+
+            func start() {
+                guard monitor == nil else { return }
+                monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                    MainActor.assumeIsolated { self?.consume(event) ?? event }
+                }
+            }
+
+            func stop() {
+                if let monitor { NSEvent.removeMonitor(monitor) }
+                monitor = nil
+            }
+
+            func consume(_ event: NSEvent) -> NSEvent? {
+                MacWorkbenchEscapeMonitor.consume(event, in: view?.window, blocked: blocked, cancel: cancel)
+            }
         }
     }
 

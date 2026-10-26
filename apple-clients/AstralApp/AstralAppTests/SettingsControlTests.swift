@@ -228,7 +228,7 @@ final class SettingsControlTests: XCTestCase {
         let model = model()
         XCTAssertEqual(model.connectionStripLabel, "Connecting…")
         await model.handle(.disconnected(reason: "Connection refused"))
-        XCTAssertEqual(model.connectionStripLabel, "Couldn't connect. Check your connection and retry.")
+        XCTAssertEqual(model.connectionStripLabel, "Couldn't connect.")
         await model.handle(.connected)
         XCTAssertNil(model.connectionStripLabel)
         await model.handle(.disconnected(reason: "Connection lost"))

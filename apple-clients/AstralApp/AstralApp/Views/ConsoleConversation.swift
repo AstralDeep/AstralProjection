@@ -1,11 +1,33 @@
-// Presents the console transcript and one persistent result renderer across preview and full screen.
-// Existing component and workspace action contexts continue to authorize all result interactions.
+// Presents the console transcript with inline tool steps and one persistent result renderer across preview and full
+// screen. Existing component and workspace action contexts continue to authorize all result interactions.
 
 import AstralCore
 import SwiftUI
 
 #if os(macOS)
     import AppKit
+
+    enum MacTranscriptEntry: Identifiable {
+        case turn(AppModel.ChatTurn)
+        case tools(Int, [AppModel.ActivityRow])
+
+        var id: String {
+            switch self {
+            case .turn(let turn): return turn.id
+            case .tools(let position, _): return "tool-steps-\(position)"
+            }
+        }
+
+        static func build(turns: [AppModel.ChatTurn], activity: [AppModel.ActivityRow]) -> [MacTranscriptEntry] {
+            let groups = Dictionary(grouping: activity) { min(max($0.position, 0), turns.count) }
+            var entries = groups[0].map { [MacTranscriptEntry.tools(0, $0)] } ?? []
+            for (index, turn) in turns.enumerated() {
+                if !turn.text.isEmpty || !turn.components.isEmpty { entries.append(.turn(turn)) }
+                if let rows = groups[index + 1] { entries.append(.tools(index + 1, rows)) }
+            }
+            return entries
+        }
+    }
 
     struct MacWorkbenchTranscript: View {
         @Environment(AppModel.self) private var model
@@ -17,50 +39,27 @@ import SwiftUI
         private var turns: [AppModel.ChatTurn] {
             model.visibleTurns.filter { !$0.text.isEmpty || !$0.components.isEmpty }
         }
+        private var entries: [MacTranscriptEntry] {
+            MacTranscriptEntry.build(turns: model.visibleTurns, activity: model.activity)
+        }
 
         var body: some View {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 28) {
-                        ForEach(turns) { turn in
-                            if turn.role == "reasoning" {
-                                ReasoningSnippet(text: turn.text)
-                            } else {
-                                let isUser = turn.role == "user"
-                                HStack {
-                                    if isUser { Spacer(minLength: 24) }
-                                    VStack(alignment: .leading, spacing: 10) {
-                                        if !turn.text.isEmpty {
-                                            if isUser {
-                                                Text(turn.text).textSelection(.enabled)
-                                            } else {
-                                                MarkdownBlockView(source: turn.text).textSelection(.enabled)
-                                            }
-                                        }
-                                        ForEach(Array(turn.components.enumerated()), id: \.offset) { _, component in
-                                            ComponentView(component: component)
-                                                .environment(\.astralNavigationTranscript, turn.id)
-                                        }
+                        ForEach(entries) { entry in
+                            switch entry {
+                            case .turn(let turn):
+                                turnView(turn)
+                            case .tools(_, let rows):
+                                VStack(alignment: .leading, spacing: 6) {
+                                    ForEach(rows) { row in
+                                        MacActivityRowView(row: row, compact: true)
+                                            .accessibilityIdentifier("conversation-tool-\(row.id)")
                                     }
-                                    .font(ConsoleTypography.body).foregroundStyle(p.text)
-                                    .padding(.horizontal, 16).padding(.vertical, 14)
-                                    .background(
-                                        isUser ? p.primary.opacity(0.17) : p.surface.opacity(0.55),
-                                        in: RoundedRectangle(cornerRadius: 12)
-                                    )
-                                    .astralChartBackdrop(
-                                        p, color: isUser ? p.primary : p.surface, opacity: isUser ? 0.17 : 0.55
-                                    )
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 12).stroke(
-                                            isUser ? p.primary.opacity(0.35) : p.border))
-                                    if !isUser { Spacer(minLength: 24) }
                                 }
-                                .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
-                                .accessibilityElement(children: .contain)
-                                .accessibilityLabel(isUser ? "You" : "AstralDeep")
-                                .accessibilityIdentifier("conversation-turn-\(turn.id)")
-                                .id(turn.id)
+                                .padding(.horizontal, 4)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
                         if let status = model.statusText {
@@ -93,7 +92,52 @@ import SwiftUI
                     scrollToLatest(proxy)
                 }
                 .onChange(of: turns) { _, _ in if followsLatest { scrollToLatest(proxy) } }
+                .onChange(of: model.activity.count) { _, _ in if followsLatest { scrollToLatest(proxy) } }
                 .onChange(of: model.statusText) { _, _ in if followsLatest { scrollToLatest(proxy) } }
+            }
+        }
+
+        private func turnView(_ turn: AppModel.ChatTurn) -> some View {
+            Group {
+                if turn.role == "reasoning" {
+                    ReasoningSnippet(text: turn.text)
+                } else {
+                    let isUser = turn.role == "user"
+                    HStack {
+                        if isUser { Spacer(minLength: 24) }
+                        VStack(alignment: .leading, spacing: 10) {
+                            if !turn.text.isEmpty {
+                                if isUser {
+                                    Text(turn.text).textSelection(.enabled)
+                                } else {
+                                    MarkdownBlockView(source: turn.text).textSelection(.enabled)
+                                }
+                            }
+                            ForEach(Array(turn.components.enumerated()), id: \.offset) { _, component in
+                                ComponentView(component: component)
+                                    .environment(\.astralNavigationTranscript, turn.id)
+                            }
+                        }
+                        .font(ConsoleTypography.body).foregroundStyle(p.text)
+                        .padding(.horizontal, 16).padding(.vertical, 14)
+                        .background(
+                            isUser ? p.primary.opacity(0.17) : p.surface.opacity(0.55),
+                            in: RoundedRectangle(cornerRadius: 12)
+                        )
+                        .astralChartBackdrop(
+                            p, color: isUser ? p.primary : p.surface, opacity: isUser ? 0.17 : 0.55
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12).stroke(
+                                isUser ? p.primary.opacity(0.35) : p.border))
+                        if !isUser { Spacer(minLength: 24) }
+                    }
+                    .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel(isUser ? "You" : "AstralDeep")
+                    .accessibilityIdentifier("conversation-turn-\(turn.id)")
+                    .id(turn.id)
+                }
             }
         }
 
@@ -101,6 +145,75 @@ import SwiftUI
             Task { @MainActor in
                 await Task.yield()
                 proxy.scrollTo("workbench-latest", anchor: .bottom)
+            }
+        }
+    }
+
+    struct MacActivityRowView: View {
+        @Environment(ThemeStore.self) private var theme
+        let row: AppModel.ActivityRow
+        let compact: Bool
+        private var p: AstralPalette { theme.palette }
+        private var symbol: String {
+            if row.approval == .waiting { return "hand.raised" }
+            switch row.state {
+            case .running: return "circle.dotted"
+            case .completed: return "checkmark.circle"
+            case .failed: return "exclamationmark.triangle"
+            case .cancelled: return "xmark.circle"
+            }
+        }
+        private var tint: Color {
+            if row.approval == .waiting { return p.warning }
+            switch row.state {
+            case .running: return p.primary
+            case .completed: return p.success
+            case .failed: return p.error
+            case .cancelled: return p.muted
+            }
+        }
+        private var detail: String { row.result.isEmpty ? row.stateLabel : row.result }
+
+        var body: some View {
+            HStack(alignment: compact ? .center : .top, spacing: 10) {
+                Image(systemName: symbol).foregroundStyle(tint).frame(width: 16)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(row.action).font(ConsoleTypography.caption.weight(.semibold)).lineLimit(1)
+                        if !row.target.isEmpty {
+                            Text(row.target).font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                                .lineLimit(1).truncationMode(.middle)
+                        }
+                        if compact { trailing }
+                    }
+                    if !compact { trailing }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if let thumbnail = row.thumbnail, let image = NSImage(data: thumbnail) {
+                    Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: compact ? 56 : 96, maxHeight: compact ? 32 : 64)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(p.border))
+                }
+            }
+            .padding(.horizontal, compact ? 10 : 0).padding(.vertical, compact ? 6 : 0)
+            .background(compact ? p.surface.opacity(0.35) : .clear, in: RoundedRectangle(cornerRadius: 8))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(row.accessibilityLabel)
+            .accessibilityValue(row.accessibilityValue)
+        }
+
+        @ViewBuilder private var trailing: some View {
+            HStack(spacing: 6) {
+                if let approval = row.approvalLabel {
+                    Text(approval).font(ConsoleTypography.caption2.weight(.semibold))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(tint.opacity(0.16), in: Capsule())
+                }
+                if row.approval == .none || !row.result.isEmpty {
+                    Text(detail).font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                        .lineLimit(compact ? 1 : 3)
+                }
             }
         }
     }
@@ -206,10 +319,8 @@ struct ConsoleConversation: View {
                             HStack(spacing: 10) {
                                 Text("✦").foregroundStyle(p.accent).frame(width: 32, height: 32)
                                     .background(p.primary.opacity(0.2), in: RoundedRectangle(cornerRadius: 7))
-                                VStack(alignment: .leading, spacing: 3) {
+                                if !model.consoleResultAgent.isEmpty {
                                     Text(model.consoleResultAgent).font(ConsoleTypography.subheadline.weight(.semibold))
-                                    Text(model.consoleLabel("result_agent_role")).font(ConsoleTypography.sans(11))
-                                        .foregroundStyle(p.muted)
                                 }
                             }
                             Color.clear
@@ -309,15 +420,15 @@ struct ConsoleResultPane: View {
                         Button {
                             model.consoleFullscreen = true
                         } label: {
-                            Label(
-                                model.consoleLabel("result_preview_action"),
-                                systemImage: "arrow.up.left.and.arrow.down.right"
-                            )
-                            .font(ConsoleTypography.caption).padding(10)
-                            .background(p.surface, in: RoundedRectangle(cornerRadius: 5))
-                            .overlay(RoundedRectangle(cornerRadius: 5).stroke(p.muted.opacity(0.4)))
+                            Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                .font(ConsoleTypography.caption).frame(width: 40, height: 40)
+                                .background(p.surface, in: RoundedRectangle(cornerRadius: 5))
+                                .overlay(RoundedRectangle(cornerRadius: 5).stroke(p.muted.opacity(0.4)))
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain).padding(.bottom, 14)
+                        .help(model.consoleLabel("result_preview_action"))
+                        .accessibilityLabel(model.consoleLabel("result_preview_action"))
                     }
                 }
                 .frame(height: fullscreen ? max(0, geometry.size.height - 64) : presentation.resultBodyMaxHeight)
@@ -432,10 +543,18 @@ extension AppModel {
         for identifier in identifiers {
             if let agent = console?.catalog.agents.first(where: { $0.id == identifier }) { return agent.name }
         }
-        return consoleLabel("result_default_agent")
+        return ""
     }
 
     var consoleResultTitle: String {
-        consoleLabel("result_title").replacingOccurrences(of: "{agent}", with: consoleResultAgent)
+        workspaceCanvas.lazy.compactMap { $0.title?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty } ?? consoleResultAgent
+    }
+
+    var consoleResultAccessibilityLabel: String {
+        let title = consoleResultTitle
+        let agent = consoleResultAgent
+        if title.isEmpty { return "Canvas" }
+        return agent.isEmpty || agent == title ? title : "\(title), \(agent)"
     }
 }
