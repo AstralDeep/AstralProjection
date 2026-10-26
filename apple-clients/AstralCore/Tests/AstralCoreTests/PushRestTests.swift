@@ -13,7 +13,7 @@ final class PushRestTests: XCTestCase {
         status: Int,
         recording: @escaping @Sendable (URLRequest) -> Void
     ) -> PushRest {
-        PushRest(serverBase: URL(string: "https://backend.example.test")!) { request in
+        return PushRest(serverBase: URL(string: "https://backend.example.test")!) { request in
             recording(request)
             return (status, Data("{}".utf8))
         }

@@ -341,7 +341,7 @@ class NotificationPushAdapter(
         const val PLATFORM = "android"
         const val DEFAULT_ACCEPTED_CAPACITY = 64
         const val MAX_TOKEN_CHARS = 4096
-        const val CODE_TOKEN_UNAVAILABLE = "provider_token_unavailable"
+        const val CODE_TOKEN_UNAVAILABLE = "token_unavailable"
         const val CODE_TOKEN_INVALID = "token_invalid"
         const val REASON_BOOTSTRAP = "bootstrap"
         const val REASON_RETRY = "retry"

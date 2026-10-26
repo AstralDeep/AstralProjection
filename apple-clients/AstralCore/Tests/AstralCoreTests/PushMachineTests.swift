@@ -135,7 +135,7 @@ final class PushMachineTests: XCTestCase {
         guard case .failedRetryable(let code, _) = machine.registration else {
             return XCTFail("nil token must be retryable")
         }
-        XCTAssertEqual(code, "provider_token_unavailable")
+        XCTAssertEqual(code, "token_unavailable")
         let retry = machine.retryRegistration()
         XCTAssertEqual(retry, [.requestToken(reason: "retry")])
         _ = machine.onDeviceToken("aabbccdd")

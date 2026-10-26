@@ -183,7 +183,7 @@ class NotificationPushAdapterTest {
         adapter.onPermissionReport(granted = true, notificationsEnabled = true)
         adapter.onAvailability(true)
         assertTrue(adapter.onToken(null).isEmpty())
-        assertEquals(RegistrationState.FailedRetryable("provider_token_unavailable", 1), adapter.registration)
+        assertEquals(RegistrationState.FailedRetryable("token_unavailable", 1), adapter.registration)
         assertEquals(listOf<PushEffect>(PushEffect.RequestToken("retry")), adapter.retryRegistration())
         assertEquals(RegistrationState.RequestingToken, adapter.registration)
         deliverToken(adapter, "provider-token-A")

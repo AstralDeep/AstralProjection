@@ -122,7 +122,7 @@ public func decodePushPayload(_ data: [String: String]) -> PushPayloadResult {
 }
 
 public func pushTokenFingerprint(_ token: String) -> String {
-    SHA256.hash(data: Data(token.utf8)).map { String(format: "%02x", $0) }.joined()
+    return SHA256.hash(data: Data(token.utf8)).map { String(format: "%02x", $0) }.joined()
 }
 
 private func trimmed(_ value: String?) -> String? {
@@ -132,7 +132,7 @@ private func trimmed(_ value: String?) -> String? {
 }
 
 private func containsControlCharacter(_ value: String) -> Bool {
-    value.unicodeScalars.contains { $0.value < 0x20 || $0.value == 0x7F }
+    return value.unicodeScalars.contains { $0.value < 0x20 || $0.value == 0x7F }
 }
 
 public final class PushDestinationMachine {
@@ -286,11 +286,11 @@ public final class PushDestinationMachine {
     }
 
     public func onForegroundDelivery(_ data: [String: String]) -> PushMessageReceipt {
-        receipt(for: data, systemPresents: false)
+        return receipt(for: data, systemPresents: false)
     }
 
     public func onSystemDelivery(_ data: [String: String]) -> PushMessageReceipt {
-        receipt(for: data, systemPresents: true)
+        return receipt(for: data, systemPresents: true)
     }
 
     public func onDismissed(_ notificationId: String) -> Bool {
@@ -327,7 +327,7 @@ public final class PushDestinationMachine {
     }
 
     private func enrollEffect(_ token: String) -> PushEffect {
-        .enrollDestination(
+        return .enrollDestination(
             deviceId: identity.deviceId,
             platform: platform,
             token: token,
@@ -351,7 +351,7 @@ public final class PushDestinationMachine {
     }
 
     static let maxTokenChars = 4096
-    static let codeTokenUnavailable = "provider_token_unavailable"
+    static let codeTokenUnavailable = "token_unavailable"
     static let codeTokenInvalid = "token_invalid"
     static let reasonBootstrap = "bootstrap"
     static let reasonRetry = "retry"

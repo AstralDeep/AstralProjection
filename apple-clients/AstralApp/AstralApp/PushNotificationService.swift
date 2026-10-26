@@ -67,7 +67,7 @@
         }
 
         func shouldOfferPermissionRequest() -> Bool {
-            machine.permission == .notDetermined
+            return machine.permission == .notDetermined
         }
 
         func requestAuthorizationIfNeeded() {

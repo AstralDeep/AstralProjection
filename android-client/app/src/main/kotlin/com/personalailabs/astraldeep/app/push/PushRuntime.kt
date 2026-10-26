@@ -140,8 +140,9 @@ class PushRuntime(
 
     private fun enroll(effect: PushEffect.EnrollDestination) {
         scope.launch {
-            when (val outcome =
-                rest.enroll(tokenProvider(), effect.deviceId, effect.platform, effect.token, effect.label)) {
+            val outcome =
+                rest.enroll(tokenProvider(), effect.deviceId, effect.platform, effect.token, effect.label)
+            when (outcome) {
                 is PushEnrollOutcome.Accepted -> machine().onEnrollmentAccepted()
                 is PushEnrollOutcome.Rejected -> {
                     Log.w(TAG, "push enrollment rejected: ${outcome.code}")

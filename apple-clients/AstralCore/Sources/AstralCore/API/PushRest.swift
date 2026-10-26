@@ -116,7 +116,7 @@ public struct PushRest: Sendable {
     }
 
     private func outcome(of request: URLRequest) async -> (Int, Data) {
-        (try? await transport(request)) ?? (0, Data())
+        return (try? await transport(request)) ?? (0, Data())
     }
 
     private func classify(_ result: (Int, Data)) -> PushEnrollOutcome {
