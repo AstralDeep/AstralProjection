@@ -5978,6 +5978,7 @@
     return (n >> 16 & 255) + " " + (n >> 8 & 255) + " " + (n & 255);
   }
   var PRESETS = {
+    graphite: { bg: "#0B0B0D", surface: "#151518", primary: "#8B5CF6", secondary: "#6E6E78", text: "#ECECEF", muted: "#8C8C95", accent: "#A78BFA" },
     midnight: { bg: "#0F1221", surface: "#1A1E2E", primary: "#6366F1", secondary: "#8B5CF6", text: "#F3F4F6", muted: "#9CA3AF", accent: "#06B6D4" },
     daylight: { bg: "#F8FAFC", surface: "#FFFFFF", primary: "#4F46E5", secondary: "#7C3AED", text: "#1E293B", muted: "#64748B", accent: "#0891B2" },
     ocean: { bg: "#0C1222", surface: "#132038", primary: "#0EA5E9", secondary: "#06B6D4", text: "#E2E8F0", muted: "#94A3B8", accent: "#2DD4BF" },

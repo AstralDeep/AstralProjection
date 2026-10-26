@@ -128,7 +128,7 @@
     }
   ],
   "theme": {
-    "name": "midnight",
+    "name": "graphite",
     "colors": {},
     "color_scheme": "dark",
     "contrast": "normal"

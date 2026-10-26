@@ -93,3 +93,39 @@ def test_the_check_would_catch_a_reintroduced_literal() -> None:
 ])
 def test_every_theme_channel_is_still_defined(token: str) -> None:
     assert f"{token}:" in _stylesheet()
+
+
+GRAPHITE_CHANNELS = {
+    "--astral-bg": "11 11 13",
+    "--astral-surface": "21 21 24",
+    "--astral-primary": "139 92 246",
+    "--astral-secondary": "110 110 120",
+    "--astral-text": "236 236 239",
+    "--astral-muted": "140 140 149",
+    "--astral-accent": "167 139 250",
+}
+
+
+def _root_channels(css: str) -> dict[str, str]:
+    root = re.search(r"^:root \{(?P<body>.*?)^\}", css, re.MULTILINE | re.DOTALL)
+    assert root, ":root palette block is missing"
+    return dict(re.findall(r"^\s*(--astral-(?:bg|surface|primary|secondary|text|muted|accent)):\s*([0-9 ]+);", root["body"], re.MULTILINE))
+
+
+def test_the_root_palette_is_graphite() -> None:
+    assert _root_channels(_stylesheet()) == GRAPHITE_CHANNELS
+
+
+def test_graphite_channels_match_the_canonical_preset() -> None:
+    from astralprojection.chrome.personalization import THEME_PRESETS
+
+    channels = {
+        f"--astral-{role}": " ".join(str(int(value[index:index + 2], 16)) for index in (1, 3, 5))
+        for role, value in THEME_PRESETS["graphite"].items()
+    }
+
+    assert channels == GRAPHITE_CHANNELS
+
+
+def test_no_stale_midnight_primary_fallback_remains_in_the_stylesheet() -> None:
+    assert "99 102 241" not in _stylesheet()
