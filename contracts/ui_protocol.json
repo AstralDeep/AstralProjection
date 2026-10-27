@@ -4822,6 +4822,16 @@
       "contract": "accept_actions.chrome_computer_grant_revoke"
     },
     {
+      "field": "grant_scope",
+      "shape": "app | window | command | origin: the scope kind of the task-grant offer this button carries",
+      "carried_on": [
+        "ui_event.authorize_action.payload"
+      ],
+      "scope": "Present on each \"Allow for this task\" button of a review card ({hitl_request_id, decision: grant_task, grant_scope}); a Mac input card can offer both window and app. A client sends the button payload unchanged. The server binds only an offer the card made, refuses grant_scope on any other decision, and treats a grant_task without it as the narrowest offer.",
+      "introduced_by": "macOS live findings, Deep server contracts",
+      "contract": "accept_actions.authorize_action"
+    },
+    {
       "field": "pinned, archived",
       "shape": {
         "pinned": "boolean",
