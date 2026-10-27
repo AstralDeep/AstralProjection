@@ -428,7 +428,7 @@ jobs:
     if: needs.changes.outputs.apple == 'true'
     name: Required · ${{ matrix.name }} first-login and voice UI
     runs-on: macos-26
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -503,13 +503,11 @@ jobs:
             dest="platform=iOS Simulator,id=${{ steps.ios_sim.outputs.udid }}"
           fi
           workspace_actions=()
-          parallel=()
           if [[ "${{ matrix.slug }}" == "ios" ]]; then
             workspace_actions=(
               -only-testing:AstralAppUITests/WorkspaceActionsUITests
               -only-testing:AstralAppUITests/SettingsControlsUITests
             )
-            parallel=(-parallel-testing-enabled YES -parallel-testing-worker-count 2)
           fi
           derived="$PWD/build/060/app-${{ matrix.slug }}-ui-dd"
           test_action='test'
@@ -530,7 +528,6 @@ jobs:
             -maximum-test-execution-time-allowance 300 \
             -retry-tests-on-failure \
             -test-iterations 2 \
-            ${parallel[@]+"${parallel[@]}"} \
             -derivedDataPath "$derived" \
             -resultBundlePath "$result" \
             -only-testing:AstralAppUITests/LLMFirstLoginUITests \

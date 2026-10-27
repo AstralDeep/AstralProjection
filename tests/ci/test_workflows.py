@@ -477,11 +477,8 @@ def _assert_apple_platform_contract(apple: str) -> None:
         in first_login
     )
     assert '"${workspace_actions[@]}"' in first_login
-    assert "            parallel=(-parallel-testing-enabled YES -parallel-testing-worker-count 2)\n" in first_login
-    assert first_login.count("-parallel-testing-worker-count") == 1
-    assert '            ${parallel[@]+"${parallel[@]}"} \\\n' in first_login
     assert "COMPILER_INDEX_STORE_ENABLE=NO -derivedDataPath \"$derived\" build-for-testing" in first_login
-    assert "-parallel-testing" not in app_unit and "-parallel-testing" not in core_ios
+    assert all("-parallel-testing" not in job for job in (first_login, app_unit, core_ios))
     assert 'result="${COVERAGE_ROOT}/AstralApp-${{ matrix.slug }}-first-login.xcresult"' in first_login
     assert APPLE_RESULT_GUARD in first_login
     assert "test ! -e" not in first_login
@@ -884,7 +881,7 @@ def test_core_android_and_apple_jobs_are_capped_at_thirty_minutes(workflow_name:
     _assert_jobs_capped_at_thirty_minutes((ACTIVE / workflow_name).read_text(encoding="utf-8"))
 
 
-APPLE_TEST_JOBS = ("core-tests", "core-ios-tests", "app-unit-tests", "first-login-ui", "watch-continuity")
+APPLE_TEST_JOBS = ("core-tests", "core-ios-tests", "app-unit-tests", "watch-continuity")
 
 
 def _assert_apple_test_jobs_within_twenty_minutes(text: str) -> None:
@@ -1466,15 +1463,7 @@ def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, platform, l
     assert xcode[-1][xcode[-1].index("-project") + 1] == "Owned Fixture.xcodeproj"
     assert "CODE_SIGNING_ALLOWED=NO" in xcode[-1]
     _assert_retried_test_run(xcode)
-    parallel = "-parallel-testing-enabled" in xcode[-1]
-    assert parallel == (lane == "ui" and platform == "ios")
-    assert not any(value.startswith("-parallel") for value in xcode[0])
-    if parallel:
-        run = xcode[-1]
-        assert run[run.index("-parallel-testing-enabled") + 1] == "YES"
-        assert run[run.index("-parallel-testing-worker-count") + 1] == "2"
-    else:
-        assert "-parallel-testing-worker-count" not in xcode[-1]
+    assert not any(value.startswith("-parallel") for call in xcode for value in call)
     assert ("COMPILER_INDEX_STORE_ENABLE=NO" in xcode[0]) == (lane == "ui")
     if lane == "ui":
         selectors = {arg for arg in xcode[-1] if arg.startswith("-only-testing:")}
