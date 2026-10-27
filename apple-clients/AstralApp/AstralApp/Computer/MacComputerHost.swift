@@ -70,6 +70,10 @@
         }
     }
 
+    enum MacBypassOrigin: Equatable {
+        case controls, settings, palette
+    }
+
     @MainActor @Observable
     final class MacComputerHost {
         private struct PauseWaiter {
@@ -90,7 +94,11 @@
         private(set) var lastError: String?
         private(set) var awaitingApproval = false
         private(set) var working = false
+        private(set) var bypass = false
+        var bypassConfirmation: MacBypassOrigin?
         let files: MacComputerFiles
+        @ObservationIgnored var announcer: (String) -> Void = { AccessibilityNotification.Announcement($0).post() }
+        @ObservationIgnored private var bypassReleaseOwed = false
         @ObservationIgnored private let defaults: UserDefaults
         @ObservationIgnored private let authority: ComputerHostAuthority
         @ObservationIgnored private let driver: any MacComputerDriving
@@ -346,6 +354,11 @@
         }
         private func disconnect(epoch: UUID) {
             localInput?.invalidate()
+            bypassConfirmation = nil
+            if bypass {
+                bypassReleaseOwed = true
+                turnBypassOff()
+            }
             channelEpoch = epoch
             outboundTail?.cancel()
             outboundTail = nil
@@ -358,6 +371,7 @@
             let epoch = UUID()
             disconnect(epoch: epoch)
             guard channelEpoch == epoch else { return }
+            bypassReleaseOwed = false
             desktopAvailable = false
             authority.setDesktopAvailable(false, requiresLocalRearm: false)
             owner = nil
@@ -480,6 +494,7 @@
         }
         private func suspendAccess() {
             let epoch = channelEpoch
+            setBypass(false)
             localInput?.invalidate()
             enabled = false
             desktopAvailable = false
@@ -498,7 +513,69 @@
             suspendAccess()
             lastError = "Computer control stopped because this desktop became unavailable."
         }
+        func requestBypass(_ value: Bool, from origin: MacBypassOrigin) {
+            guard value else {
+                setBypass(false)
+                return
+            }
+            guard !bypass, bypassAllowed() else { return }
+            lastError = nil
+            bypassConfirmation = origin
+        }
+        func confirmBypass() {
+            guard bypassConfirmation != nil else { return }
+            bypassConfirmation = nil
+            guard bypassAllowed() else { return }
+            setBypass(true)
+        }
+        func cancelBypass() { bypassConfirmation = nil }
+        func releaseBypass() -> String? {
+            bypassConfirmation = nil
+            let owed = bypass || bypassReleaseOwed
+            bypassReleaseOwed = false
+            turnBypassOff()
+            return owed ? bypassFrame(false) : nil
+        }
+        private func bypassAllowed() -> Bool {
+            guard available, enabled, owner != nil, sender != nil else {
+                lastError = "Allow computer tasks on this Mac before bypassing approvals."
+                return false
+            }
+            guard desktopRearm(), desktopProbe() else {
+                lastError = "Turn on bypass yourself from Astral's active, unlocked local desktop."
+                return false
+            }
+            return true
+        }
+        private func setBypass(_ value: Bool) {
+            bypassConfirmation = nil
+            bypassReleaseOwed = false
+            guard bypass != value else { return }
+            bypass = value
+            send(bypassFrame(value))
+            announcer(value ? "Approvals bypassed on this Mac" : "Approval bypass is off")
+        }
+        private func turnBypassOff() {
+            guard bypass else { return }
+            bypass = false
+            announcer("Approval bypass is off")
+        }
+        private func bypassFrame(_ enabled: Bool) -> String {
+            ComputerHostOutbound.frame(
+                action: "chrome_computer_bypass_set",
+                payload: ["host_id": .string(hostId), "enabled": .bool(enabled)])
+        }
+        private func reconcileBypass(_ reported: Bool?) {
+            if bypassReleaseOwed, sender != nil {
+                bypassReleaseOwed = false
+                send(bypassFrame(false))
+            } else if reported == true && !bypass {
+                send(bypassFrame(false))
+            }
+            if reported == false { turnBypassOff() }
+        }
         func applicationWillTerminate() {
+            turnBypassOff()
             commands.terminateNow()
             localInput?.stop()
             stop()
@@ -628,11 +705,17 @@
         }
         @discardableResult
         func consume(_ frame: InboundFrame) -> Bool {
-            if frame.name == "computer_host" { return true }
+            if frame.name == "computer_host" {
+                if frame.payload["host_id"]?.stringValue == hostId {
+                    reconcileBypass(frame.payload["bypass"]?.boolValue)
+                }
+                return true
+            }
             if frame.name == "computer_session" {
                 guard let incoming = try? ComputerHostSession(json: frame.payload), incoming.hostId == hostId else {
                     return true
                 }
+                reconcileBypass(incoming.bypass)
                 if incoming.state == "ended" {
                     if session?.id == incoming.id { retire() }
                     return true

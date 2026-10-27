@@ -1,12 +1,13 @@
-// One quiet status line under the Mac workbench composer: connection, model, token use, waiting approvals and this
-// Mac's computer-host state, each with a glyph and words. MacWorkbenchView places it and supplies the actions.
+// One quiet status line under the Mac workbench composer: connection, model, token use, waiting approvals, this
+// Mac's computer-host state and a bypassed-approvals warning, each with a glyph and words. MacWorkbenchView places
+// it and supplies the actions.
 
 #if os(macOS)
     import AstralCore
     import SwiftUI
 
     struct MacStatusItem: Identifiable, Equatable {
-        enum Kind: String { case connection, model, tokens, approvals, computer }
+        enum Kind: String { case connection, model, tokens, approvals, computer, bypass }
 
         let kind: Kind
         let symbol: String
@@ -27,6 +28,7 @@
             let enabled: Bool
             let sessionState: String?
             let statusLabel: String
+            var bypass = false
         }
 
         static func connection(connected: Bool, everConnected: Bool, failed: Bool) -> Connection {
@@ -66,6 +68,12 @@
                         tone: .warning))
             }
             if let computer { items.append(computerItem(computer)) }
+            if computer?.bypass == true {
+                items.append(
+                    MacStatusItem(
+                        kind: .bypass, symbol: "exclamationmark.shield.fill", text: "Approvals bypassed",
+                        label: "Approval bypass", value: "Approvals bypassed on this Mac", tone: .warning))
+            }
             return items
         }
 
@@ -123,7 +131,8 @@
                 approvals: model.waitingApprovals,
                 computer: host.available
                     ? MacStatusFooterModel.Computer(
-                        enabled: host.enabled, sessionState: host.session?.state, statusLabel: host.statusLabel)
+                        enabled: host.enabled, sessionState: host.session?.state, statusLabel: host.statusLabel,
+                        bypass: host.bypass)
                     : nil)
         }
 
@@ -132,7 +141,7 @@
                 ForEach(items) { item in
                     switch item.kind {
                     case .approvals: button(item, action: showActivity)
-                    case .computer: button(item) { model.macComputerHost.showControls() }
+                    case .computer, .bypass: button(item) { model.macComputerHost.showControls() }
                     default: label(item, identifier: "workbench-status-\(item.id)")
                     }
                 }

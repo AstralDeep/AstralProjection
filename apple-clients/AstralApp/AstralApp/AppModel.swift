@@ -200,6 +200,7 @@ final class AppModel: NSObject {
         didSet {
             if oldValue != authorityText {
                 #if os(macOS)
+                    releaseComputerBypass()
                     macComputerHost.signedOut()
                     macBrowser.bind(owner: nil)
                 #endif
@@ -629,6 +630,7 @@ final class AppModel: NSObject {
     func bindConversationAccount(_ account: ConversationAccount) {
         if conversationAccount != account {
             #if os(macOS)
+                releaseComputerBypass()
                 macComputerHost.signedOut()
                 macBrowser.bind(owner: nil)
             #endif
@@ -1489,6 +1491,7 @@ final class AppModel: NSObject {
 
     func signOut(revokeRemote: Bool = true) async {
         #if os(macOS)
+            releaseComputerBypass()
             macComputerHost.signedOut()
             macBrowser.bind(owner: nil)
             llmUsage = LLMUsageTally()
@@ -3292,6 +3295,20 @@ final class AppModel: NSObject {
     }
 
     #if os(macOS)
+        func computerApplicationWillTerminate() {
+            releaseComputerBypass()
+            macComputerHost.applicationWillTerminate()
+        }
+
+        private func releaseComputerBypass() {
+            guard let frame = macComputerHost.releaseBypass() else { return }
+            outboundTap?(frame)
+            guard let socket = ws, let connection = continuity.connectionGeneration,
+                let bound = ComputerHostOutbound.bindToConnection(frame, connectionGeneration: connection)
+            else { return }
+            Task { _ = await socket.sendCurrentComputerEvent(bound, connectionGeneration: connection) { true } }
+        }
+
         func stopComputerTask() {
             cancelCurrentTurn()
             macComputerHost.stop()
@@ -3358,6 +3375,11 @@ final class AppModel: NSObject {
         return ApprovalPrompt(
             requestId: approval.requestId, site: approvalSite(summary), summary: summary, allow: allow.choice,
             deny: deny.choice)
+    }
+
+    private static func bypassApproved(_ card: AstralComponent) -> Bool {
+        card.raw["approval_source"] == .string("bypass")
+            || card.children.contains { $0.raw["payload"]?["approval_source"] == .string("bypass") }
     }
 
     static func approvalSite(_ summary: String) -> String? {
@@ -3649,8 +3671,14 @@ final class AppModel: NSObject {
     private func observeActivityComponents() {
         guard !activityObservationPaused else { return }
         let live = transientCanvas ?? canvas
+        #if os(macOS)
+            let bypassing = macComputerHost.bypass
+        #else
+            let bypassing = false
+        #endif
         let cards = Self.approvalCards(in: visibleTurns.suffix(8).flatMap(\.components) + live)
             .filter { !decidedApprovals.contains($0.approval.requestId) }
+            .filter { !(bypassing && Self.bypassApproved($0.card)) }
         let pending = cards.map(\.approval)
         let prompts = cards.compactMap { Self.approvalPrompt($0.card, $0.approval) }
         if prompts != approvalPrompts { approvalPrompts = prompts }
