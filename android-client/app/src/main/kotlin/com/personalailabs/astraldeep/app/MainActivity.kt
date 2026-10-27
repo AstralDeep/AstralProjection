@@ -56,6 +56,10 @@ import com.personalailabs.astraldeep.app.auth.ServerSessionTransport
 import com.personalailabs.astraldeep.app.auth.TokenStore
 import com.personalailabs.astraldeep.app.auth.keycloakEndpoints
 import com.personalailabs.astraldeep.app.auth.routeAfterRefresh
+import com.personalailabs.astraldeep.app.push.AbsentPushProviderBackend
+import com.personalailabs.astraldeep.app.push.PushDestinationRest
+import com.personalailabs.astraldeep.app.push.PushIdentity
+import com.personalailabs.astraldeep.app.push.PushRuntime
 import com.personalailabs.astraldeep.app.render.CanvasCaptureRegistry
 import com.personalailabs.astraldeep.app.render.Download
 import com.personalailabs.astraldeep.app.render.Emit
@@ -126,6 +130,31 @@ class MainActivity : ComponentActivity() {
     private val keycloakLogout by lazy {
         KeycloakLogout(keycloakEndpoints(AppConfig.KEYCLOAK_AUTHORITY).endSessionEndpoint)
     }
+    private val pushRuntime by lazy {
+        PushRuntime(
+            applicationContext,
+            PushRuntime.pushDeviceId(applicationContext).let { PushIdentity(it) },
+            PushDestinationRest(AppConfig.API_BASE),
+            tokenProvider = { authToken.value },
+            providerBackend = AbsentPushProviderBackend(),
+            inAppListener = { payload ->
+                pushViewModel?.presentPushInApp(payload.title, payload.body, payload.level)
+            },
+        )
+    }
+    private var pushViewModel: AppViewModel? = null
+    private var pushPermissionRequested = false
+
+    private fun maybeRequestPushPermission() {
+        if (pushPermissionRequested || !pushRuntime.shouldOfferPermissionRequest()) return
+        pushPermissionRequested = true
+        pushPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    private val pushPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { _ ->
+            pushRuntime.refreshPermission()
+        }
 
     private data class PendingDownload(val url: String, val owner: ConversationResumeStore.AccountIdentity)
 
@@ -238,6 +267,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         workspaceActions.invalidateStale()
         componentActions.invalidateStale()
+        pushRuntime.start()
+        pushRuntime.handleTap(intent)
         val initial = authFence.capture()
         lifecycleScope.launch(Dispatchers.IO) {
             try {
@@ -268,6 +299,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val vm: AppViewModel =
                 viewModel(factory = AppViewModel.factory(client, rest, conversationResumeStore, voiceController, store))
+            pushViewModel = vm
             val uiState by vm.state.collectAsStateWithLifecycle()
             AstralTheme(palette = uiState.themePalette) {
                 val renderer =
@@ -352,9 +384,16 @@ class MainActivity : ComponentActivity() {
                 if (next == null || oldOwner != newOwner) {
                     workspaceActions.clear()
                     componentActions.clear()
+                    if (oldOwner != null && oldOwner != newOwner) {
+                        pushRuntime.onAccountChanged(authToken.value)
+                    }
                 }
                 authToken.value = next
                 signInError.value = error
+                if (next != null) {
+                    pushRuntime.onAuthenticated()
+                    maybeRequestPushPermission()
+                }
             }
             if (next != null && ticket.mode == AuthAttemptFence.Mode.SERVER) {
                 checkNotNull(serverSession).withToken(next, publish)
@@ -437,6 +476,8 @@ class MainActivity : ComponentActivity() {
             signInError.value = null
             authToken.value = null
         }
+        pushRuntime.onSignedOut(access)
+        pushViewModel = null
         if (custodyMode) {
             if (retired != null) {
                 lifecycleScope.launch(Dispatchers.IO) {
@@ -468,11 +509,28 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        pushRuntime.handleTap(intent)
+        if (authToken.value != null) pushRuntime.onAuthenticated()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        pushRuntime.onLifecycleActive()
+    }
+
+    override fun onPause() {
+        pushRuntime.onLifecycleInactive()
+        super.onPause()
+    }
+
     override fun onDestroy() {
         authFence.retire()
         pendingSignIn = null
         workspaceActions.clear()
         componentActions.clear()
+        pushViewModel = null
         oidc.dispose()
         super.onDestroy()
     }

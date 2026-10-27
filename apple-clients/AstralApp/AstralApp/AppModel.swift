@@ -177,6 +177,9 @@ final class AppModel: NSObject {
     #else
         typealias LocalComputerHost = Never
     #endif
+    #if os(iOS)
+        var pushNotifications: PushNotificationService?
+    #endif
 
     var serverBaseText: String {
         didSet {
@@ -562,6 +565,31 @@ final class AppModel: NSObject {
             return self?.refreshActiveChat()
         }
         #if os(iOS)
+            let pushDeviceKey = "astraldeep.push.device-id.v1"
+            let storedPushDeviceId = defaults.string(forKey: pushDeviceKey)
+            let pushDeviceId: String
+            if let storedPushDeviceId,
+                storedPushDeviceId.count >= 8, storedPushDeviceId.count <= 128,
+                storedPushDeviceId.first.map({ $0.isLetter || $0.isNumber }) == true,
+                storedPushDeviceId.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "." || $0 == "_" || $0 == "-" })
+            {
+                pushDeviceId = storedPushDeviceId
+            } else {
+                let fresh = UUID().uuidString.lowercased()
+                defaults.set(fresh, forKey: pushDeviceKey)
+                pushDeviceId = fresh
+            }
+            let pushIdentity = PushIdentity(deviceId: pushDeviceId, label: "Astral phone")
+            let service = PushNotificationService(
+                identity: pushIdentity,
+                machine: PushDestinationMachine(identity: pushIdentity),
+                rest: PushRest(serverBase: serverBase),
+                tokenProvider: { [weak self] in await self?.freshAccessToken() })
+            service.setInAppPresent { [weak self] payload in
+                self?.presentPushInApp(payload)
+            }
+            service.start()
+            pushNotifications = service
             WatchOverrideSync.shared.activate()
             if !storedBase.isEmpty { WatchOverrideSync.shared.push(serverBaseText) }
         #endif
@@ -574,6 +602,11 @@ final class AppModel: NSObject {
                 macBrowser.bind(owner: nil)
             #endif
             clearActivity()
+            #if os(iOS)
+                if conversationAccount != nil {
+                    pushNotifications?.ownerSessionEnded(access: nil)
+                }
+            #endif
             if conversationAccount != nil {
                 retireMeshCustody()
             } else if serverSession?.owner == account.subject, serverSession?.scope.issuer == account.issuer {
@@ -1425,7 +1458,22 @@ final class AppModel: NSObject {
             resetChatState()
         }
         signedIn = true
+        #if os(iOS)
+            pushNotifications?.ownerAuthenticated()
+            if pushNotifications?.shouldOfferPermissionRequest() == true {
+                pushNotifications?.requestAuthorizationIfNeeded()
+            }
+        #endif
         connectWS(resumed: resumedSession)
+    }
+
+    func presentPushInApp(_ payload: PushPayload) {
+        let text = [payload.title, payload.body]
+            .compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: ": ")
+        guard !text.isEmpty else { return }
+        bannerIsError = payload.level == "error"
+        warningBannerText = payload.level == "warning" ? text : nil
+        errorBanner = text
     }
 
     func signOut(revokeRemote: Bool = true) async {
@@ -1434,6 +1482,9 @@ final class AppModel: NSObject {
             macBrowser.bind(owner: nil)
         #endif
         clearActivity()
+        #if os(iOS)
+            pushNotifications?.ownerSessionEnded(access: tokens?.accessToken)
+        #endif
         retireMeshCustody()
         // Local wipe must precede the async revoke call, before any suspension
         let access = tokens?.accessToken
@@ -2143,9 +2194,12 @@ final class AppModel: NSObject {
                 errorBanner = "Background task finished"
             }
         case "notification":
-            let text = [frame.payload["title"]?.stringValue, frame.payload["body"]?.stringValue]
+            var text = [frame.payload["title"]?.stringValue, frame.payload["body"]?.stringValue]
                 .compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: ": ")
             if !text.isEmpty {
+                if let chatId = nestedChatId(frame), chatId != activeChatId {
+                    text += " — open it from History"
+                }
                 bannerIsError = frame.payload["level"]?.stringValue == "error"
                 warningBannerText = frame.payload["level"]?.stringValue == "warning" ? text : nil
                 errorBanner = text

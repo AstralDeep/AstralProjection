@@ -3427,6 +3427,84 @@
       "interactive_scope": "Keyboard input, resize, interrupt and session close are advertised only on interactive_panel dispositions. Read-only monitors receive the complete list and output reads with platform-selection copy and never a partial command form; phone, tablet and tv render the read-only monitor through their declared ROTE fallbacks.",
       "unavailable_host": "When the host reports the terminal capability unavailable or refused, the panel renders the declared unavailable or denied state with recovery guidance and advertises no terminal controls; the omission stays server-declared and is never hidden independently in a client.",
       "watch": "Host renders only content-free state metadata and a phone or desktop handoff. Session id, target, directory, offsets and output are not sent to the watch."
+    },
+    "push_navigation": {
+      "version": 1,
+      "purpose": "Owner-bound OS push on the phone clients: the destination runtime enrolls the device push token with Deep, presents only what the server selected for the delivery pipeline, suppresses duplicates in the foreground, and resolves taps into authorized sources after Keycloak authentication. A tap never approves an action, executes a tool, or opens a server-unresolved target.",
+      "clients": {
+        "android": "POST_NOTIFICATIONS-gated OS presentation with the astral_push default and astral_push_alerts channels; the provider bridge reports backend availability and supplies token rotations",
+        "ios": "UNUserNotificationCenter authorization with APNs registration; alerts presented by the system when backgrounded and suppressed in favor of the in-app banner while connected",
+        "web": "in-app banner only; the ws notification frame keeps the existing presentation and no OS push registration exists",
+        "windows": "in-app banner only; the ws notification frame keeps the existing presentation and no OS push registration exists",
+        "macos": "in-app banner only; the ws notification frame keeps the existing presentation and no OS push registration exists",
+        "watch": "in-app presentation only; no OS push registration exists"
+      },
+      "destination": {
+        "enroll": {
+          "endpoint": "/api/push/destinations",
+          "fields": {
+            "device_id": "1-128 characters, first character alphanumeric, then alphanumerics, dot, underscore or hyphen",
+            "platform": "android|ios",
+            "token": "1-4096 characters from the platform provider, no control characters",
+            "label": "optional, at most 64 characters"
+          },
+          "rotation": "a changed provider token re-enrolls the same device_id and Deep rotates the destination with an incremented token_generation; a repeated token is idempotent",
+          "reactivation": "re-enrollment after revocation reactivates the destination when capacity allows"
+        },
+        "ack": {
+          "endpoint": "/api/push/ack",
+          "fields": {
+            "device_id": "the enrolled device_id",
+            "notification_id": "the delivered notification identity"
+          },
+          "timing": "after the client presents or reads the notification; never queued for reconnect replay"
+        },
+        "revoke": {
+          "endpoint": "/api/push/destinations/{device_id}",
+          "triggers": [
+            "sign-out",
+            "account change",
+            "permission revocation",
+            "provider token becoming permanently unavailable"
+          ]
+        },
+        "denials": {
+          "401": "the Keycloak session is gone; authenticate again before any retry",
+          "400": "destination_invalid or ack_invalid; the local state is wrong, reset the runtime instead of retrying",
+          "403": "the owner is not permitted to hold destinations for this platform; stay unregistered",
+          "404": "unknown notification or destination for this owner; stop retrying the id",
+          "410": "the destination was revoked server-side; clear local registration and wait for an explicit re-enrollment trigger",
+          "429": "temporary capacity or rate pressure; retry later from the retryable state",
+          "503": "the provider backend is not configured or the store is unavailable; keep the runtime unsupported until availability returns"
+        }
+      },
+      "payload": {
+        "note": "The delivery pipeline's minimal payload bounds: the provider message carries the identity and text only; the owner's authenticated ws notification frame carries the same text plus the bounded source ids. Clients validate both against these bounds and treat every other key as inert.",
+        "notification_id": "^[A-Za-z0-9._:-]{8,128}$",
+        "title": "at most 128 characters, no control characters",
+        "body": "at most 256 characters, no control characters",
+        "level": "info|warning|error; absent means info",
+        "source_ids": {
+          "chat_id": "at most 128 characters when present",
+          "job_id": "at most 128 characters when present",
+          "activity_id": "at most 128 characters when present",
+          "assignment_id": "at most 128 characters when present"
+        }
+      },
+      "presentation": {
+        "server_selected": "Deep's delivery pipeline selects the text and identity; the client maps the server level to presentation importance: error to the high-importance alert channel, warning and info to the default channel, and never invents importance from client state",
+        "foreground": "while the owner's socket is connected the ws notification frame owns presentation as the single in-app banner slot; an OS-delivered duplicate of the same text cannot stack a second banner",
+        "background": "the system presents the provider message; the client records the identity when it next sees it and acknowledges after the user reads or taps it",
+        "terminated": "identical to background; the tap launches the ordinary authentication flow first",
+        "deduplication": "a bounded receipt ledger keyed by notification_id suppresses duplicate OS presentation and duplicate acknowledgments across surfaces and process restarts; dismissal removes the entry so a genuine redelivery after dismissal presents again"
+      },
+      "navigation": {
+        "tap": "a tap first completes the ordinary Keycloak authentication; only then does the client act on the delivery identity",
+        "resolution": "the provider message carries the identity and text only; the client acknowledges the identity and the app lands on the owner's authenticated surfaces through the ordinary resume flow, and the client never navigates from a URL inside the provider message",
+        "foreground_sources": "the owner's authenticated ws notification frame carries the bounded source ids; a frame naming a conversation other than the active one points at the authorized conversation surfaces and never opens or executes anything on its own",
+        "unresolved": "an identity the client cannot resolve to an authorized source leaves the owner on the authenticated surfaces; the client must not fabricate a target",
+        "forbidden": "taps never approve actions, execute tools, replay queued commands, or carry component verbs"
+      }
     }
   },
   "frame_contracts": {

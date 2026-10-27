@@ -21,6 +21,9 @@ struct AstralApp: App {
         @State private var updateRequirement: UpdateRequirement?
     #endif
     @Environment(\.scenePhase) private var scenePhase
+    #if os(iOS)
+        @UIApplicationDelegateAdaptor(PushNotificationAppDelegate.self) private var pushAppDelegate
+    #endif
     private let unitTestHost =
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 
