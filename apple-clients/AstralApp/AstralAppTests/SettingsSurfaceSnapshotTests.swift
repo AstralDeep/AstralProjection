@@ -65,8 +65,12 @@
         }
 
         private func allSurfaces() throws -> [Surface] {
-            try ["agents_list", "agents_detail", "llm", "personalization", "audit", "theme", "my_computers", "table"]
-                .map(surface)
+            try [
+                "agents_list", "agents_detail", "llm", "personalization", "audit", "theme", "my_computers", "table",
+                "safety_running", "safety_engaged", "remote_machines", "mesh", "mesh_invitations", "llm_system",
+                "admin_tools", "drafts", "authoring", "attachments", "search", "pulse",
+            ]
+            .map(surface)
                 + [
                     try surface("guidance_agents", contract: "guidance_088/agents_surface.json", state: "list"),
                     try surface("guidance_agent_new", contract: "guidance_088/agents_surface.json", state: "new"),
@@ -164,7 +168,8 @@
         }
 
         private func mount(
-            _ surface: Surface, preset: String = "graphite", width: CGFloat = 760
+            _ surface: Surface, preset: String = "graphite", width: CGFloat = 760,
+            textSize: DynamicTypeSize = .large
         ) async throws -> Mount {
             let model = signedInModel()
             model.screen = .surface
@@ -173,13 +178,16 @@
             let theme = ThemeStore()
             theme.apply(preset: preset)
             let mount = Mount(
-                compact(content(surface, theme: theme, width: width), model: model, theme: theme),
+                compact(content(surface, theme: theme, width: width), model: model, theme: theme)
+                    .environment(\.dynamicTypeSize, textSize),
                 size: CGSize(width: width, height: 200), scheme: theme.colorScheme, fitHeight: true)
             try await mount.settle(fitHeight: true)
             return mount
         }
 
-        private func measure(_ component: AstralComponent, chip: Bool? = nil, inCard: Bool = true) -> CGSize {
+        private func measure(
+            _ component: AstralComponent, chip: Bool? = nil, inCard: Bool = true, textSize: DynamicTypeSize = .large
+        ) -> CGSize {
             let model = signedInModel()
             model.screen = .surface
             let theme = ThemeStore()
@@ -189,7 +197,9 @@
                         .environment(\.astralCompactChip, chip)
                         .environment(\.astralCompactCardContent, inCard)
                         .fixedSize(),
-                    model: model, theme: theme))
+                    model: model, theme: theme
+                )
+                .environment(\.dynamicTypeSize, textSize))
             view.layoutSubtreeIfNeeded()
             return view.fittingSize
         }
@@ -224,7 +234,14 @@
                     Bundle(for: SettingsSurfaceSnapshotTests.self).url(forResource: name, withExtension: "json"), name)
                 XCTAssertTrue(url.standardizedFileURL.path.hasPrefix(bundle), name)
             }
-            XCTAssertGreaterThanOrEqual(try allSurfaces().count, 18)
+            XCTAssertEqual(try allSurfaces().count, 30)
+            let keys = Set(try allSurfaces().map(\.key))
+            for key in [
+                "safety", "remote_machines", "mesh", "llm_system", "admin_tools", "drafts", "agent_authoring",
+                "attachments", "search", "pulse",
+            ] {
+                XCTAssertTrue(keys.contains(key), key)
+            }
         }
 
         func testEverySettingsSurfaceRendersInGraphiteMidnightAndDaylight() async throws {
@@ -234,6 +251,27 @@
                     defer { mount.close() }
                     XCTAssertGreaterThan(mount.view.bounds.height, 40, surface.name)
                     write(try mount.png(), name: preset == "graphite" ? surface.name : "\(surface.name)-\(preset)")
+                }
+            }
+        }
+
+        func testLargerTextKeepsEverySurfaceAndControlInsideItsBounds() async throws {
+            for textSize in [DynamicTypeSize.large, .accessibility3] {
+                for surface in try allSurfaces() {
+                    let mount = try await mount(surface, textSize: textSize)
+                    defer { mount.close() }
+                    XCTAssertGreaterThan(mount.view.bounds.height, 40, "\(surface.name) \(textSize)")
+                    XCTAssertLessThanOrEqual(mount.view.fittingSize.width, 760.5, "\(surface.name) \(textSize)")
+                    if textSize == .accessibility3 {
+                        write(try mount.png(), name: "\(surface.name)-accessibility3")
+                    }
+                    for raw in Self.buttons(surface.components.map(\.raw)) {
+                        let component = try XCTUnwrap(AstralComponent(json: raw))
+                        let size = measure(component, textSize: textSize)
+                        let name = "\(surface.name) \(textSize): \(component.label ?? "")"
+                        XCTAssertEqual(size.height, 28, accuracy: 0.5, name)
+                        XCTAssertLessThan(size.width, 760 * 0.6, name)
+                    }
                 }
             }
         }
@@ -452,40 +490,44 @@
             model.pendingSurfaceKey = "agents"
             model.pendingSurfaceParams = .object([:])
             model.pendingSurface = .init(surfaceKey: "agents", title: agents.title, components: agents.components)
-            let theme = ThemeStore()
-            let size = CGSize(width: 1440, height: 900)
-            let mount = Mount(
-                ConsoleSurfaceOverlay(console: try XCTUnwrap(model.console), presentation: presentation, size: size)
-                    .frame(width: size.width, height: size.height)
-                    .background(theme.palette.bg)
-                    .environment(\.astralViewportWidth, size.width)
-                    .environment(model).environment(theme),
-                size: size, scheme: theme.colorScheme, fitHeight: false)
-            defer { mount.close() }
-            try await mount.settle(fitHeight: false)
-            write(try mount.png(), name: "settings_sheet")
-            let text = try mount.text()
-            for kept in [
-                "Agents & permissions", "LLM settings", "Theme", "Private notes", "Owned by me", "Clinical Notes",
-                "Account", "Help",
-            ] {
-                XCTAssertTrue(text.contains { $0.contains(kept) }, "Missing: \(kept)")
+            for preset in ["graphite", "midnight", "daylight"] {
+                let theme = ThemeStore()
+                theme.apply(preset: preset)
+                let size = CGSize(width: 1440, height: 900)
+                let mount = Mount(
+                    ConsoleSurfaceOverlay(console: try XCTUnwrap(model.console), presentation: presentation, size: size)
+                        .frame(width: size.width, height: size.height)
+                        .background(theme.palette.bg)
+                        .environment(\.astralViewportWidth, size.width)
+                        .environment(model).environment(theme),
+                    size: size, scheme: theme.colorScheme, fitHeight: false)
+                defer { mount.close() }
+                try await mount.settle(fitHeight: false)
+                write(try mount.png(), name: preset == "graphite" ? "settings_sheet" : "settings_sheet-\(preset)")
+                let text = try mount.text()
+                for kept in [
+                    "Agents & permissions", "LLM settings", "Theme", "Private notes", "Owned by me", "Clinical Notes",
+                    "Account", "Help",
+                ] {
+                    XCTAssertTrue(text.contains { $0.contains(kept) }, "\(preset) missing: \(kept)")
+                }
+                XCTAssertFalse(
+                    text.contains { $0.contains("ACCOUNT") }, "group headers keep the server's sentence case")
+                let navigation = text.joined(separator: " ")
+                XCTAssertTrue(
+                    navigation.contains("Remote machines and SSH") && navigation.contains("credentials"), "\(text)")
+                XCTAssertFalse(text.contains { $0.contains("…") }, "a navigation label was truncated: \(text)")
+                let bitmap = try XCTUnwrap(mount.view.bitmapImageRepForCachingDisplay(in: mount.view.bounds))
+                mount.view.cacheDisplay(in: mount.view.bounds, to: bitmap)
+                let pixels = try SettingsSheetChromeTests.Pixels(bitmap)
+                let scale = CGFloat(pixels.width) / size.width
+                let bg = theme.palette.bg.resolve(in: EnvironmentValues())
+                let scrim = Color(
+                    .sRGB, red: Double(bg.red) * 0.6, green: Double(bg.green) * 0.6, blue: Double(bg.blue) * 0.6)
+                let frame = try XCTUnwrap(Self.overlayFrame(pixels, scrim: scrim))
+                XCTAssertEqual(frame.width / scale, 940, accuracy: 2, preset)
+                XCTAssertEqual(frame.height / scale, 774, accuracy: 2, preset)
             }
-            XCTAssertFalse(text.contains { $0.contains("ACCOUNT") }, "group headers keep the server's sentence case")
-            let navigation = text.joined(separator: " ")
-            XCTAssertTrue(
-                navigation.contains("Remote machines and SSH") && navigation.contains("credentials"), "\(text)")
-            XCTAssertFalse(text.contains { $0.contains("…") }, "a navigation label was truncated: \(text)")
-            let bitmap = try XCTUnwrap(mount.view.bitmapImageRepForCachingDisplay(in: mount.view.bounds))
-            mount.view.cacheDisplay(in: mount.view.bounds, to: bitmap)
-            let pixels = try SettingsSheetChromeTests.Pixels(bitmap)
-            let scale = CGFloat(pixels.width) / size.width
-            let bg = theme.palette.bg.resolve(in: EnvironmentValues())
-            let scrim = Color(
-                .sRGB, red: Double(bg.red) * 0.6, green: Double(bg.green) * 0.6, blue: Double(bg.blue) * 0.6)
-            let frame = try XCTUnwrap(Self.overlayFrame(pixels, scrim: scrim))
-            XCTAssertEqual(frame.width / scale, 940, accuracy: 2)
-            XCTAssertEqual(frame.height / scale, 774, accuracy: 2)
         }
 
         private static func moveSelection(_ group: AstralComponent, from label: String) -> AstralComponent? {
