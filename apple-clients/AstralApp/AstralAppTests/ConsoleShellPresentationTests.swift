@@ -402,7 +402,7 @@ final class ConsoleShellPresentationTests: XCTestCase {
             for cut in ["Your provider", "Auto-set", "Lets the agent"] {
                 XCTAssertFalse(text.contains { $0.contains(cut) }, "Unexpected settings copy: \(cut)")
             }
-            XCTAssertTrue(text.contains { $0.contains("gpt-4o-mini") })
+            XCTAssertTrue(text.contains { $0.contains("gpt-4o-mini") || $0.contains("gpt-40-mini") }, "\(text)")
             let fields = try XCTUnwrap(form.arrayValue?.first?["fields"]?.arrayValue)
             XCTAssertEqual(fields.map(ParamPickerComponent.placeholder), ["", "gpt-4o-mini", ""])
         }

@@ -376,9 +376,56 @@
             XCTAssertNil(CompactSettingsLayout.chipSelection(row.children))
         }
 
+        func testOverlayGeometryFollowsTheServerPresentation() throws {
+            for row in try XCTUnwrap(bundled("rote-console")["cases"]?.arrayValue) {
+                let presentation = try XCTUnwrap(ConsolePresentation(json: row["presentation"]))
+                guard presentation.settingsPresentation == .dialog, presentation.settingsNavigationAxis == .vertical
+                else { continue }
+                let viewport = try XCTUnwrap(row["viewport"]?.arrayValue?.compactMap(\.numberValue))
+                let size = CGSize(width: viewport[0], height: viewport[1])
+                let geometry = ConsoleSurfaceOverlay.geometry(
+                    presentation: presentation, size: size, hasNavigation: true, isIntro: false, desktop: true)
+                XCTAssertEqual(geometry.width, min(size.width - 32, presentation.settingsWidth), "\(viewport)")
+                XCTAssertEqual(geometry.height, min(size.height - 32, presentation.settingsMaxHeight), "\(viewport)")
+                XCTAssertEqual(geometry.navigation, presentation.settingsNavigationWidth, "\(viewport)")
+            }
+            let row = try XCTUnwrap(
+                bundled("rote-console")["cases"]?.arrayValue?.first {
+                    $0["viewport"]?.arrayValue?.first?.numberValue == 1440
+                })
+            let geometry = ConsoleSurfaceOverlay.geometry(
+                presentation: try XCTUnwrap(ConsolePresentation(json: row["presentation"])),
+                size: CGSize(width: 1440, height: 900), hasNavigation: true, isIntro: false, desktop: true)
+            XCTAssertEqual(geometry.width, 940)
+            XCTAssertEqual(geometry.height, 774)
+            XCTAssertEqual(geometry.navigation, 216)
+        }
+
+        private static func overlayFrame(_ pixels: SettingsSheetChromeTests.Pixels, scrim: Color) -> CGRect? {
+            let midX = pixels.width / 2
+            let rows = (0..<pixels.height).filter { !pixels.matches(x: midX, y: $0, scrim) }
+            guard let top = rows.first, let bottom = rows.last else { return nil }
+            let probe = top + (bottom - top) / 2
+            let columns = (0..<pixels.width).filter { !pixels.matches(x: $0, y: probe, scrim) }
+            guard let left = columns.first, let right = columns.last else { return nil }
+            return CGRect(x: left, y: top, width: right - left + 1, height: bottom - top + 1)
+        }
+
         func testSettingsSheetUsesDesktopFrameCompactNavigationAndTitleHeader() async throws {
             let model = signedInModel()
-            model.chromeMenu = try XCTUnwrap(ChromeMenuModel.fromJSON(bundled("chrome-console")))
+            var menu = try XCTUnwrap(bundled("chrome-console").objectValue)
+            var groups = try XCTUnwrap(menu["menu"]?.arrayValue)
+            var account = try XCTUnwrap(groups.first?.objectValue)
+            account["items"] = .array(
+                (account["items"]?.arrayValue ?? []) + [
+                    .object([
+                        "key": .string("remote_machines"), "label": .string("Remote machines and SSH credentials"),
+                        "surface": .string("remote_machines"), "params": .object([:]), "admin_only": .bool(false),
+                    ])
+                ])
+            groups[0] = .object(account)
+            menu["menu"] = .array(groups)
+            model.chromeMenu = try XCTUnwrap(ChromeMenuModel.fromJSON(.object(menu)))
             let row = try XCTUnwrap(
                 bundled("rote-console")["cases"]?.arrayValue?.first {
                     $0["viewport"]?.arrayValue?.first?.numberValue == 1440
@@ -405,9 +452,25 @@
             let text = try mount.text()
             for kept in [
                 "Agents & permissions", "LLM settings", "Theme", "Private notes", "Owned by me", "Clinical Notes",
+                "Account", "Help",
             ] {
                 XCTAssertTrue(text.contains { $0.contains(kept) }, "Missing: \(kept)")
             }
+            XCTAssertFalse(text.contains { $0.contains("ACCOUNT") }, "group headers keep the server's sentence case")
+            let navigation = text.joined(separator: " ")
+            XCTAssertTrue(
+                navigation.contains("Remote machines and SSH") && navigation.contains("credentials"), "\(text)")
+            XCTAssertFalse(text.contains { $0.contains("…") }, "a navigation label was truncated: \(text)")
+            let bitmap = try XCTUnwrap(mount.view.bitmapImageRepForCachingDisplay(in: mount.view.bounds))
+            mount.view.cacheDisplay(in: mount.view.bounds, to: bitmap)
+            let pixels = try SettingsSheetChromeTests.Pixels(bitmap)
+            let scale = CGFloat(pixels.width) / size.width
+            let bg = theme.palette.bg.resolve(in: EnvironmentValues())
+            let scrim = Color(
+                .sRGB, red: Double(bg.red) * 0.6, green: Double(bg.green) * 0.6, blue: Double(bg.blue) * 0.6)
+            let frame = try XCTUnwrap(Self.overlayFrame(pixels, scrim: scrim))
+            XCTAssertEqual(frame.width / scale, 940, accuracy: 2)
+            XCTAssertEqual(frame.height / scale, 774, accuracy: 2)
         }
 
         private static func moveSelection(_ group: AstralComponent, from label: String) -> AstralComponent? {
