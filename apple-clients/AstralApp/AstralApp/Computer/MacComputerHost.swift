@@ -92,7 +92,7 @@
         private(set) var working = false
         let files: MacComputerFiles
         @ObservationIgnored private let defaults: UserDefaults
-        @ObservationIgnored private let authority = ComputerHostAuthority()
+        @ObservationIgnored private let authority: ComputerHostAuthority
         @ObservationIgnored private let driver: any MacComputerDriving
         @ObservationIgnored private let monitor: any MacComputerMonitoring
         @ObservationIgnored private let permissionProvider: @MainActor () -> MacComputerPermissions
@@ -138,8 +138,10 @@
             system: any MacComputerSystemIO = MacComputerLiveSystem.shared,
             panelPresenter: (@MainActor (NSPanel) -> Void)? = nil,
             commands: MacComputerCommands? = nil,
-            appActivator: (@MainActor () -> Void)? = nil
+            appActivator: (@MainActor () -> Void)? = nil,
+            authority: ComputerHostAuthority = ComputerHostAuthority()
         ) {
+            self.authority = authority
             self.available = available ?? Self.executionDistribution()
             self.defaults = defaults
             self.files = files ?? MacComputerFiles(defaults: defaults)
@@ -734,19 +736,7 @@
                         })
                 } catch { result = .failure(error) }
                 guard let self, self.workerId == id else { return }
-                do {
-                    try authority.verify(ticket)
-                    switch result {
-                    case .success(let value): self.respond(request.id, result: value)
-                    case .failure(let error):
-                        self.respond(request.id, error: error)
-                        self.lastError = error.localizedDescription
-                    }
-                } catch {
-                    self.lastError =
-                        "The operation was interrupted; inspect the current computer state before retrying."
-                }
-                authority.complete(ticket)
+                self.answer(request, ticket: ticket, with: result)
                 self.worker = nil
                 self.drain()
             }
@@ -778,19 +768,7 @@
                 } catch { result = .failure(error) }
                 guard let self, self.auxiliary.removeValue(forKey: id) != nil else { return }
                 self.refreshWorking()
-                do {
-                    try authority.verify(ticket)
-                    switch result {
-                    case .success(let value): self.respond(request.id, result: value)
-                    case .failure(let error):
-                        self.respond(request.id, error: error)
-                        self.lastError = error.localizedDescription
-                    }
-                } catch {
-                    self.lastError =
-                        "The operation was interrupted; inspect the current computer state before retrying."
-                }
-                authority.complete(ticket)
+                self.answer(request, ticket: ticket, with: result)
             }
             auxiliary[id] = task
             if serial { browserTail = task }
@@ -810,6 +788,23 @@
                 throw ComputerHostError("unsupported", "The browser pane is turned off on this Mac.")
             }
             return try await browser.handle(request, ticket: ticket, authorize: authorize)
+        }
+        private func answer(
+            _ request: ComputerHostRequest, ticket: ComputerHostTicket, with result: Result<[String: JSONValue], Error>
+        ) {
+            do {
+                try authority.verify(ticket)
+                switch result {
+                case .success(let value): respond(request.id, result: value)
+                case .failure(let error):
+                    respond(request.id, error: error)
+                    lastError = error.localizedDescription
+                }
+            } catch {
+                respond(request.id, error: error)
+                lastError = "The operation was interrupted; inspect the current computer state before retrying."
+            }
+            authority.complete(ticket)
         }
         private func respond(_ id: String, result: [String: JSONValue]? = nil, error: Error? = nil) {
             var payload: [String: JSONValue] = ["request_id": .string(id), "ok": .bool(error == nil)]
