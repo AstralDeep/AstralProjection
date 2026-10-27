@@ -284,4 +284,4 @@ def test_foreground_presentation_uses_the_authenticated_frame_slot() -> None:
     apple_machine = _apple_sources()["machine"]
     assert "PushLifecycle.Foreground ->" in android_machine
     assert "ShowInApp(payload)" in android_machine
-    assert "lifecycle == .foreground && !systemPresents" in apple_machine
+    assert "lifecycle == PushLifecycle.foreground && !systemPresents" in apple_machine

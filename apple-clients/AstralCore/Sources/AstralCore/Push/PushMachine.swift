@@ -6,26 +6,26 @@
 import CryptoKit
 import Foundation
 
-public enum PushLifecycle: Equatable, Sendable {
+public enum PushLifecycle: Sendable, Equatable {
     case foreground
     case background
     case terminated
 }
 
-public enum PushPermissionState: Equatable, Sendable {
+public enum PushPermissionState: Sendable, Equatable {
     case notDetermined
     case granted
     case denied
     case revoked
 }
 
-public enum ProviderAvailability: Equatable, Sendable {
+public enum ProviderAvailability: Sendable, Equatable {
     case unknown
     case supported
     case unsupported
 }
 
-public struct PushIdentity: Equatable, Sendable {
+public struct PushIdentity: Sendable, Equatable {
     public let deviceId: String
     public let label: String?
 
@@ -44,36 +44,52 @@ public struct PushIdentity: Equatable, Sendable {
     static let reasonLabel = "label"
 }
 
-public struct PushPayload: Equatable, Sendable {
+public struct PushPayload: Sendable, Equatable {
     public let notificationId: String
     public let title: String?
     public let body: String?
     public let level: String
     public let chatId: String?
 
+    public init(
+        notificationId: String,
+        title: String?,
+        body: String?,
+        level: String,
+        chatId: String?
+    ) {
+        self.notificationId = notificationId
+        self.title = title
+        self.body = body
+        self.level = level
+        self.chatId = chatId
+    }
+
     public static let levelInfo = "info"
     public static let levelWarning = "warning"
     public static let levelError = "error"
-    public static let levels: Set<String> = [levelInfo, levelWarning, levelError]
+    public static let levels: Set<String> = [
+        PushPayload.levelInfo, PushPayload.levelWarning, PushPayload.levelError,
+    ]
     public static let maxTitleChars = 128
     public static let maxBodyChars = 256
     public static let maxChatIdChars = 128
     static let notificationIdPattern = "^[A-Za-z0-9._:-]{8,128}$"
 }
 
-public enum PushPayloadResult: Equatable, Sendable {
+public enum PushPayloadResult: Sendable, Equatable {
     case decoded(PushPayload)
     case malformed(String)
 }
 
-public enum PushEffect: Equatable, Sendable {
+public enum PushEffect: Sendable, Equatable {
     case requestToken(reason: String)
     case enrollDestination(deviceId: String, platform: String, token: String, label: String?, tokenGeneration: Int)
     case acknowledge(deviceId: String, notificationId: String)
     case cancelPresented([String])
 }
 
-public enum PushRegistrationState: Equatable, Sendable {
+public enum PushRegistrationState: Sendable, Equatable {
     case idle
     case requestingToken
     case enrolling
@@ -82,7 +98,7 @@ public enum PushRegistrationState: Equatable, Sendable {
     case failedPermanent(code: String)
 }
 
-public enum PushMessageReceipt: Equatable, Sendable {
+public enum PushMessageReceipt: Sendable, Equatable {
     case accepted(payload: PushPayload, effects: [PushEffect], presentedAsSystemNotification: Bool)
     case duplicate(String)
     case malformed(String)
@@ -92,33 +108,38 @@ public enum PushMessageReceipt: Equatable, Sendable {
 
 public func decodePushPayload(_ data: [String: String]) -> PushPayloadResult {
     guard let notificationId = trimmed(data["notification_id"]) else {
-        return .malformed("notification_id")
+        return PushPayloadResult.malformed("notification_id")
     }
     guard notificationId.range(of: PushPayload.notificationIdPattern, options: .regularExpression) != nil else {
-        return .malformed("notification_id")
+        return PushPayloadResult.malformed("notification_id")
     }
     let title = trimmed(data["title"])
     let body = trimmed(data["body"])
     if (title ?? "").isEmpty && (body ?? "").isEmpty {
-        return .malformed("notification_text")
+        return PushPayloadResult.malformed("notification_text")
     }
-    if let title, title.count > PushPayload.maxTitleChars || containsControlCharacter(title) {
-        return .malformed("title")
+    if let title = title, title.count > PushPayload.maxTitleChars || containsControlCharacter(title) {
+        return PushPayloadResult.malformed("title")
     }
-    if let body, body.count > PushPayload.maxBodyChars || containsControlCharacter(body) {
-        return .malformed("body")
+    if let body = body, body.count > PushPayload.maxBodyChars || containsControlCharacter(body) {
+        return PushPayloadResult.malformed("body")
     }
     let level = trimmed(data["level"]) ?? PushPayload.levelInfo
     guard PushPayload.levels.contains(level) else {
-        return .malformed("level")
+        return PushPayloadResult.malformed("level")
     }
     if let chatId = trimmed(data["chat_id"]),
         chatId.count > PushPayload.maxChatIdChars || containsControlCharacter(chatId)
     {
-        return .malformed("chat_id")
+        return PushPayloadResult.malformed("chat_id")
     }
-    return .decoded(
-        PushPayload(notificationId: notificationId, title: title, body: body, level: level, chatId: chatId))
+    let payload = PushPayload(
+        notificationId: notificationId,
+        title: title,
+        body: body,
+        level: level,
+        chatId: chatId)
+    return PushPayloadResult.decoded(payload)
 }
 
 public func pushTokenFingerprint(_ token: String) -> String {
@@ -126,7 +147,7 @@ public func pushTokenFingerprint(_ token: String) -> String {
 }
 
 private func trimmed(_ value: String?) -> String? {
-    guard let value else { return nil }
+    guard let value = value else { return nil }
     let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines)
     return cleaned.isEmpty ? nil : cleaned
 }
@@ -135,11 +156,20 @@ private func containsControlCharacter(_ value: String) -> Bool {
     return value.unicodeScalars.contains { $0.value < 0x20 || $0.value == 0x7F }
 }
 
+private func malformedReason(of result: PushPayloadResult) -> String {
+    switch result {
+    case .malformed(let reason):
+        return reason
+    case .decoded:
+        return "notification_id"
+    }
+}
+
 public final class PushDestinationMachine {
-    public private(set) var lifecycle: PushLifecycle = .terminated
-    public private(set) var permission: PushPermissionState = .notDetermined
-    public private(set) var availability: ProviderAvailability = .unknown
-    public private(set) var registration: PushRegistrationState = .idle
+    public private(set) var lifecycle: PushLifecycle = PushLifecycle.terminated
+    public private(set) var permission: PushPermissionState = PushPermissionState.notDetermined
+    public private(set) var availability: ProviderAvailability = ProviderAvailability.unknown
+    public private(set) var registration: PushRegistrationState = PushRegistrationState.idle
     public private(set) var unsupportedReason: String?
     public private(set) var accepted: [String] = []
 
@@ -158,9 +188,9 @@ public final class PushDestinationMachine {
 
     public var platform: String { "ios" }
 
-    public var deviceUnsupported: Bool { availability == .unsupported }
+    public var deviceUnsupported: Bool { availability == ProviderAvailability.unsupported }
 
-    public func seedAccepted(_ ids: some Collection<String>) {
+    public func seedAccepted(_ ids: [String]) {
         for id in ids where !id.isEmpty {
             remember(id)
         }
@@ -173,30 +203,30 @@ public final class PushDestinationMachine {
     public func onPermissionReport(granted: Bool, notificationsAuthorized: Bool) -> [PushEffect] {
         let previous = permission
         if granted && notificationsAuthorized {
-            permission = .granted
+            permission = PushPermissionState.granted
         } else if granted && !notificationsAuthorized {
-            permission = .revoked
-        } else if previous == .granted || previous == .revoked {
-            permission = .revoked
+            permission = PushPermissionState.revoked
+        } else if previous == PushPermissionState.granted || previous == PushPermissionState.revoked {
+            permission = PushPermissionState.revoked
         } else {
-            permission = .denied
+            permission = PushPermissionState.denied
         }
-        if previous == .granted && permission == .revoked {
+        if previous == PushPermissionState.granted && permission == PushPermissionState.revoked {
             let cancelled = accepted
             accepted = []
-            return [.cancelPresented(cancelled)]
+            return [PushEffect.cancelPresented(cancelled)]
         }
-        if permission == .granted {
+        if permission == PushPermissionState.granted {
             return bootstrapEffects()
         }
         return []
     }
 
     public func onAvailability(supported: Bool, reason: String? = nil) -> [PushEffect] {
-        availability = supported ? .supported : .unsupported
+        availability = supported ? ProviderAvailability.supported : ProviderAvailability.unsupported
         if !supported {
-            registration = .idle
-            unsupportedReason = reason ?? Self.reasonProviderUnavailable
+            registration = PushRegistrationState.idle
+            unsupportedReason = reason ?? PushDestinationMachine.reasonProviderUnavailable
             currentToken = nil
             currentFingerprint = nil
             currentGeneration = 0
@@ -207,12 +237,16 @@ public final class PushDestinationMachine {
     }
 
     public func onDeviceToken(_ token: String?) -> [PushEffect] {
-        if deviceUnsupported || permission != .granted { return [] }
-        guard let token else {
+        if deviceUnsupported || permission != PushPermissionState.granted { return [] }
+        guard let token = token else {
             switch registration {
-            case .requestingToken, .enrolling, .registered:
+            case PushRegistrationState.requestingToken,
+                PushRegistrationState.enrolling,
+                .registered:
                 retryableAttempts += 1
-                registration = .failedRetryable(code: Self.codeTokenUnavailable, attempts: retryableAttempts)
+                registration = PushRegistrationState.failedRetryable(
+                    code: PushDestinationMachine.codeTokenUnavailable,
+                    attempts: retryableAttempts)
                 currentToken = nil
                 currentFingerprint = nil
                 currentGeneration = 0
@@ -222,63 +256,70 @@ public final class PushDestinationMachine {
             return []
         }
         let normalized = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        if normalized.isEmpty || normalized.count > Self.maxTokenChars || containsControlCharacter(normalized) {
-            registration = .failedPermanent(code: Self.codeTokenInvalid)
+        if normalized.isEmpty
+            || normalized.count > PushDestinationMachine.maxTokenChars
+            || containsControlCharacter(normalized)
+        {
+            registration = PushRegistrationState.failedPermanent(code: PushDestinationMachine.codeTokenInvalid)
             return []
         }
         let fingerprint = pushTokenFingerprint(normalized)
         if fingerprint == currentFingerprint {
-            registration = .registered(tokenFingerprint: fingerprint, tokenGeneration: currentGeneration)
+            registration = PushRegistrationState.registered(
+                tokenFingerprint: fingerprint,
+                tokenGeneration: currentGeneration)
             retryableAttempts = 0
             return []
         }
         currentToken = normalized
         currentFingerprint = fingerprint
         currentGeneration += 1
-        registration = .enrolling
+        registration = PushRegistrationState.enrolling
         return [enrollEffect(normalized)]
     }
 
     public func onTokenRequestFailed(transient: Bool, code: String) -> [PushEffect] {
-        guard registration == .requestingToken else { return [] }
+        guard registration == PushRegistrationState.requestingToken else { return [] }
         if transient {
             retryableAttempts += 1
-            registration = .failedRetryable(code: code, attempts: retryableAttempts)
+            registration = PushRegistrationState.failedRetryable(code: code, attempts: retryableAttempts)
         } else {
-            registration = .failedPermanent(code: code)
+            registration = PushRegistrationState.failedPermanent(code: code)
         }
         return []
     }
 
     public func onEnrollmentAccepted() -> [PushEffect] {
-        guard registration == .enrolling, let fingerprint = currentFingerprint else { return [] }
-        registration = .registered(tokenFingerprint: fingerprint, tokenGeneration: currentGeneration)
+        guard registration == PushRegistrationState.enrolling, let fingerprint = currentFingerprint else { return [] }
+        registration = PushRegistrationState.registered(
+            tokenFingerprint: fingerprint,
+            tokenGeneration: currentGeneration)
         retryableAttempts = 0
         return []
     }
 
     public func onEnrollmentRejected(transient: Bool, code: String) -> [PushEffect] {
-        guard registration == .enrolling else { return [] }
+        guard registration == PushRegistrationState.enrolling else { return [] }
         if transient {
             retryableAttempts += 1
-            registration = .failedRetryable(code: code, attempts: retryableAttempts)
+            registration = PushRegistrationState.failedRetryable(code: code, attempts: retryableAttempts)
         } else {
-            registration = .failedPermanent(code: code)
+            registration = PushRegistrationState.failedPermanent(code: code)
         }
         return []
     }
 
     public func retryRegistration() -> [PushEffect] {
-        if deviceUnsupported || permission != .granted { return [] }
+        if deviceUnsupported || permission != PushPermissionState.granted { return [] }
         switch registration {
-        case .failedRetryable:
+        case PushRegistrationState.failedRetryable:
             if let token = currentToken {
-                registration = .enrolling
+                registration = PushRegistrationState.enrolling
                 return [enrollEffect(token)]
             }
-            registration = .requestingToken
-            return [.requestToken(reason: Self.reasonRetry)]
-        case .idle:
+            registration = PushRegistrationState.requestingToken
+            return [PushEffect.requestToken(reason: PushDestinationMachine.reasonRetry)]
+        case PushRegistrationState.idle:
             return bootstrapEffects()
         default:
             return []
@@ -300,34 +341,36 @@ public final class PushDestinationMachine {
     }
 
     private func receipt(for data: [String: String], systemPresents: Bool) -> PushMessageReceipt {
-        if deviceUnsupported { return .unsupported }
+        if deviceUnsupported { return PushMessageReceipt.unsupported }
         let decoded = decodePushPayload(data)
-        guard case .decoded(let payload) = decoded else {
-            if case .malformed(let reason) = decoded { return .malformed(reason) }
-            return .malformed("notification_id")
+        guard case PushPayloadResult.decoded(let payload) = decoded else {
+            return PushMessageReceipt.malformed(malformedReason(of: decoded))
         }
         if accepted.contains(payload.notificationId) {
-            return .duplicate(payload.notificationId)
+            return PushMessageReceipt.duplicate(payload.notificationId)
         }
-        if lifecycle == .foreground && !systemPresents {
+        let acknowledge = PushEffect.acknowledge(
+            deviceId: identity.deviceId,
+            notificationId: payload.notificationId)
+        if lifecycle == PushLifecycle.foreground && !systemPresents {
             remember(payload.notificationId)
-            return .accepted(
+            return PushMessageReceipt.accepted(
                 payload: payload,
-                effects: [.acknowledge(deviceId: identity.deviceId, notificationId: payload.notificationId)],
+                effects: [acknowledge],
                 presentedAsSystemNotification: false)
         }
-        if permission == .granted {
+        if permission == PushPermissionState.granted {
             remember(payload.notificationId)
-            return .accepted(
+            return PushMessageReceipt.accepted(
                 payload: payload,
-                effects: [.acknowledge(deviceId: identity.deviceId, notificationId: payload.notificationId)],
+                effects: [acknowledge],
                 presentedAsSystemNotification: systemPresents)
         }
-        return .notPermitted
+        return PushMessageReceipt.notPermitted
     }
 
     private func enrollEffect(_ token: String) -> PushEffect {
-        return .enrollDestination(
+        return PushEffect.enrollDestination(
             deviceId: identity.deviceId,
             platform: platform,
             token: token,
@@ -336,9 +379,12 @@ public final class PushDestinationMachine {
     }
 
     private func bootstrapEffects() -> [PushEffect] {
-        guard permission == .granted, availability == .supported, registration == .idle else { return [] }
-        registration = .requestingToken
-        return [.requestToken(reason: Self.reasonBootstrap)]
+        guard permission == PushPermissionState.granted,
+            availability == ProviderAvailability.supported,
+            registration == PushRegistrationState.idle
+        else { return [] }
+        registration = PushRegistrationState.requestingToken
+        return [PushEffect.requestToken(reason: PushDestinationMachine.reasonBootstrap)]
     }
 
     private func remember(_ notificationId: String) {
