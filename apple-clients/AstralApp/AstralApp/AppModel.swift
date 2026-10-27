@@ -3298,11 +3298,39 @@ final class AppModel: NSObject {
         }
     #endif
 
+    struct ApprovalPrompt: Equatable, Identifiable {
+        struct Choice: Equatable {
+            let action: String
+            let payload: [String: JSONValue]
+        }
+        let requestId: String
+        let site: String?
+        let summary: String
+        let allow: Choice
+        let deny: Choice
+        var id: String { requestId }
+    }
+
+    private(set) var approvalPrompts: [ApprovalPrompt] = []
+    var waitingApprovals: Int { max(activity.filter { $0.approval == .waiting }.count, approvalPrompts.count) }
+
+    func decideApproval(_ prompt: ApprovalPrompt, allow: Bool) {
+        guard approvalPrompts.contains(prompt) else { return }
+        let choice = allow ? prompt.allow : prompt.deny
+        emit(choice.action, payload: choice.payload)
+    }
+
     static func pendingComputerApprovals(in components: [AstralComponent]) -> [PendingApproval] {
-        var found: [PendingApproval] = []
+        approvalCards(in: components).map(\.approval)
+    }
+
+    private static func approvalCards(in components: [AstralComponent]) -> [(
+        card: AstralComponent, approval: PendingApproval
+    )] {
+        var found: [(card: AstralComponent, approval: PendingApproval)] = []
         func visit(_ component: AstralComponent, depth: Int) {
             if component.type == "card", let approval = computerApproval(component) {
-                found.append(approval)
+                found.append((component, approval))
                 return
             }
             guard depth < 3 else { return }
@@ -3310,6 +3338,35 @@ final class AppModel: NSObject {
         }
         for component in components { visit(component, depth: 0) }
         return found
+    }
+
+    private static func approvalPrompt(_ card: AstralComponent, _ approval: PendingApproval) -> ApprovalPrompt? {
+        let choices = card.children.compactMap { child -> (decision: String, choice: ApprovalPrompt.Choice)? in
+            guard child.type == "button", child.raw["disabled"]?.boolValue != true,
+                let action = child.raw["action"]?.stringValue, let payload = child.raw["payload"]?.objectValue,
+                let decision = payload["decision"]?.stringValue
+            else { return nil }
+            return (decision, ApprovalPrompt.Choice(action: action, payload: payload))
+        }
+        guard
+            let allow = choices.first(where: { $0.decision == "approve" })
+                ?? choices.first(where: { $0.decision == "approve_and_resume" }),
+            let deny = choices.first(where: { $0.decision == "decline" })
+        else { return nil }
+        let texts = card.children.filter { $0.type == "text" }.compactMap(\.textContent)
+        let summary = activityLine(texts.first { !$0.hasPrefix("Tool: ") } ?? approval.summary, limit: 300)
+        return ApprovalPrompt(
+            requestId: approval.requestId, site: approvalSite(summary), summary: summary, allow: allow.choice,
+            deny: deny.choice)
+    }
+
+    static func approvalSite(_ summary: String) -> String? {
+        guard summary.hasPrefix("Open "), summary.contains(" browser pane") else { return nil }
+        let token = String(summary.dropFirst(5).prefix { !$0.isWhitespace })
+        guard let url = URL(string: token), let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),
+            let host = url.host, !host.isEmpty
+        else { return nil }
+        return "\(scheme)://\(host)" + (url.port.map { ":\($0)" } ?? "")
     }
 
     private static func computerApproval(_ card: AstralComponent) -> PendingApproval? {
@@ -3592,8 +3649,11 @@ final class AppModel: NSObject {
     private func observeActivityComponents() {
         guard !activityObservationPaused else { return }
         let live = transientCanvas ?? canvas
-        let pending = Self.pendingComputerApprovals(in: visibleTurns.suffix(8).flatMap(\.components) + live)
-            .filter { !decidedApprovals.contains($0.requestId) }
+        let cards = Self.approvalCards(in: visibleTurns.suffix(8).flatMap(\.components) + live)
+            .filter { !decidedApprovals.contains($0.approval.requestId) }
+        let pending = cards.map(\.approval)
+        let prompts = cards.compactMap { Self.approvalPrompt($0.card, $0.approval) }
+        if prompts != approvalPrompts { approvalPrompts = prompts }
         for approval in pending where approvalRows[approval.requestId] == nil { linkApproval(approval) }
         #if os(macOS)
             if macComputerHost.awaitingApproval == pending.isEmpty { macComputerHost.approvalWaiting(!pending.isEmpty) }
@@ -3650,6 +3710,7 @@ final class AppModel: NSObject {
 
     private func clearActivity() {
         activityLog = [:]
+        approvalPrompts = []
         activityAliases = [:]
         activityOrder = []
         decidedApprovals = []

@@ -120,7 +120,7 @@
                     connected: model.connected, everConnected: model.everConnected,
                     failed: model.initialConnectionFailed),
                 usage: model.llmUsage,
-                approvals: model.activity.filter { $0.approval == .waiting }.count,
+                approvals: model.waitingApprovals,
                 computer: host.available
                     ? MacStatusFooterModel.Computer(
                         enabled: host.enabled, sessionState: host.session?.state, statusLabel: host.statusLabel)
