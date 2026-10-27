@@ -64,7 +64,8 @@
                 rows.map(\.id),
                 [
                     "app/new-chat", "app/sidebar", "app/activity", "app/browser", "app/computer", "app/agents",
-                    "app/updates", "app/settings", "app/cancel-turn", "app/sign-out", "composer/background",
+                    "app/updates", "app/settings", "app/cancel-turn", "app/sign-out", "chat/rename", "chat/pin",
+                    "chat/archive", "composer/background",
                     "composer/advanced", "composer/timeline", "composer/pulse", "composer/work", "account/agents",
                     "account/llm", "account/personalization", "account/audit", "account/theme", "account/guidance",
                     "help/guide",
@@ -76,9 +77,12 @@
             XCTAssertEqual(rows.first { $0.id == "composer/background" }?.detail, "Off")
             XCTAssertEqual(
                 Set(rows.filter { !$0.enabled }.map(\.id)),
-                ["app/browser", "app/computer", "app/updates", "app/cancel-turn"])
+                [
+                    "app/browser", "app/computer", "app/updates", "app/cancel-turn", "chat/rename", "chat/pin",
+                    "chat/archive",
+                ])
             XCTAssertEqual(
-                Array(Set(rows.map(\.section))).sorted(), ["Account", "Actions", "Composer", "Help"])
+                Array(Set(rows.map(\.section))).sorted(), ["Account", "Actions", "Chat", "Composer", "Help"])
         }
 
         func testSlashQueriesKeepOnlyComposerActionsAndWordsMatchAcrossSections() throws {
@@ -154,6 +158,79 @@
             XCTAssertFalse(MacCommandPaletteModel.runnable(.composer("unknown"), context: context, menu: menu))
             context.signedIn = false
             XCTAssertFalse(MacCommandPaletteModel.runnable(.signOut, context: context, menu: menu))
+        }
+
+        func testCurrentChatEntriesNameTheirStateAndNeedAConnectedOwner() throws {
+            let menu = try menu()
+            var context = MacPaletteContext(
+                chat: MacPaletteChat(id: "c1", title: "Roll notes", pinned: true, archived: true))
+            let rows = MacCommandPaletteModel.rows(context: context, menu: menu, query: "").filter {
+                $0.section == "Chat"
+            }
+            XCTAssertEqual(rows.map(\.title), ["Rename Chat…", "Unpin Chat", "Unarchive Chat"])
+            XCTAssertTrue(rows.allSatisfy(\.enabled))
+            context.chat = MacPaletteChat(id: "c1", title: "Roll notes", pinned: false, archived: false)
+            XCTAssertEqual(
+                MacCommandPaletteModel.rows(context: context, menu: menu, query: "").filter { $0.section == "Chat" }
+                    .map(\.title),
+                ["Rename Chat…", "Pin Chat", "Archive Chat"])
+            for blocked in [
+                MacPaletteContext(connected: false, chat: context.chat),
+                MacPaletteContext(canNavigate: false, chat: context.chat),
+                MacPaletteContext(chat: context.chat, signedIn: false),
+                MacPaletteContext(),
+            ] {
+                for action in [MacPaletteAction.renameChat, .togglePin, .toggleArchive] {
+                    XCTAssertFalse(MacCommandPaletteModel.runnable(action, context: blocked, menu: menu), "\(action)")
+                }
+            }
+            XCTAssertEqual(MacCommandPaletteModel.renamedTitle("  Dice log \n", from: "Roll notes"), "Dice log")
+            XCTAssertNil(MacCommandPaletteModel.renamedTitle("   ", from: "Roll notes"))
+            XCTAssertNil(MacCommandPaletteModel.renamedTitle("Roll notes ", from: "Roll notes"))
+            XCTAssertNotNil(MacCommandPaletteModel.renamedTitle(String(repeating: "a", count: 120), from: ""))
+            XCTAssertNil(MacCommandPaletteModel.renamedTitle(String(repeating: "a", count: 121), from: ""))
+        }
+
+        func testRenameSheetSendsTheTrimmedTitleAndRefusesBlankOrLongNames() async throws {
+            let model = try model(menu: try menu())
+            var sent: [JSONValue] = []
+            model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+            let chat = MacPaletteChat(id: "c1", title: "Roll notes", pinned: false, archived: false)
+            for preset in SurfaceFixtures.presets {
+                let mount = SurfaceMount(
+                    MacRenameChatSheet(chat: chat), model: model, size: CGSize(width: 380, height: 160), preset: preset)
+                defer { mount.close() }
+                try await mount.settle()
+                XCTAssertEqual(mount.focusedPrompt(), "Chat name", preset)
+                XCTAssertTrue(try mount.text().contains("Rename Chat"), preset)
+                try mount.snapshot(self, name: "rename_chat-\(preset)")
+            }
+            let blank = SurfaceMount(
+                MacRenameChatSheet(chat: chat), model: model, size: CGSize(width: 380, height: 160))
+            defer { blank.close() }
+            try await blank.settle()
+            blank.type("   ")
+            try blank.key(.returnKey)
+            try await blank.settle()
+            let long = SurfaceMount(MacRenameChatSheet(chat: chat), model: model, size: CGSize(width: 380, height: 200))
+            defer { long.close() }
+            try await long.settle()
+            long.type(String(repeating: "a", count: 121))
+            try await long.settle()
+            XCTAssertTrue(try long.text().contains("Use 120 characters or fewer"))
+            try long.key(.returnKey)
+            try await long.settle()
+            XCTAssertTrue(sent.isEmpty, "\(sent)")
+            let valid = SurfaceMount(
+                MacRenameChatSheet(chat: chat), model: model, size: CGSize(width: 380, height: 160))
+            defer { valid.close() }
+            try await valid.settle()
+            valid.type("  Dice log  ")
+            try valid.key(.returnKey)
+            try await valid.settle()
+            XCTAssertEqual(sent.last?["action"], .string("chat_rename"))
+            XCTAssertEqual(sent.last?["payload"]?["chat_id"], .string("c1"))
+            XCTAssertEqual(sent.last?["payload"]?["title"], .string("Dice log"))
         }
 
         func testSelectionSkipsDisabledRowsAndStopsAtTheEnds() throws {

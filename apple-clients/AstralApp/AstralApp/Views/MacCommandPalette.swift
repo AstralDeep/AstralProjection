@@ -30,12 +30,22 @@
     enum MacPaletteAction: Equatable {
         case newChat, toggleSidebar, toggleActivity, toggleBrowser, computerControls, agentDirectory
         case updates, settings, cancelTurn, signOut
+        case renameChat, togglePin, toggleArchive
         case composer(String)
         case menu(group: String, item: ChromeMenuItem)
     }
 
+    struct MacPaletteChat: Equatable, Identifiable {
+        let id: String
+        let title: String
+        let pinned: Bool
+        let archived: Bool
+    }
+
     struct MacPaletteContext: Equatable {
         var canNavigate = true
+        var connected = true
+        var chat: MacPaletteChat?
         var sidebarVisible = true
         var activityVisible = false
         var browserEnabled = false
@@ -61,12 +71,20 @@
 
     enum MacCommandPaletteModel {
         static let actionsSection = "Actions"
+        static let chatSection = "Chat"
         static let composerSection = "Composer"
+        static let maximumTitleLength = 120
+
+        static func renamedTitle(_ text: String, from current: String) -> String? {
+            let title = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty, title.count <= maximumTitleLength, title != current else { return nil }
+            return title
+        }
 
         static func rows(context: MacPaletteContext, menu: ChromeMenuModel?, query: String) -> [MacPaletteRow] {
             let all =
-                appRows(context: context, menu: menu) + composerRows(context: context, menu: menu)
-                + menuRows(context: context, menu: menu)
+                appRows(context: context, menu: menu) + chatRows(context: context)
+                + composerRows(context: context, menu: menu) + menuRows(context: context, menu: menu)
             let trimmed = query.trimmingCharacters(in: .whitespaces)
             if trimmed.hasPrefix("/") {
                 let words = normalized(String(trimmed.dropFirst())).split(whereSeparator: \.isWhitespace)
@@ -126,6 +144,23 @@
                 row("settings", "Settings…", "⌘,", true, .settings),
                 row("cancel-turn", "Cancel Turn", "⌘.", context.canCancelTurn, .cancelTurn),
                 row("sign-out", menu?.signout.label ?? "Sign out", nil, context.signedIn, .signOut),
+            ]
+        }
+
+        private static func chatRows(context: MacPaletteContext) -> [MacPaletteRow] {
+            let enabled = context.chat != nil && context.canNavigate && context.connected && context.signedIn
+            let pinned = context.chat?.pinned == true
+            let archived = context.chat?.archived == true
+            return [
+                MacPaletteRow(
+                    id: "chat/rename", section: chatSection, title: "Rename Chat…", enabled: enabled,
+                    action: .renameChat),
+                MacPaletteRow(
+                    id: "chat/pin", section: chatSection, title: pinned ? "Unpin Chat" : "Pin Chat", enabled: enabled,
+                    action: .togglePin),
+                MacPaletteRow(
+                    id: "chat/archive", section: chatSection, title: archived ? "Unarchive Chat" : "Archive Chat",
+                    enabled: enabled, action: .toggleArchive),
             ]
         }
 
@@ -297,6 +332,54 @@
         private func run(_ id: String?) {
             guard let id, let row = rows.first(where: { $0.id == id }), row.enabled else { return }
             choose(row.action)
+            dismiss()
+        }
+    }
+
+    struct MacRenameChatSheet: View {
+        @Environment(AppModel.self) private var model
+        @Environment(ThemeStore.self) private var theme
+        @Environment(\.dismiss) private var dismiss
+        let chat: MacPaletteChat
+        @State private var title: String
+        @FocusState private var focused: Bool
+
+        init(chat: MacPaletteChat) {
+            self.chat = chat
+            _title = State(initialValue: chat.title)
+        }
+
+        private var renamed: String? { MacCommandPaletteModel.renamedTitle(title, from: chat.title) }
+        private var tooLong: Bool {
+            title.trimmingCharacters(in: .whitespacesAndNewlines).count > MacCommandPaletteModel.maximumTitleLength
+        }
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Rename Chat").font(ConsoleTypography.headline).accessibilityAddTraits(.isHeader)
+                TextField("Chat name", text: $title).textFieldStyle(.roundedBorder).focused($focused)
+                    .onSubmit(save)
+                    .accessibilityIdentifier("workbench-rename-title")
+                if tooLong {
+                    Text("Use \(MacCommandPaletteModel.maximumTitleLength) characters or fewer")
+                        .font(ConsoleTypography.caption).foregroundStyle(theme.palette.error)
+                }
+                HStack {
+                    Spacer()
+                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                    Button("Rename", action: save).keyboardShortcut(.defaultAction)
+                        .disabled(renamed == nil || !model.connected)
+                        .accessibilityIdentifier("workbench-rename-save")
+                }
+            }
+            .font(ConsoleTypography.subheadline).foregroundStyle(theme.palette.text)
+            .padding(20).frame(width: 380).background(theme.palette.surface)
+            .onAppear { DispatchQueue.main.async { focused = true } }
+        }
+
+        private func save() {
+            guard let renamed, model.connected, !model.mandatorySurface else { return }
+            model.emit("chat_rename", payload: ["chat_id": .string(chat.id), "title": .string(renamed)])
             dismiss()
         }
     }

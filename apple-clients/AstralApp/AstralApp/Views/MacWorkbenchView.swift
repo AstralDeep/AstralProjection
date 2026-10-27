@@ -110,6 +110,7 @@
         @State private var paletteChoice: MacPaletteAction?
         @State private var paletteFromComposer = false
         @State private var restoringDraft = false
+        @State private var renamingChat: MacPaletteChat?
         @State private var networkMonitor: NWPathMonitor?
 
         init(
@@ -233,6 +234,7 @@
             .sheet(isPresented: $commandsPresented, onDismiss: finishPalette) {
                 MacWorkbenchCommandPalette(context: paletteContext, query: $paletteQuery) { paletteChoice = $0 }
             }
+            .sheet(item: $renamingChat) { chat in MacRenameChatSheet(chat: chat) }
             .onChange(of: model.composerDraft) { old, new in
                 if restoringDraft {
                     restoringDraft = false
@@ -351,7 +353,13 @@
 
         private var paletteContext: MacPaletteContext {
             MacPaletteContext(
-                canNavigate: !model.mandatorySurface,
+                canNavigate: !model.mandatorySurface, connected: model.connected,
+                chat: model.activeChatId.map { id in
+                    let summary = model.history.first { $0.id == id }
+                    return MacPaletteChat(
+                        id: id, title: summary?.displayTitle ?? title, pinned: summary?.pinned == true,
+                        archived: summary?.archived == true)
+                },
                 sidebarVisible: presentation.navigationMode == .sidebar ? sidebarVisible : model.consoleDrawerOpen,
                 activityVisible: activityPresented, browserEnabled: model.macBrowser.isEnabled,
                 browserVisible: browserPresented, computerAvailable: model.macComputerHost.available,
@@ -393,6 +401,13 @@
             case .settings: openSettings()
             case .cancelTurn: _ = model.cancelCurrentTurn()
             case .signOut: Task { await model.signOut() }
+            case .renameChat: renamingChat = paletteContext.chat
+            case .togglePin:
+                guard let chat = paletteContext.chat else { return }
+                model.emit(chat.pinned ? "chat_unpin" : "chat_pin", payload: ["chat_id": .string(chat.id)])
+            case .toggleArchive:
+                guard let chat = paletteContext.chat else { return }
+                model.emit(chat.archived ? "chat_unarchive" : "chat_archive", payload: ["chat_id": .string(chat.id)])
             case .composer(let key):
                 guard let control = model.console?.composerActions.first(where: { $0.key == key }) else { return }
                 if control.kind == .toggle {

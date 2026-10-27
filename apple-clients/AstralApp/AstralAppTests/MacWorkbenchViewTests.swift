@@ -78,6 +78,64 @@
             XCTAssertEqual(model.composerDraft, "/")
         }
 
+        func testPaletteRenamesPinsAndArchivesTheCurrentChat() async throws {
+            let (model, suite) = try panelModel()
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            var sent: [JSONValue] = []
+            model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+            model.activeChatId = "c1"
+            model.history = [
+                try XCTUnwrap(
+                    ChatSummary(json: .object(["id": .string("c1"), "title": .string("Roll notes")])))
+            ]
+            let (_, window) = try mountWorkbench(model, width: 1440, activity: false)
+            defer { window.close() }
+            try await settle()
+            func choose(_ query: String) async throws {
+                model.composerDraft = ""
+                try await settle()
+                model.composerDraft = "/"
+                try await settle()
+                let palette = try XCTUnwrap(window.attachedSheet, "The palette sheet did not open")
+                palette.sendEvent(try SurfaceKey.delete.event(windowNumber: palette.windowNumber))
+                try await settle()
+                (palette.firstResponder as? NSTextView)?.insertText(
+                    query, replacementRange: NSRange(location: NSNotFound, length: 0))
+                try await settle()
+                palette.sendEvent(try SurfaceKey.returnKey.event(windowNumber: palette.windowNumber))
+                try await settle()
+            }
+            try await choose("pin chat")
+            XCTAssertEqual(sent.last?["action"], .string("chat_pin"))
+            XCTAssertEqual(sent.last?["payload"]?["chat_id"], .string("c1"))
+            model.history = [
+                try XCTUnwrap(
+                    ChatSummary(
+                        json: .object([
+                            "id": .string("c1"), "title": .string("Roll notes"), "pinned": .bool(true),
+                            "archived": .bool(true),
+                        ])))
+            ]
+            try await choose("unpin")
+            XCTAssertEqual(sent.last?["action"], .string("chat_unpin"))
+            try await choose("unarchive")
+            XCTAssertEqual(sent.last?["action"], .string("chat_unarchive"))
+            try await choose("rename")
+            let rename = try XCTUnwrap(window.attachedSheet, "The rename sheet did not open")
+            (rename.firstResponder as? NSTextView)?.insertText(
+                "Dice log", replacementRange: NSRange(location: NSNotFound, length: 0))
+            try await settle()
+            rename.sendEvent(try SurfaceKey.returnKey.event(windowNumber: rename.windowNumber))
+            try await settle()
+            XCTAssertNil(window.attachedSheet)
+            XCTAssertEqual(sent.last?["action"], .string("chat_rename"))
+            XCTAssertEqual(sent.last?["payload"]?["title"], .string("Dice log"))
+            model.activeChatId = nil
+            let count = sent.count
+            try await choose("archive chat")
+            XCTAssertEqual(sent.count, count)
+        }
+
         func testAgentDirectoryFocusesSearchAndMarksOfflineAgentsByShapeAndText() async throws {
             let (model, suite) = try SurfaceFixtures.model(menu: Self.twoAgentMenu())
             defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
