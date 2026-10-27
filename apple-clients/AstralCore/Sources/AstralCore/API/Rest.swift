@@ -14,6 +14,7 @@ public struct ChatSummary: Sendable, Identifiable, Equatable {
     public let timeLabel: String?
     public let pinned: Bool
     public let archived: Bool
+    public let projectId: String?
 
     public init?(json: JSONValue) {
         guard
@@ -32,6 +33,12 @@ public struct ChatSummary: Sendable, Identifiable, Equatable {
         self.timeLabel = json["time"]?.stringValue
         self.pinned = json["pinned"]?.boolValue == true
         self.archived = json["archived"]?.boolValue == true
+        if let project = json["project_id"], project != .null {
+            guard let id = project.stringValue, ProjectIdentity.valid(id) else { return nil }
+            self.projectId = id
+        } else {
+            self.projectId = nil
+        }
     }
 
     public init?(historyItem: JSONValue) {
@@ -42,6 +49,7 @@ public struct ChatSummary: Sendable, Identifiable, Equatable {
                 "preview": historyItem["preview"] ?? .null,
                 "has_saved_components": historyItem["saved"] ?? .null,
                 "icon": historyItem["icon"] ?? .null, "time": historyItem["time"] ?? .null,
+                "project_id": historyItem["project_id"] ?? .null,
                 "pinned": historyItem["pinned"] ?? .null, "archived": historyItem["archived"] ?? .null,
             ]))
     }
@@ -237,9 +245,17 @@ public struct RestClient: Sendable {
         return comps.url!
     }
 
-    func request(_ method: String, _ path: String, body: JSONValue? = nil) async throws -> (Int, JSONValue) {
+    func request(
+        _ method: String, _ path: String, body: JSONValue? = nil,
+        queryItems: [URLQueryItem] = []
+    ) async throws -> (Int, JSONValue) {
+        guard var parts = URLComponents(url: serverBase.appendingPathComponent(path), resolvingAgainstBaseURL: false)
+        else { throw URLError(.badURL) }
+        parts.queryItems = queryItems.isEmpty ? nil : queryItems
+        parts.fragment = nil
+        guard let url = parts.url else { throw URLError(.badURL) }
         var request = NoStoreHTTP.request(
-            url: serverBase.appendingPathComponent(path),
+            url: url,
             method: method,
             body: try body?.encoded(),
             contentType: body == nil ? nil : "application/json")
