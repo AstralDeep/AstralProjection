@@ -49,9 +49,7 @@ struct ConsoleShell: View {
                         .accessibilityHidden(model.consoleDashboardVisible)
                     }
                 }
-                .blur(radius: model.screen == .surface ? 6 : 0)
-                .allowsHitTesting(model.screen != .surface)
-                .accessibilityHidden(model.screen == .surface)
+                .settingsOverlayBackground(model.screen == .surface, blur: 6)
                 if presentation.navigationMode == .drawer, model.consoleDrawerOpen {
                     Color.black.opacity(0.48).ignoresSafeArea()
                         .onTapGesture { model.consoleDrawerOpen = false }
@@ -403,6 +401,7 @@ struct ConsoleSurfaceOverlay: View {
     let console: ConsoleModel
     let presentation: ConsolePresentation
     let size: CGSize
+    @FocusState private var titleFocused: Bool
     private var p: AstralPalette { theme.palette }
     private var currentNavigationItem: ChromeMenuItem? {
         guard
@@ -430,16 +429,32 @@ struct ConsoleSurfaceOverlay: View {
             false
         #endif
     }
-    private var sheetWidth: CGFloat {
+    private var geometry: (width: CGFloat, height: CGFloat?, navigation: CGFloat) {
+        Self.geometry(
+            presentation: presentation, size: size, hasNavigation: hasNavigation, isIntro: isIntro,
+            desktop: desktopSheet)
+    }
+    private var navigationSelection: Binding<String?> {
+        Binding(
+            get: { currentNavigationItem?.key },
+            set: { key in
+                guard let key, key != currentNavigationItem?.key,
+                    let item = model.chromeMenu?.allItems.first(where: { $0.key == key })
+                else { return }
+                model.openMenuItem(item)
+            })
+    }
+
+    static func geometry(
+        presentation: ConsolePresentation, size: CGSize, hasNavigation: Bool, isIntro: Bool, desktop: Bool
+    ) -> (width: CGFloat, height: CGFloat?, navigation: CGFloat) {
+        let framed = desktop && hasNavigation
         let width = hasNavigation ? presentation.settingsWidth : presentation.dialogWidth
-        return desktopSheet && hasNavigation ? min(size.width - 32, 980) : min(size.width, width)
+        let height: CGFloat? =
+            isIntro && presentation.settingsPresentation != .sheet
+            ? nil : min(framed ? size.height - 32 : size.height, presentation.settingsMaxHeight)
+        return (min(framed ? size.width - 32 : size.width, width), height, presentation.settingsNavigationWidth)
     }
-    private var sheetHeight: CGFloat? {
-        if isIntro && presentation.settingsPresentation != .sheet { return nil }
-        let height = min(size.height, presentation.settingsMaxHeight)
-        return desktopSheet && hasNavigation ? min(size.height - 32, height, 640) : height
-    }
-    private var navigationWidth: CGFloat { desktopSheet ? 220 : presentation.settingsNavigationWidth }
 
     var body: some View {
         ZStack {
@@ -456,6 +471,9 @@ struct ConsoleSurfaceOverlay: View {
                     .font(desktopSheet ? ConsoleTypography.subheadline.weight(.semibold) : ConsoleTypography.headline)
                     .foregroundStyle(p.text)
                     .accessibilityAddTraits(.isHeader)
+                    .focusable()
+                    .focused($titleFocused)
+                    .focusEffectDisabled()
                     Spacer()
                     if model.mandatorySurface {
                         Button(model.chromeMenu?.signout.label ?? "Sign out") { Task { await model.signOut() } }
@@ -469,6 +487,8 @@ struct ConsoleSurfaceOverlay: View {
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain).foregroundStyle(p.muted).accessibilityLabel("Close")
+                        .keyboardShortcut(.cancelAction)
+                        .accessibilityIdentifier("console-settings-close")
                     }
                 }
                 .padding(.horizontal, presentation.settingsPresentation == .sheet ? 16 : desktopSheet ? 16 : 20)
@@ -485,31 +505,26 @@ struct ConsoleSurfaceOverlay: View {
                     Divider().overlay(p.border)
                 }
                 HStack(spacing: 0) {
-                    if hasNavigation, presentation.settingsNavigationAxis == .vertical {
-                        VStack(alignment: .leading, spacing: desktopSheet ? 12 : 16) {
-                            HStack(spacing: desktopSheet ? 8 : 10) {
+                    if hasNavigation, presentation.settingsNavigationAxis == .vertical, desktopSheet {
+                        desktopNavigation.frame(width: geometry.navigation).background(p.bg.opacity(0.35))
+                        Divider().overlay(p.border)
+                    } else if hasNavigation, presentation.settingsNavigationAxis == .vertical {
+                        VStack(alignment: .leading, spacing: 16) {
+                            HStack(spacing: 10) {
                                 Text(console.identity.initials).font(ConsoleTypography.caption.bold()).foregroundStyle(
                                     .white
                                 )
-                                .frame(width: desktopSheet ? 28 : 34, height: desktopSheet ? 28 : 34)
+                                .frame(width: 34, height: 34)
                                 .background(p.gradient, in: Circle())
-                                Text(console.identity.name)
-                                    .font(
-                                        desktopSheet
-                                            ? ConsoleTypography.footnote.weight(.semibold)
-                                            : ConsoleTypography.subheadline.weight(.semibold)
-                                    )
+                                Text(console.identity.name).font(ConsoleTypography.subheadline.weight(.semibold))
                                     .lineLimit(1)
                             }
-                            .padding(.horizontal, desktopSheet ? 4 : 0)
                             Divider().overlay(p.border)
                             ScrollView {
-                                VStack(alignment: .leading, spacing: desktopSheet ? 12 : 18) {
+                                VStack(alignment: .leading, spacing: 18) {
                                     ForEach(model.chromeMenu?.menu ?? []) { group in
-                                        VStack(alignment: .leading, spacing: desktopSheet ? 2 : 4) {
-                                            Text(group.label.uppercased()).font(ConsoleTypography.sans(10).bold())
-                                                .tracking(0.8).foregroundStyle(p.muted)
-                                                .padding(.horizontal, 8).padding(.vertical, desktopSheet ? 4 : 8)
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            groupHeader(group.label).padding(.horizontal, 8).padding(.vertical, 8)
                                             ForEach(group.items) { item in navigationButton(item) }
                                         }
                                     }
@@ -517,7 +532,7 @@ struct ConsoleSurfaceOverlay: View {
                             }
                             signoutButton
                         }
-                        .padding(desktopSheet ? 8 : 12).frame(width: navigationWidth)
+                        .padding(12).frame(width: geometry.navigation)
                         .background(p.bg.opacity(0.35))
                         Divider().overlay(p.border)
                     }
@@ -531,7 +546,7 @@ struct ConsoleSurfaceOverlay: View {
                     }
                 }
             }
-            .frame(width: sheetWidth, height: sheetHeight)
+            .frame(width: geometry.width, height: geometry.height)
             .background(p.surface)
             .clipShape(RoundedRectangle(cornerRadius: presentation.settingsPresentation == .sheet ? 0 : 14))
             .overlay(
@@ -539,6 +554,50 @@ struct ConsoleSurfaceOverlay: View {
             )
             .accessibilityAddTraits(.isModal)
         }
+        .onAppear { titleFocused = true }
+        #if os(macOS)
+            .onExitCommand { model.closeSurface() }
+        #endif
+    }
+
+    private var desktopNavigation: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text(console.identity.initials).font(ConsoleTypography.caption.bold()).foregroundStyle(.white)
+                    .frame(width: 28, height: 28)
+                    .background(p.gradient, in: Circle())
+                    .accessibilityHidden(true)
+                Text(console.identity.name).font(ConsoleTypography.footnote.weight(.semibold))
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .help(console.identity.name)
+            }
+            .padding(.horizontal, 12).padding(.top, 12)
+            List(selection: navigationSelection) {
+                ForEach(model.chromeMenu?.menu ?? []) { group in
+                    Section {
+                        ForEach(group.items) { item in
+                            Text(item.label).font(ConsoleTypography.footnote).foregroundStyle(p.text)
+                                .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                                .help(item.label)
+                                .tag(item.key)
+                                .accessibilityIdentifier("console-settings-nav-\(item.key)")
+                        }
+                    } header: {
+                        groupHeader(group.label)
+                    }
+                }
+            }
+            .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
+            .tint(p.primary)
+            .accessibilityIdentifier("console-settings-navigation")
+            signoutButton.padding(.horizontal, 8).padding(.bottom, 8)
+        }
+    }
+
+    private func groupHeader(_ label: String) -> some View {
+        Text(label).font(ConsoleTypography.caption.weight(.semibold)).foregroundStyle(p.muted)
+            .accessibilityAddTraits(.isHeader)
     }
 
     private var signoutButton: some View {
@@ -555,10 +614,9 @@ struct ConsoleSurfaceOverlay: View {
         return Button {
             model.openMenuItem(item)
         } label: {
-            Text(item.label).font(desktopSheet ? ConsoleTypography.footnote : ConsoleTypography.subheadline)
-                .foregroundStyle(selected ? p.text : desktopSheet ? p.text.opacity(0.8) : p.muted)
-                .lineLimit(desktopSheet ? 1 : nil)
-                .padding(.horizontal, 10).padding(.vertical, desktopSheet ? 6 : 8)
+            Text(item.label).font(ConsoleTypography.subheadline)
+                .foregroundStyle(selected ? p.text : p.muted)
+                .padding(.horizontal, 10).padding(.vertical, 8)
                 .frame(
                     maxWidth: presentation.settingsNavigationAxis == .vertical ? .infinity : nil, alignment: .leading
                 )

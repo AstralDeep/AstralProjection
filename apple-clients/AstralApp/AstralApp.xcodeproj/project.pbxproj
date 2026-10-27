@@ -117,6 +117,10 @@
 		AD0881000000000000000006 /* ../AstralWatchNavigationUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = ../AstralWatchNavigationUITests; sourceTree = "<group>"; };
 		AD0900000000000000000001 /* ../NativeAppearance */ = {isa = PBXFileSystemSynchronizedRootGroup; path = ../NativeAppearance; sourceTree = "<group>"; };
 		AD0900000000000000000002 /* ConsoleFixtures */ = {isa = PBXFileSystemSynchronizedRootGroup; name = ConsoleFixtures; path = ../../contracts/fixtures/console; sourceTree = "<group>"; };
+		AD0900000000000000000020 /* GuidanceFixtures */ = {isa = PBXFileSystemSynchronizedRootGroup; name = GuidanceFixtures; path = ../../contracts/fixtures/guidance_088; sourceTree = "<group>"; };
+		AD0900000000000000000021 /* TerminalFixtures */ = {isa = PBXFileSystemSynchronizedRootGroup; name = TerminalFixtures; path = ../../contracts/fixtures/terminal; sourceTree = "<group>"; };
+		AD0900000000000000000022 /* WorkspaceFixtures */ = {isa = PBXFileSystemSynchronizedRootGroup; name = WorkspaceFixtures; path = ../../contracts/fixtures/workspace_088; sourceTree = "<group>"; };
+		AD0900000000000000000023 /* ConnectionsFixtures */ = {isa = PBXFileSystemSynchronizedRootGroup; name = ConnectionsFixtures; path = ../../contracts/fixtures/connections_088; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -172,6 +176,10 @@
 				AD0900000000000000000001 /* ../NativeAppearance */,
 				AA00000000000000000000E1 /* AstralAppTests */,
 				AD0900000000000000000002 /* ConsoleFixtures */,
+				AD0900000000000000000020 /* GuidanceFixtures */,
+				AD0900000000000000000021 /* TerminalFixtures */,
+				AD0900000000000000000022 /* WorkspaceFixtures */,
+				AD0900000000000000000023 /* ConnectionsFixtures */,
 				AB0000000000000000000003 /* AstralAppUITests */,
 				AA00000000000000000000B2 /* ../AstralWatch */,
 				AB0000000000000000000004 /* ../AstralWatchTests */,
@@ -276,6 +284,10 @@
 			fileSystemSynchronizedGroups = (
 				AA00000000000000000000E1 /* AstralAppTests */,
 				AD0900000000000000000002 /* ConsoleFixtures */,
+				AD0900000000000000000020 /* GuidanceFixtures */,
+				AD0900000000000000000021 /* TerminalFixtures */,
+				AD0900000000000000000022 /* WorkspaceFixtures */,
+				AD0900000000000000000023 /* ConnectionsFixtures */,
 			);
 			name = AstralAppTests;
 			packageProductDependencies = (

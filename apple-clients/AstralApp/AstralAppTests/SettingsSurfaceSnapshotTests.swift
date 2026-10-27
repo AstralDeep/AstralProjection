@@ -40,15 +40,7 @@
         }
 
         private func contract(_ path: String) throws -> JSONValue {
-            var root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-            for _ in 0..<8 {
-                let file = root.appendingPathComponent("contracts/fixtures/\(path)")
-                if FileManager.default.fileExists(atPath: file.path) {
-                    return try JSONValue.parse(Data(contentsOf: file))
-                }
-                root.deleteLastPathComponent()
-            }
-            throw CocoaError(.fileNoSuchFile)
+            try bundled(URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent)
         }
 
         private func bundled(_ name: String) throws -> JSONValue {
@@ -73,8 +65,12 @@
         }
 
         private func allSurfaces() throws -> [Surface] {
-            try ["agents_list", "agents_detail", "llm", "personalization", "audit", "theme", "my_computers", "table"]
-                .map(surface)
+            try [
+                "agents_list", "agents_detail", "llm", "personalization", "audit", "theme", "my_computers", "table",
+                "safety_running", "safety_engaged", "remote_machines", "mesh", "mesh_invitations", "llm_system",
+                "admin_tools", "drafts", "authoring", "attachments", "search", "pulse",
+            ]
+            .map(surface)
                 + [
                     try surface("guidance_agents", contract: "guidance_088/agents_surface.json", state: "list"),
                     try surface("guidance_agent_new", contract: "guidance_088/agents_surface.json", state: "new"),
@@ -172,7 +168,8 @@
         }
 
         private func mount(
-            _ surface: Surface, preset: String = "graphite", width: CGFloat = 760
+            _ surface: Surface, preset: String = "graphite", width: CGFloat = 760,
+            textSize: DynamicTypeSize = .large
         ) async throws -> Mount {
             let model = signedInModel()
             model.screen = .surface
@@ -181,13 +178,16 @@
             let theme = ThemeStore()
             theme.apply(preset: preset)
             let mount = Mount(
-                compact(content(surface, theme: theme, width: width), model: model, theme: theme),
+                compact(content(surface, theme: theme, width: width), model: model, theme: theme)
+                    .environment(\.dynamicTypeSize, textSize),
                 size: CGSize(width: width, height: 200), scheme: theme.colorScheme, fitHeight: true)
             try await mount.settle(fitHeight: true)
             return mount
         }
 
-        private func measure(_ component: AstralComponent, chip: Bool? = nil, inCard: Bool = true) -> CGSize {
+        private func measure(
+            _ component: AstralComponent, chip: Bool? = nil, inCard: Bool = true, textSize: DynamicTypeSize = .large
+        ) -> CGSize {
             let model = signedInModel()
             model.screen = .surface
             let theme = ThemeStore()
@@ -197,7 +197,9 @@
                         .environment(\.astralCompactChip, chip)
                         .environment(\.astralCompactCardContent, inCard)
                         .fixedSize(),
-                    model: model, theme: theme))
+                    model: model, theme: theme
+                )
+                .environment(\.dynamicTypeSize, textSize))
             view.layoutSubtreeIfNeeded()
             return view.fittingSize
         }
@@ -221,6 +223,27 @@
             }
         }
 
+        func testEverySurfaceFixtureLoadsFromTheTestBundle() throws {
+            let bundle = Bundle(for: SettingsSurfaceSnapshotTests.self).bundleURL.standardizedFileURL.path
+            for name in [
+                "SettingsSurfaceSnapshotFixtures", "chrome-console", "rote-console", "agents_surface", "notes_surface",
+                "skills_surface", "monitor_surface", "panel_surface", "saved_results_surface",
+                "recurring_work_surface", "connections_surface",
+            ] {
+                let url = try XCTUnwrap(
+                    Bundle(for: SettingsSurfaceSnapshotTests.self).url(forResource: name, withExtension: "json"), name)
+                XCTAssertTrue(url.standardizedFileURL.path.hasPrefix(bundle), name)
+            }
+            XCTAssertEqual(try allSurfaces().count, 30)
+            let keys = Set(try allSurfaces().map(\.key))
+            for key in [
+                "safety", "remote_machines", "mesh", "llm_system", "admin_tools", "drafts", "agent_authoring",
+                "attachments", "search", "pulse",
+            ] {
+                XCTAssertTrue(keys.contains(key), key)
+            }
+        }
+
         func testEverySettingsSurfaceRendersInGraphiteMidnightAndDaylight() async throws {
             for surface in try allSurfaces() {
                 for preset in ["graphite", "midnight", "daylight"] {
@@ -232,19 +255,132 @@
             }
         }
 
+        func testLargerTextKeepsEverySurfaceAndControlInsideItsBounds() async throws {
+            for textSize in [DynamicTypeSize.large, .accessibility3] {
+                for surface in try allSurfaces() {
+                    let mount = try await mount(surface, textSize: textSize)
+                    defer { mount.close() }
+                    XCTAssertGreaterThan(mount.view.bounds.height, 40, "\(surface.name) \(textSize)")
+                    XCTAssertLessThanOrEqual(mount.view.fittingSize.width, 760.5, "\(surface.name) \(textSize)")
+                    if textSize == .accessibility3 {
+                        write(try mount.png(), name: "\(surface.name)-accessibility3")
+                    }
+                    for raw in Self.buttons(surface.components.map(\.raw)) {
+                        let component = try XCTUnwrap(AstralComponent(json: raw))
+                        let size = measure(component, textSize: textSize)
+                        let name = "\(surface.name) \(textSize): \(component.label ?? "")"
+                        XCTAssertEqual(size.height, 28, accuracy: 0.5, name)
+                        XCTAssertLessThan(size.width, 760 * 0.6, name)
+                    }
+                }
+            }
+        }
+
         func testNoSettingsButtonGrowsPastCompactBounds() throws {
             var measured = 0
             for surface in try allSurfaces() {
                 for raw in Self.buttons(surface.components.map(\.raw)) {
                     let component = try XCTUnwrap(AstralComponent(json: raw))
                     let size = measure(component)
-                    XCTAssertLessThanOrEqual(size.height, 44, "\(surface.name): \(component.label ?? "")")
-                    XCTAssertLessThanOrEqual(size.height, 28, "\(surface.name): \(component.label ?? "")")
+                    XCTAssertEqual(size.height, 28, accuracy: 0.5, "\(surface.name): \(component.label ?? "")")
+                    XCTAssertGreaterThanOrEqual(size.width, 64, "\(surface.name): \(component.label ?? "")")
                     XCTAssertLessThan(size.width, 760 * 0.6, "\(surface.name): \(component.label ?? "")")
                     measured += 1
                 }
             }
             XCTAssertGreaterThan(measured, 40)
+        }
+
+        private func component(_ json: String) throws -> AstralComponent {
+            try XCTUnwrap(AstralComponent(json: JSONValue.parse(Data(json.utf8))))
+        }
+
+        private func controls(_ view: NSView) -> (fields: [NSTextField], switches: [NSView]) {
+            func collect(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(collect) }
+            let all = collect(view)
+            return (
+                all.compactMap { $0 as? NSTextField }.filter(\.isEditable),
+                all.filter { String(describing: type(of: $0)).contains("PlatformSwitch") }
+            )
+        }
+
+        func testStateDependentActionLabelsKeepOneButtonWidth() throws {
+            let enable = try component(#"{"type":"button","label":"Enable","action":"chrome_agent_enable"}"#)
+            let disable = try component(#"{"type":"button","label":"Disable","action":"chrome_agent_disable"}"#)
+            let open = try component(#"{"type":"button","label":"Open","action":"chrome_open"}"#)
+            XCTAssertEqual(measure(enable).width, measure(disable).width, accuracy: 0.5)
+            for button in [enable, disable, open] {
+                XCTAssertEqual(measure(button).height, 28, accuracy: 0.5, button.label ?? "")
+                XCTAssertEqual(measure(button).width, 64, accuracy: 0.5, button.label ?? "")
+            }
+        }
+
+        func testLongCompactLabelsStayOnOneLineInsideTheirRow() throws {
+            let long = try component(
+                #"{"type":"button","label":"Approve and resume on build-host-07 / com.example.LongTargetName","action":"approve"}"#
+            )
+            let model = signedInModel()
+            model.screen = .surface
+            let view = NSHostingView(
+                rootView: compact(
+                    ComponentView(component: long).environment(\.astralCompactCardContent, true)
+                        .frame(width: 180, alignment: .leading).fixedSize(horizontal: false, vertical: true),
+                    model: model, theme: ThemeStore()))
+            view.layoutSubtreeIfNeeded()
+            XCTAssertEqual(view.fittingSize.height, 28, accuracy: 0.5)
+            XCTAssertLessThanOrEqual(view.fittingSize.width, 180.5)
+        }
+
+        func testCompactFormFieldsShareOneSmallTrailingColumn() async throws {
+            let form = try component(
+                #"""
+                {"type":"param_picker","title":"Add a machine","fields":[
+                {"name":"label","label":"Label","kind":"text"},
+                {"name":"port","label":"Port","kind":"number","default":"22"},
+                {"name":"password","label":"Password","kind":"password"},
+                {"name":"os","label":"Operating system","kind":"select","default":"linux","options":["linux","windows"]},
+                {"name":"trusted","label":"Trusted","kind":"boolean","default":true}],
+                "submit_action":"chrome_machine_add","submit_label":"Add & probe"}
+                """#)
+            let input = try component(#"{"type":"input","label":"Rename","placeholder":"New name","action":"rename"}"#)
+            let mount = try await mount(
+                Surface(name: "form", key: "remote_machines", title: "", components: [form, input]))
+            defer { mount.close() }
+            let (fields, switches) = controls(mount.view)
+            XCTAssertEqual(fields.count, 4)
+            let column = fields.prefix(3)
+            for field in fields {
+                XCTAssertFalse(field.isBezeled, "compact fields draw their own outline")
+                XCTAssertLessThanOrEqual(field.frame.height, 28)
+            }
+            let frames = column.map { $0.convert($0.bounds, to: nil) }
+            for frame in frames.dropFirst() {
+                XCTAssertEqual(frame.minX, frames[0].minX, accuracy: 0.5)
+                XCTAssertEqual(frame.width, frames[0].width, accuracy: 0.5)
+            }
+            XCTAssertLessThanOrEqual(frames[0].width, SettingsControlMetrics.formColumn)
+            XCTAssertGreaterThan(frames[0].width, SettingsControlMetrics.formColumn - 20)
+            let toggle = try XCTUnwrap(switches.first).convert(try XCTUnwrap(switches.first).bounds, to: nil)
+            XCTAssertEqual(toggle.maxX, frames[0].maxX, accuracy: 8)
+            let regular = NSHostingView(rootView: Toggle("", isOn: .constant(true)).toggleStyle(.switch).labelsHidden())
+            regular.layoutSubtreeIfNeeded()
+            XCTAssertLessThan(toggle.height, regular.fittingSize.height, "boolean fields use the small control size")
+            write(try mount.png(), name: "compact-form-column")
+        }
+
+        func testCardTextIsNeverClampedBehindAHoverTooltip() async throws {
+            let card = try component(
+                #"""
+                {"type":"card","title":"This Mac","content":[
+                {"type":"text","content":"Pause and Stop stay visible while a task runs. Commands and file changes ask first. Touching the mouse or keyboard pauses the task until you resume it here on this Mac. Grants end when the task ends or when you revoke them from the session panel, whichever comes first, and nothing carries over to terminus."},
+                {"type":"button","label":"Pause","action":"chrome_computer_pause"}]}
+                """#)
+            let mount = try await mount(
+                Surface(name: "clamp", key: "my_computers", title: "", components: [card]), width: 420)
+            defer { mount.close() }
+            let text = try mount.text().joined(separator: " ")
+            XCTAssertTrue(text.contains("terminus"), text)
+            write(try mount.png(), name: "card-text-unclamped")
         }
 
         func testAgentListCardsStayCompactAndKeepTheirCopy() async throws {
@@ -293,9 +429,56 @@
             XCTAssertNil(CompactSettingsLayout.chipSelection(row.children))
         }
 
+        func testOverlayGeometryFollowsTheServerPresentation() throws {
+            for row in try XCTUnwrap(bundled("rote-console")["cases"]?.arrayValue) {
+                let presentation = try XCTUnwrap(ConsolePresentation(json: row["presentation"]))
+                guard presentation.settingsPresentation == .dialog, presentation.settingsNavigationAxis == .vertical
+                else { continue }
+                let viewport = try XCTUnwrap(row["viewport"]?.arrayValue?.compactMap(\.numberValue))
+                let size = CGSize(width: viewport[0], height: viewport[1])
+                let geometry = ConsoleSurfaceOverlay.geometry(
+                    presentation: presentation, size: size, hasNavigation: true, isIntro: false, desktop: true)
+                XCTAssertEqual(geometry.width, min(size.width - 32, presentation.settingsWidth), "\(viewport)")
+                XCTAssertEqual(geometry.height, min(size.height - 32, presentation.settingsMaxHeight), "\(viewport)")
+                XCTAssertEqual(geometry.navigation, presentation.settingsNavigationWidth, "\(viewport)")
+            }
+            let row = try XCTUnwrap(
+                bundled("rote-console")["cases"]?.arrayValue?.first {
+                    $0["viewport"]?.arrayValue?.first?.numberValue == 1440
+                })
+            let geometry = ConsoleSurfaceOverlay.geometry(
+                presentation: try XCTUnwrap(ConsolePresentation(json: row["presentation"])),
+                size: CGSize(width: 1440, height: 900), hasNavigation: true, isIntro: false, desktop: true)
+            XCTAssertEqual(geometry.width, 940)
+            XCTAssertEqual(geometry.height, 774)
+            XCTAssertEqual(geometry.navigation, 216)
+        }
+
+        private static func overlayFrame(_ pixels: SettingsSheetChromeTests.Pixels, scrim: Color) -> CGRect? {
+            let midX = pixels.width / 2
+            let rows = (0..<pixels.height).filter { !pixels.matches(x: midX, y: $0, scrim) }
+            guard let top = rows.first, let bottom = rows.last else { return nil }
+            let probe = top + (bottom - top) / 2
+            let columns = (0..<pixels.width).filter { !pixels.matches(x: $0, y: probe, scrim) }
+            guard let left = columns.first, let right = columns.last else { return nil }
+            return CGRect(x: left, y: top, width: right - left + 1, height: bottom - top + 1)
+        }
+
         func testSettingsSheetUsesDesktopFrameCompactNavigationAndTitleHeader() async throws {
             let model = signedInModel()
-            model.chromeMenu = try XCTUnwrap(ChromeMenuModel.fromJSON(bundled("chrome-console")))
+            var menu = try XCTUnwrap(bundled("chrome-console").objectValue)
+            var groups = try XCTUnwrap(menu["menu"]?.arrayValue)
+            var account = try XCTUnwrap(groups.first?.objectValue)
+            account["items"] = .array(
+                (account["items"]?.arrayValue ?? []) + [
+                    .object([
+                        "key": .string("remote_machines"), "label": .string("Remote machines and SSH credentials"),
+                        "surface": .string("remote_machines"), "params": .object([:]), "admin_only": .bool(false),
+                    ])
+                ])
+            groups[0] = .object(account)
+            menu["menu"] = .array(groups)
+            model.chromeMenu = try XCTUnwrap(ChromeMenuModel.fromJSON(.object(menu)))
             let row = try XCTUnwrap(
                 bundled("rote-console")["cases"]?.arrayValue?.first {
                     $0["viewport"]?.arrayValue?.first?.numberValue == 1440
@@ -307,23 +490,43 @@
             model.pendingSurfaceKey = "agents"
             model.pendingSurfaceParams = .object([:])
             model.pendingSurface = .init(surfaceKey: "agents", title: agents.title, components: agents.components)
-            let theme = ThemeStore()
-            let size = CGSize(width: 1440, height: 900)
-            let mount = Mount(
-                ConsoleSurfaceOverlay(console: try XCTUnwrap(model.console), presentation: presentation, size: size)
-                    .frame(width: size.width, height: size.height)
-                    .background(theme.palette.bg)
-                    .environment(\.astralViewportWidth, size.width)
-                    .environment(model).environment(theme),
-                size: size, scheme: theme.colorScheme, fitHeight: false)
-            defer { mount.close() }
-            try await mount.settle(fitHeight: false)
-            write(try mount.png(), name: "settings_sheet")
-            let text = try mount.text()
-            for kept in [
-                "Agents & permissions", "LLM settings", "Theme", "Private notes", "Owned by me", "Clinical Notes",
-            ] {
-                XCTAssertTrue(text.contains { $0.contains(kept) }, "Missing: \(kept)")
+            for preset in ["graphite", "midnight", "daylight"] {
+                let theme = ThemeStore()
+                theme.apply(preset: preset)
+                let size = CGSize(width: 1440, height: 900)
+                let mount = Mount(
+                    ConsoleSurfaceOverlay(console: try XCTUnwrap(model.console), presentation: presentation, size: size)
+                        .frame(width: size.width, height: size.height)
+                        .background(theme.palette.bg)
+                        .environment(\.astralViewportWidth, size.width)
+                        .environment(model).environment(theme),
+                    size: size, scheme: theme.colorScheme, fitHeight: false)
+                defer { mount.close() }
+                try await mount.settle(fitHeight: false)
+                write(try mount.png(), name: preset == "graphite" ? "settings_sheet" : "settings_sheet-\(preset)")
+                let text = try mount.text()
+                for kept in [
+                    "Agents & permissions", "LLM settings", "Theme", "Private notes", "Owned by me", "Clinical Notes",
+                    "Account", "Help",
+                ] {
+                    XCTAssertTrue(text.contains { $0.contains(kept) }, "\(preset) missing: \(kept)")
+                }
+                XCTAssertFalse(
+                    text.contains { $0.contains("ACCOUNT") }, "group headers keep the server's sentence case")
+                let navigation = text.joined(separator: " ")
+                XCTAssertTrue(
+                    navigation.contains("Remote machines and SSH") && navigation.contains("credentials"), "\(text)")
+                XCTAssertFalse(text.contains { $0.contains("…") }, "a navigation label was truncated: \(text)")
+                let bitmap = try XCTUnwrap(mount.view.bitmapImageRepForCachingDisplay(in: mount.view.bounds))
+                mount.view.cacheDisplay(in: mount.view.bounds, to: bitmap)
+                let pixels = try SettingsSheetChromeTests.Pixels(bitmap)
+                let scale = CGFloat(pixels.width) / size.width
+                let bg = theme.palette.bg.resolve(in: EnvironmentValues())
+                let scrim = Color(
+                    .sRGB, red: Double(bg.red) * 0.6, green: Double(bg.green) * 0.6, blue: Double(bg.blue) * 0.6)
+                let frame = try XCTUnwrap(Self.overlayFrame(pixels, scrim: scrim))
+                XCTAssertEqual(frame.width / scale, 940, accuracy: 2, preset)
+                XCTAssertEqual(frame.height / scale, 774, accuracy: 2, preset)
             }
         }
 
