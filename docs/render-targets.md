@@ -1,6 +1,6 @@
 # Render targets
 
-Verified against the source tree on 2026-09-28. This page documents every
+Verified against the source tree on 2026-10-27. This page documents every
 render target of [`webrender.registry`](../backend/webrender/registry.py), as
 Constitution Principle II requires: how each is registered and selected, what
 it produces, and which clients consume it.
@@ -34,6 +34,7 @@ it produces, and which clients consume it.
 | `voice` | Built in | SSML string | No client in this repository registers a `voice` device; AstralDeep calls `render_voice` directly for watch speech |
 | `aom` | Built in | Accessibility-object-model dict tree | No client consumes it |
 | `mcp` | [`targets/mcp_renderer.py`](../backend/webrender/targets/mcp_renderer.py) `install()` | List of MCP text content blocks | AstralDeep's MCP server endpoint, for MCP clients |
+| `chatgpt` | [`targets/chatgpt_panel.py`](../backend/webrender/targets/chatgpt_panel.py) `install()` | Bounded panel document, validated view model, and MCP text blocks | OpenAI MCP Extension (ChatGPT-style) hosts via AstralDeep's MCP server endpoint, and [`examples/chatgpt_mcp_panel/`](../examples/chatgpt_mcp_panel/README.md) |
 | `stubtext` | [`targets/stub_renderer.py`](../backend/webrender/targets/stub_renderer.py) `install()` | Escaped plain text | Tests only |
 
 The Windows, Android and Apple clients do not consume any target's output.
@@ -119,6 +120,60 @@ They render the structured `components` of each frame themselves
   `[result truncated: N component(s) omitted]` block is appended when it fits
   the remaining result budget. A component with nothing portable becomes
   `[<type> component has no portable text representation]`.
+
+## `chatgpt`
+
+- `install()` registers `render_chatgpt_panel_target` under the lowercase name
+  `chatgpt`. The target renders the Astral Work status/artifact panel for OpenAI MCP
+  Extension hosts: a static vanilla HTML/CSS/JS panel document served as a
+  `text/html` resource (`ui://astralprojection/astral-work-status`), the validated view
+  model for the host's widget bridge, and bounded MCP text content blocks for every
+  other surface.
+- Unlike `mcp`, this target does not project arbitrary component trees: its registry
+  callable accepts exactly one panel view-model object (a one-element list carrying a
+  dict) and raises `InvalidPanelView` otherwise. The view model is a closed, bounded
+  shape: `kind` must be `astral_work_status`, `state` must be one of `waiting`,
+  `running`, `input_required`, `failed`, `cancelled` and `succeeded`, `title`, `detail`,
+  `status_message`, `progress` (only while running, with `0 <= completed <= total`), and
+  at most 8 `artifacts` are accepted; any other top-level or artifact key — including
+  `html`, `script`, `css`, `style`, `token` and `onclick` — is rejected. Strings are
+  bounded (title 200, detail 2000, message 500, artifact fields 128/200/200), lone
+  surrogates become U+FFFD, and control characters other than newline and tab are
+  rejected.
+- Artifact links are restricted to `http(s)`, `mailto:` and root-relative URLs of at
+  most 2048 characters without whitespace; `media_type` must match one allowlisted MIME
+  type exactly (`text/plain`, `text/markdown`, `text/csv`, `text/html`,
+  `application/json`, `application/pdf`, `image/png`, `image/jpeg`, `image/webp`), and
+  `size_bytes` must be an integer within `0..2^40`. The panel only links artifacts; it
+  never renders them inline. The document's JavaScript re-checks every URL against the
+  same rule and renders all dynamic text with `textContent`, so authored HTML, scripts
+  and untrusted styling cannot reach the widget even if a future host bridge changed.
+- Every state is rendered truthfully from the view model alone. The renderer has no
+  path that infers completion from a transport response: a `CallToolResult`-shaped
+  payload is rejected like any other non-conforming input, and the document's static
+  default is a neutral "status unavailable" notice, never a completion state.
+- `render_chatgpt_panel(view_model)` returns `kind`, `resource` (the descriptor plus the
+  full document text), `structuredContent` (the validated view model, JSON-safe),
+  `content` (text blocks routed through the bounded `mcp` renderer), and `metadata`
+  (the `_meta` fragment: `openai/outputTemplate`, `openai/toolInvocation/invoking`,
+  `openai/toolInvocation/invoked`, `openai/widgetAccessible` set to false, and
+  `openai/resultCanProduceUI`). Hosts without the extension ignore the metadata and
+  bridge and surface the text blocks, which carry the complete status; a host serving
+  the document under a stricter CSP that blocks inline scripts gets the document's
+  static notice instead of the live widget. The recommended serving posture — a
+  `default-src 'none'` CSP with no network or subresources and an
+  `iframe sandbox="allow-scripts"` without `allow-same-origin` — is documented in
+  [`examples/chatgpt_mcp_panel/README.md`](../examples/chatgpt_mcp_panel/README.md).
+- The document carries `role="status"` with `aria-live="polite"`, a
+  `role="progressbar"` when determinate progress exists, a labelled `region`, visible
+  `:focus-visible` outlines, reduced-motion support, and Escape handling that returns
+  focus to the panel (or calls a feature-detected host close hook).
+- The Windows, Android and Apple clients do not consume this target, and no
+  `contracts/ui_protocol.json` vocabulary changes: the panel input is a target-local
+  view model, not a component type. The OpenAI metadata key names follow the MCP
+  Extensions output-template pattern reviewed for this issue; the external ChatGPT host
+  and platform acceptance run in pull-request CI, and the synthetic host in
+  `examples/chatgpt_mcp_panel/` qualifies the serving posture over loopback HTTP.
 
 ## `stubtext`
 
