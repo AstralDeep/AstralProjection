@@ -3932,6 +3932,10 @@ final class AppModel: NSObject {
 
     func sendChat(_ text: String) {
         if timelineReadOnly { return }
+        if mandatorySurface {
+            composerDraft = text
+            return
+        }
         let ready = staged.filter { $0.state == "ready" && $0.attachmentId != nil }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty && ready.isEmpty { return }

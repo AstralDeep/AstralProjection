@@ -49,9 +49,7 @@ struct ConsoleShell: View {
                         .accessibilityHidden(model.consoleDashboardVisible)
                     }
                 }
-                .blur(radius: model.screen == .surface ? 6 : 0)
-                .allowsHitTesting(model.screen != .surface)
-                .accessibilityHidden(model.screen == .surface)
+                .settingsOverlayBackground(model.screen == .surface, blur: 6)
                 if presentation.navigationMode == .drawer, model.consoleDrawerOpen {
                     Color.black.opacity(0.48).ignoresSafeArea()
                         .onTapGesture { model.consoleDrawerOpen = false }
@@ -403,6 +401,7 @@ struct ConsoleSurfaceOverlay: View {
     let console: ConsoleModel
     let presentation: ConsolePresentation
     let size: CGSize
+    @FocusState private var titleFocused: Bool
     private var p: AstralPalette { theme.palette }
     private var currentNavigationItem: ChromeMenuItem? {
         guard
@@ -456,6 +455,9 @@ struct ConsoleSurfaceOverlay: View {
                     .font(desktopSheet ? ConsoleTypography.subheadline.weight(.semibold) : ConsoleTypography.headline)
                     .foregroundStyle(p.text)
                     .accessibilityAddTraits(.isHeader)
+                    .focusable()
+                    .focused($titleFocused)
+                    .focusEffectDisabled()
                     Spacer()
                     if model.mandatorySurface {
                         Button(model.chromeMenu?.signout.label ?? "Sign out") { Task { await model.signOut() } }
@@ -469,6 +471,8 @@ struct ConsoleSurfaceOverlay: View {
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain).foregroundStyle(p.muted).accessibilityLabel("Close")
+                        .keyboardShortcut(.cancelAction)
+                        .accessibilityIdentifier("console-settings-close")
                     }
                 }
                 .padding(.horizontal, presentation.settingsPresentation == .sheet ? 16 : desktopSheet ? 16 : 20)
@@ -539,6 +543,10 @@ struct ConsoleSurfaceOverlay: View {
             )
             .accessibilityAddTraits(.isModal)
         }
+        .onAppear { titleFocused = true }
+        #if os(macOS)
+            .onExitCommand { model.closeSurface() }
+        #endif
     }
 
     private var signoutButton: some View {
