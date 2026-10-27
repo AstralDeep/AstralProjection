@@ -509,7 +509,8 @@
             if awaitingApproval { showPanel() }
         }
         func bringAstralForward() { appActivator() }
-        private func pause(reason: String) {
+        private func pause(reason: String, retainingPermits: Bool = false) {
+            if !retainingPermits { browser?.discardPermits() }
             guard let current = session, current.state == "active" else { return }
             localInput?.invalidate()
             authority.pause()
@@ -536,7 +537,7 @@
         }
         func recordApprovalInteraction() -> String? {
             let id = session?.id
-            if session?.state == "active" { pause(reason: "local_input") }
+            if session?.state == "active" { pause(reason: "local_input", retainingPermits: true) }
             return id
         }
         func approvalStillCurrent(_ expected: String?) -> Bool {
@@ -882,6 +883,7 @@
                             .accessibilityIdentifier("mac-computer-approval-waiting")
                         Spacer()
                         Button("Open Astral", action: host.bringAstralForward)
+                            .keyboardShortcut(.defaultAction)
                             .accessibilityIdentifier("mac-computer-open-astral")
                     }.padding([.horizontal, .top], 12)
                 }

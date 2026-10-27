@@ -51,6 +51,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.personalailabs.astraldeep.app.R
+import com.personalailabs.astraldeep.app.ui.theme.LocalAstralFieldBorder
 import com.personalailabs.astraldeep.app.voice.VoiceUiState
 import com.personalailabs.astraldeep.core.chrome.ConsoleComposerAction
 import com.personalailabs.astraldeep.core.chrome.ConsoleModel
@@ -79,7 +80,8 @@ internal fun ConsoleComposer(
     val field: @Composable (Modifier) -> Unit = { modifier ->
         BasicTextField(
             input, onInputChange,
-            modifier.border(1.dp, colors.outline, RoundedCornerShape(10.dp)).background(colors.surface, RoundedCornerShape(10.dp))
+            modifier.border(1.dp, LocalAstralFieldBorder.current, RoundedCornerShape(10.dp))
+                .background(colors.surface, RoundedCornerShape(10.dp))
                 .heightIn(min = 44.dp, max = 150.dp).padding(12.dp).testTag("chat-input")
                 .onFocusChanged { inputFocused = it.hasFocus }
                 .semantics { contentDescription = console.label("message_placeholder") }

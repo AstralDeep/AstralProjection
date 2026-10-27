@@ -615,20 +615,28 @@ struct ComponentView: View {
         let variant = component.variant ?? "primary"
         let action = component.raw["action"]?.stringValue ?? "component_action"
         let navigate = model.navigationCallback(component, surface: navigationSurface, transcript: navigationTranscript)
+        let serverDisabled =
+            component.raw["disabled"]?.boolValue == true || component.raw["enabled"]?.boolValue == false
+        let chip = CompactSettingsLayout.chipState(
+            serverDisabled: serverDisabled, selected: compactSettings && compactChip == true)
         let button = Button {
+            guard !chip.inert else { return }
             let payload = component.raw["payload"]?.objectValue ?? [:]
             if action == "load_chat" { navigate(payload) } else { model.emit(action, payload: payload) }
         } label: {
-            Text(label).fixedSize(horizontal: false, vertical: true)
-                .frame(
-                    maxWidth: variant == "primary" && !compactSettings && !WorkspaceWelcome.isExample(component)
-                        ? .infinity : nil)
+            if compactSettings {
+                CompactButtonLabel(text: label)
+            } else {
+                Text(label).fixedSize(horizontal: false, vertical: true)
+                    .frame(
+                        maxWidth: variant == "primary" && !WorkspaceWelcome.isExample(component) ? .infinity : nil)
+            }
         }
         .disabled(
-            component.raw["disabled"]?.boolValue == true || component.raw["enabled"]?.boolValue == false
+            chip.disabled
                 || (model.screen == .surface && (!model.connected || model.paramPickerPending(action: action)))
         )
-        .accessibilityValue(model.paramPickerPending(action: action) ? "Submitting" : "Ready")
+        .accessibilityValue(ComponentAccessibility.buttonValue(pending: model.paramPickerPending(action: action)))
         .accessibilityAddTraits(compactSettings && compactChip == true ? .isSelected : [])
         if WorkspaceWelcome.isExample(component) {
             button.buttonStyle(WelcomeExampleButtonStyle(palette: p))
@@ -929,6 +937,10 @@ struct ComponentView: View {
     }
 }
 
+enum ComponentAccessibility {
+    static func buttonValue(pending: Bool) -> String { pending ? "Submitting" : "" }
+}
+
 enum CompactSettingsLayout {
     static let rendered: Set<String> = ["text", "alert", "card", "container", "badge", "keyvalue", "code", "list"]
     private static let inline: Set<String> = ["button", "badge", "text", "link"]
@@ -1007,6 +1019,10 @@ enum CompactSettingsLayout {
         return !disabled.contains(true) && primary.filter({ $0 }).count == 1 ? primary : nil
     }
 
+    static func chipState(serverDisabled: Bool, selected: Bool) -> (disabled: Bool, inert: Bool) {
+        (serverDisabled && !selected, serverDisabled && selected)
+    }
+
     static func isNumeric(_ cells: [String]) -> Bool {
         let values = cells.map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty && $0 != "-" && $0 != "—" }
@@ -1043,8 +1059,6 @@ extension ComponentView {
         } else {
             markdown(text)
                 .font(compactTextFont).foregroundStyle(compactTextColor)
-                .lineLimit(compactCardContent && component.variant != "caption" && !workReadSurface ? 3 : nil)
-                .compactTooltip(compactCardContent && !workReadSurface ? text : nil)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1383,15 +1397,16 @@ private struct AstralButtonBody: View {
         }
     }
 
-    // Chips keep one weight, padding and minimum width so selection never resizes or shifts a row
+    // Every compact button keeps one height, weight and minimum width so state never resizes or shifts a row
     private var compactBody: some View {
         let shape = RoundedRectangle(cornerRadius: AstralRadius.sm)
         let colors = compactColors
         return configuration.label
             .font(ConsoleTypography.caption.weight(.medium))
             .lineLimit(1)
-            .padding(.horizontal, 10).padding(.vertical, chip == nil ? 4 : 6)
-            .frame(minWidth: chip == nil ? 0 : 64, minHeight: chip == nil ? 24 : 28)
+            .padding(.horizontal, 10)
+            .frame(minWidth: SettingsControlMetrics.minimumWidth)
+            .frame(height: SettingsControlMetrics.height)
             .foregroundStyle(colors.foreground)
             .background(colors.fill, in: shape)
             .overlay(shape.strokeBorder(colors.stroke))
@@ -1409,6 +1424,17 @@ private struct AstralButtonBody: View {
         case "secondary", "ghost": return (palette.text, palette.text.opacity(0.06), palette.border)
         case "danger": return (palette.error, palette.error.opacity(0.12), palette.error.opacity(0.4))
         default: return (.white, palette.primary, palette.primary)
+        }
+    }
+}
+
+private struct CompactButtonLabel: View {
+    let text: String
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            Text(text).fixedSize()
+            Text(text).lineLimit(1).truncationMode(.tail).help(text)
         }
     }
 }
@@ -1782,6 +1808,7 @@ struct InputComponent: View {
     let component: AstralComponent
     @Environment(ThemeStore.self) var theme
     @Environment(AppModel.self) var model
+    @Environment(\.astralCompactSettings) private var compactSettings
     @State private var value = ""
     @State private var editingOwner = UUID()
     @State private var initialValue = ""
@@ -1789,16 +1816,24 @@ struct InputComponent: View {
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
+        let placeholder = component.raw["placeholder"]?.stringValue ?? ""
         VStack(alignment: .leading, spacing: 3) {
             if let label = component.label, !label.isEmpty {
-                Text(label).font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                Text(label).font(compactSettings ? ConsoleTypography.footnote : ConsoleTypography.caption)
+                    .foregroundStyle(compactSettings ? p.text : p.muted)
+                    .accessibilityHidden(true)
             }
-            HStack {
-                TextField(component.raw["placeholder"]?.stringValue ?? "", text: $value)
-                    .textFieldStyle(.roundedBorder)
+            HStack(spacing: compactSettings ? 6 : 8) {
+                TextField(placeholder, text: $value)
+                    .astralFieldStyle(compactSettings, palette: p)
                     .focused($editingFocused)
                     .onSubmit(submit)
-                Button("Send", action: submit).tint(p.primary)
+                    .accessibilityLabel(component.label.flatMap { $0.isEmpty ? nil : $0 } ?? placeholder)
+                if compactSettings {
+                    Button("Send", action: submit).buttonStyle(AstralButtonStyle(palette: p, variant: "primary"))
+                } else {
+                    Button("Send", action: submit).tint(p.primary)
+                }
             }
         }
         .onAppear {
@@ -1976,6 +2011,7 @@ struct ParamPickerComponent: View {
                     }
                 }
             }
+            .controlSize(.small)
             .compactGroupBox(!compactCardContent, palette: p)
         }
     }
@@ -1989,6 +2025,7 @@ struct ParamPickerComponent: View {
         if kind == "textarea" || kind == "checklist" {
             VStack(alignment: .leading, spacing: 6) {
                 Text(title).font(ConsoleTypography.footnote).foregroundStyle(p.text)
+                    .accessibilityHidden(kind == "textarea")
                 fieldControl(field, name: name, label: label, kind: kind).fieldHelp(field["help"]?.stringValue)
             }
         } else {
@@ -1996,6 +2033,7 @@ struct ParamPickerComponent: View {
                 Text(title).font(ConsoleTypography.footnote).foregroundStyle(p.text)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityHidden(true)
                 compactControl(field, name: name, label: label, kind: kind).layoutPriority(1)
             }
         }
@@ -2004,14 +2042,17 @@ struct ParamPickerComponent: View {
     @ViewBuilder
     private func compactControl(_ field: JSONValue, name: String, label: String, kind: String) -> some View {
         let control = fieldControl(field, name: name, label: label, kind: kind).fieldHelp(field["help"]?.stringValue)
-        switch kind {
-        case "boolean", "checkbox":
-            control.toggleStyle(.switch).controlSize(.small)
-        case "select":
-            control.labelsHidden().fixedSize()
-        default:
-            control.font(ConsoleTypography.footnote).frame(maxWidth: 300)
+        Group {
+            switch kind {
+            case "boolean", "checkbox":
+                control.toggleStyle(.switch)
+            case "select":
+                control.labelsHidden()
+            default:
+                control
+            }
         }
+        .frame(width: SettingsControlMetrics.formColumn, alignment: .trailing)
     }
 
     private func fieldIsVisible(_ field: JSONValue) -> Bool {
@@ -2031,29 +2072,35 @@ struct ParamPickerComponent: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label + (field["required"]?.boolValue == true ? " *" : ""))
                 .font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                .accessibilityHidden(kind != "checklist")
             fieldControl(field, name: name, label: label, kind: kind)
                 .fieldHelp(field["help"]?.stringValue)
         }
     }
 
+    static func accessibleLabel(_ label: String, required: Bool) -> String {
+        required ? "\(label), required" : label
+    }
+
     // One switch over every kind inside fieldBody exceeded the Xcode 26.3 Release type-checker limit
     @ViewBuilder
     private func fieldControl(_ field: JSONValue, name: String, label: String, kind: String) -> some View {
+        let spoken = Self.accessibleLabel(label, required: field["required"]?.boolValue == true)
         switch kind {
         case "boolean", "checkbox":
-            booleanField(field, name: name, label: label)
+            booleanField(field, name: name, label: spoken)
         case "select":
-            selectField(field, name: name, label: label)
+            selectField(field, name: name, label: label, spoken: spoken)
         case "checklist":
             checklistField(field, name: name)
         case "number":
-            numberField(field, name: name, label: label)
+            numberField(field, name: name, label: spoken)
         case "password":
-            passwordField(field, name: name, label: label)
+            passwordField(field, name: name, label: spoken)
         case "textarea":
-            textareaField(field, name: name, label: label)
+            textareaField(field, name: name, label: spoken)
         default:
-            plainTextField(field, name: name, label: label)
+            plainTextField(field, name: name, label: spoken)
         }
     }
 
@@ -2071,7 +2118,7 @@ struct ParamPickerComponent: View {
     }
 
     @ViewBuilder
-    private func selectField(_ field: JSONValue, name: String, label: String) -> some View {
+    private func selectField(_ field: JSONValue, name: String, label: String, spoken title: String) -> some View {
         let options: [ParameterOption] = form?.options(field) ?? []
         let selection: Binding<String> = Binding(
             get: { form?.stringValue(field, values: values) ?? "" },
@@ -2081,8 +2128,9 @@ struct ParamPickerComponent: View {
             ForEach(options) { Text($0.label).tag($0.value) }
         }
         .pickerStyle(.menu).tint(p.primary)
+        .compactTooltip(compactSettings ? spoken : nil)
         .accessibilityIdentifier("param-field-\(name)")
-        .accessibilityLabel(label)
+        .accessibilityLabel(title)
         .accessibilityValue(spoken)
     }
 
@@ -2117,7 +2165,7 @@ struct ParamPickerComponent: View {
             },
             set: { values[name] = $0 })
         TextField(Self.placeholder(field), text: text)
-            .textFieldStyle(.roundedBorder)
+            .astralFieldStyle(compactSettings, palette: p)
             .focused($editingField, equals: name)
             #if os(iOS)
                 .keyboardType(.decimalPad)
@@ -2132,7 +2180,7 @@ struct ParamPickerComponent: View {
             get: { values[name] ?? "" },
             set: { values[name] = $0 })
         SecureField(Self.placeholder(field), text: text)
-            .textFieldStyle(.roundedBorder)
+            .astralFieldStyle(compactSettings, palette: p)
             .focused($editingField, equals: name)
             .onSubmit { editingField = nil }
             .accessibilityIdentifier("param-field-\(name)")
@@ -2155,7 +2203,7 @@ struct ParamPickerComponent: View {
                 in: RoundedRectangle(cornerRadius: AstralRadius.sm)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: AstralRadius.sm).strokeBorder(compactSettings ? p.border : Color.clear)
+                RoundedRectangle(cornerRadius: AstralRadius.sm).strokeBorder(compactSettings ? p.muted : Color.clear)
             )
             .autocorrectionDisabled(true)
             #if os(iOS)
@@ -2171,7 +2219,7 @@ struct ParamPickerComponent: View {
             get: { values[name] ?? (field["default"]?.stringValue ?? "") },
             set: { values[name] = $0 })
         TextField(Self.placeholder(field), text: text)
-            .textFieldStyle(.roundedBorder)
+            .astralFieldStyle(compactSettings, palette: p)
             .focused($editingField, equals: name)
             .onSubmit { editingField = nil }
             .autocorrectionDisabled(true)
@@ -2190,8 +2238,10 @@ struct ParamPickerComponent: View {
         payload: [String: JSONValue],
         available: Bool
     ) -> some View {
-        Button(label) {
+        Button {
             submit(action: action, payload: payload)
+        } label: {
+            if compactSettings { CompactButtonLabel(text: label) } else { Text(label) }
         }
         .buttonStyle(AstralButtonStyle(palette: p, variant: variant))
         .disabled(
@@ -2203,10 +2253,7 @@ struct ParamPickerComponent: View {
             action == "chrome_llm_save" ? "llm-save-button" : "param-action-\(action ?? "message")"
         )
         .accessibilityLabel(label)
-        .accessibilityValue(
-            model.paramPickerPending(action: action ?? "")
-                ? "Submitting"
-                : "Ready")
+        .accessibilityValue(ComponentAccessibility.buttonValue(pending: model.paramPickerPending(action: action ?? "")))
     }
 
     private func submit(action: String?, payload: [String: JSONValue]) {
@@ -2375,6 +2422,21 @@ extension View {
     @ViewBuilder
     fileprivate func compactFont(_ font: Font?) -> some View {
         if let font { self.font(font) } else { self }
+    }
+
+    @ViewBuilder
+    fileprivate func astralFieldStyle(_ compact: Bool, palette: AstralPalette) -> some View {
+        if compact {
+            let shape = RoundedRectangle(cornerRadius: AstralRadius.sm)
+            textFieldStyle(.plain)
+                .font(ConsoleTypography.footnote)
+                .padding(.horizontal, 8)
+                .frame(minHeight: SettingsControlMetrics.height)
+                .background(palette.text.opacity(0.04), in: shape)
+                .overlay(shape.strokeBorder(palette.muted))
+        } else {
+            textFieldStyle(.roundedBorder)
+        }
     }
 
     @ViewBuilder

@@ -7,6 +7,7 @@ from __future__ import annotations
 from astralprojection.chrome import render_html
 from astralprojection.models import ThemeView
 from astralprojection.chrome.personalization import (
+    THEME_COLOR_ROLES,
     THEME_PRESETS,
     build_dreaming_view,
     build_llm_view,
@@ -264,6 +265,8 @@ def test_theme_view_preserves_presets_custom_colors_and_shared_types() -> None:
     assert [item["title"] for item in cards][:2] == ["Graphite", "Midnight"]
     types = [item["type"] for item in default.to_dict()["components"]]
     assert types.count("color_picker") == 7
+    pickers = [item["color_key"] for item in default.to_dict()["components"] if item.get("type") == "color_picker"]
+    assert pickers == list(THEME_COLOR_ROLES)
     assert "theme_apply" not in types
     ocean = build_theme_view({"preset": "ocean"})
     ocean_html = render_html(ocean)
@@ -271,6 +274,7 @@ def test_theme_view_preserves_presets_custom_colors_and_shared_types() -> None:
     assert _actions(ocean).count("chrome_theme_preset") == 6
     assert ocean.to_dict()["components"][0]["type"] == "theme_apply"
     assert ocean.to_dict()["components"][0]["preset"] == "ocean"
+    assert ocean.to_dict()["components"][0]["colors"] == dict(THEME_PRESETS["ocean"])
     applied = [
         item
         for item in ocean.to_dict()["components"]
@@ -314,8 +318,14 @@ def test_graphite_is_the_first_preset_and_the_default_theme_name() -> None:
         "primary": "#7C3AED",
         "secondary": "#6E6E78",
         "text": "#ECECEF",
-        "muted": "#8C8C95",
+        "muted": "#93939B",
         "accent": "#A78BFA",
+        "success": "#5EC28F",
+        "warning": "#D4A94A",
+        "error": "#E17272",
+        "info": "#9A8CF2",
+        "on_error": "#121214",
+        "field_border": "#6E6E75",
     }
     assert dict(THEME_PRESETS["midnight"])["bg"] == "#0F1221"
     assert ThemeView().name == "graphite"

@@ -68,7 +68,7 @@ final class LLMFirstLoginUITests: XCTestCase {
             waitForStatus(containingAny: ["Check your provider credentials"], timeout: 3))
         XCTAssertTrue(apiKey.isEnabled)
         XCTAssertTrue(waitForEnabled(save, enabled: true, timeout: 2))
-        XCTAssertEqual(save.value as? String, "Ready")
+        XCTAssertEqual((save.value as? String) ?? "", "", "an idle Save button carries no spoken value")
 
         focusAndType(apiKey, "-corrected")
     }
@@ -106,7 +106,7 @@ final class LLMFirstLoginUITests: XCTestCase {
                 timeout: 11))
         XCTAssertTrue(apiKey.isEnabled)
         XCTAssertTrue(save.isEnabled)
-        XCTAssertEqual(save.value as? String, "Ready")
+        XCTAssertEqual((save.value as? String) ?? "", "", "an idle Save button carries no spoken value")
 
         save.press()
         XCTAssertTrue(save.isEnabled)

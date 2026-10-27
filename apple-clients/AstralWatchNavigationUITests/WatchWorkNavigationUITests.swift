@@ -10,6 +10,7 @@ import XCTest
 final class WatchWorkNavigationUITests: XCTestCase {
     // The ten-second duration is proven on a controllable clock in AstralWatchTests; this only guards a hang.
     private let timeoutPathGuard: TimeInterval = 60
+    private let fixtureGuard: TimeInterval = 60
     private var peer: WatchNavigationPeer!
     private var app: XCUIApplication!
 
@@ -40,12 +41,17 @@ final class WatchWorkNavigationUITests: XCTestCase {
         app?.terminate()
     }
 
+    private func waitUntil(_ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(fixtureGuard)
+        while !condition() {
+            guard Date() < deadline else { return false }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        return true
+    }
+
     private func frame(_ index: Int, action: String, mode: String? = nil) throws -> [String: Any] {
-        let received = XCTNSPredicateExpectation(
-            predicate: NSPredicate { [peer] _, _ in
-                peer!.frames.count > index
-            }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [received], timeout: 5), .completed)
+        XCTAssertTrue(waitUntil { peer.frames.count > index }, "Frame \(index) never reached the fixture server")
         let frame = peer.frames[index]
         XCTAssertEqual(frame["type"] as? String, "ui_event")
         XCTAssertEqual(frame["action"] as? String, action)
@@ -77,11 +83,8 @@ final class WatchWorkNavigationUITests: XCTestCase {
     }
 
     private func waitForClock(_ command: String, status: String) {
-        let acknowledged = XCTNSPredicateExpectation(
-            predicate: NSPredicate { [peer] _, _ in
-                peer!.clockAcknowledgements[command] == status
-            }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [acknowledged], timeout: 5), .completed)
+        XCTAssertTrue(
+            waitUntil { peer.clockAcknowledgements[command] == status }, "Clock \(command) never became \(status)")
     }
 
     private func screenshot(_ name: String) {

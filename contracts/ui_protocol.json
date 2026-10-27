@@ -4,7 +4,11 @@
   "presentation_contracts": {
     "ordinary_settings_forms": {
       "version": 1,
-      "components": ["param_picker", "color_picker", "theme_apply"],
+      "components": [
+        "param_picker",
+        "color_picker",
+        "theme_apply"
+      ],
       "options": "String choices or objects with a string value and readable label. Labels are displayed, values submitted, and saved choices absent from refreshed catalogs remain recoverable.",
       "defaults": "Untouched select, boolean and checklist controls display and submit their saved defaults; conditional fields use the same resolved form state.",
       "actions": "Untyped label/action/payload descriptors are metadata, not renderable components. Adaptation preserves routing and labels, while host interactivity and action budgets still apply. Missing routing is explicitly unavailable.",
@@ -754,7 +758,7 @@
       },
       "payload": {
         "version": 1,
-        "agent": "null or {agent_id, revision_id} — one active declarative agent revision",
+        "agent": "null or {agent_id, revision_id} \u2014 one active declarative agent revision",
         "skills": "list of {skill_id, revision}, at most 20, unique",
         "notes": "list of {note_id, revision}, at most 8, unique",
         "shape": "Exactly the version-1 selection work_submit accepts; every button carries the complete resulting selection, never a delta. The all-empty shape clears the chat's selection and is never forwarded as a Work selection.",
@@ -815,7 +819,7 @@
           "button",
           "param_picker"
         ],
-        "text": "Notes appear only as category, revision and enabled state — never their value. Skills appear only as name, /command, revision and enabled state — never their instructions."
+        "text": "Notes appear only as category, revision and enabled state \u2014 never their value. Skills appear only as name, /command, revision and enabled state \u2014 never their instructions."
       },
       "legacy": "Hosts expose the picker only to clients advertising guidance_selection_v1; other clients submit Work without a selection exactly as before."
     },
@@ -4324,7 +4328,12 @@
     "agent_tunnel",
     "authorize_action",
     "cancel_task",
+    "chat_archive",
     "chat_message",
+    "chat_pin",
+    "chat_rename",
+    "chat_unarchive",
+    "chat_unpin",
     "chrome_admin_proposal_decide",
     "chrome_admin_step_archive",
     "chrome_admin_step_restore",
@@ -4359,6 +4368,7 @@
     "chrome_author_tasks",
     "chrome_close",
     "chrome_computer_forget",
+    "chrome_computer_grant_revoke",
     "chrome_computer_session_pause",
     "chrome_computer_session_resume",
     "chrome_computer_session_start",
@@ -4790,6 +4800,51 @@
       "scope": "Optional server capability for a fresh scoped hydration on update_device; absence or false retains legacy capability delivery.",
       "introduced_by": "090-native-ui-v2",
       "contract": "console_v2"
+    },
+    {
+      "field": "grants",
+      "shape": {
+        "id": "task grant id",
+        "kind": "application | program | origin",
+        "target": "bundle id for application, program name for program, http(s) origin for origin",
+        "expires_at": "integer epoch seconds: the earlier of last use + 900 and creation + 7200",
+        "scope": {
+          "kind": "app | window | command | origin",
+          "hwnd": "window scope only: positive integer window handle",
+          "root": "command scope only: absolute workspace folder the program is granted in"
+        }
+      },
+      "carried_on": [
+        "computer_session"
+      ],
+      "scope": "The owner's live task grants for this session, refreshed when a grant is created, used, expires or is revoked; always empty on a paused or ended session. A client lists them and revokes one with ui_event chrome_computer_grant_revoke {session_id, host_id, chat_id, grant_id} taken from the same frame. A client never caches, extends or widens a grant.",
+      "introduced_by": "macOS client production readiness, Deep server contracts",
+      "contract": "accept_actions.chrome_computer_grant_revoke"
+    },
+    {
+      "field": "pinned, archived",
+      "shape": {
+        "pinned": "boolean",
+        "archived": "boolean"
+      },
+      "carried_on": [
+        "history_list.chats[]",
+        "GET /api/chats chats[]"
+      ],
+      "scope": "Owner chat organization. history_list and GET /api/chats omit archived chats unless the request asks for them; a pinned chat stays listed while it is among the owner's 200 most recent non-empty chats. The owner changes them with ui_event chat_pin, chat_unpin, chat_archive and chat_unarchive {chat_id} and renames with chat_rename {chat_id, title}, title 1 to 120 visible characters after the server strips control and format characters. A refusal is an error frame {code: invalid_request | invalid_title | chat_not_found | chat_update_failed, message, action}; success refreshes every owner socket's history_list.",
+      "introduced_by": "macOS client production readiness, Deep server contracts",
+      "contract": "accept_actions.chat_rename"
+    },
+    {
+      "field": "include_archived",
+      "shape": "boolean, default false",
+      "carried_on": [
+        "ui_event.get_history.payload",
+        "GET /api/chats?include_archived"
+      ],
+      "scope": "When true the answering history_list also carries archived chats, each marked archived; a later owner-wide history refresh returns to the default listing.",
+      "introduced_by": "macOS client production readiness, Deep server contracts",
+      "contract": "accept_actions.get_history"
     }
   ],
   "component_types": [
