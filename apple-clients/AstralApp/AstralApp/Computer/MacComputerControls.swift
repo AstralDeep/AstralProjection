@@ -148,7 +148,7 @@
                 "Bypass approvals on this Mac?", identifier: "mac-bypass", close: host.cancelBypass, done: nil
             ) {
                 Text(
-                    "Astral will click, type, run commands and browse on this Mac without asking. Stop or Esc ends it at any time."
+                    "Astral will click, type, run commands and browse on this Mac without asking until you turn this off. Stop or Esc still halts a task."
                 )
                 .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("mac-bypass-message")
             } footer: {
