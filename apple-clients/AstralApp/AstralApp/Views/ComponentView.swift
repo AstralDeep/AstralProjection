@@ -615,7 +615,12 @@ struct ComponentView: View {
         let variant = component.variant ?? "primary"
         let action = component.raw["action"]?.stringValue ?? "component_action"
         let navigate = model.navigationCallback(component, surface: navigationSurface, transcript: navigationTranscript)
+        let serverDisabled =
+            component.raw["disabled"]?.boolValue == true || component.raw["enabled"]?.boolValue == false
+        let chip = CompactSettingsLayout.chipState(
+            serverDisabled: serverDisabled, selected: compactSettings && compactChip == true)
         let button = Button {
+            guard !chip.inert else { return }
             let payload = component.raw["payload"]?.objectValue ?? [:]
             if action == "load_chat" { navigate(payload) } else { model.emit(action, payload: payload) }
         } label: {
@@ -628,10 +633,10 @@ struct ComponentView: View {
             }
         }
         .disabled(
-            component.raw["disabled"]?.boolValue == true || component.raw["enabled"]?.boolValue == false
+            chip.disabled
                 || (model.screen == .surface && (!model.connected || model.paramPickerPending(action: action)))
         )
-        .accessibilityValue(model.paramPickerPending(action: action) ? "Submitting" : "Ready")
+        .accessibilityValue(ComponentAccessibility.buttonValue(pending: model.paramPickerPending(action: action)))
         .accessibilityAddTraits(compactSettings && compactChip == true ? .isSelected : [])
         if WorkspaceWelcome.isExample(component) {
             button.buttonStyle(WelcomeExampleButtonStyle(palette: p))
@@ -932,6 +937,10 @@ struct ComponentView: View {
     }
 }
 
+enum ComponentAccessibility {
+    static func buttonValue(pending: Bool) -> String { pending ? "Submitting" : "" }
+}
+
 enum CompactSettingsLayout {
     static let rendered: Set<String> = ["text", "alert", "card", "container", "badge", "keyvalue", "code", "list"]
     private static let inline: Set<String> = ["button", "badge", "text", "link"]
@@ -1010,6 +1019,10 @@ enum CompactSettingsLayout {
         return !disabled.contains(true) && primary.filter({ $0 }).count == 1 ? primary : nil
     }
 
+    static func chipState(serverDisabled: Bool, selected: Bool) -> (disabled: Bool, inert: Bool) {
+        (serverDisabled && !selected, serverDisabled && selected)
+    }
+
     static func isNumeric(_ cells: [String]) -> Bool {
         let values = cells.map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty && $0 != "-" && $0 != "—" }
@@ -1046,8 +1059,6 @@ extension ComponentView {
         } else {
             markdown(text)
                 .font(compactTextFont).foregroundStyle(compactTextColor)
-                .lineLimit(compactCardContent && component.variant != "caption" && !workReadSurface ? 3 : nil)
-                .compactTooltip(compactCardContent && !workReadSurface ? text : nil)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -2014,6 +2025,7 @@ struct ParamPickerComponent: View {
         if kind == "textarea" || kind == "checklist" {
             VStack(alignment: .leading, spacing: 6) {
                 Text(title).font(ConsoleTypography.footnote).foregroundStyle(p.text)
+                    .accessibilityHidden(kind == "textarea")
                 fieldControl(field, name: name, label: label, kind: kind).fieldHelp(field["help"]?.stringValue)
             }
         } else {
@@ -2021,6 +2033,7 @@ struct ParamPickerComponent: View {
                 Text(title).font(ConsoleTypography.footnote).foregroundStyle(p.text)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityHidden(true)
                 compactControl(field, name: name, label: label, kind: kind).layoutPriority(1)
             }
         }
@@ -2059,29 +2072,35 @@ struct ParamPickerComponent: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label + (field["required"]?.boolValue == true ? " *" : ""))
                 .font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                .accessibilityHidden(kind != "checklist")
             fieldControl(field, name: name, label: label, kind: kind)
                 .fieldHelp(field["help"]?.stringValue)
         }
     }
 
+    static func accessibleLabel(_ label: String, required: Bool) -> String {
+        required ? "\(label), required" : label
+    }
+
     // One switch over every kind inside fieldBody exceeded the Xcode 26.3 Release type-checker limit
     @ViewBuilder
     private func fieldControl(_ field: JSONValue, name: String, label: String, kind: String) -> some View {
+        let spoken = Self.accessibleLabel(label, required: field["required"]?.boolValue == true)
         switch kind {
         case "boolean", "checkbox":
-            booleanField(field, name: name, label: label)
+            booleanField(field, name: name, label: spoken)
         case "select":
-            selectField(field, name: name, label: label)
+            selectField(field, name: name, label: label, spoken: spoken)
         case "checklist":
             checklistField(field, name: name)
         case "number":
-            numberField(field, name: name, label: label)
+            numberField(field, name: name, label: spoken)
         case "password":
-            passwordField(field, name: name, label: label)
+            passwordField(field, name: name, label: spoken)
         case "textarea":
-            textareaField(field, name: name, label: label)
+            textareaField(field, name: name, label: spoken)
         default:
-            plainTextField(field, name: name, label: label)
+            plainTextField(field, name: name, label: spoken)
         }
     }
 
@@ -2099,7 +2118,7 @@ struct ParamPickerComponent: View {
     }
 
     @ViewBuilder
-    private func selectField(_ field: JSONValue, name: String, label: String) -> some View {
+    private func selectField(_ field: JSONValue, name: String, label: String, spoken title: String) -> some View {
         let options: [ParameterOption] = form?.options(field) ?? []
         let selection: Binding<String> = Binding(
             get: { form?.stringValue(field, values: values) ?? "" },
@@ -2111,7 +2130,7 @@ struct ParamPickerComponent: View {
         .pickerStyle(.menu).tint(p.primary)
         .compactTooltip(compactSettings ? spoken : nil)
         .accessibilityIdentifier("param-field-\(name)")
-        .accessibilityLabel(label)
+        .accessibilityLabel(title)
         .accessibilityValue(spoken)
     }
 
@@ -2234,10 +2253,7 @@ struct ParamPickerComponent: View {
             action == "chrome_llm_save" ? "llm-save-button" : "param-action-\(action ?? "message")"
         )
         .accessibilityLabel(label)
-        .accessibilityValue(
-            model.paramPickerPending(action: action ?? "")
-                ? "Submitting"
-                : "Ready")
+        .accessibilityValue(ComponentAccessibility.buttonValue(pending: model.paramPickerPending(action: action ?? "")))
     }
 
     private func submit(action: String?, payload: [String: JSONValue]) {

@@ -330,6 +330,21 @@
             write(try mount.png(), name: "compact-form-column")
         }
 
+        func testCardTextIsNeverClampedBehindAHoverTooltip() async throws {
+            let card = try component(
+                #"""
+                {"type":"card","title":"This Mac","content":[
+                {"type":"text","content":"Pause and Stop stay visible while a task runs. Commands and file changes ask first. Touching the mouse or keyboard pauses the task until you resume it here on this Mac. Grants end when the task ends or when you revoke them from the session panel, whichever comes first, and nothing carries over to terminus."},
+                {"type":"button","label":"Pause","action":"chrome_computer_pause"}]}
+                """#)
+            let mount = try await mount(
+                Surface(name: "clamp", key: "my_computers", title: "", components: [card]), width: 420)
+            defer { mount.close() }
+            let text = try mount.text().joined(separator: " ")
+            XCTAssertTrue(text.contains("terminus"), text)
+            write(try mount.png(), name: "card-text-unclamped")
+        }
+
         func testAgentListCardsStayCompactAndKeepTheirCopy() async throws {
             let agents = try surface("agents_list")
             for card in agents.components where card.type == "card" {

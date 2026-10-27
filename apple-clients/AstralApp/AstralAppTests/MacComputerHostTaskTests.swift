@@ -254,8 +254,21 @@
             let rendered = NSHostingController(rootView: MacComputerSessionPanel(host: host))
             rendered.view.layoutSubtreeIfNeeded()
             XCTAssertGreaterThan(rendered.view.fittingSize.height, 0)
-            host.bringAstralForward()
+            let window = NSWindow(
+                contentRect: NSRect(x: -10_000, y: -10_000, width: 380, height: 160), styleMask: .borderless,
+                backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentViewController = rendered
+            defer { window.close() }
+            rendered.view.layoutSubtreeIfNeeded()
+            let returnKey = try XCTUnwrap(
+                NSEvent.keyEvent(
+                    with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                    context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+            XCTAssertTrue(window.performKeyEquivalent(with: returnKey), "Open Astral is the panel's default action")
             XCTAssertEqual(activations, 1)
+            host.bringAstralForward()
+            XCTAssertEqual(activations, 2)
             host.approvalWaiting(false)
             XCTAssertFalse(host.awaitingApproval)
             host.approvalWaiting(true)

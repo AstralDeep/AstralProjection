@@ -36,7 +36,7 @@ final class Accessibility060UITests: XCTestCase {
         XCTAssertTrue(save.waitForExistence(timeout: 2))
         XCTAssertEqual(save.elementType, .button)
         XCTAssertEqual(save.label, "Save")
-        XCTAssertEqual(save.value as? String, "Ready")
+        XCTAssertEqual((save.value as? String) ?? "", "", "an idle Save button carries no spoken value")
         XCTAssertTrue(save.isEnabled)
         if !save.isHittable {
             app.staticTexts["llm-provider-form-title"].press()

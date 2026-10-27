@@ -221,7 +221,12 @@ final class AppModel: NSObject {
 
     var signedIn = false
     var accountName = ""
-    var connected = false
+    var connected = false {
+        didSet {
+            guard signedIn, everConnected, connected != oldValue else { return }
+            announce(connected ? "Reconnected" : "Connection lost")
+        }
+    }
     var everConnected = false
     var initialConnectionFailed = false
     var surfaceFailureMessage: String?
@@ -296,7 +301,9 @@ final class AppModel: NSObject {
 
     var staged: [StagedAttachment] = []
     var statusText: String?
-    var errorBanner: String?
+    var errorBanner: String? {
+        didSet { if let errorBanner, errorBanner != oldValue { announce(errorBanner) } }
+    }
     var bannerIsError = true
     private var warningBannerText: String?
     var bannerIsWarning: Bool { errorBanner != nil && errorBanner == warningBannerText }
@@ -469,6 +476,7 @@ final class AppModel: NSObject {
     static let llmFirstLoginWatchdogNanoseconds: UInt64 = 10_000_000_000
 
     @ObservationIgnored var outboundTap: ((String) -> Void)?
+    @ObservationIgnored var announcer: (String) -> Void = { AccessibilityNotification.Announcement($0).post() }
 
     @ObservationIgnored var currentConnectionVoiceSendOverride: ((String) -> Void)?
 
@@ -3565,6 +3573,7 @@ final class AppModel: NSObject {
         }
         guard let linked else { return }
         approvalRows[approval.requestId] = linked
+        announce(approval.summary.isEmpty ? "Approval waiting" : "Approval waiting: \(approval.summary)")
         if let image = approval.image { attachActivityThumbnail(image, to: linked, chatId: chatId) }
     }
 
@@ -3810,6 +3819,11 @@ final class AppModel: NSObject {
     }
 
     func dismissBanner() { errorBanner = nil }
+
+    func announce(_ message: String) {
+        let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.isEmpty { announcer(text) }
+    }
 
     func consoleLabel(_ key: String) -> String { console?.labels[key] ?? "" }
 

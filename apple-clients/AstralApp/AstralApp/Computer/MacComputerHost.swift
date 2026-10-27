@@ -882,6 +882,7 @@
                             .accessibilityIdentifier("mac-computer-approval-waiting")
                         Spacer()
                         Button("Open Astral", action: host.bringAstralForward)
+                            .keyboardShortcut(.defaultAction)
                             .accessibilityIdentifier("mac-computer-open-astral")
                     }.padding([.horizontal, .top], 12)
                 }
