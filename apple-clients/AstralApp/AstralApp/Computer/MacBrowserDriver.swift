@@ -307,9 +307,20 @@
                 permit["refs"]?.arrayValue?.compactMap(\.stringValue) ?? permit["ref"].flatMap(\.stringValue).map {
                     [$0]
                 } ?? []
-            guard named.contains(ref) else { return false }
-            granted.insert(key)
-            return true
+            return named.contains(ref)
+        }
+
+        private func grant(_ refs: [String], snapshot: String) {
+            for ref in refs { granted.insert(snapshot + "|" + ref) }
+        }
+
+        private func revoke(_ refs: [String], snapshot: String) {
+            for ref in refs { granted.remove(snapshot + "|" + ref) }
+        }
+
+        func discardPermits() {
+            issued = []
+            granted = []
         }
 
         private func review(_ described: Described, ref: String, snapshot: String) -> ComputerHostError {
@@ -458,8 +469,8 @@
                 guard let origin = ComputerBrowserPolicy.origin(of: url) else {
                     throw ComputerHostError("url_rejected", "The browser pane cannot open that address.")
                 }
-                approved.insert(origin)
                 try authorize()
+                approved.insert(origin)
                 pane.load(url)
             } else {
                 let action = args["action"]?.stringValue ?? ""
@@ -525,7 +536,9 @@
             if consequential && !permits(args, ref: ref, snapshot: snapshot, origin: origin) {
                 throw review(described, ref: ref, snapshot: snapshot)
             }
+            defer { if consequential { revoke([ref], snapshot: snapshot) } }
             try authorize()
+            if consequential { grant([ref], snapshot: snapshot) }
             let mark = pane.mark()
             let right = args["button"]?.stringValue == "right"
             let count = Int(args["count"]?.numberValue ?? 1)
@@ -614,11 +627,13 @@
                     guard permits(args, ref: ref, snapshot: snapshot, origin: origin) else {
                         throw review(described, ref: ref, snapshot: snapshot)
                     }
+                    grant([ref], snapshot: snapshot)
                     reviewed.append(ref)
                 }
                 plan.append((ref, value, target))
             }
             var filled: [JSONValue] = []
+            defer { revoke(reviewed, snapshot: snapshot) }
             for item in plan {
                 try authorize()
                 let value: JSONValue

@@ -21,6 +21,7 @@
         }
         private func makeHost(
             roots: [URL] = [], driver: any MacComputerDriving = MacComputerTaskDriver(),
+            monitor: MacComputerTaskMonitor? = nil,
             commands: MacComputerCommands? = nil, presented: (() -> Void)? = nil, activated: (() -> Void)? = nil
         ) throws -> MacComputerHost {
             let suite = "host-task-" + UUID().uuidString
@@ -34,7 +35,8 @@
             files.bind("task-owner")
             if !roots.isEmpty { files.choose() }
             let host = MacComputerHost(
-                available: true, defaults: defaults, files: files, driver: driver, monitor: MacComputerTaskMonitor(),
+                available: true, defaults: defaults, files: files, driver: driver,
+                monitor: monitor ?? MacComputerTaskMonitor(),
                 permissionProvider: { MacComputerPermissions(accessibility: true, screen: true, monitoring: true) },
                 desktopProbe: { true }, desktopRearm: { true }, system: MacComputerTestSystem(),
                 panelPresenter: { _ in presented?() },
@@ -237,6 +239,84 @@
             XCTAssertEqual(host.session?.state, "paused")
         }
 
+        func testHumanPausesDiscardBrowserPermitsButApprovalDecisionsAndResumesKeepThem() throws {
+            let monitor = MacComputerTaskMonitor()
+            let host = try makeHost(monitor: monitor)
+            let browser = MacComputerTaskBrowser()
+            host.browser = browser
+            let id = UUID().uuidString.lowercased()
+            host.consume(try session(host, id))
+            host.pause()
+            XCTAssertEqual(browser.discarded, 1)
+            host.consume(try session(host, id, "paused", reason: "local_pause"))
+            host.resume()
+            host.consume(try session(host, id))
+            XCTAssertEqual(host.session?.state, "active")
+            XCTAssertEqual(browser.discarded, 1)
+            host.takeover()
+            XCTAssertEqual(browser.discarded, 2)
+            host.consume(try session(host, id, "paused", reason: "local_input"))
+            host.consume(try session(host, id))
+            XCTAssertEqual(host.session?.state, "active")
+            monitor.humanInput?()
+            XCTAssertEqual(host.session?.state, "paused")
+            XCTAssertEqual(browser.discarded, 3)
+            host.consume(try session(host, id, "paused", reason: "local_input"))
+            host.consume(try session(host, id))
+            XCTAssertEqual(host.recordApprovalInteraction(), id)
+            XCTAssertEqual(host.session?.state, "paused")
+            host.consume(try session(host, id, "paused", reason: "local_input"))
+            host.consume(try session(host, id))
+            XCTAssertEqual(host.session?.state, "active")
+            XCTAssertEqual(browser.discarded, 3)
+        }
+
+        func testApprovedBrowserActionsSurviveTheApprovalPauseButNotATakeover() async throws {
+            let harness = try MacBrowserHarness()
+            await harness.start()
+            addTeardownBlock { harness.close() }
+            let host = try makeHost()
+            host.browser = harness.driver
+            harness.driver.host = host
+            let id = UUID().uuidString.lowercased()
+            host.consume(try session(host, id))
+            _ = try await harness.open("/form")
+            let snap = try await harness.snapshot()
+            let pay = try harness.ref(snap.lines, containing: "button \"Pay now\"")
+            let holder = try harness.ref(snap.lines, containing: "textbox \"Card holder\"")
+            let click: [String: JSONValue] = ["ref": .string(pay), "snapshot_id": .string(snap.id)]
+            func permit(_ ref: String) -> JSONValue {
+                .object([
+                    "ref": .string(ref), "refs": .array([.string(ref)]), "origin": .string(harness.origin),
+                    "snapshot_id": .string(snap.id),
+                ])
+            }
+            await harness.expectCode("browser_click", click, "confirmation_required")
+            XCTAssertEqual(host.recordApprovalInteraction(), id)
+            host.consume(try session(host, id, "paused", reason: "local_input"))
+            host.resume()
+            _ = await host.flushCurrentSends()
+            XCTAssertEqual(events.last?["event"], .string("resumed"))
+            host.consume(try session(host, id))
+            XCTAssertEqual(host.session?.state, "active")
+            await harness.expectCode("browser_click", click.merging(["permit": permit(pay)]) { $1 }, nil)
+            try await harness.expectPage("document.title", "paid")
+            let fill: [String: JSONValue] = [
+                "snapshot_id": .string(snap.id),
+                "fields": .array([.object(["ref": .string(holder), "value": .string("A Lovelace")])]),
+            ]
+            await harness.expectCode("browser_fill", fill, "confirmation_required")
+            host.takeover()
+            host.consume(try session(host, id, "paused", reason: "local_input"))
+            host.consume(try session(host, id))
+            XCTAssertEqual(host.session?.state, "active")
+            let permitted = fill.merging(["permit": permit(holder)]) { $1 }
+            await harness.expectCode("browser_fill", permitted, "confirmation_required")
+            try await harness.expectPage("document.getElementById('holder').value", "")
+            await harness.expectCode("browser_fill", permitted, nil)
+            try await harness.expectPage("document.getElementById('holder').value", "A Lovelace")
+        }
+
         func testApprovalWaitingFollowsTheSessionAndBringsAstralForward() throws {
             var presentations = 0
             var activations = 0
@@ -281,8 +361,10 @@
     @MainActor
     final class MacComputerTaskMonitor: MacComputerMonitoring {
         var running = false
+        var humanInput: (@MainActor () -> Void)?
         func start(_ humanInput: @escaping @MainActor () -> Void) -> Bool {
             running = true
+            self.humanInput = humanInput
             return true
         }
         func stop() { running = false }
@@ -305,6 +387,7 @@
     final class MacComputerTaskBrowser: MacBrowserVerbHandling {
         var isEnabled = true
         var handled: [(verb: String, ticket: String)] = []
+        private(set) var discarded = 0
         func handle(
             _ request: ComputerHostRequest, ticket: ComputerHostTicket,
             authorize: @escaping @Sendable () throws -> Void
@@ -313,5 +396,6 @@
             handled.append((request.verb, ticket.requestId))
             return ["snapshot_id": .string("s1")]
         }
+        func discardPermits() { discarded += 1 }
     }
 #endif

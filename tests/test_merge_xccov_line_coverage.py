@@ -1015,3 +1015,30 @@ def test_cli_accepts_declared_ui_shards_and_refuses_a_missing_one(tmp_path, caps
     assert merger.main(arguments("missing.json", 3, shards[:2])) == 2
     assert "[shard_count_mismatch]" in capsys.readouterr().err
     assert not (repo / "build/missing.json").exists()
+
+
+def test_ui_shards_that_observe_different_sources_union_their_observed_inventory(tmp_path):
+    repo = _repo(tmp_path)
+    inputs = _sharded_inputs(repo, [(1, 0), (0, 2), (4, 0)])
+    core = "apple-clients/AstralCore/Sources/AstralCore/Core.swift"
+    wider = _domain_report(
+        repo, "ui", {SOURCE: _observations(0, 2), core: _observations(3, 0)}, [core, SOURCE]
+    )
+    wider["domains"]["ui"]["binary"]["sha256"] = "e" * 64
+    inputs["ui"][1].write_text(json.dumps(wider))
+    assert json.loads(inputs["ui"][0].read_text())["domains"]["ui"]["observed_sources"] == [SOURCE]
+    result = merge_xccov_reports(
+        repo=repo, platform="ios", inputs=inputs, output=repo / "build/observed.json", ui_shards=3
+    )
+    assert result["domains"]["ui"]["observed_sources"] == sorted([core, SOURCE])
+    assert result["domains"]["ui"]["binary"]["sha256"] == "a" * 64
+    assert result["coverage"][SOURCE] == _observations(6, 2)
+    assert result["coverage"][core] == _observations(4, 0)
+    inputs["ui"][1].write_text(json.dumps({**wider, "domains": {"ui": {
+        **wider["domains"]["ui"], "observed_sources": [core, SOURCE, "apple-clients/AstralApp/AstralApp/Other.swift"]
+    }}}))
+    with pytest.raises(MergeError) as caught:
+        merge_xccov_reports(
+            repo=repo, platform="ios", inputs=inputs, output=repo / "build/unknown.json", ui_shards=3
+        )
+    assert caught.value.code == "native_domain_mismatch"

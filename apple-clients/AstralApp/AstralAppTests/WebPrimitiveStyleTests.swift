@@ -145,7 +145,7 @@ final class WebPrimitiveStyleTests: XCTestCase {
         let image = try render(
             #"{"type":"metric","title":"Total","value":18,"subtitle":"Six dice","variant":"success","progress":2}"#)
         assertRGB(try rgb(image, x: 21, y: image.height / 2), [84, 171, 127])
-        assertRGB(try rgb(image, x: 300, y: image.height - 40), [224, 108, 108])
+        assertRGB(try rgb(image, x: 300, y: image.height - 40), [225, 114, 114])
         let empty = try render(#"{"type":"metric","title":"Total","value":18,"progress":-1}"#)
         let noProgress = try render(#"{"type":"metric","title":"Total","value":18}"#)
         XCTAssertEqual(empty.height - noProgress.height, 18)

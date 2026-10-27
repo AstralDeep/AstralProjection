@@ -35,8 +35,14 @@ THEME_PRESETS: Mapping[str, Mapping[str, str]] = {
         "primary": "#7C3AED",
         "secondary": "#6E6E78",
         "text": "#ECECEF",
-        "muted": "#8C8C95",
+        "muted": "#93939B",
         "accent": "#A78BFA",
+        "success": "#5EC28F",
+        "warning": "#D4A94A",
+        "error": "#E17272",
+        "info": "#9A8CF2",
+        "on_error": "#121214",
+        "field_border": "#6E6E75",
     },
     "midnight": {
         "bg": "#0F1221",
@@ -46,6 +52,12 @@ THEME_PRESETS: Mapping[str, Mapping[str, str]] = {
         "text": "#F3F4F6",
         "muted": "#9CA3AF",
         "accent": "#06B6D4",
+        "success": "#5EC28F",
+        "warning": "#D4A94A",
+        "error": "#E27777",
+        "info": "#9A8CF2",
+        "on_error": "#0F1221",
+        "field_border": "#686F7E",
     },
     "daylight": {
         "bg": "#F8FAFC",
@@ -53,8 +65,14 @@ THEME_PRESETS: Mapping[str, Mapping[str, str]] = {
         "primary": "#4F46E5",
         "secondary": "#7C3AED",
         "text": "#1E293B",
-        "muted": "#64748B",
-        "accent": "#0891B2",
+        "muted": "#58667B",
+        "accent": "#067590",
+        "success": "#147739",
+        "warning": "#955B06",
+        "error": "#B91C1C",
+        "info": "#4338CA",
+        "on_error": "#FFFFFF",
+        "field_border": "#7F8A9B",
     },
     "ocean": {
         "bg": "#0C1222",
@@ -64,6 +82,12 @@ THEME_PRESETS: Mapping[str, Mapping[str, str]] = {
         "text": "#E2E8F0",
         "muted": "#94A3B8",
         "accent": "#2DD4BF",
+        "success": "#5EC28F",
+        "warning": "#D4A94A",
+        "error": "#E27777",
+        "info": "#9A8CF2",
+        "on_error": "#0C1222",
+        "field_border": "#66758A",
     },
     "sunset": {
         "bg": "#1C1017",
@@ -73,6 +97,12 @@ THEME_PRESETS: Mapping[str, Mapping[str, str]] = {
         "text": "#FEF2F2",
         "muted": "#A8A29E",
         "accent": "#FBBF24",
+        "success": "#5EC28F",
+        "warning": "#D4A94A",
+        "error": "#E37B7B",
+        "info": "#9A8CF2",
+        "on_error": "#1C1017",
+        "field_border": "#7B7172",
     },
     "forest": {
         "bg": "#0F1A14",
@@ -82,8 +112,16 @@ THEME_PRESETS: Mapping[str, Mapping[str, str]] = {
         "text": "#ECFDF5",
         "muted": "#86EFAC",
         "accent": "#A3E635",
+        "success": "#5EC28F",
+        "warning": "#D4A94A",
+        "error": "#E78C8C",
+        "info": "#A69AF4",
+        "on_error": "#0F1A14",
+        "field_border": "#508965",
     },
 }
+
+THEME_COLOR_ROLES = ("bg", "surface", "primary", "secondary", "text", "muted", "accent")
 
 _PERSONALIZATION_TABS = (
     ("soul", "Soul"),
@@ -458,7 +496,7 @@ def build_theme_view(
             card(
                 name.capitalize() + (" — Active" if name == active else ""),
                 [
-                    key_value((key.capitalize(), value) for key, value in preset_colors.items()),
+                    key_value((key.capitalize(), preset_colors[key]) for key in THEME_COLOR_ROLES),
                     button(
                         "Applied" if name == active else f"Apply {name.capitalize()}",
                         "chrome_theme_preset",
@@ -469,11 +507,11 @@ def build_theme_view(
             )
         )
     components.append(text("Fine-tune colors", "h3"))
-    for key, value in colors.items():
+    for key in THEME_COLOR_ROLES:
         components.append(
             ComponentView(
                 "color_picker",
-                {"color_key": key, "value": value, "label": key.capitalize()},
+                {"color_key": key, "value": colors[key], "label": key.capitalize()},
             )
         )
     return build_view("theme", "Theme", components, theme=theme, layout=layout)
@@ -550,6 +588,7 @@ def build_personalization_view(
 
 
 __all__ = [
+    "THEME_COLOR_ROLES",
     "THEME_PRESETS",
     "build_dreaming_view",
     "build_llm_view",
