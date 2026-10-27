@@ -320,7 +320,23 @@ final class AppModel: NSObject {
     static let maximumActivityRows = 200
     static let maximumActivityChats = 32
     var activity: [ActivityRow] { activityLog[activityKey(activeChatId)] ?? [] }
-    var canCancelTurn: Bool { signedIn && connected && turnActive }
+    var canCancelTurn: Bool { signedIn && connected && turnBusy }
+    private static let turnOperations: Set<String> = ["chat_message", "authorize_action", "remote_op_decision"]
+    var turnBusy: Bool {
+        if turnActive || activity.contains(where: { $0.state == .running && $0.approval != .waiting }) { return true }
+        if operationStatuses.values.contains(where: {
+            !$0.terminal && Self.turnOperations.contains($0.action)
+                && $0.connectionGeneration == continuity.connectionGeneration
+                && ($0.chatId == nil || $0.chatId == activeChatId)
+        }) {
+            return true
+        }
+        #if os(macOS)
+            return macComputerHost.working
+        #else
+            return false
+        #endif
+    }
     var asyncDetached = false
     var operationStatuses: [String: OperationStatus] = [:]
     var agentLifecycles: [String: AgentLifecycle] = [:]
@@ -589,7 +605,7 @@ final class AppModel: NSObject {
     var connectionActivityLevel: ConnectionActivity.Level {
         guard signedIn else { return .idle }
         #if os(macOS)
-            if turnActive || macComputerHost.taskActive { return .active }
+            if turnBusy || macComputerHost.taskActive { return .active }
         #else
             if turnActive { return .active }
         #endif
@@ -2084,6 +2100,7 @@ final class AppModel: NSObject {
         case "chat_deleted":
             if let chatId = nestedChatId(frame) { clearConfirmedDeletion(chatId) }
         case "chat_status":
+            if let target = frame.payload["chat_id"]?.stringValue, let active = activeChatId, target != active { break }
             if frame.payload["status"]?.stringValue == "done", frame.payload["message"]?.stringValue == "Cancelled" {
                 recordActivityCancellation(chatId: nestedChatId(frame) ?? activeChatId)
             }

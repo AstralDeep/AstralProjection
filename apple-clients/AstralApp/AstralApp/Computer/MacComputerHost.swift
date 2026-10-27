@@ -89,6 +89,7 @@
         private(set) var monitoringAllowed = false
         private(set) var lastError: String?
         private(set) var awaitingApproval = false
+        private(set) var working = false
         let files: MacComputerFiles
         @ObservationIgnored private let defaults: UserDefaults
         @ObservationIgnored private let authority = ComputerHostAuthority()
@@ -601,7 +602,12 @@
             for task in auxiliary.values { task.cancel() }
             auxiliary = [:]
             browserTail = nil
+            refreshWorking()
             if resetDriver { Task { await driver.reset() } }
+        }
+        private func refreshWorking() {
+            let busy = worker != nil || !queue.isEmpty || !auxiliary.isEmpty
+            if working != busy { working = busy }
         }
         private func retire(commands state: String = "interrupted") {
             resolvePauseWaiters(accepted: false)
@@ -700,6 +706,7 @@
         private static func browserVerb(_ verb: String) -> Bool { verb.hasPrefix("browser_") }
         private static func nonPhysical(_ verb: String) -> Bool { browserVerb(verb) || commandVerbs.contains(verb) }
         private func drain() {
+            defer { refreshWorking() }
             while let index = queue.firstIndex(where: { Self.nonPhysical($0.0.verb) }) {
                 let (request, ticket) = queue.remove(at: index)
                 runAuxiliary(request, ticket)
@@ -770,6 +777,7 @@
                         try await host.performAuxiliary(request, ticket: ticket, roots: roots, authorize: authorize))
                 } catch { result = .failure(error) }
                 guard let self, self.auxiliary.removeValue(forKey: id) != nil else { return }
+                self.refreshWorking()
                 do {
                     try authority.verify(ticket)
                     switch result {
