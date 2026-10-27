@@ -15,34 +15,67 @@
 
     @MainActor
     final class MacWorkbenchViewTests: XCTestCase {
-        func testCommandPaletteGroupsDirectActionsAndUsesTheAuthorizedSurface() async throws {
+        func testSlashInAnEmptyComposerOpensThePaletteAndRunsTheChosenAction() async throws {
             let (model, suite) = try panelModel()
             defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
             var sent: [JSONValue] = []
             model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
-            let (view, window) = panel(MacWorkbenchCommandPalette(), model: model, width: 560)
+            let (_, window) = try mountWorkbench(model, width: 1440, activity: false)
             defer { window.close() }
             try await settle()
-            let lines = try recognizedText(view).lowercased().components(separatedBy: "\n")
-            XCTAssertEqual(
-                lines.filter { $0 == "account" }.count, 1,
-                "Rendered command rows: \(lines.joined(separator: " | "))")
-            let snapshot = try XCTUnwrap(WorkbenchAccessibility.snapshot(windowTitle: window.title))
-            XCTAssertEqual(
-                snapshot.elements.filter { $0.role == kAXButtonRole }.compactMap(\.identifier)
-                    .filter { $0.hasPrefix("workbench-command-") },
-                [
-                    "workbench-command-account/agents", "workbench-command-account/llm",
-                    "workbench-command-account/personalization", "workbench-command-account/audit",
-                    "workbench-command-account/theme", "workbench-command-account/guidance",
-                    "workbench-command-help/guide",
-                ])
-            try attach(view, name: "workbench-grouped-commands")
-            XCTAssertTrue(
-                WorkbenchAccessibility.press(identifier: "workbench-command-account/llm", windowTitle: window.title))
+            func sheet() async throws -> NSWindow {
+                try await settle()
+                return try XCTUnwrap(window.attachedSheet, "The palette sheet did not open")
+            }
+            func type(_ text: String, in sheet: NSWindow) {
+                (sheet.firstResponder as? NSTextView)?.insertText(
+                    text, replacementRange: NSRange(location: NSNotFound, length: 0))
+            }
+            model.composerDraft = "/"
+            var palette = try await sheet()
+            XCTAssertEqual(model.composerDraft, "")
+            type("back", in: palette)
             try await settle()
+            palette.sendEvent(try SurfaceKey.returnKey.event(windowNumber: palette.windowNumber))
+            try await settle()
+            XCTAssertNil(window.attachedSheet)
+            XCTAssertTrue(model.runInBackground)
+            XCTAssertFalse(sent.contains { $0["action"]?.stringValue == "chat_message" })
+
+            model.composerDraft = ""
+            try await settle()
+            model.composerDraft = "/"
+            palette = try await sheet()
+            type("he", in: palette)
+            try await settle()
+            XCTAssertTrue(
+                palette.performKeyEquivalent(with: try SurfaceKey.escape.event(windowNumber: palette.windowNumber)))
+            try await settle()
+            XCTAssertNil(window.attachedSheet)
+            XCTAssertEqual(model.composerDraft, "/he")
+
+            model.composerDraft = ""
+            try await settle()
+            model.composerDraft = "/"
+            palette = try await sheet()
+            palette.sendEvent(try SurfaceKey.delete.event(windowNumber: palette.windowNumber))
+            try await settle()
+            type("llm", in: palette)
+            try await settle()
+            palette.sendEvent(try SurfaceKey.returnKey.event(windowNumber: palette.windowNumber))
+            try await settle()
+            XCTAssertNil(window.attachedSheet)
             XCTAssertEqual(sent.last?["action"], .string("chrome_open"))
             XCTAssertEqual(sent.last?["payload"]?["surface"], .string("llm"))
+
+            model.screen = .chat
+            model.mandatorySurface = true
+            model.composerDraft = ""
+            try await settle()
+            model.composerDraft = "/"
+            try await settle()
+            XCTAssertNil(window.attachedSheet)
+            XCTAssertEqual(model.composerDraft, "/")
         }
 
         func testAgentDirectoryFocusesSearchAndMarksOfflineAgentsByShapeAndText() async throws {
@@ -131,7 +164,7 @@
             defer { mount.close() }
             try await mount.settle()
             mount.type("dice")
-            try mount.key(36, characters: "\r")
+            try mount.key(.returnKey)
             try await mount.settle()
             XCTAssertEqual(sent.last?["payload"]?["params"]?["agent_id"], .string("dice"))
             let (empty, emptySuite) = try SurfaceFixtures.model(menu: SurfaceFixtures.menu(agents: []))

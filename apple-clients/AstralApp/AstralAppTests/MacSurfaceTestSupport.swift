@@ -162,13 +162,14 @@
                 text, replacementRange: NSRange(location: NSNotFound, length: 0))
         }
 
-        func key(_ code: UInt16, characters: String) throws {
-            let event = try XCTUnwrap(
-                NSEvent.keyEvent(
-                    with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                    windowNumber: window.windowNumber, context: nil, characters: characters,
-                    charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code))
-            window.sendEvent(event)
+        func key(_ key: SurfaceKey, in target: NSWindow? = nil) throws {
+            let destination = target ?? window
+            destination.sendEvent(try key.event(windowNumber: destination.windowNumber))
+        }
+
+        func shortcut(_ key: SurfaceKey, in target: NSWindow? = nil) throws -> Bool {
+            let destination = target ?? window
+            return destination.performKeyEquivalent(with: try key.event(windowNumber: destination.windowNumber))
         }
 
         func snapshot(_ test: XCTestCase, name: String) throws {
@@ -187,6 +188,26 @@
         func close() {
             window.contentView = nil
             window.close()
+        }
+    }
+
+    enum SurfaceKey {
+        case returnKey, escape, down, up, delete
+
+        func event(windowNumber: Int) throws -> NSEvent {
+            let (code, characters, flags): (UInt16, String, NSEvent.ModifierFlags) =
+                switch self {
+                case .returnKey: (36, "\r", [])
+                case .escape: (53, "\u{1b}", [])
+                case .down: (125, "\u{F701}", [.numericPad, .function])
+                case .up: (126, "\u{F700}", [.numericPad, .function])
+                case .delete: (51, "\u{7f}", [])
+                }
+            return try XCTUnwrap(
+                NSEvent.keyEvent(
+                    with: .keyDown, location: .zero, modifierFlags: flags,
+                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: windowNumber, context: nil,
+                    characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code))
         }
     }
 

@@ -97,6 +97,7 @@
         @Environment(AppModel.self) private var model
         @Environment(ThemeStore.self) private var theme
         @Environment(\.astralUpdateCoordinator) private var updates
+        @Environment(\.openSettings) private var openSettings
         let console: ConsoleModel
         let presentation: ConsolePresentation
         let workbench: ConsoleWorkbenchPresentation
@@ -105,6 +106,10 @@
         @State private var commandsPresented = false
         @State private var activityPresented = false
         @State private var agentsPresented = false
+        @State private var paletteQuery = ""
+        @State private var paletteChoice: MacPaletteAction?
+        @State private var paletteFromComposer = false
+        @State private var restoringDraft = false
         @State private var networkMonitor: NWPathMonitor?
 
         init(
@@ -213,7 +218,7 @@
             .focusedSceneValue(
                 \.astralWorkbench,
                 MacWorkbenchActions(
-                    newChat: { model.newChat() }, commands: { commandsPresented = true },
+                    newChat: { model.newChat() }, commands: { presentPalette(query: "") },
                     sidebar: toggleSidebar, activity: { activityPresented.toggle() },
                     conversation: {
                         model.consoleFullscreen = false
@@ -225,7 +230,18 @@
                     agentDirectoryTitle: model.consoleLabel("agent_directory"),
                     hasCanvas: hasCanvas, canNavigate: !model.mandatorySurface, canCancelTurn: model.canCancelTurn)
             )
-            .sheet(isPresented: $commandsPresented) { MacWorkbenchCommandPalette() }
+            .sheet(isPresented: $commandsPresented, onDismiss: finishPalette) {
+                MacWorkbenchCommandPalette(context: paletteContext, query: $paletteQuery) { paletteChoice = $0 }
+            }
+            .onChange(of: model.composerDraft) { old, new in
+                if restoringDraft {
+                    restoringDraft = false
+                } else if old.isEmpty, new == "/", !commandsPresented, !model.mandatorySurface {
+                    model.composerDraft = ""
+                    paletteFromComposer = true
+                    presentPalette(query: "/")
+                }
+            }
             .onChange(of: model.activeChatId) { _, _ in selectedPane = .conversation }
             .onChange(of: browserPresented) { _, presented in
                 if presented { selectedPane = .canvas }
@@ -319,7 +335,7 @@
                             .accessibilityIdentifier("workbench-stop")
                     }
                 }
-                iconButton("magnifyingglass", label: "Search commands (⌘K)") { commandsPresented = true }
+                iconButton("magnifyingglass", label: "Search commands (⌘K)") { presentPalette(query: "") }
                     .disabled(model.mandatorySurface)
             }
             .padding(.horizontal, 12).frame(height: 56)
@@ -331,6 +347,61 @@
                 Image(systemName: icon).frame(width: 36, height: 40).contentShape(Rectangle())
             }
             .buttonStyle(.plain).foregroundStyle(p.muted).help(label).accessibilityLabel(label)
+        }
+
+        private var paletteContext: MacPaletteContext {
+            MacPaletteContext(
+                canNavigate: !model.mandatorySurface,
+                sidebarVisible: presentation.navigationMode == .sidebar ? sidebarVisible : model.consoleDrawerOpen,
+                activityVisible: activityPresented, browserEnabled: model.macBrowser.isEnabled,
+                browserVisible: browserPresented, computerAvailable: model.macComputerHost.available,
+                updatesEnabled: updates?.isEnabled == true, canCancelTurn: model.canCancelTurn,
+                signedIn: model.signedIn, composerLocked: model.mutationsLocked,
+                runInBackground: model.runInBackground)
+        }
+
+        private func presentPalette(query: String) {
+            guard !model.mandatorySurface else { return }
+            paletteQuery = query
+            paletteChoice = nil
+            commandsPresented = true
+        }
+
+        private func finishPalette() {
+            let choice = paletteChoice
+            let fromComposer = paletteFromComposer
+            paletteChoice = nil
+            paletteFromComposer = false
+            guard let choice else {
+                if fromComposer, paletteQuery.hasPrefix("/"), model.composerDraft.isEmpty {
+                    restoringDraft = true
+                    model.composerDraft = paletteQuery
+                }
+                return
+            }
+            guard MacCommandPaletteModel.runnable(choice, context: paletteContext, menu: model.chromeMenu) else {
+                return
+            }
+            switch choice {
+            case .newChat: model.newChat()
+            case .toggleSidebar: toggleSidebar()
+            case .toggleActivity: activityPresented.toggle()
+            case .toggleBrowser: model.macBrowser.isPresented.toggle()
+            case .computerControls: model.macComputerHost.showControls()
+            case .agentDirectory: agentsPresented = true
+            case .updates: updates?.settingsPresented = true
+            case .settings: openSettings()
+            case .cancelTurn: _ = model.cancelCurrentTurn()
+            case .signOut: Task { await model.signOut() }
+            case .composer(let key):
+                guard let control = model.console?.composerActions.first(where: { $0.key == key }) else { return }
+                if control.kind == .toggle {
+                    model.runInBackground.toggle()
+                } else if let action = control.action {
+                    model.openSurface(action.surface, params: action.params)
+                }
+            case .menu(_, let item): model.openMenuItem(item)
+            }
         }
 
         private func toggleSidebar() {
@@ -562,70 +633,6 @@
                 if !current { actionTarget = nil }
             }
             .onDisappear { actionTarget = nil }
-        }
-    }
-
-    struct MacWorkbenchCommandPalette: View {
-        @Environment(AppModel.self) private var model
-        @Environment(ThemeStore.self) private var theme
-        @Environment(\.dismiss) private var dismiss
-        @State private var query = ""
-        @FocusState private var focused: Bool
-        private var commands: [MacWorkbenchCommand] { MacWorkbenchCommand.search(menu: model.chromeMenu, query: query) }
-
-        var body: some View {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 12) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(theme.palette.muted)
-                    TextField("Search commands", text: $query).textFieldStyle(.plain).focused($focused)
-                        .onSubmit { if let first = commands.first { open(first) } }
-                    Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
-                }
-                .padding(20)
-                Divider()
-                List {
-                    if commands.isEmpty {
-                        Text("No matching commands.").foregroundStyle(theme.palette.muted)
-                    }
-                    ForEach(model.chromeMenu?.menu ?? []) { group in
-                        let matches = commands.filter { $0.groupKey == group.key }
-                        if !matches.isEmpty {
-                            Section(group.label) {
-                                ForEach(matches) { command in
-                                    Button {
-                                        open(command)
-                                    } label: {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(command.item.label).foregroundStyle(theme.palette.text)
-                                            if let message = command.item.availability?.message {
-                                                Text(message).font(ConsoleTypography.caption).foregroundStyle(
-                                                    theme.palette.muted)
-                                            }
-                                        }
-                                        .padding(.vertical, 6).frame(maxWidth: .infinity, alignment: .leading)
-                                        .contentShape(Rectangle())
-                                    }
-                                    .buttonStyle(.plain)
-                                    .accessibilityIdentifier("workbench-command-\(command.id)")
-                                }
-                            }
-                        }
-                    }
-                }
-                .listStyle(.plain)
-            }
-            .font(ConsoleTypography.subheadline).background(theme.palette.surface)
-            .frame(minWidth: 280, idealWidth: 560, maxWidth: 680, minHeight: 280, idealHeight: 460)
-            .onAppear { focused = true }
-        }
-
-        private func open(_ command: MacWorkbenchCommand) {
-            guard !model.mandatorySurface,
-                model.chromeMenu?.menu.first(where: { $0.key == command.groupKey })?.items.contains(command.item)
-                    == true
-            else { return }
-            model.openMenuItem(command.item)
-            dismiss()
         }
     }
 
