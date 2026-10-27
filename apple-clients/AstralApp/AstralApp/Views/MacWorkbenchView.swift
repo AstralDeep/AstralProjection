@@ -64,10 +64,8 @@
                     .keyboardShortcut("n").disabled(actions?.canNavigate != true)
             }
             CommandGroup(after: .appSettings) {
-                if let computerControls {
-                    Button("Computer controls…", action: computerControls)
-                        .keyboardShortcut("c", modifiers: [.command, .shift])
-                }
+                Button("Computer Controls…") { computerControls?() }
+                    .keyboardShortcut("c", modifiers: [.command, .shift]).disabled(computerControls == nil)
             }
             CommandMenu("Workspace") {
                 Button("Search commands…") { actions?.commands() }
