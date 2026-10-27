@@ -269,11 +269,10 @@ class NotificationPushAdapter(
     fun onMessage(data: JsonObject): MessageReceipt {
         if (deviceUnsupported) return MessageReceipt.Unsupported
         val decoded = decodePushPayload(data)
-        val payload =
-            when (decoded) {
-                is PushPayloadResult.Decoded -> decoded.payload
-                is PushPayloadResult.Malformed -> return MessageReceipt.Malformed(decoded.reason)
-            }
+        if (decoded is PushPayloadResult.Malformed) {
+            return MessageReceipt.Malformed(decoded.reason)
+        }
+        val payload = decoded.payload
         if (payload.notificationId in acceptedIds) return MessageReceipt.Duplicate(payload.notificationId)
         return when {
             lifecycle == PushLifecycle.Foreground -> {
@@ -356,6 +355,7 @@ object PushChannels {
 
 private fun String.hasControlChars(): Boolean = any { it.code < 0x20 || it.code == 0x7F }
 
-private fun tokenFingerprint(token: String): String =
-    MessageDigest.getInstance("SHA-256").digest(token.toByteArray(Charsets.UTF_8))
-        .joinToString("") { "%02x".format(it) }
+private fun tokenFingerprint(token: String): String {
+    val digest = MessageDigest.getInstance("SHA-256").digest(token.toByteArray(Charsets.UTF_8))
+    return digest.joinToString("") { "%02x".format(it) }
+}

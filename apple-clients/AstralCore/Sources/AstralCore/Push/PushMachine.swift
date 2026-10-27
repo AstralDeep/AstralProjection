@@ -51,20 +51,6 @@ public struct PushPayload: Sendable, Equatable {
     public let level: String
     public let chatId: String?
 
-    public init(
-        notificationId: String,
-        title: String?,
-        body: String?,
-        level: String,
-        chatId: String?
-    ) {
-        self.notificationId = notificationId
-        self.title = title
-        self.body = body
-        self.level = level
-        self.chatId = chatId
-    }
-
     public static let levelInfo = "info"
     public static let levelWarning = "warning"
     public static let levelError = "error"

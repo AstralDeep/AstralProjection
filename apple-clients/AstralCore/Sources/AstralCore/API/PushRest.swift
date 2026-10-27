@@ -34,11 +34,14 @@ public struct PushRest: Sendable {
         transport: Transport? = nil
     ) {
         self.serverBase = serverBase
-        self.transport =
-            transport ?? { request in
+        if let transport = transport {
+            self.transport = transport
+        } else {
+            self.transport = { request in
                 let (data, response) = try await NoStoreHTTP.session.data(for: request)
                 return ((response as? HTTPURLResponse)?.statusCode ?? 0, data)
             }
+        }
     }
 
     public func enroll(

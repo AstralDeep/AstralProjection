@@ -79,7 +79,7 @@ fun decodePushPayload(data: JsonObject): PushPayloadResult {
 }
 
 fun displayIdFor(notificationId: String): Int =
-    ByteBuffer.wrap(MessageDigest.getInstance("SHA-256").digest(notificationId.toByteArray(Charsets.UTF_8))).int
+    ByteBuffer.wrap(MessageDigest.getInstance("SHA-256").digest(notificationId.toByteArray(Charsets.UTF_8))).getInt()
 
 private fun String.hasControlChars(): Boolean = any { it.code < 0x20 || it.code == 0x7F }
 
