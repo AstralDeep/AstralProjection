@@ -1,5 +1,6 @@
 // Decides the environment, working directory, timeout, program and grantable form of a host command before launch.
 // The Mac host builds every spawn from these decisions; the server keeps review and task grants.
+// A working directory is matched to the selected folders by path before anything outside them is touched.
 
 #if os(macOS)
     import Darwin
@@ -76,14 +77,27 @@
         }
 
         public static func workingDirectory(_ cwd: String, roots: [String]) throws -> String {
-            guard cwd.hasPrefix("/"), !cwd.contains("\0"), cwd.utf8.count <= 1024,
-                let resolved = canonical(cwd), let target = identity(resolved, directory: true)
-            else {
+            try workingDirectory(cwd, roots: roots, resolve: canonical)
+        }
+
+        static func workingDirectory(_ cwd: String, roots: [String], resolve: (String) -> String?) throws -> String {
+            guard cwd.hasPrefix("/"), !cwd.contains("\0"), cwd.utf8.count <= 1024 else {
                 throw ComputerHostError(
                     "cwd_outside_workspace",
                     "The working directory does not resolve to a folder in a selected workspace.")
             }
-            let anchors = roots.compactMap { canonical($0) }.compactMap { identity($0, directory: true) }
+            let resolvedRoots = roots.compactMap(resolve)
+            let requested = lexical(cwd)
+            guard (roots.map(lexical) + resolvedRoots).contains(where: { within(requested, $0) }) else {
+                throw ComputerHostError(
+                    "cwd_outside_workspace", "The working directory is outside every selected workspace folder.")
+            }
+            guard let resolved = resolve(cwd), let target = identity(resolved, directory: true) else {
+                throw ComputerHostError(
+                    "cwd_outside_workspace",
+                    "The working directory does not resolve to a folder in a selected workspace.")
+            }
+            let anchors = resolvedRoots.compactMap { identity($0, directory: true) }
             var candidate = resolved
             var current = target
             while true {
@@ -219,6 +233,23 @@
 
         private static func basename(_ path: String) -> String {
             path.split(separator: "/").last.map(String.init) ?? path
+        }
+
+        private static func lexical(_ path: String) -> String {
+            var parts: [Substring] = []
+            for part in path.split(separator: "/") where part != "." {
+                if part == ".." {
+                    _ = parts.popLast()
+                } else {
+                    parts.append(part)
+                }
+            }
+            return "/" + parts.joined(separator: "/")
+        }
+
+        private static func within(_ path: String, _ root: String) -> Bool {
+            let base = lexical(root)
+            return base == "/" || path == base || path.hasPrefix(base + "/")
         }
 
         private static func canonical(_ path: String) -> String? {

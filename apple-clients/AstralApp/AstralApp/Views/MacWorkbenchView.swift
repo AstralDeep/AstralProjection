@@ -158,6 +158,7 @@
                                     model.dismissBanner()
                                 }
                             }
+                            if let prompt = model.approvalPrompts.first { MacApprovalBanner(prompt: prompt) }
                             ViewportRefreshNotice()
                             HStack(spacing: 0) {
                                 conversation
@@ -233,6 +234,7 @@
                 MacWorkbenchCommandPalette(context: paletteContext, query: $paletteQuery) { paletteChoice = $0 }
             }
             .sheet(item: $renamingChat) { chat in MacRenameChatSheet(chat: chat) }
+            .bypassConfirmation(host: model.macComputerHost, origin: .palette)
             .onChange(of: model.composerDraft) { old, new in
                 if restoringDraft {
                     restoringDraft = false
@@ -364,7 +366,8 @@
                 browserVisible: browserPresented, computerAvailable: model.macComputerHost.available,
                 updatesEnabled: updates?.isEnabled == true, canCancelTurn: model.canCancelTurn,
                 signedIn: model.signedIn, composerLocked: model.mutationsLocked,
-                runInBackground: model.runInBackground)
+                runInBackground: model.runInBackground, computerEnabled: model.macComputerHost.enabled,
+                bypass: model.macComputerHost.bypass)
         }
 
         private func presentPalette(query: String) {
@@ -399,6 +402,7 @@
             case .updates: updates?.settingsPresented = true
             case .settings: openSettings()
             case .cancelTurn: _ = model.cancelCurrentTurn()
+            case .toggleBypass: model.macComputerHost.requestBypass(!model.macComputerHost.bypass, from: .palette)
             case .signOut: Task { await model.signOut() }
             case .renameChat: renamingChat = paletteContext.chat
             case .togglePin:

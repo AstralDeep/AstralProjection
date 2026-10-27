@@ -29,7 +29,7 @@
 
     enum MacPaletteAction: Equatable {
         case newChat, toggleSidebar, toggleActivity, toggleBrowser, computerControls, agentDirectory
-        case updates, settings, cancelTurn, signOut
+        case updates, settings, cancelTurn, signOut, toggleBypass
         case renameChat, togglePin, toggleArchive
         case composer(String)
         case menu(group: String, item: ChromeMenuItem)
@@ -56,6 +56,8 @@
         var signedIn = true
         var composerLocked = false
         var runInBackground = false
+        var computerEnabled = false
+        var bypass = false
     }
 
     struct MacPaletteRow: Identifiable, Equatable {
@@ -125,6 +127,13 @@
                     id: "app/\(id)", section: actionsSection, title: title, shortcut: shortcut, enabled: enabled,
                     action: action)
             }
+            let bypass =
+                context.computerAvailable
+                ? [
+                    row(
+                        "bypass", context.bypass ? "Bypass Approvals Off" : "Bypass Approvals On", nil,
+                        context.computerEnabled, .toggleBypass)
+                ] : []
             return [
                 row("new-chat", labels["new_chat"] ?? "New Chat", "⌘N", context.canNavigate, .newChat),
                 row(
@@ -137,6 +146,7 @@
                     "browser", context.browserVisible ? "Hide Browser Pane" : "Show Browser Pane", nil,
                     context.browserEnabled && context.canNavigate, .toggleBrowser),
                 row("computer", "Computer Controls…", "⇧⌘C", context.computerAvailable, .computerControls),
+            ] + bypass + [
                 row(
                     "agents", "\(labels["agent_directory"] ?? "Agent Directory")…", nil, context.canNavigate,
                     .agentDirectory),

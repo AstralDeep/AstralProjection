@@ -1,6 +1,7 @@
 // Actor-based WebSocket transport with the reconnect contract shared across Windows/Android/Apple clients:
 // capped exponential backoff, a bounded drop-oldest outbound queue, and sends fenced to the currently
-// established connection.
+// established connection. A liveness policy pings a quiet socket and abandons one that stops answering, so the
+// loop reconnects and replays queued operations through the caller's fence.
 
 import Foundation
 
@@ -58,6 +59,20 @@ public struct BoundedQueue<Element>: Sendable where Element: Sendable {
     public var count: Int { elements.count }
 }
 
+public struct LivenessPolicy: Sendable, Equatable {
+    public let interval: TimeInterval
+    public let timeout: TimeInterval
+    public let freshness: TimeInterval
+
+    public init(interval: TimeInterval, timeout: TimeInterval, freshness: TimeInterval) {
+        self.interval = interval
+        self.timeout = timeout
+        self.freshness = freshness
+    }
+
+    public static let standard = LivenessPolicy(interval: 20, timeout: 5, freshness: 10)
+}
+
 public enum WSEvent: Sendable {
     case connected
     case disconnected(reason: String)
@@ -72,6 +87,23 @@ private struct QueuedOutboundFrame: Sendable {
     let replay: QueuedOperationReplay
 }
 
+private final class PingAnswer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Bool, Never>?
+
+    init(_ continuation: CheckedContinuation<Bool, Never>) {
+        self.continuation = continuation
+    }
+
+    func resolve(_ answered: Bool) {
+        lock.lock()
+        let pending = continuation
+        continuation = nil
+        lock.unlock()
+        pending?.resume(returning: answered)
+    }
+}
+
 public actor WSClient {
     public let url: URL
     private var task: URLSessionWebSocketTask?
@@ -84,11 +116,18 @@ public actor WSClient {
     private var continuation: AsyncStream<WSEvent>.Continuation?
     private var onConnect: (@Sendable () async -> String?)?
     private var onReplay: (@Sendable (QueuedOperationReplay) async -> Bool)?
+    private let liveness: LivenessPolicy?
+    private var lastInbound = ContinuousClock.now
+    private var keepalive: Task<Void, Never>?
 
     private let requestHeaders: @Sendable () async -> [String: String]?
 
-    public init(url: URL, requestHeaders: @escaping @Sendable () async -> [String: String]? = { [:] }) {
+    public init(
+        url: URL, liveness: LivenessPolicy? = nil,
+        requestHeaders: @escaping @Sendable () async -> [String: String]? = { [:] }
+    ) {
         self.url = url
+        self.liveness = liveness
         self.requestHeaders = requestHeaders
     }
 
@@ -113,20 +152,15 @@ public actor WSClient {
         running = false
         established = false
         registeredConnectionGeneration = nil
+        keepalive?.cancel()
+        keepalive = nil
         task?.cancel(with: .normalClosure, reason: nil)
         task = nil
         continuation?.finish()
     }
 
     public func send(_ text: String) {
-        guard !WorkReadRequest.claimsCurrentConnectionSemantics(frameText: text),
-            !GuidanceRequest.claimsCurrentConnectionSemantics(frameText: text),
-            !ConsoleSurfaceRequest.claimsCurrentConnectionSemantics(frameText: text),
-            !SafetySurfaceRequest.claimsCurrentConnectionSemantics(frameText: text),
-            !MeshSurfaceRequest.claimsCurrentConnectionSemantics(frameText: text),
-            !ViewportSnapshotRequest.claimsCurrentConnectionSemantics(frameText: text),
-            !ComputerHostOutbound.claimsCurrentConnectionSemantics(frameText: text)
-        else {
+        guard !Self.claimsCurrentConnection(text) else {
             continuation?.yield(.sendRejected(action: Self.actionHint(text)))
             return
         }
@@ -144,6 +178,83 @@ public actor WSClient {
         } else {
             retain(queued)
         }
+    }
+
+    public func sendThroughReplay(_ text: String) async {
+        guard !Self.claimsCurrentConnection(text), VoiceCurrentConnectionFrame(frameText: text) == nil,
+            let replay = QueuedOperationReplay(frameText: text)
+        else {
+            continuation?.yield(.sendRejected(action: Self.actionHint(text)))
+            return
+        }
+        let queued = QueuedOutboundFrame(text: text, replay: replay)
+        guard established, let current = task, current.state == .running else {
+            retain(queued)
+            return
+        }
+        guard await onReplay?(replay) == true else {
+            continuation?.yield(.queuedOperationDropped(replay, reason: "replay fence rejected"))
+            return
+        }
+        if established, task === current, current.state == .running {
+            transmit(queued, using: current)
+        } else {
+            retain(queued)
+        }
+    }
+
+    public func confirmLive() async -> Bool {
+        guard established, let current = task, current.state == .running else { return false }
+        return await probe(current, policy: liveness ?? .standard)
+    }
+
+    private func probe(_ current: URLSessionWebSocketTask, policy: LivenessPolicy) async -> Bool {
+        guard established, task === current else { return false }
+        if ContinuousClock.now - lastInbound < Self.duration(policy.freshness) { return true }
+        let answered = await Self.ping(current, within: policy.timeout)
+        guard established, task === current else { return false }
+        if answered {
+            lastInbound = .now
+            return true
+        }
+        established = false
+        registeredConnectionGeneration = nil
+        current.cancel(with: .goingAway, reason: nil)
+        return false
+    }
+
+    private func startKeepalive(_ current: URLSessionWebSocketTask) {
+        keepalive?.cancel()
+        keepalive = nil
+        guard let policy = liveness else { return }
+        keepalive = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(max(0.01, policy.interval) * 1_000_000_000))
+                guard !Task.isCancelled, let self, await self.probe(current, policy: policy) else { return }
+            }
+        }
+    }
+
+    private static func ping(_ task: URLSessionWebSocketTask, within timeout: TimeInterval) async -> Bool {
+        await withCheckedContinuation { continuation in
+            let answer = PingAnswer(continuation)
+            task.sendPing { error in answer.resolve(error == nil) }
+            DispatchQueue.global().asyncAfter(deadline: .now() + max(0.01, timeout)) { answer.resolve(false) }
+        }
+    }
+
+    private static func duration(_ seconds: TimeInterval) -> Duration {
+        .milliseconds(Int64(max(0, min(seconds, 86400)) * 1000))
+    }
+
+    private static func claimsCurrentConnection(_ text: String) -> Bool {
+        WorkReadRequest.claimsCurrentConnectionSemantics(frameText: text)
+            || GuidanceRequest.claimsCurrentConnectionSemantics(frameText: text)
+            || ConsoleSurfaceRequest.claimsCurrentConnectionSemantics(frameText: text)
+            || SafetySurfaceRequest.claimsCurrentConnectionSemantics(frameText: text)
+            || MeshSurfaceRequest.claimsCurrentConnectionSemantics(frameText: text)
+            || ViewportSnapshotRequest.claimsCurrentConnectionSemantics(frameText: text)
+            || ComputerHostOutbound.claimsCurrentConnectionSemantics(frameText: text)
     }
 
     @discardableResult
@@ -297,9 +408,12 @@ public actor WSClient {
             receive: while running {
                 do {
                     let message = try await task.receive()
+                    guard task.state == .running else { continue }
+                    lastInbound = .now
                     if !established {
                         established = true
                         backoff.reset()
+                        startKeepalive(task)
                         continuation?.yield(.connected)
                         for queued in queue.drainAll() {
                             guard await onReplay?(queued.replay) == true else {
@@ -335,6 +449,8 @@ public actor WSClient {
             }
             established = false
             registeredConnectionGeneration = nil
+            keepalive?.cancel()
+            keepalive = nil
             self.task = nil
             guard running else { break }
             let delay = backoffNext()
