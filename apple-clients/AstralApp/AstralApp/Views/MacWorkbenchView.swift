@@ -16,6 +16,8 @@
         let conversation: () -> Void
         let canvas: () -> Void
         let cancelTurn: () -> Void
+        let agents: () -> Void
+        let agentDirectoryTitle: String
         let hasCanvas: Bool
         let canNavigate: Bool
         let canCancelTurn: Bool
@@ -82,6 +84,9 @@
                 Divider()
                 Button("Cancel turn") { actions?.cancelTurn() }
                     .keyboardShortcut(".", modifiers: .command).disabled(actions?.canCancelTurn != true)
+                Divider()
+                Button("\(actions?.agentDirectoryTitle ?? "Agent Directory")…") { actions?.agents() }
+                    .disabled(actions?.canNavigate != true)
             }
         }
     }
@@ -104,12 +109,13 @@
 
         init(
             console: ConsoleModel, presentation: ConsolePresentation, workbench: ConsoleWorkbenchPresentation,
-            activityPresented: Bool = false
+            activityPresented: Bool = false, agentsPresented: Bool = false
         ) {
             self.console = console
             self.presentation = presentation
             self.workbench = workbench
             _activityPresented = State(initialValue: activityPresented)
+            _agentsPresented = State(initialValue: agentsPresented)
         }
 
         private var p: AstralPalette { theme.palette }
@@ -215,10 +221,11 @@
                     },
                     canvas: { selectedPane = .canvas },
                     cancelTurn: { model.cancelCurrentTurn() },
+                    agents: { agentsPresented = true },
+                    agentDirectoryTitle: model.consoleLabel("agent_directory"),
                     hasCanvas: hasCanvas, canNavigate: !model.mandatorySurface, canCancelTurn: model.canCancelTurn)
             )
             .sheet(isPresented: $commandsPresented) { MacWorkbenchCommandPalette() }
-            .popover(isPresented: $agentsPresented, arrowEdge: .top) { MacWorkbenchAgents(console: console) }
             .onChange(of: model.activeChatId) { _, _ in selectedPane = .conversation }
             .onChange(of: browserPresented) { _, presented in
                 if presented { selectedPane = .canvas }
@@ -292,6 +299,8 @@
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden)
                 .disabled(model.mandatorySurface).help("Workspace actions").accessibilityLabel("Workspace actions")
+                .accessibilityIdentifier("workbench-actions-menu")
+                .popover(isPresented: $agentsPresented, arrowEdge: .bottom) { MacWorkbenchAgents(console: console) }
                 if let updates { UpdateStatusChip(coordinator: updates) }
                 iconButton("waveform.path", label: "Activity") { activityPresented.toggle() }
                     .accessibilityValue(activityPresented ? "Shown" : "Hidden")
@@ -356,6 +365,7 @@
         @Environment(ThemeStore.self) private var theme
         let console: ConsoleModel
         @State private var query = ""
+        @FocusState private var searchFocused: Bool
         private var p: AstralPalette { theme.palette }
         private var chats: [ChatSummary] {
             model.history.filter {
@@ -394,13 +404,8 @@
                 }
                 .buttonStyle(.plain).disabled(model.mandatorySurface)
                 .accessibilityIdentifier("new-chat-button")
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                    TextField("Search chats", text: $query).textFieldStyle(.plain)
-                }
-                .font(ConsoleTypography.caption).foregroundStyle(p.muted).padding(10)
-                .background(p.bg.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
-                .accessibilityLabel("Search chats")
+                MacSearchField(
+                    prompt: "Search chats", text: $query, focused: $searchFocused, identifier: "workbench-chat-search")
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 3) {
                         if model.historyLoading { ProgressView().controlSize(.small).padding(8) }
@@ -804,45 +809,76 @@
         @Environment(\.dismiss) private var dismiss
         let console: ConsoleModel
         @State private var query = ""
+        @FocusState private var searchFocused: Bool
+        private var p: AstralPalette { theme.palette }
+        private var agents: [ConsoleAgent] {
+            console.catalog.agents.filter {
+                query.isEmpty || ($0.name + " " + $0.description).localizedCaseInsensitiveContains(query)
+            }
+        }
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 12) {
                 Text(model.consoleLabel("agent_directory")).font(ConsoleTypography.headline)
-                TextField(model.consoleLabel("search_agents"), text: $query).textFieldStyle(.roundedBorder)
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(
-                            console.catalog.agents.filter {
-                                query.isEmpty
-                                    || ($0.name + " " + $0.description).localizedCaseInsensitiveContains(query)
+                    .accessibilityAddTraits(.isHeader)
+                MacSearchField(
+                    prompt: model.consoleLabel("search_agents"), text: $query, focused: $searchFocused,
+                    identifier: "workbench-agent-search"
+                )
+                .onSubmit { if let first = agents.first { open(first) } }
+                if agents.isEmpty {
+                    Text(console.catalog.agents.isEmpty ? "No agents available" : "No matching agents")
+                        .font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
+                        .accessibilityIdentifier("workbench-agent-empty")
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(Array(agents.enumerated()), id: \.element.id) { index, agent in
+                                if index > 0 { Divider().overlay(p.border) }
+                                row(agent)
                             }
-                        ) { agent in
-                            Button {
-                                guard !model.mandatorySurface else { return }
-                                model.openSurface("agent_intro", params: .object(["agent_id": .string(agent.id)]))
-                                dismiss()
-                            } label: {
-                                HStack(alignment: .top, spacing: 12) {
-                                    Circle().fill(agent.state == .ready ? theme.palette.success : theme.palette.muted)
-                                        .frame(width: 7, height: 7).padding(.top, 6)
-                                        .accessibilityHidden(true)
-                                    Text(agent.name).font(ConsoleTypography.subheadline.weight(.semibold))
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                                .padding(.vertical, 12).contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(agent.name)
-                            .accessibilityValue(agent.state == .ready ? "Available" : "Offline")
-                            .accessibilityHint(agent.description)
-                            .accessibilityIdentifier("workbench-agent-\(agent.id)")
-                            Divider()
                         }
                     }
+                    .frame(maxHeight: 440).fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .foregroundStyle(theme.palette.text).padding(20).background(theme.palette.surface)
-            .frame(width: 360, height: 480)
+            .foregroundStyle(p.text).padding(20)
+            .frame(minWidth: 320, idealWidth: 360, maxWidth: 440, minHeight: 160, maxHeight: 560, alignment: .top)
+            .background(p.surface)
+            .onAppear { DispatchQueue.main.async { searchFocused = true } }
+        }
+
+        private func row(_ agent: ConsoleAgent) -> some View {
+            let ready = agent.state == .ready
+            return Button {
+                open(agent)
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: ready ? "circle.fill" : "circle.slash")
+                        .font(.system(size: ready ? 8 : 12, weight: .semibold))
+                        .foregroundStyle(ready ? p.success : p.muted)
+                        .frame(width: 14).accessibilityHidden(true)
+                    Text(agent.name).font(ConsoleTypography.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if !ready {
+                        Text("Offline").font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                    }
+                }
+                .padding(.vertical, 10).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(agent.description)
+            .accessibilityLabel(agent.name)
+            .accessibilityValue(ready ? "Available" : "Offline")
+            .accessibilityHint(agent.description)
+            .accessibilityIdentifier("workbench-agent-\(agent.id)")
+        }
+
+        private func open(_ agent: ConsoleAgent) {
+            guard !model.mandatorySurface else { return }
+            model.openSurface("agent_intro", params: .object(["agent_id": .string(agent.id)]))
+            dismiss()
         }
     }
 #endif
