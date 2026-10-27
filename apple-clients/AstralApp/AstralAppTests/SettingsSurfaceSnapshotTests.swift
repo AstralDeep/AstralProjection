@@ -244,13 +244,90 @@
                 for raw in Self.buttons(surface.components.map(\.raw)) {
                     let component = try XCTUnwrap(AstralComponent(json: raw))
                     let size = measure(component)
-                    XCTAssertLessThanOrEqual(size.height, 44, "\(surface.name): \(component.label ?? "")")
-                    XCTAssertLessThanOrEqual(size.height, 28, "\(surface.name): \(component.label ?? "")")
+                    XCTAssertEqual(size.height, 28, accuracy: 0.5, "\(surface.name): \(component.label ?? "")")
+                    XCTAssertGreaterThanOrEqual(size.width, 64, "\(surface.name): \(component.label ?? "")")
                     XCTAssertLessThan(size.width, 760 * 0.6, "\(surface.name): \(component.label ?? "")")
                     measured += 1
                 }
             }
             XCTAssertGreaterThan(measured, 40)
+        }
+
+        private func component(_ json: String) throws -> AstralComponent {
+            try XCTUnwrap(AstralComponent(json: JSONValue.parse(Data(json.utf8))))
+        }
+
+        private func controls(_ view: NSView) -> (fields: [NSTextField], switches: [NSView]) {
+            func collect(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(collect) }
+            let all = collect(view)
+            return (
+                all.compactMap { $0 as? NSTextField }.filter(\.isEditable),
+                all.filter { String(describing: type(of: $0)).contains("PlatformSwitch") }
+            )
+        }
+
+        func testStateDependentActionLabelsKeepOneButtonWidth() throws {
+            let enable = try component(#"{"type":"button","label":"Enable","action":"chrome_agent_enable"}"#)
+            let disable = try component(#"{"type":"button","label":"Disable","action":"chrome_agent_disable"}"#)
+            let open = try component(#"{"type":"button","label":"Open","action":"chrome_open"}"#)
+            XCTAssertEqual(measure(enable).width, measure(disable).width, accuracy: 0.5)
+            for button in [enable, disable, open] {
+                XCTAssertEqual(measure(button).height, 28, accuracy: 0.5, button.label ?? "")
+                XCTAssertEqual(measure(button).width, 64, accuracy: 0.5, button.label ?? "")
+            }
+        }
+
+        func testLongCompactLabelsStayOnOneLineInsideTheirRow() throws {
+            let long = try component(
+                #"{"type":"button","label":"Approve and resume on build-host-07 / com.example.LongTargetName","action":"approve"}"#
+            )
+            let model = signedInModel()
+            model.screen = .surface
+            let view = NSHostingView(
+                rootView: compact(
+                    ComponentView(component: long).environment(\.astralCompactCardContent, true)
+                        .frame(width: 180, alignment: .leading).fixedSize(horizontal: false, vertical: true),
+                    model: model, theme: ThemeStore()))
+            view.layoutSubtreeIfNeeded()
+            XCTAssertEqual(view.fittingSize.height, 28, accuracy: 0.5)
+            XCTAssertLessThanOrEqual(view.fittingSize.width, 180.5)
+        }
+
+        func testCompactFormFieldsShareOneSmallTrailingColumn() async throws {
+            let form = try component(
+                #"""
+                {"type":"param_picker","title":"Add a machine","fields":[
+                {"name":"label","label":"Label","kind":"text"},
+                {"name":"port","label":"Port","kind":"number","default":"22"},
+                {"name":"password","label":"Password","kind":"password"},
+                {"name":"os","label":"Operating system","kind":"select","default":"linux","options":["linux","windows"]},
+                {"name":"trusted","label":"Trusted","kind":"boolean","default":true}],
+                "submit_action":"chrome_machine_add","submit_label":"Add & probe"}
+                """#)
+            let input = try component(#"{"type":"input","label":"Rename","placeholder":"New name","action":"rename"}"#)
+            let mount = try await mount(
+                Surface(name: "form", key: "remote_machines", title: "", components: [form, input]))
+            defer { mount.close() }
+            let (fields, switches) = controls(mount.view)
+            XCTAssertEqual(fields.count, 4)
+            let column = fields.prefix(3)
+            for field in fields {
+                XCTAssertFalse(field.isBezeled, "compact fields draw their own outline")
+                XCTAssertLessThanOrEqual(field.frame.height, 28)
+            }
+            let frames = column.map { $0.convert($0.bounds, to: nil) }
+            for frame in frames.dropFirst() {
+                XCTAssertEqual(frame.minX, frames[0].minX, accuracy: 0.5)
+                XCTAssertEqual(frame.width, frames[0].width, accuracy: 0.5)
+            }
+            XCTAssertLessThanOrEqual(frames[0].width, SettingsControlMetrics.formColumn)
+            XCTAssertGreaterThan(frames[0].width, SettingsControlMetrics.formColumn - 20)
+            let toggle = try XCTUnwrap(switches.first).convert(try XCTUnwrap(switches.first).bounds, to: nil)
+            XCTAssertEqual(toggle.maxX, frames[0].maxX, accuracy: 8)
+            let regular = NSHostingView(rootView: Toggle("", isOn: .constant(true)).toggleStyle(.switch).labelsHidden())
+            regular.layoutSubtreeIfNeeded()
+            XCTAssertLessThan(toggle.height, regular.fittingSize.height, "boolean fields use the small control size")
+            write(try mount.png(), name: "compact-form-column")
         }
 
         func testAgentListCardsStayCompactAndKeepTheirCopy() async throws {

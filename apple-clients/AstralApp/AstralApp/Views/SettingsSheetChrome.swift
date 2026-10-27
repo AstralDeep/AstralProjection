@@ -11,6 +11,7 @@ import SwiftUI
 enum SettingsControlMetrics {
     static let height: CGFloat = 28
     static let minimumWidth: CGFloat = 64
+    static let formColumn: CGFloat = 220
     static let headerHeight: CGFloat = 56
 }
 

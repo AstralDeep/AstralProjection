@@ -619,10 +619,13 @@ struct ComponentView: View {
             let payload = component.raw["payload"]?.objectValue ?? [:]
             if action == "load_chat" { navigate(payload) } else { model.emit(action, payload: payload) }
         } label: {
-            Text(label).fixedSize(horizontal: false, vertical: true)
-                .frame(
-                    maxWidth: variant == "primary" && !compactSettings && !WorkspaceWelcome.isExample(component)
-                        ? .infinity : nil)
+            if compactSettings {
+                CompactButtonLabel(text: label)
+            } else {
+                Text(label).fixedSize(horizontal: false, vertical: true)
+                    .frame(
+                        maxWidth: variant == "primary" && !WorkspaceWelcome.isExample(component) ? .infinity : nil)
+            }
         }
         .disabled(
             component.raw["disabled"]?.boolValue == true || component.raw["enabled"]?.boolValue == false
@@ -1383,15 +1386,16 @@ private struct AstralButtonBody: View {
         }
     }
 
-    // Chips keep one weight, padding and minimum width so selection never resizes or shifts a row
+    // Every compact button keeps one height, weight and minimum width so state never resizes or shifts a row
     private var compactBody: some View {
         let shape = RoundedRectangle(cornerRadius: AstralRadius.sm)
         let colors = compactColors
         return configuration.label
             .font(ConsoleTypography.caption.weight(.medium))
             .lineLimit(1)
-            .padding(.horizontal, 10).padding(.vertical, chip == nil ? 4 : 6)
-            .frame(minWidth: chip == nil ? 0 : 64, minHeight: chip == nil ? 24 : 28)
+            .padding(.horizontal, 10)
+            .frame(minWidth: SettingsControlMetrics.minimumWidth)
+            .frame(height: SettingsControlMetrics.height)
             .foregroundStyle(colors.foreground)
             .background(colors.fill, in: shape)
             .overlay(shape.strokeBorder(colors.stroke))
@@ -1409,6 +1413,17 @@ private struct AstralButtonBody: View {
         case "secondary", "ghost": return (palette.text, palette.text.opacity(0.06), palette.border)
         case "danger": return (palette.error, palette.error.opacity(0.12), palette.error.opacity(0.4))
         default: return (.white, palette.primary, palette.primary)
+        }
+    }
+}
+
+private struct CompactButtonLabel: View {
+    let text: String
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            Text(text).fixedSize()
+            Text(text).lineLimit(1).truncationMode(.tail).help(text)
         }
     }
 }
@@ -1782,6 +1797,7 @@ struct InputComponent: View {
     let component: AstralComponent
     @Environment(ThemeStore.self) var theme
     @Environment(AppModel.self) var model
+    @Environment(\.astralCompactSettings) private var compactSettings
     @State private var value = ""
     @State private var editingOwner = UUID()
     @State private var initialValue = ""
@@ -1789,16 +1805,24 @@ struct InputComponent: View {
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
+        let placeholder = component.raw["placeholder"]?.stringValue ?? ""
         VStack(alignment: .leading, spacing: 3) {
             if let label = component.label, !label.isEmpty {
-                Text(label).font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                Text(label).font(compactSettings ? ConsoleTypography.footnote : ConsoleTypography.caption)
+                    .foregroundStyle(compactSettings ? p.text : p.muted)
+                    .accessibilityHidden(true)
             }
-            HStack {
-                TextField(component.raw["placeholder"]?.stringValue ?? "", text: $value)
-                    .textFieldStyle(.roundedBorder)
+            HStack(spacing: compactSettings ? 6 : 8) {
+                TextField(placeholder, text: $value)
+                    .astralFieldStyle(compactSettings, palette: p)
                     .focused($editingFocused)
                     .onSubmit(submit)
-                Button("Send", action: submit).tint(p.primary)
+                    .accessibilityLabel(component.label.flatMap { $0.isEmpty ? nil : $0 } ?? placeholder)
+                if compactSettings {
+                    Button("Send", action: submit).buttonStyle(AstralButtonStyle(palette: p, variant: "primary"))
+                } else {
+                    Button("Send", action: submit).tint(p.primary)
+                }
             }
         }
         .onAppear {
@@ -1976,6 +2000,7 @@ struct ParamPickerComponent: View {
                     }
                 }
             }
+            .controlSize(.small)
             .compactGroupBox(!compactCardContent, palette: p)
         }
     }
@@ -2004,14 +2029,17 @@ struct ParamPickerComponent: View {
     @ViewBuilder
     private func compactControl(_ field: JSONValue, name: String, label: String, kind: String) -> some View {
         let control = fieldControl(field, name: name, label: label, kind: kind).fieldHelp(field["help"]?.stringValue)
-        switch kind {
-        case "boolean", "checkbox":
-            control.toggleStyle(.switch).controlSize(.small)
-        case "select":
-            control.labelsHidden().fixedSize()
-        default:
-            control.font(ConsoleTypography.footnote).frame(maxWidth: 300)
+        Group {
+            switch kind {
+            case "boolean", "checkbox":
+                control.toggleStyle(.switch)
+            case "select":
+                control.labelsHidden()
+            default:
+                control
+            }
         }
+        .frame(width: SettingsControlMetrics.formColumn, alignment: .trailing)
     }
 
     private func fieldIsVisible(_ field: JSONValue) -> Bool {
@@ -2081,6 +2109,7 @@ struct ParamPickerComponent: View {
             ForEach(options) { Text($0.label).tag($0.value) }
         }
         .pickerStyle(.menu).tint(p.primary)
+        .compactTooltip(compactSettings ? spoken : nil)
         .accessibilityIdentifier("param-field-\(name)")
         .accessibilityLabel(label)
         .accessibilityValue(spoken)
@@ -2117,7 +2146,7 @@ struct ParamPickerComponent: View {
             },
             set: { values[name] = $0 })
         TextField(Self.placeholder(field), text: text)
-            .textFieldStyle(.roundedBorder)
+            .astralFieldStyle(compactSettings, palette: p)
             .focused($editingField, equals: name)
             #if os(iOS)
                 .keyboardType(.decimalPad)
@@ -2132,7 +2161,7 @@ struct ParamPickerComponent: View {
             get: { values[name] ?? "" },
             set: { values[name] = $0 })
         SecureField(Self.placeholder(field), text: text)
-            .textFieldStyle(.roundedBorder)
+            .astralFieldStyle(compactSettings, palette: p)
             .focused($editingField, equals: name)
             .onSubmit { editingField = nil }
             .accessibilityIdentifier("param-field-\(name)")
@@ -2155,7 +2184,7 @@ struct ParamPickerComponent: View {
                 in: RoundedRectangle(cornerRadius: AstralRadius.sm)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: AstralRadius.sm).strokeBorder(compactSettings ? p.border : Color.clear)
+                RoundedRectangle(cornerRadius: AstralRadius.sm).strokeBorder(compactSettings ? p.muted : Color.clear)
             )
             .autocorrectionDisabled(true)
             #if os(iOS)
@@ -2171,7 +2200,7 @@ struct ParamPickerComponent: View {
             get: { values[name] ?? (field["default"]?.stringValue ?? "") },
             set: { values[name] = $0 })
         TextField(Self.placeholder(field), text: text)
-            .textFieldStyle(.roundedBorder)
+            .astralFieldStyle(compactSettings, palette: p)
             .focused($editingField, equals: name)
             .onSubmit { editingField = nil }
             .autocorrectionDisabled(true)
@@ -2190,8 +2219,10 @@ struct ParamPickerComponent: View {
         payload: [String: JSONValue],
         available: Bool
     ) -> some View {
-        Button(label) {
+        Button {
             submit(action: action, payload: payload)
+        } label: {
+            if compactSettings { CompactButtonLabel(text: label) } else { Text(label) }
         }
         .buttonStyle(AstralButtonStyle(palette: p, variant: variant))
         .disabled(
@@ -2375,6 +2406,21 @@ extension View {
     @ViewBuilder
     fileprivate func compactFont(_ font: Font?) -> some View {
         if let font { self.font(font) } else { self }
+    }
+
+    @ViewBuilder
+    fileprivate func astralFieldStyle(_ compact: Bool, palette: AstralPalette) -> some View {
+        if compact {
+            let shape = RoundedRectangle(cornerRadius: AstralRadius.sm)
+            textFieldStyle(.plain)
+                .font(ConsoleTypography.footnote)
+                .padding(.horizontal, 8)
+                .frame(minHeight: SettingsControlMetrics.height)
+                .background(palette.text.opacity(0.04), in: shape)
+                .overlay(shape.strokeBorder(palette.muted))
+        } else {
+            textFieldStyle(.roundedBorder)
+        }
     }
 
     @ViewBuilder
