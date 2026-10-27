@@ -395,6 +395,63 @@ def _assert_retry_policy_in_one_run(job: str, run: str) -> None:
         assert job.count(flag) == 1 and flag in run, flag
 
 
+FIRST_LOGIN_UI_CLASSES = (
+    "Accessibility060UITests",
+    "LLMFirstLoginUITests",
+    "VoiceConversationUITests",
+    "WorkspacePresentationUITests",
+    "WorkspaceActionsUITests",
+    "SettingsControlsUITests",
+    "ConversationContinuityUITests/testDeterministicProcessRelaunchRestoresSemanticConversation",
+)
+MACOS_UI_CLASSES = tuple(
+    name for name in FIRST_LOGIN_UI_CLASSES if name not in {"WorkspaceActionsUITests", "SettingsControlsUITests"}
+)
+
+
+def _first_login_matrix(apple: str) -> list[dict[str, str]]:
+    job = _job_block(apple, "first-login-ui")
+    include = job.split("        include:\n", 1)[1].split("    steps:\n", 1)[0]
+    entries = []
+    for raw in include.split("          - name: ")[1:]:
+        lines = raw.splitlines()
+        entry = {"name": lines[0].strip()}
+        key = None
+        for line in lines[1:]:
+            match = re.fullmatch(r"            ([a-z]+): (.*)", line)
+            if match:
+                key, value = match.groups()
+                entry[key] = "" if value == ">-" else value.strip('"')
+            elif key == "tests" and line.startswith("              "):
+                entry["tests"] = " ".join(part for part in (entry["tests"], line.strip()) if part)
+        entries.append(entry)
+    return entries
+
+
+def _first_login_substitutions(entry: dict[str, str]) -> dict[str, str]:
+    return {
+        "matrix.slug": entry["slug"],
+        "matrix.platform": entry["platform"],
+        "matrix.tests": entry["tests"],
+        "matrix.destination": entry["destination"],
+        "steps.ios_sim.outputs.udid": "owned-fixture-id",
+    }
+
+
+def _assert_first_login_shards(apple: str) -> None:
+    entries = _first_login_matrix(apple)
+    assert [entry["slug"] for entry in entries] == ["ios-1", "ios-2", "ios-3", "macos"]
+    shards = [entry for entry in entries if entry["platform"] == "ios"]
+    assert all(
+        entry["destination"] == "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5" for entry in shards
+    )
+    selected = [name for entry in shards for name in entry["tests"].split()]
+    assert sorted(selected) == sorted(FIRST_LOGIN_UI_CLASSES)
+    macos = entries[-1]
+    assert macos["platform"] == "macos" and macos["destination"] == "platform=macOS"
+    assert sorted(macos["tests"].split()) == sorted(MACOS_UI_CLASSES)
+
+
 def _assert_apple_platform_contract(apple: str) -> None:
     app_unit = _job_block(apple, "app-unit-tests")
     core_ios = _job_block(apple, "core-ios-tests")
@@ -427,14 +484,14 @@ def _assert_apple_platform_contract(apple: str) -> None:
     macos_destination = 'destination: "platform=macOS"'
     ios_runtime_check = 'xcrun simctl list runtimes available | grep -F "iOS ${IOS_RUNTIME}"'
     exporter = "python3 scripts/export_xccov_line_coverage.py"
-    for job in (app_unit, first_login):
+    for job, key in ((app_unit, "matrix.slug"), (first_login, "matrix.platform")):
         assert ios_destination in job
         assert macos_destination in job
         assert ios_runtime_check in job
         assert job.count("CODE_SIGNING_ALLOWED=NO") == 2
         assert job.count("-enableCodeCoverage YES") == 2
         assert job.count(exporter) == 1
-        assert "--platform '${{ matrix.slug }}'" in job
+        assert f"--platform '${{{{ {key} }}}}'" in job
 
     assert "-scheme AstralCore" in core_ios
     assert "-only-testing:AstralCoreTests" in core_ios
@@ -454,29 +511,19 @@ def _assert_apple_platform_contract(apple: str) -> None:
         '--core-input "${GITHUB_WORKSPACE}/build/060/coverage/union-inputs/ios/core/apple-ios-core-xccov.json"'
         in apple_required
     )
-    for selector in (
-        "Accessibility060UITests",
-        "LLMFirstLoginUITests",
-        "VoiceConversationUITests",
-        "WorkspacePresentationUITests",
-        "WorkspaceActionsUITests",
-        "SettingsControlsUITests",
-        "ConversationContinuityUITests/testDeterministicProcessRelaunchRestoresSemanticConversation",
-    ):
-        assert "-only-testing:AstralAppUITests/" + selector in first_login
+    _assert_first_login_shards(apple)
     assert (
-        "-only-testing:AstralAppUITests/ConversationContinuityUITests/"
-        "testDeterministicProcessRelaunchRestoresSemanticConversation \\\n"
+        "          for selected in ${{ matrix.tests }}; do\n"
+        '            selectors+=("-only-testing:AstralAppUITests/$selected")\n'
+        "          done\n"
     ) in first_login
-    assert (
-        'if [[ "${{ matrix.slug }}" == "ios" ]]; then\n'
-        '            workspace_actions=(\n'
-        '              -only-testing:AstralAppUITests/WorkspaceActionsUITests\n'
-        '              -only-testing:AstralAppUITests/SettingsControlsUITests\n'
-        '            )'
-        in first_login
-    )
-    assert '"${workspace_actions[@]}"' in first_login
+    assert '            "${selectors[@]}" \\\n' in first_login
+    assert "-only-testing:AstralAppUITests/" in first_login
+    provision = _step_block(first_login, "Provision a dedicated iOS simulator")
+    assert 'xcrun simctl boot "$udid"' in provision and "bootstatus" not in provision
+    assert first_login.index("build-for-testing") < first_login.index(
+        'xcrun simctl bootstatus "${{ steps.ios_sim.outputs.udid }}" -b'
+    ) < first_login.index("test_action=test-without-building")
     assert "COMPILER_INDEX_STORE_ENABLE=NO -derivedDataPath \"$derived\" build-for-testing" in first_login
     assert all("-parallel-testing" not in job for job in (first_login, app_unit, core_ios))
     assert 'result="${COVERAGE_ROOT}/AstralApp-${{ matrix.slug }}-first-login.xcresult"' in first_login
@@ -521,7 +568,9 @@ def _assert_apple_platform_contract(apple: str) -> None:
     marker_steps = {
         "Require iOS app-unit success": "apple-required-app-unit-ios",
         "Require macOS app-unit success": "apple-required-app-unit-macos",
-        "Require iOS first-login success": "apple-required-first-login-ios",
+        "Require iOS first-login shard 1 success": "apple-required-first-login-ios-1",
+        "Require iOS first-login shard 2 success": "apple-required-first-login-ios-2",
+        "Require iOS first-login shard 3 success": "apple-required-first-login-ios-3",
         "Require macOS first-login success": "apple-required-first-login-macos",
     }
     for step_name, artifact_name in marker_steps.items():
@@ -533,25 +582,29 @@ def _assert_apple_platform_contract(apple: str) -> None:
     assert "python3 scripts/merge_xccov_line_coverage.py" in apple_required
     for platform in ("ios", "macos"):
         assert f"name: apple-required-app-unit-{platform}-coverage" in apple_required
-        assert f"name: apple-required-first-login-{platform}-coverage" in apple_required
         assert f"--platform {platform}" in apple_required
         assert (
             f"path: ${{{{ github.workspace }}}}/build/060/coverage/union-inputs/{platform}/unit"
-        ) in apple_required
-        assert (
-            f"path: ${{{{ github.workspace }}}}/build/060/coverage/union-inputs/{platform}/ui"
         ) in apple_required
         assert (
             f'--unit-input "${{GITHUB_WORKSPACE}}/build/060/coverage/union-inputs/'
             f"{platform}/unit/"
             f'apple-{platform}-unit-xccov.json"'
         ) in apple_required
-        assert (
-            f'--ui-input "${{GITHUB_WORKSPACE}}/build/060/coverage/union-inputs/'
-            f"{platform}/ui/"
-            f'apple-{platform}-first-login-xccov.json"'
-        ) in apple_required
         assert f'--output "${{COVERAGE_ROOT}}/apple-{platform}-xccov.json"' in apple_required
+    ui_inputs = {"macos": ("macos/ui", "macos")} | {
+        f"ios-{shard}": (f"ios/ui-{shard}", f"ios-{shard}") for shard in (1, 2, 3)
+    }
+    for slug, (folder, name) in ui_inputs.items():
+        assert f"name: apple-required-first-login-{slug}-coverage" in apple_required
+        assert f"path: ${{{{ github.workspace }}}}/build/060/coverage/union-inputs/{folder}\n" in apple_required
+        assert (
+            f'--ui-input "${{GITHUB_WORKSPACE}}/build/060/coverage/union-inputs/{folder}/'
+            f'apple-{name}-first-login-xccov.json"'
+        ) in apple_required
+    assert apple_required.count("--ui-input") == 4
+    assert apple_required.count("--ui-shards 3 \\\n") == 1
+    assert "apple-required-first-login-ios-coverage" not in apple_required
     assert "name: apple-required-platform-union-coverage" in apple_required
     assert '--repo "${GITHUB_WORKSPACE}"' in apple_required
     assert "${RUNNER_TEMP}/apple-coverage" not in apple_required
@@ -881,7 +934,7 @@ def test_core_android_and_apple_jobs_are_capped_at_thirty_minutes(workflow_name:
     _assert_jobs_capped_at_thirty_minutes((ACTIVE / workflow_name).read_text(encoding="utf-8"))
 
 
-APPLE_TEST_JOBS = ("core-tests", "core-ios-tests", "app-unit-tests", "watch-continuity")
+APPLE_TEST_JOBS = ("core-tests", "core-ios-tests", "app-unit-tests", "first-login-ui", "watch-continuity")
 
 
 def _assert_apple_test_jobs_within_twenty_minutes(text: str) -> None:
@@ -1361,7 +1414,9 @@ def _assert_ios_domain_collection(text):
         assert block.index("build-for-testing") < block.index("test-without-building") < block.index("python3 scripts/collect_xccov_native_domain.py")
         assert f"--lane {lane}" in block
         assert f"-derivedDataPath {derived}" in block
-        archive_platform = "ios" if lane == "core" else "${{ matrix.slug }}"
+        archive_platform = {
+            "core": "ios", "unit": "${{ matrix.slug }}", "ui": "${{ matrix.platform }}"
+        }[lane]
         assert f"native-binaries/apple-{archive_platform}-{lane}.zip" in block
         assert "--native-domain" in block
         assert "-enableCodeCoverage YES" in block
@@ -1396,9 +1451,12 @@ def test_ios_mapping_collection_guard_refuses_lane_rebuild_or_domain_loss(old, n
         _assert_ios_domain_collection(text.replace(old, new, 1))
 
 
-@pytest.mark.parametrize("platform", ["macos", "ios"])
-@pytest.mark.parametrize("lane", ["unit", "ui"])
-def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, platform, lane):
+@pytest.mark.parametrize(
+    "lane,slug",
+    [("unit", "macos"), ("unit", "ios"), ("ui", "macos"), ("ui", "ios-1"), ("ui", "ios-2"), ("ui", "ios-3")],
+)
+def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, lane, slug):
+    platform = slug.split("-")[0]
     bash = "/bin/bash" if Path("/bin/bash").is_file() else shutil.which("bash")
     if bash is None:
         pytest.skip("Apple workflow shell contract requires Bash")
@@ -1414,15 +1472,22 @@ def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, platform, l
     script = textwrap.dedent(
         _step_block(_job_block(text, job), step).split("run: |\n", 1)[1]
     )
-    for name, value in {
-        "matrix.slug": platform,
-        "matrix.destination": (
-            "platform=macOS"
-            if platform == "macos"
-            else "platform=iOS Simulator,name=Owned Fixture"
-        ),
-        "steps.ios_sim.outputs.udid": "owned-fixture-id",
-    }.items():
+    entry = next(
+        (item for item in _first_login_matrix(text) if item["slug"] == slug),
+        {"slug": slug, "platform": platform, "tests": "", "destination": "platform=macOS"},
+    )
+    substitutions = (
+        _first_login_substitutions(entry)
+        if lane == "ui"
+        else {
+            "matrix.slug": platform,
+            "matrix.destination": (
+                "platform=macOS" if platform == "macos" else "platform=iOS Simulator,name=Owned Fixture"
+            ),
+            "steps.ios_sim.outputs.udid": "owned-fixture-id",
+        }
+    )
+    for name, value in substitutions.items():
         script = script.replace("${{ " + name + " }}", value)
     assert "${{" not in script
     recorder = tmp_path / "record_commands.py"
@@ -1436,6 +1501,7 @@ def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, platform, l
     command = f"{shlex.quote(sys.executable)} {shlex.quote(str(recorder))}"
     prefix = (
         f'xcodebuild() {{ {command} xcodebuild "$@"; }}\n'
+        f'xcrun() {{ {command} xcrun "$@"; }}\n'
         f'python3() {{ {command} python3 "$@"; }}\n'
     )
     record = tmp_path / "commands.jsonl"
@@ -1465,14 +1531,16 @@ def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, platform, l
     _assert_retried_test_run(xcode)
     assert not any(value.startswith("-parallel") for call in xcode for value in call)
     assert ("COMPILER_INDEX_STORE_ENABLE=NO" in xcode[0]) == (lane == "ui")
+    boots = [call for call in calls if call[0] == "xcrun"]
     if lane == "ui":
-        selectors = {arg for arg in xcode[-1] if arg.startswith("-only-testing:")}
-        assert "-only-testing:AstralAppUITests/WorkspacePresentationUITests" in selectors
-        assert (
-            "-only-testing:AstralAppUITests/WorkspaceActionsUITests" in selectors
-        ) == (platform == "ios")
+        selectors = [arg for arg in xcode[-1] if arg.startswith("-only-testing:")]
+        assert selectors == ["-only-testing:AstralAppUITests/" + name for name in entry["tests"].split()]
+        assert boots == ([["xcrun", "simctl", "bootstatus", "owned-fixture-id", "-b"]] if platform == "ios" else [])
+        assert calls.index(boots[0]) > calls.index(xcode[0]) if boots else True
+        assert calls.index(boots[0]) < calls.index(xcode[-1]) if boots else True
     else:
         assert "-only-testing:AstralAppTests" in xcode[-1]
+        assert boots == []
     exports = [call for call in calls if "scripts/export_xccov_line_coverage.py" in call]
     assert len(exports) == 1
     assert exports[0][exports[0].index("--platform") + 1] == platform
@@ -1482,8 +1550,11 @@ def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, platform, l
     if collectors:
         assert collectors[0][collectors[0].index("--lane") + 1] == lane
         assert collectors[0][collectors[0].index("--platform") + 1] == platform
+        assert collectors[0][collectors[0].index("--binary-archive") + 1].endswith(
+            f"coverage with spaces/native-binaries/apple-{platform}-{lane}.zip"
+        )
         assert exports[0][exports[0].index("--native-domain") + 1] == (
-            f"coverage with spaces/apple-{platform}-{lane}-domain.json"
+            f"coverage with spaces/apple-{slug}-{lane}-domain.json"
         )
 
 
@@ -1552,7 +1623,7 @@ def test_apple_core_ios_builds_once_then_runs_one_retried_suite(tmp_path):
     assert collectors[0][collectors[0].index("--lane") + 1] == "core"
 
 
-def _run_first_login_step(tmp_path, platform, *, suite_exit):
+def _run_first_login_step(tmp_path, slug, *, suite_exit):
     bash = "/bin/bash" if Path("/bin/bash").is_file() else shutil.which("bash")
     if bash is None:
         pytest.skip("Apple workflow shell contract requires Bash")
@@ -1563,11 +1634,8 @@ def _run_first_login_step(tmp_path, platform, *, suite_exit):
             "Run deterministic first-login, voice and workspace UI tests with coverage",
         ).split("run: |\n", 1)[1]
     )
-    for name, value in {
-        "matrix.slug": platform,
-        "matrix.destination": "platform=macOS",
-        "steps.ios_sim.outputs.udid": "owned-fixture-id",
-    }.items():
+    entry = next(item for item in _first_login_matrix(text) if item["slug"] == slug)
+    for name, value in _first_login_substitutions(entry).items():
         script = script.replace("${{ " + name + " }}", value)
     assert "${{" not in script
     recorder = tmp_path / "record_commands.py"
@@ -1601,9 +1669,9 @@ def _run_first_login_step(tmp_path, platform, *, suite_exit):
     return result, [json.loads(line) for line in record.read_text().splitlines()]
 
 
-@pytest.mark.parametrize("platform", ["macos", "ios"])
-def test_apple_first_login_failure_fails_the_job_without_rerunning_the_suite(tmp_path, platform):
-    result, calls = _run_first_login_step(tmp_path, platform, suite_exit=65)
+@pytest.mark.parametrize("slug", ["macos", "ios-1", "ios-2", "ios-3"])
+def test_apple_first_login_failure_fails_the_job_without_rerunning_the_suite(tmp_path, slug):
+    result, calls = _run_first_login_step(tmp_path, slug, suite_exit=65)
 
     assert result.returncode == 1, result.stderr
     suites = [call for call in calls if call[0] == "xcodebuild" and "-resultBundlePath" in call]
@@ -1611,22 +1679,24 @@ def test_apple_first_login_failure_fails_the_job_without_rerunning_the_suite(tmp
     _assert_retried_test_run([call for call in calls if call[0] == "xcodebuild"])
     assert "-retry-tests-on-failure" in suites[0]
     assert suites[0][suites[0].index("-default-test-execution-time-allowance") + 1] == "120"
-    assert not [call for call in calls if call[0] == "xcrun"]
+    assert [call for call in calls if call[0] == "xcrun"] == (
+        [] if slug == "macos" else [["xcrun", "simctl", "bootstatus", "owned-fixture-id", "-b"]]
+    )
     collectors = [call for call in calls if "scripts/collect_xccov_native_domain.py" in call]
     assert not collectors
 
 
-@pytest.mark.parametrize("platform", ["macos", "ios"])
+@pytest.mark.parametrize("slug", ["macos", "ios-1", "ios-2", "ios-3"])
 @pytest.mark.parametrize("existing", ["directory", "dangling-link"])
-def test_apple_first_login_refuses_an_existing_result_bundle(tmp_path, platform, existing):
-    bundle = tmp_path / "coverage with spaces" / f"AstralApp-{platform}-first-login.xcresult"
+def test_apple_first_login_refuses_an_existing_result_bundle(tmp_path, slug, existing):
+    bundle = tmp_path / "coverage with spaces" / f"AstralApp-{slug}-first-login.xcresult"
     bundle.parent.mkdir()
     if existing == "directory":
         bundle.mkdir()
     else:
         bundle.symlink_to(tmp_path / "missing")
 
-    result, calls = _run_first_login_step(tmp_path, platform, suite_exit=0)
+    result, calls = _run_first_login_step(tmp_path, slug, suite_exit=0)
 
     assert result.returncode == 1
     assert "::error::result bundle" in result.stdout
