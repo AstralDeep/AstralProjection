@@ -46,6 +46,37 @@
             XCTAssertFalse(FileManager.default.fileExists(atPath: path))
         }
 
+        func testReviewedCreateRefusesAFileCreatedAfterReview() throws {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let workspace = try ComputerWorkspace(root: root.path)
+            let file = root.appendingPathComponent("target.txt")
+            XCTAssertThrowsError(try workspace.read(file.path, maximum: 100))
+            try Data("competing".utf8).write(to: file)
+            XCTAssertThrowsError(try workspace.write(file.path, content: "reviewed", overwrite: false, authorize: {}))
+            XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "competing")
+        }
+
+        func testReviewedCreateRefusesACompetingFileBeforeRename() throws {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let workspace = try ComputerWorkspace(root: root.path)
+            let file = root.appendingPathComponent("target.txt")
+            XCTAssertThrowsError(try workspace.read(file.path, maximum: 100)) { error in
+                XCTAssertEqual((error as? ComputerHostError)?.code, "not_found")
+            }
+            var checks = 0
+            XCTAssertThrowsError(
+                try workspace.write(file.path, content: "reviewed", overwrite: false) {
+                    checks += 1
+                    if checks == 3 { try Data("competing".utf8).write(to: file) }
+                })
+            XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "competing")
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), ["target.txt"])
+        }
+
         func testCredentialRootsAndInvalidTextAreRejected() throws {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             try FileManager.default.createDirectory(
