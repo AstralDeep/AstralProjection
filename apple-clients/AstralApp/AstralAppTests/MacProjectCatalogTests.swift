@@ -164,6 +164,7 @@
                 model.newChat()
                 XCTAssertTrue(model.projectChooserPresented)
                 await model.createProject(name: "New project", chooseFolders: folders)
+                model.projectChoiceDidDismiss()
                 for _ in 0..<2000 where model.activeChatId == nil { await Task.yield() }
                 XCTAssertEqual(model.projects.projects.count, 1)
                 XCTAssertNotNil(model.activeChatId)
@@ -171,6 +172,153 @@
                 XCTAssertEqual(io.choices, folders ? 1 : 0)
                 XCTAssertTrue(grants.manifest?.projects.isEmpty == true)
             }
+        }
+
+        func testCreatedProjectWaitsForChooserDismissalBeforeOpeningNativeFolders() async throws {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                .resolvingSymlinksInPath()
+            let first = root.appendingPathComponent("first")
+            let second = root.appendingPathComponent("second")
+            for url in [first, second] {
+                try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            }
+            defer { try? FileManager.default.removeItem(at: root) }
+            let (model, io, server, grants) = await projectChoiceFixture(selection: [first, second])
+            defer {
+                io.onChoose = nil
+                grants.bind(server: nil, account: nil, device: "mac")
+            }
+            model.composerDraft = "preserved draft"
+            model.staged = [
+                .init(
+                    uid: 1, filename: "notes.txt", category: "text", attachmentId: "attachment", state: "ready",
+                    note: nil)
+            ]
+            io.onChoose = {
+                XCTAssertFalse(model.projectChooserPresented)
+                XCTAssertNil(model.activeChatId)
+                XCTAssertEqual(model.composerDraft, "preserved draft")
+                XCTAssertEqual(model.staged.count, 1)
+            }
+            model.newChat()
+            await model.createProject(name: "New project", chooseFolders: true)
+            XCTAssertFalse(model.projectChooserPresented)
+            XCTAssertEqual(io.choices, 0)
+            XCTAssertNil(model.activeChatId)
+            XCTAssertEqual(model.composerDraft, "preserved draft")
+            let created = await server.created
+            XCTAssertTrue(created.isEmpty)
+            model.projectChoiceDidDismiss()
+            model.projectChoiceDidDismiss()
+            for _ in 0..<2000 where model.activeChatId == nil { await Task.yield() }
+            XCTAssertEqual(io.choices, 1)
+            XCTAssertNotNil(model.activeChatId)
+            XCTAssertEqual(model.composerDraft, "preserved draft")
+            XCTAssertEqual(model.staged.count, 1)
+            XCTAssertEqual(grants.roots(project: try XCTUnwrap(model.projects.selectedId)), [first.path, second.path])
+            let completed = await server.created
+            XCTAssertEqual(completed.count, 1)
+        }
+
+        func testDelayedProjectPickerCannotResumeAfterItsIntentChanges() async throws {
+            for change in ["cancel", "server", "account", "connection", "navigation", "selection", "intent"] {
+                let (model, io, server, _) = await projectChoiceFixture()
+                model.composerDraft = "preserved"
+                model.newChat()
+                await model.createProject(name: "New project", chooseFolders: true)
+                switch change {
+                case "cancel": model.cancelProjectChoice()
+                case "server": model.serverBaseText = "https://another.test"
+                case "account":
+                    model.bindConversationAccount(ConversationAccount(issuer: "https://id.test", subject: "other")!)
+                case "connection": _ = model.beginConversationConnection(UUID().uuidString.lowercased())
+                case "navigation": model.activeChatId = "other-chat"
+                case "selection": model.projects.select(nil)
+                default:
+                    model.projects.select(nil)
+                    model.newChat()
+                }
+                model.projectChoiceDidDismiss()
+                for _ in 0..<100 { await Task.yield() }
+                XCTAssertEqual(io.choices, 0, change)
+                let created = await server.created
+                XCTAssertTrue(created.isEmpty, change)
+                if change == "intent" { XCTAssertTrue(model.projectChooserPresented) }
+                if change == "cancel" || change == "selection" || change == "intent" {
+                    XCTAssertEqual(model.composerDraft, "preserved", change)
+                }
+            }
+        }
+
+        func testSidebarCreationChoosesFoldersWithoutWaitingForSheetCallback() async throws {
+            let (model, io, server, _) = await projectChoiceFixture()
+            await model.createProject(name: "New project", chooseFolders: true)
+            XCTAssertFalse(model.projectChooserPresented)
+            XCTAssertEqual(io.choices, 1)
+            XCTAssertEqual(model.projects.projects.count, 1)
+            XCTAssertNotNil(model.projects.selectedId)
+            XCTAssertNil(model.activeChatId)
+            model.projectChoiceDidDismiss()
+            XCTAssertEqual(io.choices, 1)
+            let created = await server.created
+            XCTAssertTrue(created.isEmpty)
+        }
+
+        func testPickerReturnRechecksIntentBeforeResumingChat() async throws {
+            for change in ["cancel", "server", "account", "connection", "navigation", "selection", "capability"] {
+                let (model, io, server, _) = await projectChoiceFixture()
+                model.composerDraft = "preserved"
+                model.newChat()
+                await model.createProject(name: "New project", chooseFolders: true)
+                io.onChoose = {
+                    switch change {
+                    case "cancel": model.cancelProjectChoice()
+                    case "server": model.serverBaseText = "https://another.test"
+                    case "account":
+                        model.bindConversationAccount(ConversationAccount(issuer: "https://id.test", subject: "other")!)
+                    case "connection": _ = model.beginConversationConnection(UUID().uuidString.lowercased())
+                    case "navigation": model.activeChatId = "other-chat"
+                    case "selection": model.projects.select(nil)
+                    default: model.projects.negotiate(false)
+                    }
+                }
+                model.projectChoiceDidDismiss()
+                io.onChoose = nil
+                for _ in 0..<100 { await Task.yield() }
+                XCTAssertEqual(io.choices, 1, change)
+                let created = await server.created
+                XCTAssertTrue(created.isEmpty, change)
+                if change == "cancel" || change == "selection" {
+                    XCTAssertEqual(model.composerDraft, "preserved", change)
+                }
+            }
+        }
+
+        private func projectChoiceFixture(selection: [URL]? = nil) async -> (
+            AppModel, MacComputerTestWorkspaceGrants, ProjectCatalogServer, MacProjectGrants
+        ) {
+            let server = ProjectCatalogServer(project: project)
+            await server.startEmpty()
+            await server.succeedCreations()
+            let io = MacComputerTestWorkspaceGrants()
+            io.selection = selection
+            var bytes: [String: Data] = [:]
+            let grants = MacProjectGrants(
+                grants: io.port, persistence: .init(read: { bytes[$0] }, write: { bytes[$0] = $1 }))
+            let host = MacComputerHost(available: false, projectGrants: grants)
+            let model = AppModel(
+                tokenStore: InMemoryTokenStore(), defaults: UserDefaults(suiteName: UUID().uuidString)!,
+                computerHost: host)
+            host.beginWorkspaceNegotiation(server: URL(string: "https://example.test")!, account: "owner")
+            host.workspaceNegotiated(projects: true)
+            model.projects.bind(
+                scope: "owner",
+                client: RestClient(
+                    serverBase: URL(string: "https://example.test")!, tokenProvider: { nil },
+                    transport: { try await server.respond($0) }))
+            model.projects.negotiate(true)
+            await model.projects.refresh()
+            return (model, io, server, grants)
         }
 
         func testVoiceWithoutSelectedProjectNeverCreatesAnUnscopedChat() async throws {

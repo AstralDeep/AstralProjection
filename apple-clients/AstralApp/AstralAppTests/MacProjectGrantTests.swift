@@ -3,12 +3,46 @@
 
 #if os(macOS)
     import AstralCore
+    import Observation
     import XCTest
     @testable import AstralDeep
 
     @MainActor final class MacProjectGrantTests: XCTestCase {
         let project = "00000000-0000-1000-8000-000000000001"
         let other = "00000000-0000-1000-8000-000000000002"
+        func testFolderRowsObserveSelectionPrimaryChangesAndRemoval() async throws {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                .resolvingSymlinksInPath()
+            let first = root.appendingPathComponent("first")
+            let second = root.appendingPathComponent("second")
+            for url in [first, second] {
+                try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            }
+            defer { try? FileManager.default.removeItem(at: root) }
+            let io = MacComputerTestWorkspaceGrants()
+            io.selection = [first, second]
+            var bytes: [String: Data] = [:]
+            let store = MacProjectGrants(
+                grants: io.port, persistence: .init(read: { bytes[$0] }, write: { bytes[$0] = $1 }))
+            store.bind(server: URL(string: "https://example.com")!, account: "owner", device: "mac")
+            try store.reconcile(projectIds: [project])
+            for change in ["choose", "primary", "remove"] {
+                let changed = expectation(description: "folder rows update after \(change)")
+                withObservationTracking {
+                    _ = store.roots(project: project)
+                } onChange: {
+                    changed.fulfill()
+                }
+                switch change {
+                case "choose": try store.choose(project: project)
+                case "primary": try store.primary(project: project, path: second.path)
+                default: try store.remove(project: project, path: first.path)
+                }
+                await fulfillment(of: [changed], timeout: 1)
+            }
+            XCTAssertEqual(store.roots(project: project), [second.path])
+            store.bind(server: nil, account: nil, device: "mac")
+        }
         func testGrantIsolationRevocationAndDurableFailure() throws {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
                 .resolvingSymlinksInPath()

@@ -235,7 +235,9 @@
             }
             .sheet(
                 isPresented: Binding(
-                    get: { model.projectChooserPresented }, set: { if !$0 { model.cancelProjectChoice() } })
+                    get: { model.projectChooserPresented },
+                    set: { if !$0, model.projectChooserPresented { model.cancelProjectChoice() } }),
+                onDismiss: model.projectChoiceDidDismiss
             ) {
                 MacProjectChoiceSheet()
             }

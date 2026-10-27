@@ -279,6 +279,7 @@ final class AppModel: NSObject {
         let projects = MacProjectCatalog()
         private(set) var projectChooserPresented = false
         @ObservationIgnored private var projectChoice: (() -> Void)?
+        @ObservationIgnored private var projectChoiceAfterDismissal: (() -> Void)?
         @ObservationIgnored private var projectChoiceEpoch = UUID()
         @ObservationIgnored private var projectCreationTask: Task<Void, Never>?
         @ObservationIgnored private var projectCreationEpoch = UUID()
@@ -5214,6 +5215,7 @@ final class AppModel: NSObject {
             let connection = continuity.connectionGeneration
             let navigation = conversationNavigationGeneration
             let chat = activeChatId
+            projectChoiceAfterDismissal = nil
             projectChoiceEpoch = UUID()
             projectChoice = { [weak self] in
                 guard let self, self.downloadOwner == owner, self.continuity.connectionGeneration == connection,
@@ -5228,6 +5230,13 @@ final class AppModel: NSObject {
             projectChoiceEpoch = UUID()
             projectChooserPresented = false
             projectChoice = nil
+            projectChoiceAfterDismissal = nil
+        }
+        func projectChoiceDidDismiss() {
+            guard !projectChooserPresented else { return }
+            let action = projectChoiceAfterDismissal
+            projectChoiceAfterDismissal = nil
+            action?()
         }
         func chooseProjectForPendingChat(_ id: String) {
             guard projectChooserPresented, projects.enabled, projects.projects.contains(where: { $0.id == id }) else {
@@ -5240,17 +5249,44 @@ final class AppModel: NSObject {
         }
         func createProject(name: String, chooseFolders: Bool) async {
             let owner = downloadOwner
+            let server = serverBase
             let connection = continuity.connectionGeneration
             let navigation = conversationNavigationGeneration
+            let chat = activeChatId
             let choice = projectChoiceEpoch
-            guard let id = await projects.createProject(name: name), downloadOwner == owner,
+            guard let id = await projects.createProject(name: name), !Task.isCancelled, downloadOwner == owner,
+                serverBase == server, activeChatId == chat,
                 continuity.connectionGeneration == connection, conversationNavigationGeneration == navigation,
                 projectChoiceEpoch == choice, projects.selectedId == id
             else { return }
-            if chooseFolders {
-                macComputerHost.updateProjectFolders { try macComputerHost.projectGrants.choose(project: id) }
+            let finish = { [weak self] in
+                guard let self, self.downloadOwner == owner, self.serverBase == server, self.activeChatId == chat,
+                    self.continuity.connectionGeneration == connection,
+                    self.conversationNavigationGeneration == navigation, self.projectChoiceEpoch == choice,
+                    self.projects.enabled, self.projects.selectedId == id,
+                    self.projects.projects.contains(where: { $0.id == id })
+                else { return }
+                if chooseFolders {
+                    self.macComputerHost.updateProjectFolders {
+                        try self.macComputerHost.projectGrants.choose(project: id)
+                    }
+                }
+                guard self.downloadOwner == owner, self.serverBase == server, self.activeChatId == chat,
+                    self.continuity.connectionGeneration == connection,
+                    self.conversationNavigationGeneration == navigation, self.projectChoiceEpoch == choice,
+                    self.projects.enabled, self.projects.selectedId == id,
+                    self.projects.projects.contains(where: { $0.id == id })
+                else { return }
+                let action = self.projectChoice
+                self.cancelProjectChoice()
+                action?()
             }
-            if projectChooserPresented { chooseProjectForPendingChat(id) }
+            if projectChooserPresented {
+                projectChoiceAfterDismissal = finish
+                projectChooserPresented = false
+            } else {
+                finish()
+            }
         }
         private func createProjectChat(force: Bool = false, then action: (() -> Void)? = nil) {
             if needsProjectSelection(force: force) {

@@ -181,7 +181,10 @@
                 throw error
             }
         }
-        func roots(project: String) -> [String] { resources[project, default: []].map { $0.workspace.root } }
+        func roots(project: String) -> [String] {
+            _ = manifest
+            return resources[project, default: []].map { $0.workspace.root }
+        }
         func choose(project: String) throws {
             let operation = epoch
             let choice = UUID()
