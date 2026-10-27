@@ -60,6 +60,8 @@ import com.personalailabs.astraldeep.app.render.Renderer
 import com.personalailabs.astraldeep.app.render.ThemeSink
 import com.personalailabs.astraldeep.app.ui.ViewportInteraction
 import com.personalailabs.astraldeep.app.ui.theme.AstralMono
+import com.personalailabs.astraldeep.app.ui.theme.LocalAstralFieldBorder
+import com.personalailabs.astraldeep.app.ui.theme.astralOutlinedFieldColors
 import com.personalailabs.astraldeep.app.ui.theme.channelSwatchOptions
 import com.personalailabs.astraldeep.app.ui.theme.hexToColor
 import com.personalailabs.astraldeep.core.sdui.Component
@@ -106,6 +108,7 @@ private fun InputPrimitive(
         modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.hasFocus },
         label = c.str("label")?.let { { Text(it) } },
         singleLine = true,
+        colors = astralOutlinedFieldColors(),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         keyboardActions =
             KeyboardActions(
@@ -312,6 +315,7 @@ private fun ParamPickerPrimitive(
                             modifier = Modifier.fillMaxWidth(),
                             label = { Text(label) },
                             singleLine = kind != "textarea",
+                            colors = astralOutlinedFieldColors(),
                             visualTransformation =
                                 if (kind == "password") PasswordVisualTransformation() else VisualTransformation.None,
                         )
@@ -399,7 +403,7 @@ private fun SelectField(
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(4.dp))
-                        .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
+                        .border(1.dp, LocalAstralFieldBorder.current, RoundedCornerShape(4.dp))
                         .clickable(role = Role.DropdownList) { open = true }
                         .padding(horizontal = 12.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -510,6 +514,7 @@ private fun ColorPickerPrimitive(
                             onValueChange = { draft = it },
                             label = { Text("Hex color") },
                             singleLine = true,
+                            colors = astralOutlinedFieldColors(),
                             isError = draft.isNotBlank() && hexToColor(draft) == null,
                             supportingText = { Text("Enter a six-digit hex color, such as #123456.") },
                         )
