@@ -44,17 +44,22 @@
             model.selectProject(project)
             model.composerDraft = "preserved draft"
             XCTAssertNil(model.projects.errorMessage)
-            func elements(_ value: Any, depth: Int = 0) -> [any NSAccessibilityProtocol] {
-                guard depth < 32, let element = value as? any NSAccessibilityProtocol else { return [] }
-                return [element] + (element.accessibilityChildren() ?? []).flatMap { elements($0, depth: depth + 1) }
-            }
+            model.history = [
+                try XCTUnwrap(
+                    ChatSummary(json: .object(["id": .string("legacy"), "title": .string("Legacy fallback row")])))
+            ]
             let content = try XCTUnwrap(window.contentView)
+            window.makeKeyAndOrderFront(nil)
+            content.layoutSubtreeIfNeeded()
             try await settle()
-            let create = try XCTUnwrap(elements(content).first { $0.accessibilityIdentifier() == "project-create" })
-            XCTAssertTrue(create.accessibilityPerformPress())
+            XCTAssertEqual(model.consolePresentation?.navigationMode, .sidebar)
+            XCTAssertTrue(try recognizedText(content).contains("Retained project"))
+            model.presentProjectCreation()
             try await settle()
             XCTAssertTrue(model.projectChooserPresented)
-            XCTAssertNotNil(window.attachedSheet)
+            let sheet = try XCTUnwrap(window.attachedSheet)
+            let sheetView = try XCTUnwrap(sheet.contentView)
+            XCTAssertTrue(try recognizedText(sheetView).contains("Choose a project"))
             XCTAssertEqual(model.projects.selectedId, project)
             XCTAssertEqual(model.composerDraft, "preserved draft")
             model.cancelProjectChoice()
@@ -62,11 +67,13 @@
             XCTAssertNil(window.attachedSheet)
             await model.handle(.disconnected(reason: "reconnect"))
             try await settle()
-            let controls = elements(content)
-            XCTAssertNotNil(controls.first { $0.accessibilityIdentifier() == "project-select-" + project })
-            XCTAssertFalse(controls.contains { $0.accessibilityIdentifier()?.hasPrefix("workbench-chat-") == true })
-            let unavailable = try XCTUnwrap(controls.first { $0.accessibilityIdentifier() == "project-create" })
-            XCTAssertFalse(unavailable.isAccessibilityEnabled())
+            let visible = try recognizedText(content)
+            XCTAssertTrue(visible.contains("Retained project"))
+            XCTAssertFalse(visible.contains("Legacy fallback row"))
+            model.presentProjectCreation()
+            try await settle()
+            XCTAssertFalse(model.projectChooserPresented)
+            XCTAssertNil(window.attachedSheet)
             XCTAssertFalse(model.projects.enabled)
         }
 
