@@ -113,7 +113,7 @@ final class AppModel: NSObject {
 
     struct ActivityRow: Identifiable, Equatable {
         enum Approval: Equatable {
-            case none, waiting, submitted, approved, granted, denied, refused, expired, uncertain
+            case none, waiting, withdrawing, submitted, approved, granted, denied, refused, expired, uncertain
         }
         enum State: Equatable { case running, completed, failed, cancelled }
 
@@ -133,6 +133,7 @@ final class AppModel: NSObject {
             case .none: return nil
             case .waiting: return "Approval waiting"
             case .submitted: return "Decision submitted"
+            case .withdrawing: return nil
             case .refused: return "Not approved"
             case .expired: return "Approval expired"
             case .uncertain: return "Outcome uncertain"
@@ -348,6 +349,9 @@ final class AppModel: NSObject {
     @ObservationIgnored private var decidedApprovals: Set<String> = []
     @ObservationIgnored private var screenThumbnailSource: String?
     @ObservationIgnored private var approvalRows: [String: String] = [:]
+    @ObservationIgnored private var approvalOrigins: [String: SubmittedApproval] = [:]
+    @ObservationIgnored private var approvalHosts: [String: String] = [:]
+    @ObservationIgnored private var withdrawingApprovals: Set<String> = []
     @ObservationIgnored private var redispatchable: Set<String> = []
     @ObservationIgnored private var activityObservationPaused = false
     static let maximumActivityRows = 200
@@ -613,6 +617,7 @@ final class AppModel: NSObject {
         authorityText = storedAuthority.isEmpty ? AstralConfig.keycloakAuthority : storedAuthority
         super.init()
         #if os(macOS)
+            macComputerHost.bypassDidEnable = { [weak self] host in self?.withdrawLocalComputerReviews(host) }
             projects.onReconciled = { [weak self] ids in
                 guard let self else { return }
                 try self.macComputerHost.reconcileProjects(ids)
@@ -1167,6 +1172,7 @@ final class AppModel: NSObject {
             retireOrdinarySurfaceRequests()
             surfaceFailureMessage = "Reload Safety to check current stop status before trying again."
         }
+        if continuity.connectionGeneration != generation { retireSubmittedApprovals() }
         resetViewportRefresh(clearSubmissionHistory: true)
         invalidateWorkRead()
         clearPendingOperationSubmissions()
@@ -2017,6 +2023,7 @@ final class AppModel: NSObject {
                 Task { await self.reconcileLLMFirstLoginOperation() }
             }
         case .disconnected:
+            retireSubmittedApprovals()
             #if os(macOS)
                 macComputerHost.disconnect()
             #endif
@@ -3616,6 +3623,7 @@ final class AppModel: NSObject {
             rows.removeFirst(rows.count - Self.maximumActivityRows)
             activityAliases = activityAliases.filter { !dropped.contains($0.value) }
             approvalRows = approvalRows.filter { !dropped.contains($0.value) }
+            approvalOrigins = approvalOrigins.filter { approvalRows[$0.key] != nil }
             redispatchable.subtract(dropped)
         }
         guard rows != before else { return }
@@ -3729,18 +3737,26 @@ final class AppModel: NSObject {
         }
     }
 
-    private func noteApprovalDecision(_ text: String) {
+    private func noteApprovalDecision(_ text: String) -> Bool {
         guard text.contains("authorize_action") || text.contains("remote_op_decision"),
             let frame = InboundFrame.parse(text), frame.name == "ui_event",
             ["authorize_action", "remote_op_decision"].contains(frame.payload["action"]?.stringValue ?? ""),
             let payload = frame.payload["payload"],
             let requestId = (payload["hitl_request_id"] ?? payload["proposal_id"])?.stringValue, !requestId.isEmpty
-        else { return }
+        else { return true }
         guard let decision = payload["decision"]?.stringValue,
             ["approve", "approve_and_resume", "grant_task", "decline"].contains(decision),
-            !decidedApprovals.contains(requestId), submittedApprovals[requestId] == nil
-        else { return }
-        guard submittedApprovals.count < 512 else { return }
+            !decidedApprovals.contains(requestId), !withdrawingApprovals.contains(requestId),
+            submittedApprovals[requestId] == nil
+        else { return false }
+        guard submittedApprovals.count < 512 else { return false }
+        if let origin = approvalOrigins[requestId],
+            origin.owner != downloadOwner || origin.connection != continuity.connectionGeneration
+                || origin.chat != activeChatId
+        {
+            errorBanner = "Open the original conversation to answer this review."
+            return false
+        }
         let linked = approvalRows[requestId]
         submittedApprovals[requestId] = SubmittedApproval(
             owner: downloadOwner, connection: continuity.connectionGeneration,
@@ -3749,6 +3765,85 @@ final class AppModel: NSObject {
             guard let index = linked.flatMap({ id in rows.firstIndex { $0.id == id } }) else { return }
             rows[index].approval = .submitted
         }
+        observeActivityComponents()
+        return true
+    }
+
+    private func withdrawLocalComputerReviews(_ host: String) {
+        let ids = Set(
+            approvalHosts.compactMap { id, value -> String? in
+                guard value == host, !decidedApprovals.contains(id), let origin = approvalOrigins[id],
+                    origin.owner == downloadOwner, origin.connection == continuity.connectionGeneration
+                else { return nil }
+                return id
+            })
+        withdrawingApprovals.formUnion(ids)
+        for id in ids {
+            guard let origin = approvalOrigins[id] else { continue }
+            updateActivity(origin.chat) { rows in
+                if let index = rows.firstIndex(where: { $0.id == origin.row }) {
+                    rows[index].approval = .withdrawing
+                    if submittedApprovals[id] == nil {
+                        rows[index].action = "Review closed on this Mac"
+                        rows[index].state = .completed
+                        rows[index].result =
+                            "Approval mode changed. This closes only the local review; check the action outcome before retrying."
+                    } else {
+                        rows[index].result = "Computer approval mode changed; the server outcome is not yet known."
+                    }
+                }
+            }
+        }
+        removeApprovalCards(ids)
+        observeActivityComponents()
+    }
+
+    private func removeApprovalCards(_ ids: Set<String>) {
+        func stripped(_ value: JSONValue) -> JSONValue? {
+            guard var object = value.objectValue else { return value }
+            if let id = object["id"]?.stringValue,
+                ids.contains(where: { id == "hitl_" + $0 || id == "au_approval_" + $0 })
+            {
+                return nil
+            }
+            for (key, child) in object {
+                if let values = child.arrayValue { object[key] = .array(values.compactMap(stripped)) }
+            }
+            return .object(object)
+        }
+        func components(_ values: [AstralComponent]) -> [AstralComponent] {
+            values.compactMap { item in stripped(item.raw).map { AstralComponent(type: item.type, raw: $0) } }
+        }
+        func cleaned(_ turn: ChatTurn) -> ChatTurn {
+            ChatTurn(id: turn.id, role: turn.role, text: turn.text, components: components(turn.components))
+        }
+        activityObservationPaused = true
+        canvas = components(canvas)
+        transientCanvas = transientCanvas.map(components)
+        turns = turns.map(cleaned)
+        transientTurns = transientTurns.map(cleaned)
+        activityObservationPaused = false
+    }
+
+    private func retireSubmittedApprovals() {
+        let interrupted = submittedApprovals.merging(approvalOrigins.filter { withdrawingApprovals.contains($0.key) }) {
+            submitted, _ in submitted
+        }
+        for (id, pending) in interrupted {
+            decidedApprovals.insert(id)
+            updateActivity(pending.chat) { rows in
+                guard let index = pending.row.flatMap({ id in rows.firstIndex { $0.id == id } }) else { return }
+                rows[index].approval = pending.decision.isEmpty ? .expired : .uncertain
+                rows[index].state = .failed
+                rows[index].result =
+                    pending.decision.isEmpty
+                    ? "This local review was interrupted by a connection change. Check the action outcome before retrying."
+                    : "The connection changed before the decision outcome arrived. Inspect the action before retrying."
+            }
+        }
+        submittedApprovals.removeAll()
+        withdrawingApprovals.removeAll()
+        removeApprovalCards(Set(interrupted.keys))
         observeActivityComponents()
     }
 
@@ -3759,16 +3854,21 @@ final class AppModel: NSObject {
             return
         #endif
         guard let value = frame.payload["approval_decision"], let id = value["request_id"]?.stringValue,
-            let pending = submittedApprovals[id], !decidedApprovals.contains(id), pending.owner == downloadOwner,
+            let pending = submittedApprovals[id]
+                ?? (value["decision"] == .string("withdraw") ? approvalOrigins[id] : nil),
+            !decidedApprovals.contains(id), pending.owner == downloadOwner,
             let connection = pending.connection, connection == continuity.connectionGeneration,
             frame.payload["connection_generation"] == .string(connection),
             frame.payload["chat_id"]?.stringValue == pending.chat,
-            value["decision"]?.stringValue == pending.decision, value["revision"] == .number(1),
+            value["decision"]?.stringValue == pending.decision
+                || value["decision"] == .string("withdraw") && value["state"] == .string("cancelled"),
+            value["revision"] == .number(1),
             let state = value["state"]?.stringValue,
             ["accepted", "refused", "expired", "cancelled", "error", "uncertain"].contains(state),
             let message = value["message"]?.stringValue, message.unicodeScalars.count <= 1000
         else { return }
         submittedApprovals.removeValue(forKey: id)
+        withdrawingApprovals.remove(id)
         decidedApprovals.insert(id)
         updateActivity(pending.chat) { rows in
             guard let index = pending.row.flatMap({ id in rows.firstIndex { $0.id == id } }) else { return }
@@ -3783,33 +3883,49 @@ final class AppModel: NSObject {
                 rows[index].approval = .uncertain
                 rows[index].state = .failed
             case "cancelled":
-                rows[index].approval = pending.decision == "decline" ? .denied : .refused
+                rows[index].approval =
+                    pending.decision == "decline" && value["decision"] != .string("withdraw") ? .denied : .refused
                 rows[index].state = .cancelled
             default:
                 rows[index].approval = .refused
                 rows[index].state = .failed
             }
+            if value["decision"] == .string("withdraw") {
+                rows[index].approval = .none
+                rows[index].action = "Review closed on this Mac"
+                rows[index].state = .completed
+            }
             if state != "accepted" { rows[index].result = message }
         }
-        if state != "accepted", pending.chat == activeChatId {
+        if state != "accepted", value["decision"] != .string("withdraw"), pending.chat == activeChatId {
             errorBanner = message
             bannerIsError = state != "cancelled"
         }
+        removeApprovalCards([id])
         observeActivityComponents()
     }
 
     private func observeActivityComponents() {
         guard !activityObservationPaused else { return }
         let live = transientCanvas ?? canvas
-        let cards = Self.approvalCards(in: visibleTurns.suffix(8).flatMap(\.components) + live)
+        let observed = Self.approvalCards(in: visibleTurns.suffix(8).flatMap(\.components) + live)
+        let retired = Set(observed.map(\.approval.requestId)).intersection(decidedApprovals.union(withdrawingApprovals))
+        if !retired.isEmpty { removeApprovalCards(retired) }
+        let cards =
+            observed
             .filter {
-                !decidedApprovals.contains($0.approval.requestId) && submittedApprovals[$0.approval.requestId] == nil
+                !decidedApprovals.contains($0.approval.requestId)
+                    && !withdrawingApprovals.contains($0.approval.requestId)
+                    && submittedApprovals[$0.approval.requestId] == nil
             }
             .filter { !Self.bypassApproved($0.card) }
         let pending = cards.map(\.approval)
         let prompts = cards.compactMap { Self.approvalPrompt($0.card, $0.approval) }
         if prompts != approvalPrompts { approvalPrompts = prompts }
-        for approval in pending where approvalRows[approval.requestId] == nil { linkApproval(approval) }
+        for item in cards where approvalRows[item.approval.requestId] == nil {
+            linkApproval(item.approval)
+            approvalHosts[item.approval.requestId] = item.card.raw["computer_host_id"]?.stringValue
+        }
         #if os(macOS)
             if macComputerHost.awaitingApproval == pending.isEmpty { macComputerHost.approvalWaiting(!pending.isEmpty) }
         #endif
@@ -3825,7 +3941,11 @@ final class AppModel: NSObject {
     }
 
     private func linkApproval(_ approval: PendingApproval) {
-        if approvalRows.count >= 512 { approvalRows.removeAll() }
+        if approvalRows.count >= 512 {
+            approvalRows.removeAll()
+            approvalOrigins.removeAll()
+            approvalHosts.removeAll()
+        }
         let chatId = activeChatId
         let position = activityPosition(chatId)
         var linked: String?
@@ -3845,6 +3965,9 @@ final class AppModel: NSObject {
         }
         guard let linked else { return }
         approvalRows[approval.requestId] = linked
+        approvalOrigins[approval.requestId] = SubmittedApproval(
+            owner: downloadOwner,
+            connection: continuity.connectionGeneration, chat: chatId, row: linked, decision: "")
         announce(approval.summary.isEmpty ? "Approval waiting" : "Approval waiting: \(approval.summary)")
         if let image = approval.image { attachActivityThumbnail(image, to: linked, chatId: chatId) }
     }
@@ -3871,6 +3994,9 @@ final class AppModel: NSObject {
         decidedApprovals = []
         submittedApprovals = [:]
         approvalRows = [:]
+        approvalOrigins = [:]
+        approvalHosts = [:]
+        withdrawingApprovals = []
         redispatchable = []
         screenThumbnailSource = nil
         #if os(macOS)
@@ -4808,7 +4934,7 @@ final class AppModel: NSObject {
     }
 
     private func rawSend(_ text: String) {
-        noteApprovalDecision(text)
+        guard noteApprovalDecision(text) else { return }
         let computerReview = ComputerHostOutbound.isReviewDecision(text)
         #if os(macOS)
             let localComputerSession = computerReview ? macComputerHost.recordApprovalInteraction() : nil

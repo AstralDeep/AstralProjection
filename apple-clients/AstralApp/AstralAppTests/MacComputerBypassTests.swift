@@ -76,6 +76,83 @@
             await flush(host)
         }
 
+        func testPhysicalBypassWithdrawsOnlyThisHostsCardsWithoutApprovingOrReplaying() async throws {
+            for submitted in [false, true] {
+                let host = try makeHost()
+                let suite = "BypassReview.\(UUID().uuidString)"
+                suites.append(suite)
+                let model = AppModel(
+                    tokenStore: InMemoryTokenStore(), defaults: try XCTUnwrap(UserDefaults(suiteName: suite)),
+                    computerHost: host)
+                model.signedIn = true
+                model.connected = true
+                let connection = UUID().uuidString.lowercased()
+                XCTAssertTrue(model.beginConversationConnection(connection))
+                model.activeChatId = "33333333-3333-4333-8333-333333333333"
+                model.projects.bind(
+                    scope: "owner",
+                    client: RestClient(serverBase: URL(string: "https://example.test")!, tokenProvider: { nil }))
+                model.projects.negotiate(true)
+                let request = String(repeating: "ab", count: 16)
+                let other = String(repeating: "cd", count: 16)
+                func card(_ id: String, _ hostId: String) -> AstralComponent {
+                    AstralComponent(
+                        type: "card",
+                        raw: .object([
+                            "type": .string("card"), "id": .string("au_approval_" + id),
+                            "title": .string("Confirm an action on Mac"), "computer_host_id": .string(hostId),
+                            "content": .array(
+                                ["approve", "decline"].map { decision in
+                                    .object([
+                                        "type": .string("button"), "label": .string(decision),
+                                        "action": .string("remote_op_decision"),
+                                        "payload": .object(["proposal_id": .string(id), "decision": .string(decision)]),
+                                    ])
+                                }),
+                        ]))
+                }
+                model.canvas = [card(request, try XCTUnwrap(host.descriptor).hostId), card(other, "other-mac")]
+                let prompt = try XCTUnwrap(model.approvalPrompts.first { $0.requestId == request })
+                var decisions = 0
+                model.outboundTap = { _ in decisions += 1 }
+                if submitted { model.decideApproval(prompt, allow: true) }
+                let before = decisions
+                await enable(host)
+                XCTAssertTrue(host.bypass)
+                XCTAssertEqual(model.approvalPrompts.map(\.requestId), [other])
+                XCTAssertEqual(AppModel.pendingComputerApprovals(in: model.canvas).map(\.requestId), [other])
+                XCTAssertEqual(model.waitingApprovals, 1)
+                model.canvas = [card(request, try XCTUnwrap(host.descriptor).hostId), card(other, "other-mac")]
+                XCTAssertEqual(AppModel.pendingComputerApprovals(in: model.canvas).map(\.requestId), [other])
+                XCTAssertEqual(model.activity.first?.approval, .withdrawing)
+                XCTAssertNil(model.activity.first?.approvalLabel)
+                if !submitted {
+                    XCTAssertEqual(model.activity.first?.state, .completed)
+                    XCTAssertEqual(model.activity.first?.action, "Review closed on this Mac")
+                    XCTAssertTrue(model.activity.first?.result.contains("check the action outcome") == true)
+                }
+                model.decideApproval(prompt, allow: true)
+                XCTAssertEqual(decisions, before)
+                model.handleFrame(
+                    InboundFrame(
+                        name: "chat_status",
+                        payload: .object([
+                            "chat_id": .string(model.activeChatId!), "connection_generation": .string(connection),
+                            "approval_decision": .object([
+                                "request_id": .string(request), "decision": .string(submitted ? "approve" : "withdraw"),
+                                "state": .string(submitted ? "accepted" : "cancelled"), "revision": .number(1),
+                                "message": .string("Computer approval mode changed."),
+                            ]),
+                        ])))
+                XCTAssertEqual(
+                    model.activity.first?.approval, submitted ? .approved : AppModel.ActivityRow.Approval.none)
+                XCTAssertNil(model.errorBanner)
+                if !submitted { XCTAssertNil(model.activity.first?.approvalLabel) }
+                XCTAssertEqual(model.approvalPrompts.map(\.requestId), [other])
+                XCTAssertEqual(decisions, before)
+            }
+        }
+
         func testEnablingFromTheBackgroundOrWithoutComputerAccessIsRefused() async throws {
             let gate = Gate()
             let host = try makeHost(gate: gate)

@@ -103,6 +103,7 @@
         @ObservationIgnored private var workspaceNegotiated = true
         @ObservationIgnored private var projectHostAnnounced = false
         @ObservationIgnored private var pendingManifest: ComputerProjectManifest?
+        @ObservationIgnored var bypassDidEnable: ((String) -> Void)?
         @ObservationIgnored var announcer: (String) -> Void = { AccessibilityNotification.Announcement($0).post() }
         @ObservationIgnored private var bypassReleaseOwed = false
         @ObservationIgnored private let defaults: UserDefaults
@@ -630,6 +631,7 @@
             bypassReleaseOwed = false
             guard bypass != value else { return }
             bypass = value
+            if value { bypassDidEnable?(hostId) }
             send(bypassFrame(value))
             announcer(value ? "Approvals bypassed on this Mac" : "Approval bypass is off")
         }

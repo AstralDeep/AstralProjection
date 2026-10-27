@@ -100,6 +100,127 @@
             XCTAssertTrue(model.turnActive)
             XCTAssertEqual(model.statusText, statusBeforeReceipt)
         }
+        private func receipt(_ connection: String, chat: String, state: String, decision: String = "approve")
+            -> InboundFrame
+        {
+            InboundFrame(
+                name: "chat_status",
+                payload: .object([
+                    "type": .string("chat_status"), "status": .string("approval_decision"),
+                    "chat_id": .string(chat), "connection_generation": .string(connection),
+                    "approval_decision": .object([
+                        "request_id": .string(proposal), "decision": .string(decision),
+                        "revision": .number(1), "state": .string(state), "message": .string("Server: " + state),
+                    ]),
+                ]))
+        }
+
+        private func negotiated(_ model: AppModel, connection: String) {
+            XCTAssertTrue(model.beginConversationConnection(connection))
+            model.projects.bind(
+                scope: "owner",
+                client: RestClient(serverBase: URL(string: "https://example.test")!, tokenProvider: { nil }))
+            model.projects.negotiate(true)
+        }
+
+        func testEveryTerminalReceiptIsStickyAndPreservesUnrelatedWork() throws {
+            let cases: [(String, Bool, AppModel.ActivityRow.Approval)] = [
+                ("accepted", true, .approved), ("refused", true, .refused), ("expired", true, .expired),
+                ("error", true, .refused), ("uncertain", true, .uncertain), ("cancelled", true, .refused),
+                ("cancelled", false, .denied), ("refused", false, .refused),
+            ]
+            for (state, allow, expected) in cases {
+                let (model, sent) = try model()
+                let connection = UUID().uuidString.lowercased()
+                negotiated(model, connection: connection)
+                let origin = try XCTUnwrap(model.activeChatId)
+                model.canvas = [originCard()]
+                let prompt = try XCTUnwrap(model.approvalPrompts.first)
+                model.decideApproval(prompt, allow: allow)
+                model.decideApproval(prompt, allow: allow)
+                XCTAssertEqual(decisions(sent()).count, 1)
+                model.activeChatId = "another-chat"
+                model.turnActive = true
+                model.statusText = "Another chat is running"
+                let otherRows = model.activity
+                let decision = allow ? "approve" : "decline"
+                model.handleFrame(receipt(connection, chat: "foreign-chat", state: state, decision: decision))
+                model.activeChatId = origin
+                XCTAssertEqual(model.activity.last?.approval, .submitted)
+                model.activeChatId = "another-chat"
+                model.handleFrame(receipt(connection, chat: origin, state: state, decision: decision))
+                XCTAssertEqual(model.activity, otherRows)
+                XCTAssertTrue(model.turnActive)
+                XCTAssertEqual(model.statusText, "Another chat is running")
+                model.activeChatId = origin
+                XCTAssertEqual(model.activity.last?.approval, expected, state)
+                if state != "accepted" { XCTAssertEqual(model.activity.last?.result, "Server: " + state) }
+                model.handleFrame(receipt(connection, chat: origin, state: "accepted", decision: decision))
+                XCTAssertEqual(model.activity.last?.approval, expected)
+                XCTAssertTrue(model.approvalPrompts.isEmpty)
+            }
+        }
+
+        func testOldCardCannotSubmitUnderNewNavigation() throws {
+            let (model, sent) = try model()
+            model.canvas = [originCard()]
+            let prompt = try XCTUnwrap(model.approvalPrompts.first)
+            let original = model.activeChatId
+            XCTAssertTrue(
+                model.openConversationRequest(
+                    chatId: "44444444-4444-4444-8444-444444444444", requestGeneration: UUID().uuidString.lowercased(),
+                    purpose: .hydration))
+            model.decideApproval(prompt, allow: true)
+            XCTAssertTrue(decisions(sent()).isEmpty)
+            XCTAssertTrue(model.activity.isEmpty)
+            model.activeChatId = original
+            XCTAssertNotEqual(model.activity.last?.approval, .submitted)
+        }
+
+        func testDisconnectAndConnectionReplacementRetireSubmittedWithoutReplay() async throws {
+            for disconnect in [true, false] {
+                let (model, sent) = try model()
+                let old = UUID().uuidString.lowercased()
+                negotiated(model, connection: old)
+                let chat = try XCTUnwrap(model.activeChatId)
+                model.canvas = [originCard()]
+                model.decideApproval(try XCTUnwrap(model.approvalPrompts.first), allow: true)
+                if disconnect { await model.handle(.disconnected(reason: "test")) }
+                XCTAssertTrue(model.beginConversationConnection(UUID().uuidString.lowercased()))
+                XCTAssertEqual(model.activity.last?.approval, .uncertain)
+                model.handleFrame(receipt(old, chat: chat, state: "accepted"))
+                XCTAssertEqual(model.activity.last?.approval, .uncertain)
+                XCTAssertTrue(model.approvalPrompts.isEmpty)
+                XCTAssertEqual(decisions(sent()).count, 1)
+            }
+        }
+
+        func testRefusalReceiptSurfacesItsMessageWithoutClearingBusyState() throws {
+            let (model, _) = try model()
+            let connection = UUID().uuidString.lowercased()
+            negotiated(model, connection: connection)
+            model.canvas = [originCard()]
+            model.decideApproval(try XCTUnwrap(model.approvalPrompts.first), allow: true)
+            model.turnActive = true
+            model.statusText = "Working"
+            model.handleFrame(receipt(connection, chat: model.activeChatId!, state: "refused"))
+            XCTAssertEqual(model.errorBanner, "Server: refused")
+            XCTAssertEqual(model.activity.last?.approval, .refused)
+            XCTAssertTrue(model.turnActive)
+            XCTAssertEqual(model.statusText, "Working")
+        }
+
+        func testReceiptFromPreviousOwnerCannotSettleDecision() throws {
+            let (model, _) = try model()
+            let connection = UUID().uuidString.lowercased()
+            negotiated(model, connection: connection)
+            model.canvas = [originCard()]
+            model.decideApproval(try XCTUnwrap(model.approvalPrompts.first), allow: true)
+            model.signedIn.toggle()
+            model.handleFrame(receipt(connection, chat: model.activeChatId!, state: "accepted"))
+            XCTAssertNotEqual(model.activity.last?.approval, .approved)
+        }
+
         func testServerAlertRemainsVisibleWhileReviewIsOpen() throws {
             let (model, _) = try model()
             model.canvas = [originCard()]
