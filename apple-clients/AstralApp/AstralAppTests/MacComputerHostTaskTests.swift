@@ -163,83 +163,98 @@
         }
 
         func testProjectRemovalStopsRunningAndQueuedCommandsBeforeReleasingFolders() async throws {
-            for queued in [false, true] {
-                let project = "12345678-1234-1234-9234-123456789abc"
-                let root = try folder().resolvingSymlinksInPath()
-                let spawner = MacComputerFakeSpawner()
-                let barrier = ProjectCommandStartBarrier(hold: queued)
-                let commands = MacComputerCommands(
-                    spawner: spawner, clock: MacComputerFakeClock { _ in true }, inherited: [:],
-                    loginPath: { await barrier.path() })
-                let io = MacComputerTestWorkspaceGrants()
-                io.selection = [root]
-                var stored: [String: Data] = [:]
-                let grants = MacProjectGrants(
-                    grants: io.port, persistence: .init(read: { stored[$0] }, write: { stored[$0] = $1 }))
-                let host = try makeHost(projectGrants: grants, commands: commands)
-                let hostId = try XCTUnwrap(host.descriptor?.hostId)
-                host.beginWorkspaceNegotiation(server: URL(string: "https://example.test")!, account: "owner")
-                host.workspaceNegotiated(projects: true)
-                try host.reconcileProjects([project])
-                host.updateProjectFolders { try grants.choose(project: project) }
-                let manifest = try XCTUnwrap(grants.manifest)
-                host.consume(
-                    try frame(
-                        .object([
-                            "type": .string("computer_host"), "host_id": .string(hostId),
-                            "project_manifest_ack": .object([
-                                "generation": .number(Double(manifest.generation)), "digest": .string(manifest.digest),
-                                "accepted": .bool(true),
-                            ]),
-                        ])))
-                let id = UUID().uuidString.lowercased()
-                let context = try ComputerProjectContext(
-                    chatId: "chat", projectId: project, grantRevision: manifest.projects[0].grantRevision,
-                    manifestGeneration: manifest.generation)
-                host.consume(
-                    try frame(
-                        .object([
-                            "type": .string("computer_session"), "host_id": .string(hostId), "session_id": .string(id),
-                            "state": .string("active"), "project_context": context.json,
-                        ])))
-                for digit in ["a", "b"] {
+            for control in ["remove", "paused", "ended"] {
+                for queued in [false, true] {
+                    let project = "12345678-1234-1234-9234-123456789abc"
+                    let root = try folder().resolvingSymlinksInPath()
+                    let spawner = MacComputerFakeSpawner()
+                    let barrier = ProjectCommandStartBarrier(hold: queued)
+                    let commands = MacComputerCommands(
+                        spawner: spawner, clock: MacComputerFakeClock { _ in true }, inherited: [:],
+                        loginPath: { await barrier.path() })
+                    let io = MacComputerTestWorkspaceGrants()
+                    io.selection = [root]
+                    var stored: [String: Data] = [:]
+                    let grants = MacProjectGrants(
+                        grants: io.port, persistence: .init(read: { stored[$0] }, write: { stored[$0] = $1 }))
+                    let host = try makeHost(projectGrants: grants, commands: commands)
+                    let hostId = try XCTUnwrap(host.descriptor?.hostId)
+                    host.beginWorkspaceNegotiation(server: URL(string: "https://example.test")!, account: "owner")
+                    host.workspaceNegotiated(projects: true)
+                    try host.reconcileProjects([project])
+                    host.updateProjectFolders { try grants.choose(project: project) }
+                    let manifest = try XCTUnwrap(grants.manifest)
+                    host.consume(
+                        try frame(
+                            .object([
+                                "type": .string("computer_host"), "host_id": .string(hostId),
+                                "project_manifest_ack": .object([
+                                    "generation": .number(Double(manifest.generation)),
+                                    "digest": .string(manifest.digest),
+                                    "accepted": .bool(true),
+                                ]),
+                            ])))
+                    let id = UUID().uuidString.lowercased()
+                    let context = try ComputerProjectContext(
+                        chatId: "chat", projectId: project, grantRevision: manifest.projects[0].grantRevision,
+                        manifestGeneration: manifest.generation)
+                    host.consume(
+                        try frame(
+                            .object([
+                                "type": .string("computer_session"), "host_id": .string(hostId),
+                                "session_id": .string(id),
+                                "state": .string("active"), "project_context": context.json,
+                            ])))
+                    for digit in ["a", "b"] {
+                        host.consume(
+                            try frame(
+                                .object([
+                                    "type": .string("computer_request"),
+                                    "request_id": .string("creq_" + String(repeating: digit, count: 32)),
+                                    "session_id": .string(id), "project_context": context.json,
+                                    "verb": .string("run_command"),
+                                    "args": .object(["argv": .array([.string("echo")]), "cwd": .string(root.path)]),
+                                    "deadline_ms": .number(30000),
+                                ])))
+                    }
+                    for _ in 0..<2000 {
+                        if queued ? await barrier.calls > 0 : spawner.plans.count == 2 { break }
+                        await Task.yield()
+                    }
+                    let expected = queued ? 0 : 2
+                    XCTAssertEqual(spawner.plans.count, expected)
+                    if control == "remove" {
+                        host.updateProjectFolders { try grants.remove(project: project, path: root.path) }
+                    } else {
+                        host.consume(
+                            try frame(
+                                .object([
+                                    "type": .string("computer_session"), "host_id": .string(hostId),
+                                    "session_id": .string(id), "state": .string(control),
+                                    "project_context": context.json,
+                                ])))
+                    }
+                    await barrier.release()
+                    XCTAssertTrue(spawner.processes.allSatisfy { !$0.signals.isEmpty })
+                    for _ in 0..<20 { await Task.yield() }
+                    XCTAssertEqual(spawner.plans.count, expected)
+                    XCTAssertEqual(grants.roots(project: project).isEmpty, control == "remove")
                     host.consume(
                         try frame(
                             .object([
                                 "type": .string("computer_request"),
-                                "request_id": .string("creq_" + String(repeating: digit, count: 32)),
-                                "session_id": .string(id), "project_context": context.json,
-                                "verb": .string("run_command"),
+                                "request_id": .string("creq_" + String(repeating: "c", count: 32)),
+                                "session_id": .string(id),
+                                "project_context": context.json, "verb": .string("run_command"),
                                 "args": .object(["argv": .array([.string("echo")]), "cwd": .string(root.path)]),
                                 "deadline_ms": .number(30000),
                             ])))
+                    let refused = await response("creq_" + String(repeating: "c", count: 32), host: host)
+                    XCTAssertEqual(refused?["ok"], .bool(false))
+                    XCTAssertEqual(spawner.plans.count, expected)
+                    host.signedOut()
+                    XCTAssertEqual(io.started.count, io.stopped.count)
                 }
-                for _ in 0..<2000 {
-                    if queued ? await barrier.calls > 0 : spawner.plans.count == 2 { break }
-                    await Task.yield()
-                }
-                let expected = queued ? 0 : 2
-                XCTAssertEqual(spawner.plans.count, expected)
-                host.updateProjectFolders { try grants.remove(project: project, path: root.path) }
-                await barrier.release()
-                XCTAssertTrue(spawner.processes.allSatisfy { !$0.signals.isEmpty })
-                XCTAssertEqual(io.started.count, io.stopped.count)
-                for _ in 0..<20 { await Task.yield() }
-                XCTAssertEqual(spawner.plans.count, expected)
-                XCTAssertTrue(grants.roots(project: project).isEmpty)
-                host.consume(
-                    try frame(
-                        .object([
-                            "type": .string("computer_request"),
-                            "request_id": .string("creq_" + String(repeating: "c", count: 32)),
-                            "session_id": .string(id),
-                            "project_context": context.json, "verb": .string("run_command"),
-                            "args": .object(["argv": .array([.string("echo")]), "cwd": .string(root.path)]),
-                            "deadline_ms": .number(30000),
-                        ])))
-                let refused = await response("creq_" + String(repeating: "c", count: 32), host: host)
-                XCTAssertEqual(refused?["ok"], .bool(false))
-                XCTAssertEqual(spawner.plans.count, expected)
             }
         }
 
