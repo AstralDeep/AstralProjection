@@ -20,14 +20,16 @@ def test_apple_native_domains_are_collected_for_both_platforms_and_uploaded(lane
     ]
     assert len(blocks) == 1
     block = blocks[0].split('          exit "$status"', 1)[0]
+    platform = "matrix.slug" if lane == "unit" else "matrix.platform"
     assert "if [[ '${{ matrix.slug }}' == ios ]]" not in block
     assert 'test "$status" -eq 0' in block
-    assert "--platform '${{ matrix.slug }}'" in block
+    assert f"--platform '${{{{ {platform} }}}}'" in block
     assert f"apple-${{{{ matrix.slug }}}}-{lane}-domain.json" in block
-    assert f"native-binaries/apple-${{{{ matrix.slug }}}}-{lane}.zip" in block
+    assert f"native-binaries/apple-${{{{ {platform} }}}}-{lane}.zip" in block
     assert 'native_args=(--native-domain "$domain")' in block
     assert re.search(
-        r"build/060/coverage/native-binaries/apple-\$\{\{ matrix.slug \}\}-" + lane + r"\.zip", text
+        r"build/060/coverage/native-binaries/apple-\$\{\{ " + re.escape(platform) + r" \}\}-" + lane + r"\.zip",
+        text,
     )
     assert 'XCODE_VERSION: "26.6"' in text and 'XCODE_BUILD: "17F113"' in text
     assert "permissions:\n  contents: read" in text

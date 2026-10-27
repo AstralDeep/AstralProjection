@@ -428,17 +428,35 @@ jobs:
     if: needs.changes.outputs.apple == 'true'
     name: Required · ${{ matrix.name }} first-login and voice UI
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: iOS 26.5
-            slug: ios
+          - name: iOS 26.5 shard 1
+            slug: ios-1
+            platform: ios
             destination: "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5"
+            tests: "WorkspacePresentationUITests"
+          - name: iOS 26.5 shard 2
+            slug: ios-2
+            platform: ios
+            destination: "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5"
+            tests: "WorkspaceActionsUITests VoiceConversationUITests"
+          - name: iOS 26.5 shard 3
+            slug: ios-3
+            platform: ios
+            destination: "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5"
+            tests: >-
+              LLMFirstLoginUITests Accessibility060UITests SettingsControlsUITests
+              ConversationContinuityUITests/testDeterministicProcessRelaunchRestoresSemanticConversation
           - name: macOS
             slug: macos
+            platform: macos
             destination: "platform=macOS"
+            tests: >-
+              LLMFirstLoginUITests VoiceConversationUITests Accessibility060UITests WorkspacePresentationUITests
+              ConversationContinuityUITests/testDeterministicProcessRelaunchRestoresSemanticConversation
     steps:
       - name: Check out candidate
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -460,7 +478,7 @@ jobs:
           [[ "$(xcodebuild -version | sed -n '1p')" == "Xcode ${XCODE_VERSION}" ]]
           [[ "$(xcodebuild -version | sed -n '2p')" == "Build version ${XCODE_BUILD}" ]]
       - name: Require the supported iOS runtime
-        if: matrix.slug == 'ios'
+        if: matrix.platform == 'ios'
         shell: bash
         run: |
           set -euo pipefail
@@ -473,7 +491,7 @@ jobs:
       # AX-snapshot flapping across six runs). Same deterministic
       # device-by-UDID pattern that fixed the watch lane.
       - name: Provision a dedicated iOS simulator
-        if: matrix.slug == 'ios'
+        if: matrix.platform == 'ios'
         id: ios_sim
         shell: bash
         run: |
@@ -484,7 +502,6 @@ jobs:
           xcrun simctl delete "astral-ios-060-first-login" 2>/dev/null || true
           udid="$(xcrun simctl create "astral-ios-060-first-login" "iPhone 17 Pro" "$runtime_id")"
           xcrun simctl boot "$udid"
-          xcrun simctl bootstatus "$udid" -b
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
       - name: Run deterministic first-login, voice and workspace UI tests with coverage
         shell: bash
@@ -499,21 +516,21 @@ jobs:
             exit 1
           fi
           dest='${{ matrix.destination }}'
-          if [[ "${{ matrix.slug }}" == "ios" ]]; then
+          if [[ "${{ matrix.platform }}" == "ios" ]]; then
             dest="platform=iOS Simulator,id=${{ steps.ios_sim.outputs.udid }}"
           fi
-          workspace_actions=()
-          if [[ "${{ matrix.slug }}" == "ios" ]]; then
-            workspace_actions=(
-              -only-testing:AstralAppUITests/WorkspaceActionsUITests
-              -only-testing:AstralAppUITests/SettingsControlsUITests
-            )
-          fi
-          derived="$PWD/build/060/app-${{ matrix.slug }}-ui-dd"
+          selectors=()
+          for selected in ${{ matrix.tests }}; do
+            selectors+=("-only-testing:AstralAppUITests/$selected")
+          done
+          derived="$PWD/build/060/app-${{ matrix.platform }}-ui-dd"
           test_action='test'
           xcodebuild -project "${APP_PROJECT}" -scheme AstralApp -destination "$dest" \
             -configuration Debug CODE_SIGNING_ALLOWED=NO -enableCodeCoverage YES \
             COMPILER_INDEX_STORE_ENABLE=NO -derivedDataPath "$derived" build-for-testing
+          if [[ "${{ matrix.platform }}" == "ios" ]]; then
+            xcrun simctl bootstatus "${{ steps.ios_sim.outputs.udid }}" -b
+          fi
           test_action=test-without-building
           set +e
           xcodebuild \
@@ -530,12 +547,7 @@ jobs:
             -test-iterations 2 \
             -derivedDataPath "$derived" \
             -resultBundlePath "$result" \
-            -only-testing:AstralAppUITests/LLMFirstLoginUITests \
-            -only-testing:AstralAppUITests/VoiceConversationUITests \
-            -only-testing:AstralAppUITests/Accessibility060UITests \
-            -only-testing:AstralAppUITests/WorkspacePresentationUITests \
-            ${workspace_actions[@]+"${workspace_actions[@]}"} \
-            -only-testing:AstralAppUITests/ConversationContinuityUITests/testDeterministicProcessRelaunchRestoresSemanticConversation \
+            "${selectors[@]}" \
             "$test_action"
           status=$?
           set -e
@@ -543,15 +555,15 @@ jobs:
             test "$status" -eq 0
             domain="${COVERAGE_ROOT}/apple-${{ matrix.slug }}-ui-domain.json"
             python3 scripts/collect_xccov_native_domain.py --repo "$PWD" \
-              --platform '${{ matrix.slug }}' \
+              --platform '${{ matrix.platform }}' \
               --products "$derived/Build/Products" --xcresult "$PWD/$result" --lane ui \
-              --output "$PWD/$domain" --binary-archive "$PWD/${COVERAGE_ROOT}/native-binaries/apple-${{ matrix.slug }}-ui.zip"
+              --output "$PWD/$domain" --binary-archive "$PWD/${COVERAGE_ROOT}/native-binaries/apple-${{ matrix.platform }}-ui.zip"
             native_args=(--native-domain "$domain")
             python3 scripts/export_xccov_line_coverage.py \
               ${native_args[@]+"${native_args[@]}"} \
               --repo "$PWD" \
               --xcresult "$result" \
-              --platform '${{ matrix.slug }}' \
+              --platform '${{ matrix.platform }}' \
               --output "$report"
           fi
           exit "$status"
@@ -571,7 +583,7 @@ jobs:
             build/060/coverage/apple-${{ matrix.slug }}-ui-domain.json.diagnostics/tests.stderr
             build/060/coverage/apple-${{ matrix.slug }}-ui-domain.json.diagnostics/tests.status.json
             build/060/coverage/apple-${{ matrix.slug }}-ui-domain.json.diagnostics/stage.json
-            build/060/coverage/native-binaries/apple-${{ matrix.slug }}-ui.zip
+            build/060/coverage/native-binaries/apple-${{ matrix.platform }}-ui.zip
           if-no-files-found: error
           retention-days: 14
       - name: Publish normalized first-login coverage
@@ -766,12 +778,24 @@ jobs:
         with:
           name: apple-required-app-unit-macos
           path: ${{ runner.temp }}/apple-required/app-unit-macos
-      - name: Require iOS first-login success
+      - name: Require iOS first-login shard 1 success
         if: needs.changes.outputs.apple == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: apple-required-first-login-ios
-          path: ${{ runner.temp }}/apple-required/first-login-ios
+          name: apple-required-first-login-ios-1
+          path: ${{ runner.temp }}/apple-required/first-login-ios-1
+      - name: Require iOS first-login shard 2 success
+        if: needs.changes.outputs.apple == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: apple-required-first-login-ios-2
+          path: ${{ runner.temp }}/apple-required/first-login-ios-2
+      - name: Require iOS first-login shard 3 success
+        if: needs.changes.outputs.apple == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: apple-required-first-login-ios-3
+          path: ${{ runner.temp }}/apple-required/first-login-ios-3
       - name: Require macOS first-login success
         if: needs.changes.outputs.apple == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -784,12 +808,24 @@ jobs:
         with:
           name: apple-required-app-unit-ios-coverage
           path: ${{ github.workspace }}/build/060/coverage/union-inputs/ios/unit
-      - name: Download iOS first-login coverage
+      - name: Download iOS first-login shard 1 coverage
         if: needs.changes.outputs.apple == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: apple-required-first-login-ios-coverage
-          path: ${{ github.workspace }}/build/060/coverage/union-inputs/ios/ui
+          name: apple-required-first-login-ios-1-coverage
+          path: ${{ github.workspace }}/build/060/coverage/union-inputs/ios/ui-1
+      - name: Download iOS first-login shard 2 coverage
+        if: needs.changes.outputs.apple == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: apple-required-first-login-ios-2-coverage
+          path: ${{ github.workspace }}/build/060/coverage/union-inputs/ios/ui-2
+      - name: Download iOS first-login shard 3 coverage
+        if: needs.changes.outputs.apple == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: apple-required-first-login-ios-3-coverage
+          path: ${{ github.workspace }}/build/060/coverage/union-inputs/ios/ui-3
       - name: Download macOS app-unit coverage
         if: needs.changes.outputs.apple == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -819,7 +855,10 @@ jobs:
             --platform ios --profile ci \
             --core-input "${GITHUB_WORKSPACE}/build/060/coverage/union-inputs/ios/core/apple-ios-core-xccov.json" \
             --unit-input "${GITHUB_WORKSPACE}/build/060/coverage/union-inputs/ios/unit/apple-ios-unit-xccov.json" \
-            --ui-input "${GITHUB_WORKSPACE}/build/060/coverage/union-inputs/ios/ui/apple-ios-first-login-xccov.json" \
+            --ui-input "${GITHUB_WORKSPACE}/build/060/coverage/union-inputs/ios/ui-1/apple-ios-1-first-login-xccov.json" \
+            --ui-input "${GITHUB_WORKSPACE}/build/060/coverage/union-inputs/ios/ui-2/apple-ios-2-first-login-xccov.json" \
+            --ui-input "${GITHUB_WORKSPACE}/build/060/coverage/union-inputs/ios/ui-3/apple-ios-3-first-login-xccov.json" \
+            --ui-shards 3 \
             --output "${COVERAGE_ROOT}/apple-ios-xccov.json"
           python3 scripts/merge_xccov_line_coverage.py \
             --repo "${GITHUB_WORKSPACE}" \
