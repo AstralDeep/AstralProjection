@@ -97,7 +97,16 @@
             return (try directory(Array(parts.dropLast())), name)
         }
         private func failure() -> ComputerHostError {
-            ComputerHostError("failed", "The workspace operation was refused or failed (errno \(errno)).")
+            let code = errno == ENOENT ? "not_found" : "failed"
+            return ComputerHostError(code, "The workspace operation was refused or failed (errno \(errno)).")
+        }
+        private func preEffect<T>(_ operation: (_ begin: () -> Void) throws -> T) throws -> T {
+            var started = false
+            do {
+                return try operation { started = true }
+            } catch let error as ComputerHostError {
+                throw ComputerHostError(error.code, error.message, effectState: started ? nil : "not_started")
+            }
         }
         private func regular(_ fd: Int32) throws -> stat {
             var info = stat()
@@ -107,6 +116,9 @@
             return info
         }
         public func read(_ path: String, maximum: Int) throws -> [String: JSONValue] {
+            return try preEffect { _ in try readFile(path, maximum: maximum) }
+        }
+        private func readFile(_ path: String, maximum: Int) throws -> [String: JSONValue] {
             guard (1...262144).contains(maximum) else {
                 throw ComputerHostError("out_of_range", "The read limit is invalid.")
             }
@@ -165,6 +177,9 @@
             }
         }
         public func list(_ path: String) throws -> [String: JSONValue] {
+            return try preEffect { _ in try listDirectory(path) }
+        }
+        private func listDirectory(_ path: String) throws -> [String: JSONValue] {
             let fd = try directory(components(path))
             guard let stream = fdopendir(fd) else {
                 Darwin.close(fd)
@@ -190,6 +205,13 @@
             return ["path": .string(path), "entries": .array(entries), "count": .number(Double(entries.count))]
         }
         public func write(_ path: String, content: String, overwrite: Bool, authorize: () throws -> Void) throws {
+            try preEffect { begin in
+                try writeFile(path, content: content, overwrite: overwrite, begin: begin, authorize: authorize)
+            }
+        }
+        private func writeFile(
+            _ path: String, content: String, overwrite: Bool, begin: () -> Void, authorize: () throws -> Void
+        ) throws {
             let bytes = Array(content.utf8)
             guard bytes.count <= 262144 else { throw ComputerHostError("out_of_range", "The write exceeds 256 KiB.") }
             let (parent, name) = try parent(path)
@@ -213,6 +235,7 @@
             }
             defer { if original >= 0 { Darwin.close(original) } }
             try authorize()
+            begin()
             let temporary = ".astral-" + UUID().uuidString.lowercased()
             let fd = Darwin.openat(
                 parent, temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, mode_t(0o600))
@@ -242,6 +265,9 @@
             }
         }
         public func delete(_ path: String, authorize: () throws -> Void) throws {
+            try preEffect { begin in try deletePath(path, begin: begin, authorize: authorize) }
+        }
+        private func deletePath(_ path: String, begin: () -> Void, authorize: () throws -> Void) throws {
             let (parent, name) = try parent(path)
             defer { Darwin.close(parent) }
             var info = stat()
@@ -250,6 +276,7 @@
                 throw ComputerHostError("permission_denied", "Only files and empty directories can be deleted.")
             }
             try authorize()
+            begin()
             guard unlinkat(parent, name, info.st_mode & S_IFMT == S_IFDIR ? AT_REMOVEDIR : 0) == 0 else {
                 throw failure()
             }

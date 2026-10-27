@@ -892,11 +892,8 @@
         private func respond(_ id: String, result: [String: JSONValue]? = nil, error: Error? = nil) {
             var payload: [String: JSONValue] = ["request_id": .string(id), "ok": .bool(error == nil)]
             if let error {
-                let typed = error as? ComputerHostError
-                payload["error"] = .object([
-                    "code": .string(typed?.code ?? "failed"),
-                    "message": .string(String((typed?.message ?? "The computer operation failed.").prefix(500))),
-                ])
+                let typed = error as? ComputerHostError ?? ComputerHostError("failed", "The computer operation failed.")
+                payload["error"] = .object(typed.responseError)
             } else {
                 payload["result"] = .object(result ?? [:])
             }

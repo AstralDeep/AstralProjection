@@ -8,11 +8,18 @@ import Foundation
 public struct ComputerHostError: Error, LocalizedError, Sendable, Equatable {
     public let code: String
     public let message: String
-    public init(_ code: String, _ message: String) {
+    public let effectState: String?
+    public init(_ code: String, _ message: String, effectState: String? = nil) {
         self.code = code
         self.message = message
+        self.effectState = effectState == "not_started" ? effectState : nil
     }
     public var errorDescription: String? { message }
+    public var responseError: [String: JSONValue] {
+        var result: [String: JSONValue] = ["code": .string(code), "message": .string(String(message.prefix(500)))]
+        if let effectState { result["effect_state"] = .string(effectState) }
+        return result
+    }
 }
 
 public struct ComputerHostScreen: Sendable, Equatable {
