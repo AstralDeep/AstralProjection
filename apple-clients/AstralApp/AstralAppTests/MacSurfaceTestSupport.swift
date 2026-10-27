@@ -123,7 +123,7 @@
             return fields().first { $0.currentEditor() === editor }?.placeholderString
         }
 
-        func textFrame(_ text: String) throws -> CGRect? {
+        func textFrame(_ text: String, exact: Bool = false) throws -> CGRect? {
             let request = VNRecognizeTextRequest()
             request.recognitionLevel = .accurate
             request.usesLanguageCorrection = false
@@ -131,6 +131,7 @@
             var match: CGRect?
             for observation in request.results ?? [] {
                 guard let candidate = observation.topCandidates(1).first,
+                    !exact || candidate.string.trimmingCharacters(in: .whitespaces) == text,
                     let range = candidate.string.range(of: text)
                 else { continue }
                 match = (try? candidate.boundingBox(for: range))?.boundingBox ?? observation.boundingBox
@@ -155,8 +156,8 @@
             }
         }
 
-        func click(text: String) throws {
-            let frame = try XCTUnwrap(textFrame(text), "No rendered text \(text)")
+        func click(text: String, exact: Bool = false) throws {
+            let frame = try XCTUnwrap(textFrame(text, exact: exact), "No rendered text \(text)")
             try click(at: CGPoint(x: frame.midX, y: frame.midY))
         }
 

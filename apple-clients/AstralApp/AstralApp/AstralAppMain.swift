@@ -177,7 +177,7 @@ struct AstralApp: App {
                             for: NSApplication.willTerminateNotification)
                     ) { _ in
                         model.voiceApplicationWillTerminate()
-                        model.macComputerHost.applicationWillTerminate()
+                        model.computerApplicationWillTerminate()
                     }
                 #endif
                 #if os(macOS)

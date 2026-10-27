@@ -1,5 +1,5 @@
-// Presents explicit Mac permissions and workspace grants separately from server-owned product settings.
-// The persistent session panel controls the same host authority as this local settings sheet.
+// Presents explicit Mac permissions, workspace grants and the bypass-approvals switch separately from server-owned
+// product settings. The persistent session panel and the bypass confirmation sheet act on the same host authority.
 
 #if os(macOS)
     import AppKit
@@ -73,6 +73,8 @@
                         isOn: MacComputerControlCommand.enabledBinding(on: host)
                     )
                     .disabled(!host.available).accessibilityIdentifier("mac-computer-consent")
+                    MacBypassToggle(host: host, origin: .controls)
+                        .accessibilityIdentifier("mac-computer-bypass")
                     if let browser = host.browser as? MacBrowserDriver {
                         Toggle(
                             "Browser pane", isOn: Binding(get: { browser.paneEnabled }, set: browser.setPaneEnabled)
@@ -114,6 +116,7 @@
                 if host.session != nil { MacComputerSessionControls(host: host) }
             }
             .frame(minWidth: 480, idealWidth: 560, minHeight: 460, idealHeight: 620)
+            .bypassConfirmation(host: host, origin: .controls)
         }
         private func permission(_ label: String, allowed: Bool, command: MacComputerControlCommand) -> some View {
             HStack {
@@ -124,11 +127,72 @@
         }
     }
 
+    struct MacBypassToggle: View {
+        @Bindable var host: MacComputerHost
+        let origin: MacBypassOrigin
+        var body: some View {
+            Toggle(
+                "Bypass approvals",
+                isOn: Binding(get: { host.bypass }, set: { host.requestBypass($0, from: origin) })
+            )
+            .disabled(!host.available || !host.enabled)
+        }
+    }
+
+    struct MacBypassConfirmation: View {
+        @Bindable var host: MacComputerHost
+        @Environment(ThemeStore.self) private var theme: ThemeStore?
+        var body: some View {
+            let palette = theme?.palette ?? .graphite
+            SettingsSheetChrome(
+                "Bypass approvals on this Mac?", identifier: "mac-bypass", close: host.cancelBypass, done: nil
+            ) {
+                Text(
+                    "Astral will click, type, run commands and browse on this Mac without asking. Stop or Esc ends it at any time."
+                )
+                .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("mac-bypass-message")
+            } footer: {
+                Button("Cancel", action: host.cancelBypass).accessibilityIdentifier("mac-bypass-cancel")
+                Button("Bypass approvals", action: host.confirmBypass)
+                    .buttonStyle(SettingsButtonStyle(palette: palette, danger: true))
+                    .accessibilityIdentifier("mac-bypass-confirm")
+            }
+            .frame(minWidth: 400, idealWidth: 440, minHeight: 200)
+        }
+    }
+
+    extension View {
+        func bypassConfirmation(host: MacComputerHost, origin: MacBypassOrigin) -> some View {
+            modifier(MacBypassConfirmationPresenter(host: host, origin: origin))
+        }
+    }
+
+    private struct MacBypassConfirmationPresenter: ViewModifier {
+        @Bindable var host: MacComputerHost
+        let origin: MacBypassOrigin
+        @Environment(ThemeStore.self) private var theme: ThemeStore?
+        func body(content: Content) -> some View {
+            content.sheet(
+                isPresented: Binding(
+                    get: { host.bypassConfirmation == origin },
+                    set: { if !$0, host.bypassConfirmation == origin { host.cancelBypass() } })
+            ) {
+                MacBypassConfirmation(host: host).environment(theme)
+            }
+        }
+    }
+
     struct MacComputerSessionControls: View {
         @Bindable var host: MacComputerHost
+        @Environment(ThemeStore.self) private var theme: ThemeStore?
         var body: some View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(host.statusLabel).font(.headline)
+                if host.bypass {
+                    Label("Bypass on", systemImage: "exclamationmark.shield.fill")
+                        .font(.caption.weight(.semibold)).foregroundStyle((theme?.palette ?? .graphite).warning)
+                        .accessibilityIdentifier("mac-computer-bypass-on")
+                }
                 if let session = host.session { Text("Controlled by \(session.controller)").font(.caption) }
                 HStack {
                     if host.session?.state == "paused" {

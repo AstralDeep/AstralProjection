@@ -1,4 +1,5 @@
-// Shared settings chrome: header, scrolling body, pinned footer, Return for Done, Esc to close, palette-drawn controls.
+// Shared settings chrome: header, scrolling body, pinned footer, Return for Done (or no Done for a confirmation),
+// Esc to close, palette-drawn controls including a danger button.
 // The Updates sheet and computer controls use the chrome; ConsoleShell uses the covered-background modifier, which
 // keeps a modal settings layer keyboard-safe and returns focus on close.
 
@@ -19,17 +20,19 @@ struct SettingsSheetChrome<Content: View, Footer: View>: View {
     let title: String
     let identifier: String
     let close: () -> Void
+    let done: String?
     let content: Content
     let footer: Footer
     @Environment(ThemeStore.self) private var theme: ThemeStore?
 
     init(
-        _ title: String, identifier: String, close: @escaping () -> Void, @ViewBuilder content: () -> Content,
-        @ViewBuilder footer: () -> Footer
+        _ title: String, identifier: String, close: @escaping () -> Void, done: String? = "Done",
+        @ViewBuilder content: () -> Content, @ViewBuilder footer: () -> Footer
     ) {
         self.title = title
         self.identifier = identifier
         self.close = close
+        self.done = done
         self.content = content()
         self.footer = footer()
     }
@@ -59,12 +62,17 @@ struct SettingsSheetChrome<Content: View, Footer: View>: View {
             }
             Divider().overlay(palette.border)
             HStack(spacing: 8) {
-                footer
-                Spacer(minLength: 0)
-                Button("Done", action: close)
-                    .buttonStyle(SettingsButtonStyle(palette: palette, prominent: true))
-                    .keyboardShortcut(.defaultAction)
-                    .accessibilityIdentifier("\(identifier)-done")
+                if let done {
+                    footer
+                    Spacer(minLength: 0)
+                    Button(done, action: close)
+                        .buttonStyle(SettingsButtonStyle(palette: palette, prominent: true))
+                        .keyboardShortcut(.defaultAction)
+                        .accessibilityIdentifier("\(identifier)-done")
+                } else {
+                    Spacer(minLength: 0)
+                    footer
+                }
             }
             .padding(.horizontal, 20).padding(.vertical, 14)
         }
@@ -103,9 +111,10 @@ struct SettingsSectionTitle: View {
 struct SettingsButtonStyle: ButtonStyle {
     let palette: AstralPalette
     var prominent = false
+    var danger = false
 
     func makeBody(configuration: Configuration) -> some View {
-        SettingsButtonBody(configuration: configuration, palette: palette, prominent: prominent)
+        SettingsButtonBody(configuration: configuration, palette: palette, prominent: prominent, danger: danger)
     }
 }
 
@@ -113,19 +122,22 @@ private struct SettingsButtonBody: View {
     let configuration: ButtonStyleConfiguration
     let palette: AstralPalette
     let prominent: Bool
+    let danger: Bool
     @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: AstralRadius.sm)
         let destructive = configuration.role == .destructive
+        let fill = danger ? palette.error : prominent ? palette.primary : palette.text.opacity(0.06)
+        let ink = danger ? palette.onError : prominent ? Color.white : destructive ? palette.error : palette.text
         configuration.label
-            .font(ConsoleTypography.footnote.weight(prominent ? .semibold : .medium))
+            .font(ConsoleTypography.footnote.weight(prominent || danger ? .semibold : .medium))
             .lineLimit(1)
             .padding(.horizontal, 12)
             .frame(minWidth: SettingsControlMetrics.minimumWidth, minHeight: SettingsControlMetrics.height)
-            .foregroundStyle(prominent ? Color.white : destructive ? palette.error : palette.text)
-            .background(prominent ? palette.primary : palette.text.opacity(0.06), in: shape)
-            .overlay(shape.strokeBorder(prominent ? palette.primary : palette.border))
+            .foregroundStyle(ink)
+            .background(fill, in: shape)
+            .overlay(shape.strokeBorder(danger ? palette.error : prominent ? palette.primary : palette.border))
             .contentShape(shape)
             .opacity(isEnabled ? (configuration.isPressed ? 0.75 : 1) : 0.45)
     }
