@@ -49,6 +49,31 @@ struct AstralPalette: Equatable {
         default: return primary
         }
     }
+
+    static let textContrast = 4.5
+
+    static func contrast(_ foreground: Color, _ background: Color) -> Double {
+        func luminance(_ color: Color) -> Double {
+            let resolved = color.resolve(in: EnvironmentValues())
+            func linear(_ channel: Float) -> Double {
+                let unit = Double(channel)
+                return unit <= 0.03928 ? unit / 12.92 : pow((unit + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * linear(resolved.red) + 0.7152 * linear(resolved.green) + 0.0722 * linear(resolved.blue)
+        }
+        let first = luminance(foreground)
+        let second = luminance(background)
+        return (max(first, second) + 0.05) / (min(first, second) + 0.05)
+    }
+
+    var readablePrimary: Color {
+        [bg, surface, surface2].allSatisfy { Self.contrast(primary, $0) >= Self.textContrast } ? primary : accent
+    }
+
+    func textVariant(_ v: String?) -> Color {
+        let color = variant(v)
+        return color == primary ? readablePrimary : color
+    }
 }
 
 enum AstralRadius {

@@ -152,7 +152,7 @@ private struct SettingsCheckbox: View {
         } label: {
             HStack(spacing: 8) {
                 shape.fill(on ? palette.primary : palette.text.opacity(0.04))
-                    .overlay(shape.strokeBorder(on ? palette.primary : palette.muted))
+                    .overlay(shape.strokeBorder(on ? palette.primary : palette.fieldBorder))
                     .overlay {
                         if on {
                             Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))

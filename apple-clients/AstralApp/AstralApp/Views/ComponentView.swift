@@ -244,7 +244,8 @@ struct ComponentView: View {
             Image(systemName: alertIcon).foregroundStyle(color)
             VStack(alignment: .leading, spacing: 2) {
                 if let title = component.title, !title.isEmpty {
-                    markdown(title).font(ConsoleTypography.subheadline.bold()).foregroundStyle(color)
+                    markdown(title).font(ConsoleTypography.subheadline.bold())
+                        .foregroundStyle(p.textVariant(component.variant))
                 }
                 ComponentAlertMessage(text: component.message ?? component.fallbackText, literal: workReadSurface)
                     .foregroundStyle(p.text)
@@ -384,7 +385,7 @@ struct ComponentView: View {
     }
 
     private var badgeView: some View {
-        let color = p.variant(component.variant)
+        let color = p.textVariant(component.variant)
         return Text(component.label ?? component.fallbackText)
             .font(ConsoleTypography.caption.bold())
             .foregroundStyle(color)
@@ -418,7 +419,8 @@ struct ComponentView: View {
             }
             VStack(alignment: .leading, spacing: 6) {
                 if let eyebrow = component.raw["eyebrow"]?.stringValue, !eyebrow.isEmpty {
-                    Text(eyebrow).font(ConsoleTypography.caption.bold()).foregroundStyle(p.primary).textCase(.uppercase)
+                    Text(eyebrow).font(ConsoleTypography.caption.bold()).foregroundStyle(p.readablePrimary)
+                        .textCase(.uppercase)
                 }
                 markdown(component.raw["heading"]?.stringValue ?? component.title ?? "")
                     .font(ConsoleTypography.title.bold()).foregroundStyle(p.text)
@@ -1177,7 +1179,7 @@ extension ComponentView {
 
     private var compactBadge: some View {
         let neutral = (component.variant ?? "default") == "default"
-        let color = neutral ? p.muted : p.variant(component.variant)
+        let color = neutral ? p.muted : p.textVariant(component.variant)
         let shape = RoundedRectangle(cornerRadius: AstralRadius.md)
         return Text(component.label ?? component.fallbackText)
             .font(ConsoleTypography.caption.weight(.medium))
@@ -1386,7 +1388,7 @@ private struct AstralButtonBody: View {
                     .opacity(configuration.isPressed ? 0.7 : 1))
         case "danger":
             return AnyView(
-                label.foregroundStyle(.white)
+                label.foregroundStyle(palette.onError)
                     .background(palette.error, in: RoundedRectangle(cornerRadius: AstralRadius.sm))
                     .opacity(configuration.isPressed ? 0.8 : 1))
         default:
@@ -1512,7 +1514,7 @@ struct DownloadComponent: View {
                             NSWorkspace.shared.activateFileViewerSelecting([file])
                         }
                         .font(ConsoleTypography.callout)
-                        .tint(p.primary)
+                        .tint(p.readablePrimary)
                     }
                 #else
                     ShareLink(item: file) {
@@ -1528,7 +1530,7 @@ struct DownloadComponent: View {
                         .foregroundStyle(p.warning)
                     Text(why).font(ConsoleTypography.caption).foregroundStyle(p.muted)
                     Button("Retry") { download() }
-                        .font(ConsoleTypography.callout).tint(p.primary)
+                        .font(ConsoleTypography.callout).tint(p.readablePrimary)
                 }
             }
             if urlString == nil,
@@ -1536,7 +1538,7 @@ struct DownloadComponent: View {
                 let pageURL = URL(string: page), !page.isEmpty
             {
                 Link("Open the releases page", destination: pageURL)
-                    .font(ConsoleTypography.caption).tint(p.primary)
+                    .font(ConsoleTypography.caption).tint(p.readablePrimary)
             }
         }
         .task {
@@ -1788,7 +1790,7 @@ struct TableComponent: View {
                     .disabled(end >= Int(total))
             }
             .font(ConsoleTypography.caption)
-            .tint(p.primary)
+            .tint(p.readablePrimary)
             .padding(.top, 4)
         }
     }
@@ -1832,7 +1834,7 @@ struct InputComponent: View {
                 if compactSettings {
                     Button("Send", action: submit).buttonStyle(AstralButtonStyle(palette: p, variant: "primary"))
                 } else {
-                    Button("Send", action: submit).tint(p.primary)
+                    Button("Send", action: submit).tint(p.readablePrimary)
                 }
             }
         }
@@ -2127,7 +2129,8 @@ struct ParamPickerComponent: View {
         Picker(label, selection: selection) {
             ForEach(options) { Text($0.label).tag($0.value) }
         }
-        .pickerStyle(.menu).tint(p.primary)
+        .pickerStyle(.menu).tint(p.readablePrimary)
+        .astralSelectOutline(compactSettings, palette: p)
         .compactTooltip(compactSettings ? spoken : nil)
         .accessibilityIdentifier("param-field-\(name)")
         .accessibilityLabel(title)
@@ -2203,7 +2206,8 @@ struct ParamPickerComponent: View {
                 in: RoundedRectangle(cornerRadius: AstralRadius.sm)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: AstralRadius.sm).strokeBorder(compactSettings ? p.muted : Color.clear)
+                RoundedRectangle(cornerRadius: AstralRadius.sm).strokeBorder(
+                    compactSettings ? p.fieldBorder : Color.clear)
             )
             .autocorrectionDisabled(true)
             #if os(iOS)
@@ -2332,7 +2336,7 @@ struct TabsComponent: View {
             button.buttonStyle(AstralButtonStyle(palette: p, variant: "secondary", chip: selection == index))
         } else {
             button.font(ConsoleTypography.callout.weight(.semibold))
-                .foregroundStyle(selection == index ? p.primary : p.muted)
+                .foregroundStyle(selection == index ? p.readablePrimary : p.muted)
         }
     }
 }
@@ -2433,9 +2437,20 @@ extension View {
                 .padding(.horizontal, 8)
                 .frame(minHeight: SettingsControlMetrics.height)
                 .background(palette.text.opacity(0.04), in: shape)
-                .overlay(shape.strokeBorder(palette.muted))
+                .overlay(shape.strokeBorder(palette.fieldBorder))
         } else {
             textFieldStyle(.roundedBorder)
+        }
+    }
+
+    @ViewBuilder
+    fileprivate func astralSelectOutline(_ compact: Bool, palette: AstralPalette) -> some View {
+        if compact {
+            overlay(
+                RoundedRectangle(cornerRadius: AstralRadius.sm).strokeBorder(palette.fieldBorder)
+                    .allowsHitTesting(false))
+        } else {
+            self
         }
     }
 
