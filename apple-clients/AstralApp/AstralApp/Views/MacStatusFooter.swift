@@ -13,8 +13,11 @@
         let text: String
         let label: String
         let value: String
-        let attention: Bool
+        let tone: Tone
         var id: String { kind.rawValue }
+        var attention: Bool { tone == .warning || tone == .error }
+
+        enum Tone { case neutral, success, info, warning, error }
     }
 
     enum MacStatusFooterModel {
@@ -37,7 +40,7 @@
             if let model = usage.model {
                 items.append(
                     MacStatusItem(
-                        kind: .model, symbol: "cpu", text: model, label: "Model", value: model, attention: false))
+                        kind: .model, symbol: "cpu", text: model, label: "Model", value: model, tone: .neutral))
             }
             if usage.sessionTokens > 0 || usage.contextTokens != nil {
                 let session = "\(usage.sessionTokens.formatted()) tokens this session"
@@ -53,14 +56,14 @@
                 items.append(
                     MacStatusItem(
                         kind: .tokens, symbol: "gauge.with.dots.needle.33percent", text: text, label: "Tokens",
-                        value: value, attention: false))
+                        value: value, tone: .neutral))
             }
             if approvals > 0 {
                 let text = approvals == 1 ? "1 approval waiting" : "\(approvals) approvals waiting"
                 items.append(
                     MacStatusItem(
                         kind: .approvals, symbol: "hand.raised.fill", text: text, label: "Approvals", value: text,
-                        attention: true))
+                        tone: .warning))
             }
             if let computer { items.append(computerItem(computer)) }
             return items
@@ -81,28 +84,27 @@
         }
 
         private static func connectionItem(_ connection: Connection) -> MacStatusItem {
-            let (symbol, text, attention): (String, String, Bool) =
+            let (symbol, text, tone): (String, String, MacStatusItem.Tone) =
                 switch connection {
-                case .connected: ("circle.fill", "Connected", false)
-                case .connecting: ("circle.dotted", "Connecting…", false)
-                case .reconnecting: ("arrow.triangle.2.circlepath", "Reconnecting…", true)
-                case .offline: ("exclamationmark.triangle.fill", "Offline", true)
+                case .connected: ("circle.fill", "Connected", .success)
+                case .connecting: ("circle.dotted", "Connecting…", .neutral)
+                case .reconnecting: ("arrow.triangle.2.circlepath", "Reconnecting…", .warning)
+                case .offline: ("exclamationmark.triangle.fill", "Offline", .error)
                 }
             return MacStatusItem(
-                kind: .connection, symbol: symbol, text: text, label: "Connection", value: text, attention: attention)
+                kind: .connection, symbol: symbol, text: text, label: "Connection", value: text, tone: tone)
         }
 
         private static func computerItem(_ computer: Computer) -> MacStatusItem {
-            let (symbol, text, attention): (String, String, Bool) =
+            let (symbol, text, tone): (String, String, MacStatusItem.Tone) =
                 switch (computer.sessionState, computer.enabled) {
-                case ("paused", _): ("pause.circle.fill", "Computer paused", true)
-                case (.some, _): ("record.circle", "Computer active", true)
-                case (nil, true): ("desktopcomputer", "Computer on", false)
-                case (nil, false): ("desktopcomputer.trianglebadge.exclamationmark", "Computer off", false)
+                case ("paused", _): ("pause.circle.fill", "Computer paused", .warning)
+                case (.some, _): ("record.circle", "Computer active", .info)
+                case (nil, true): ("desktopcomputer", "Computer on", .neutral)
+                case (nil, false): ("desktopcomputer.trianglebadge.exclamationmark", "Computer off", .neutral)
                 }
             return MacStatusItem(
-                kind: .computer, symbol: symbol, text: text, label: "This Mac", value: computer.statusLabel,
-                attention: attention)
+                kind: .computer, symbol: symbol, text: text, label: "This Mac", value: computer.statusLabel, tone: tone)
         }
     }
 
@@ -148,13 +150,23 @@
         private func label(_ item: MacStatusItem, identifier: String? = nil) -> some View {
             HStack(spacing: 5) {
                 Image(systemName: item.symbol).imageScale(.small).accessibilityHidden(true)
-                    .foregroundStyle(item.attention ? theme.palette.warning : theme.palette.muted)
+                    .foregroundStyle(color(item.tone))
                 Text(item.text).truncationMode(.middle)
                     .foregroundStyle(item.attention ? theme.palette.text : theme.palette.muted)
                     .accessibilityLabel(item.label).accessibilityValue(item.value)
                     .accessibilityIdentifier(identifier ?? "")
             }
             .help(item.value)
+        }
+
+        private func color(_ tone: MacStatusItem.Tone) -> Color {
+            switch tone {
+            case .neutral: theme.palette.muted
+            case .success: theme.palette.success
+            case .info: theme.palette.info
+            case .warning: theme.palette.warning
+            case .error: theme.palette.error
+            }
         }
 
         private func button(_ item: MacStatusItem, action: @escaping () -> Void) -> some View {

@@ -195,9 +195,7 @@
                                 .shadow(color: p.bg.opacity(0.5), radius: 24, x: -12)
                         }
                     }
-                    .blur(radius: model.screen == .surface ? 5 : 0)
-                    .allowsHitTesting(model.screen != .surface)
-                    .accessibilityHidden(model.screen == .surface)
+                    .settingsOverlayBackground(model.screen == .surface, blur: 5)
                     if presentation.navigationMode != .sidebar && model.consoleDrawerOpen && !model.mandatorySurface {
                         p.bg.opacity(0.7).ignoresSafeArea().onTapGesture { model.consoleDrawerOpen = false }
                         MacWorkbenchSidebar(console: console)

@@ -23,7 +23,7 @@
             .font(ConsoleTypography.subheadline)
             .padding(.horizontal, 10).frame(minHeight: 32)
             .background(theme.palette.bg.opacity(0.6), in: RoundedRectangle(cornerRadius: AstralRadius.sm))
-            .overlay(RoundedRectangle(cornerRadius: AstralRadius.sm).stroke(theme.palette.border))
+            .overlay(RoundedRectangle(cornerRadius: AstralRadius.sm).stroke(theme.palette.fieldBorder))
         }
     }
 
@@ -222,9 +222,10 @@
                     .onKeyPress(.downArrow) { move(1, in: rows) }
                     .onKeyPress(.upArrow) { move(-1, in: rows) }
                     Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
+                        .buttonStyle(SettingsButtonStyle(palette: p))
                         .accessibilityIdentifier("workbench-command-close")
                 }
-                .padding(16)
+                .padding(.horizontal, 20).frame(minHeight: SettingsControlMetrics.headerHeight)
                 Divider().overlay(p.border)
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -238,6 +239,7 @@
             }
             .font(ConsoleTypography.subheadline).foregroundStyle(p.text).background(p.surface)
             .frame(minWidth: 420, idealWidth: 560, maxWidth: 680, minHeight: 280, idealHeight: 460, maxHeight: 560)
+            .onExitCommand { dismiss() }
             .onAppear {
                 let initial = query
                 query = ""
@@ -357,8 +359,11 @@
         var body: some View {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Rename Chat").font(ConsoleTypography.headline).accessibilityAddTraits(.isHeader)
-                TextField("Chat name", text: $title).textFieldStyle(.roundedBorder).focused($focused)
+                TextField("Chat name", text: $title).textFieldStyle(.plain).focused($focused)
                     .onSubmit(save)
+                    .padding(.horizontal, 10).frame(minHeight: 32)
+                    .background(theme.palette.bg.opacity(0.6), in: RoundedRectangle(cornerRadius: AstralRadius.sm))
+                    .overlay(RoundedRectangle(cornerRadius: AstralRadius.sm).stroke(theme.palette.fieldBorder))
                     .accessibilityIdentifier("workbench-rename-title")
                 if tooLong {
                     Text("Use \(MacCommandPaletteModel.maximumTitleLength) characters or fewer")
@@ -367,13 +372,16 @@
                 HStack {
                     Spacer()
                     Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                        .buttonStyle(SettingsButtonStyle(palette: theme.palette))
                     Button("Rename", action: save).keyboardShortcut(.defaultAction)
+                        .buttonStyle(SettingsButtonStyle(palette: theme.palette, prominent: true))
                         .disabled(renamed == nil || !model.connected)
                         .accessibilityIdentifier("workbench-rename-save")
                 }
             }
             .font(ConsoleTypography.subheadline).foregroundStyle(theme.palette.text)
             .padding(20).frame(width: 380).background(theme.palette.surface)
+            .onExitCommand { dismiss() }
             .onAppear { DispatchQueue.main.async { focused = true } }
         }
 

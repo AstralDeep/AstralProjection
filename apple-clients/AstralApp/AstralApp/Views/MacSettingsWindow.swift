@@ -20,6 +20,7 @@
         @Environment(AppModel.self) private var model
         @Environment(ThemeStore.self) private var theme
         @ObservedObject var updates: UpdateCoordinator
+        @Environment(\.dismiss) private var dismiss
         @AppStorage(MacSettingsPane.storageKey) private var stored = MacSettingsPane.account.rawValue
 
         private var selection: Binding<MacSettingsPane> {
@@ -31,8 +32,8 @@
         var body: some View {
             TabView(selection: selection) {
                 if updates.isEnabled {
-                    UpdateSettingsSheet(coordinator: updates)
-                        .frame(maxWidth: .infinity).background(theme.palette.surface)
+                    UpdateSettingsSheet(coordinator: updates) { dismiss() }
+                        .frame(maxWidth: .infinity, minHeight: 340, idealHeight: 360).background(theme.palette.surface)
                         .tabItem { Label("Updates", systemImage: "arrow.down.circle") }
                         .tag(MacSettingsPane.updates)
                 }
