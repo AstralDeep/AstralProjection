@@ -63,7 +63,7 @@ public struct ClientDispositions: Sendable {
         "chrome_render": "raw-HTML chrome region is web-only; natives use chrome_surface",
         "heartbeat": "keepalive; the transport layer answers (matches Windows/Android)",
         "llm_config_ack": "natives use the LLM chrome-surface round trip (044)",
-        "llm_usage_report": "no native usage surface (044)",
+        "llm_usage_report": "no usage readout on this client; the Mac status footer shows it",
         "rote_config": "natives are full-capability; profile info unused (044)",
         "stream_list": "no native stream-browser surface (matches Windows/Android)",
         "stream_unsubscribed": "terminal state arrives via ui_stream_data done flag",
@@ -107,6 +107,7 @@ public struct ClientDispositions: Sendable {
         client: "macos",
         frames: ios.frames.merging([
             "computer_request": .handled, "computer_session": .handled, "computer_host": .handled,
+            "llm_usage_report": .handled,
         ]) { _, new in new },
         components: fullComponentSet(fallbacks: [
             "audio": "web-only media, server degrade ladder (044 channel decision)",

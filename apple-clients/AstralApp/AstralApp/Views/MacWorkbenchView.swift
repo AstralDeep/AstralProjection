@@ -179,6 +179,8 @@
                             )
                             .frame(maxWidth: workbench.composerMaxWidth)
                             .frame(maxWidth: .infinity)
+                            MacStatusFooter { activityPresented = true }
+                                .frame(maxWidth: workbench.composerMaxWidth).frame(maxWidth: .infinity)
                         }
                         .frame(width: contentWidth)
                         if activityDocked {

@@ -128,12 +128,15 @@
             request.recognitionLevel = .accurate
             request.usesLanguageCorrection = false
             try VNImageRequestHandler(cgImage: XCTUnwrap(bitmap().cgImage)).perform([request])
-            guard
-                let box = (request.results ?? []).first(where: {
-                    $0.topCandidates(1).first?.string.contains(text) == true
-                })?
-                .boundingBox
-            else { return nil }
+            var match: CGRect?
+            for observation in request.results ?? [] {
+                guard let candidate = observation.topCandidates(1).first,
+                    let range = candidate.string.range(of: text)
+                else { continue }
+                match = (try? candidate.boundingBox(for: range))?.boundingBox ?? observation.boundingBox
+                break
+            }
+            guard let box = match else { return nil }
             let size = view.bounds.size
             return CGRect(
                 x: box.minX * size.width, y: (1 - box.maxY) * size.height, width: box.width * size.width,

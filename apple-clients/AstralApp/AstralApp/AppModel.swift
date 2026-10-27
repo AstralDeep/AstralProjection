@@ -173,6 +173,7 @@ final class AppModel: NSObject {
     #if os(macOS)
         typealias LocalComputerHost = MacComputerHost
         let macComputerHost: MacComputerHost
+        var llmUsage = LLMUsageTally()
         let macBrowser: MacBrowserDriver
     #else
         typealias LocalComputerHost = Never
@@ -1432,6 +1433,7 @@ final class AppModel: NSObject {
         #if os(macOS)
             macComputerHost.signedOut()
             macBrowser.bind(owner: nil)
+            llmUsage = LLMUsageTally()
         #endif
         clearActivity()
         retireMeshCustody()
@@ -2092,6 +2094,10 @@ final class AppModel: NSObject {
             reduceLLMOperationStatus(frame)
         case "agent_lifecycle":
             reduceAgentLifecycle(frame)
+        #if os(macOS)
+            case "llm_usage_report":
+                if let report = LLMUsageReport(frame: frame) { llmUsage.record(report) }
+        #endif
         case "user_preferences":
             themeStore.applyPreferences(frame.payload)
         case "theme_apply":
