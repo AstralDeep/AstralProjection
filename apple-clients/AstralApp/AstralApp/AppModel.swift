@@ -423,6 +423,12 @@ final class AppModel: NSObject {
     }
     @ObservationIgnored private var ws: WSClient?
     @ObservationIgnored private var initialWebSocket: WSClient?
+    #if os(macOS)
+        @ObservationIgnored var socketLiveness: LivenessPolicy? = .standard
+    #else
+        @ObservationIgnored var socketLiveness: LivenessPolicy?
+    #endif
+    @ObservationIgnored let connectionActivity: ConnectionActivity
     @ObservationIgnored private var registeredAccessToken: String?
     @ObservationIgnored private var refreshedWithinMarginAccessToken: String?
     @ObservationIgnored private var wsTask: Task<Void, Never>?
@@ -511,8 +517,10 @@ final class AppModel: NSObject {
         webSocket: WSClient? = nil,
         voiceController: AppleVoiceSessionController? = nil,
         credentialClock: @escaping @Sendable () -> Date = { Date() },
-        computerHost: LocalComputerHost? = nil
+        computerHost: LocalComputerHost? = nil,
+        processActivity: (any ProcessActivityScheduling)? = nil
     ) {
+        connectionActivity = ConnectionActivity(scheduler: processActivity ?? ProcessInfo.processInfo)
         #if os(macOS)
             let host = computerHost ?? MacComputerHost()
             macComputerHost = host
@@ -573,7 +581,33 @@ final class AppModel: NSObject {
         #if os(iOS)
             WatchOverrideSync.shared.activate()
             if !storedBase.isEmpty { WatchOverrideSync.shared.push(serverBaseText) }
+        #else
+            trackConnectionActivity()
         #endif
+    }
+
+    var connectionActivityLevel: ConnectionActivity.Level {
+        guard signedIn else { return .idle }
+        #if os(macOS)
+            if turnActive || macComputerHost.taskActive { return .active }
+        #else
+            if turnActive { return .active }
+        #endif
+        return .signedIn
+    }
+
+    private func trackConnectionActivity() {
+        let level = withObservationTracking {
+            connectionActivityLevel
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in self?.trackConnectionActivity() }
+        }
+        connectionActivity.update(level)
+    }
+
+    func verifyConnection() {
+        guard signedIn, let socket = ws else { return }
+        Task { _ = await socket.confirmLive() }
     }
 
     func bindConversationAccount(_ account: ConversationAccount) {
@@ -1812,7 +1846,7 @@ final class AppModel: NSObject {
         let client =
             initialWebSocket
             ?? WSClient(
-                url: socketURL,
+                url: socketURL, liveness: socketLiveness,
                 requestHeaders: { [weak self] in
                     await self?.serverSocketHeaders(url: socketURL, owner: socketOwner, server: socketServer)
                 })
@@ -4548,6 +4582,9 @@ final class AppModel: NSObject {
             }
             guard allowed else {
                 if owner == downloadOwner {
+                    if await sendOnRenewedSocket(text, replacing: socket, navigation: navigation, chatId: chatId) {
+                        return
+                    }
                     retireUnsentOperation(text)
                     restoreUnsentQuery(text, navigation: navigation, chatId: chatId)
                 }
@@ -4584,9 +4621,21 @@ final class AppModel: NSObject {
                 }
                 if !sent && owner == downloadOwner { retireUnsentOperation(text) }
             } else {
+                _ = await socket.confirmLive()
                 await socket.send(text)
             }
         }
+    }
+
+    private func sendOnRenewedSocket(_ text: String, replacing original: WSClient, navigation: Int, chatId: String?)
+        async -> Bool
+    {
+        guard signedIn, let current = ws, current !== original, navigation == conversationNavigationGeneration,
+            activeChatId == chatId, screen == .chat,
+            InboundFrame.parse(text)?.payload["action"]?.stringValue == "chat_message"
+        else { return false }
+        await current.sendThroughReplay(text)
+        return true
     }
 
     private func computerChannelIsCurrent(socket: WSClient, owner: DownloadOwner, connection: String?) -> Bool {
