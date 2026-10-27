@@ -18,6 +18,7 @@
 
     struct UpdateSettingsSheet: View {
         @ObservedObject var coordinator: UpdateCoordinator
+        var onClose: (() -> Void)?
         @Environment(ThemeStore.self) private var themeStore: ThemeStore?
 
         static func lastCheckText(_ date: Date?) -> String {
@@ -28,7 +29,7 @@
 
         var body: some View {
             SettingsSheetChrome(
-                "Updates", identifier: "update-settings", close: { coordinator.settingsPresented = false }
+                "Updates", identifier: "update-settings", close: onClose ?? { coordinator.settingsPresented = false }
             ) {
                 VStack(alignment: .leading, spacing: 10) {
                     Toggle(

@@ -1,6 +1,6 @@
 // SwiftUI app entry point for the shared iOS/macOS AstralDeep client; selects a deterministic UI-test fixture
 // model over the real AppModel when running under XCTest.
-// On macOS it also starts the Sparkle updater and gates connecting on the signed minimum build.
+// On macOS it also starts the Sparkle updater, gates connecting on the signed minimum build and hosts Settings.
 
 import AVFoundation
 import AstralCore
@@ -170,11 +170,7 @@ struct AstralApp: App {
                     }
                 #endif
                 #if os(macOS)
-                    .sheet(isPresented: $updates.settingsPresented) {
-                        UpdateSettingsSheet(coordinator: updates)
-                        .environment(model.themeStore)
-                        .tint(model.themeStore.palette.primary)
-                    }
+                    .modifier(MacSettingsRouter(updates: updates))
                     .frame(minWidth: 320, minHeight: 480)
                 #endif
         }
@@ -184,6 +180,16 @@ struct AstralApp: App {
             .commands {
                 MacWorkbenchCommands()
                 CommandGroup(after: .appInfo) { UpdateMenuItems(coordinator: updates) }
+            }
+        #endif
+        #if os(macOS)
+            Settings {
+                MacSettingsView(updates: updates)
+                    .environment(model)
+                    .environment(model.themeStore)
+                    .font(ConsoleTypography.body)
+                    .tint(model.themeStore.palette.primary)
+                    .preferredColorScheme(model.themeStore.colorScheme)
             }
         #endif
     }

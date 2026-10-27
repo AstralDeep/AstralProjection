@@ -12,6 +12,8 @@ public struct ChatSummary: Sendable, Identifiable, Equatable {
     public let hasSavedComponents: Bool
     public let icon: String
     public let timeLabel: String?
+    public let pinned: Bool
+    public let archived: Bool
 
     public init?(json: JSONValue) {
         guard
@@ -28,6 +30,8 @@ public struct ChatSummary: Sendable, Identifiable, Equatable {
         self.hasSavedComponents = json["has_saved_components"]?.boolValue == true
         self.icon = json["icon"]?.stringValue ?? ""
         self.timeLabel = json["time"]?.stringValue
+        self.pinned = json["pinned"]?.boolValue == true
+        self.archived = json["archived"]?.boolValue == true
     }
 
     public init?(historyItem: JSONValue) {
@@ -38,6 +42,7 @@ public struct ChatSummary: Sendable, Identifiable, Equatable {
                 "preview": historyItem["preview"] ?? .null,
                 "has_saved_components": historyItem["saved"] ?? .null,
                 "icon": historyItem["icon"] ?? .null, "time": historyItem["time"] ?? .null,
+                "pinned": historyItem["pinned"] ?? .null, "archived": historyItem["archived"] ?? .null,
             ]))
     }
 

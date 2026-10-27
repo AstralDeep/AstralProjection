@@ -16,6 +16,8 @@
         let conversation: () -> Void
         let canvas: () -> Void
         let cancelTurn: () -> Void
+        let agents: () -> Void
+        let agentDirectoryTitle: String
         let hasCanvas: Bool
         let canNavigate: Bool
         let canCancelTurn: Bool
@@ -62,10 +64,8 @@
                     .keyboardShortcut("n").disabled(actions?.canNavigate != true)
             }
             CommandGroup(after: .appSettings) {
-                if let computerControls {
-                    Button("Computer controls…", action: computerControls)
-                        .keyboardShortcut("c", modifiers: [.command, .shift])
-                }
+                Button("Computer Controls…") { computerControls?() }
+                    .keyboardShortcut("c", modifiers: [.command, .shift]).disabled(computerControls == nil)
             }
             CommandMenu("Workspace") {
                 Button("Search commands…") { actions?.commands() }
@@ -82,6 +82,9 @@
                 Divider()
                 Button("Cancel turn") { actions?.cancelTurn() }
                     .keyboardShortcut(".", modifiers: .command).disabled(actions?.canCancelTurn != true)
+                Divider()
+                Button("\(actions?.agentDirectoryTitle ?? "Agent Directory")…") { actions?.agents() }
+                    .disabled(actions?.canNavigate != true)
             }
         }
     }
@@ -92,6 +95,7 @@
         @Environment(AppModel.self) private var model
         @Environment(ThemeStore.self) private var theme
         @Environment(\.astralUpdateCoordinator) private var updates
+        @Environment(\.openSettings) private var openSettings
         let console: ConsoleModel
         let presentation: ConsolePresentation
         let workbench: ConsoleWorkbenchPresentation
@@ -100,16 +104,22 @@
         @State private var commandsPresented = false
         @State private var activityPresented = false
         @State private var agentsPresented = false
+        @State private var paletteQuery = ""
+        @State private var paletteChoice: MacPaletteAction?
+        @State private var paletteFromComposer = false
+        @State private var restoringDraft = false
+        @State private var renamingChat: MacPaletteChat?
         @State private var networkMonitor: NWPathMonitor?
 
         init(
             console: ConsoleModel, presentation: ConsolePresentation, workbench: ConsoleWorkbenchPresentation,
-            activityPresented: Bool = false
+            activityPresented: Bool = false, agentsPresented: Bool = false
         ) {
             self.console = console
             self.presentation = presentation
             self.workbench = workbench
             _activityPresented = State(initialValue: activityPresented)
+            _agentsPresented = State(initialValue: agentsPresented)
         }
 
         private var p: AstralPalette { theme.palette }
@@ -169,6 +179,8 @@
                             )
                             .frame(maxWidth: workbench.composerMaxWidth)
                             .frame(maxWidth: .infinity)
+                            MacStatusFooter { activityPresented = true }
+                                .frame(maxWidth: workbench.composerMaxWidth).frame(maxWidth: .infinity)
                         }
                         .frame(width: contentWidth)
                         if activityDocked {
@@ -183,9 +195,7 @@
                                 .shadow(color: p.bg.opacity(0.5), radius: 24, x: -12)
                         }
                     }
-                    .blur(radius: model.screen == .surface ? 5 : 0)
-                    .allowsHitTesting(model.screen != .surface)
-                    .accessibilityHidden(model.screen == .surface)
+                    .settingsOverlayBackground(model.screen == .surface, blur: 5)
                     if presentation.navigationMode != .sidebar && model.consoleDrawerOpen && !model.mandatorySurface {
                         p.bg.opacity(0.7).ignoresSafeArea().onTapGesture { model.consoleDrawerOpen = false }
                         MacWorkbenchSidebar(console: console)
@@ -207,7 +217,7 @@
             .focusedSceneValue(
                 \.astralWorkbench,
                 MacWorkbenchActions(
-                    newChat: { model.newChat() }, commands: { commandsPresented = true },
+                    newChat: { model.newChat() }, commands: { presentPalette(query: "") },
                     sidebar: toggleSidebar, activity: { activityPresented.toggle() },
                     conversation: {
                         model.consoleFullscreen = false
@@ -215,10 +225,23 @@
                     },
                     canvas: { selectedPane = .canvas },
                     cancelTurn: { model.cancelCurrentTurn() },
+                    agents: { agentsPresented = true },
+                    agentDirectoryTitle: model.consoleLabel("agent_directory"),
                     hasCanvas: hasCanvas, canNavigate: !model.mandatorySurface, canCancelTurn: model.canCancelTurn)
             )
-            .sheet(isPresented: $commandsPresented) { MacWorkbenchCommandPalette() }
-            .popover(isPresented: $agentsPresented, arrowEdge: .top) { MacWorkbenchAgents(console: console) }
+            .sheet(isPresented: $commandsPresented, onDismiss: finishPalette) {
+                MacWorkbenchCommandPalette(context: paletteContext, query: $paletteQuery) { paletteChoice = $0 }
+            }
+            .sheet(item: $renamingChat) { chat in MacRenameChatSheet(chat: chat) }
+            .onChange(of: model.composerDraft) { old, new in
+                if restoringDraft {
+                    restoringDraft = false
+                } else if old.isEmpty, new == "/", !commandsPresented, !model.mandatorySurface {
+                    model.composerDraft = ""
+                    paletteFromComposer = true
+                    presentPalette(query: "/")
+                }
+            }
             .onChange(of: model.activeChatId) { _, _ in selectedPane = .conversation }
             .onChange(of: browserPresented) { _, presented in
                 if presented { selectedPane = .canvas }
@@ -228,6 +251,7 @@
                     commandsPresented = false
                     activityPresented = false
                     agentsPresented = false
+                    renamingChat = nil
                     model.consoleDrawerOpen = false
                 }
             }
@@ -292,6 +316,8 @@
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden)
                 .disabled(model.mandatorySurface).help("Workspace actions").accessibilityLabel("Workspace actions")
+                .accessibilityIdentifier("workbench-actions-menu")
+                .popover(isPresented: $agentsPresented, arrowEdge: .bottom) { MacWorkbenchAgents(console: console) }
                 if let updates { UpdateStatusChip(coordinator: updates) }
                 iconButton("waveform.path", label: "Activity") { activityPresented.toggle() }
                     .accessibilityValue(activityPresented ? "Shown" : "Hidden")
@@ -310,7 +336,7 @@
                             .accessibilityIdentifier("workbench-stop")
                     }
                 }
-                iconButton("magnifyingglass", label: "Search commands (⌘K)") { commandsPresented = true }
+                iconButton("magnifyingglass", label: "Search commands (⌘K)") { presentPalette(query: "") }
                     .disabled(model.mandatorySurface)
             }
             .padding(.horizontal, 12).frame(height: 56)
@@ -322,6 +348,74 @@
                 Image(systemName: icon).frame(width: 36, height: 40).contentShape(Rectangle())
             }
             .buttonStyle(.plain).foregroundStyle(p.muted).help(label).accessibilityLabel(label)
+        }
+
+        private var paletteContext: MacPaletteContext {
+            MacPaletteContext(
+                canNavigate: !model.mandatorySurface, connected: model.connected,
+                chat: model.activeChatId.map { id in
+                    let summary = model.history.first { $0.id == id }
+                    return MacPaletteChat(
+                        id: id, title: summary?.displayTitle ?? title, pinned: summary?.pinned == true,
+                        archived: summary?.archived == true)
+                },
+                sidebarVisible: presentation.navigationMode == .sidebar ? sidebarVisible : model.consoleDrawerOpen,
+                activityVisible: activityPresented, browserEnabled: model.macBrowser.isEnabled,
+                browserVisible: browserPresented, computerAvailable: model.macComputerHost.available,
+                updatesEnabled: updates?.isEnabled == true, canCancelTurn: model.canCancelTurn,
+                signedIn: model.signedIn, composerLocked: model.mutationsLocked,
+                runInBackground: model.runInBackground)
+        }
+
+        private func presentPalette(query: String) {
+            guard !model.mandatorySurface else { return }
+            paletteQuery = query
+            paletteChoice = nil
+            commandsPresented = true
+        }
+
+        private func finishPalette() {
+            let choice = paletteChoice
+            let fromComposer = paletteFromComposer
+            paletteChoice = nil
+            paletteFromComposer = false
+            guard let choice else {
+                if fromComposer, paletteQuery.hasPrefix("/"), model.composerDraft.isEmpty {
+                    restoringDraft = true
+                    model.composerDraft = paletteQuery
+                }
+                return
+            }
+            guard MacCommandPaletteModel.runnable(choice, context: paletteContext, menu: model.chromeMenu) else {
+                return
+            }
+            switch choice {
+            case .newChat: model.newChat()
+            case .toggleSidebar: toggleSidebar()
+            case .toggleActivity: activityPresented.toggle()
+            case .toggleBrowser: model.macBrowser.isPresented.toggle()
+            case .computerControls: model.macComputerHost.showControls()
+            case .agentDirectory: agentsPresented = true
+            case .updates: updates?.settingsPresented = true
+            case .settings: openSettings()
+            case .cancelTurn: _ = model.cancelCurrentTurn()
+            case .signOut: Task { await model.signOut() }
+            case .renameChat: renamingChat = paletteContext.chat
+            case .togglePin:
+                guard let chat = paletteContext.chat else { return }
+                model.emit(chat.pinned ? "chat_unpin" : "chat_pin", payload: ["chat_id": .string(chat.id)])
+            case .toggleArchive:
+                guard let chat = paletteContext.chat else { return }
+                model.emit(chat.archived ? "chat_unarchive" : "chat_archive", payload: ["chat_id": .string(chat.id)])
+            case .composer(let key):
+                guard let control = model.console?.composerActions.first(where: { $0.key == key }) else { return }
+                if control.kind == .toggle {
+                    model.runInBackground.toggle()
+                } else if let action = control.action {
+                    model.openSurface(action.surface, params: action.params)
+                }
+            case .menu(_, let item): model.openMenuItem(item)
+            }
         }
 
         private func toggleSidebar() {
@@ -356,6 +450,7 @@
         @Environment(ThemeStore.self) private var theme
         let console: ConsoleModel
         @State private var query = ""
+        @FocusState private var searchFocused: Bool
         private var p: AstralPalette { theme.palette }
         private var chats: [ChatSummary] {
             model.history.filter {
@@ -394,13 +489,8 @@
                 }
                 .buttonStyle(.plain).disabled(model.mandatorySurface)
                 .accessibilityIdentifier("new-chat-button")
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                    TextField("Search chats", text: $query).textFieldStyle(.plain)
-                }
-                .font(ConsoleTypography.caption).foregroundStyle(p.muted).padding(10)
-                .background(p.bg.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
-                .accessibilityLabel("Search chats")
+                MacSearchField(
+                    prompt: "Search chats", text: $query, focused: $searchFocused, identifier: "workbench-chat-search")
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 3) {
                         if model.historyLoading { ProgressView().controlSize(.small).padding(8) }
@@ -557,70 +647,6 @@
                 if !current { actionTarget = nil }
             }
             .onDisappear { actionTarget = nil }
-        }
-    }
-
-    struct MacWorkbenchCommandPalette: View {
-        @Environment(AppModel.self) private var model
-        @Environment(ThemeStore.self) private var theme
-        @Environment(\.dismiss) private var dismiss
-        @State private var query = ""
-        @FocusState private var focused: Bool
-        private var commands: [MacWorkbenchCommand] { MacWorkbenchCommand.search(menu: model.chromeMenu, query: query) }
-
-        var body: some View {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 12) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(theme.palette.muted)
-                    TextField("Search commands", text: $query).textFieldStyle(.plain).focused($focused)
-                        .onSubmit { if let first = commands.first { open(first) } }
-                    Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
-                }
-                .padding(20)
-                Divider()
-                List {
-                    if commands.isEmpty {
-                        Text("No matching commands.").foregroundStyle(theme.palette.muted)
-                    }
-                    ForEach(model.chromeMenu?.menu ?? []) { group in
-                        let matches = commands.filter { $0.groupKey == group.key }
-                        if !matches.isEmpty {
-                            Section(group.label) {
-                                ForEach(matches) { command in
-                                    Button {
-                                        open(command)
-                                    } label: {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(command.item.label).foregroundStyle(theme.palette.text)
-                                            if let message = command.item.availability?.message {
-                                                Text(message).font(ConsoleTypography.caption).foregroundStyle(
-                                                    theme.palette.muted)
-                                            }
-                                        }
-                                        .padding(.vertical, 6).frame(maxWidth: .infinity, alignment: .leading)
-                                        .contentShape(Rectangle())
-                                    }
-                                    .buttonStyle(.plain)
-                                    .accessibilityIdentifier("workbench-command-\(command.id)")
-                                }
-                            }
-                        }
-                    }
-                }
-                .listStyle(.plain)
-            }
-            .font(ConsoleTypography.subheadline).background(theme.palette.surface)
-            .frame(minWidth: 280, idealWidth: 560, maxWidth: 680, minHeight: 280, idealHeight: 460)
-            .onAppear { focused = true }
-        }
-
-        private func open(_ command: MacWorkbenchCommand) {
-            guard !model.mandatorySurface,
-                model.chromeMenu?.menu.first(where: { $0.key == command.groupKey })?.items.contains(command.item)
-                    == true
-            else { return }
-            model.openMenuItem(command.item)
-            dismiss()
         }
     }
 
@@ -804,45 +830,76 @@
         @Environment(\.dismiss) private var dismiss
         let console: ConsoleModel
         @State private var query = ""
+        @FocusState private var searchFocused: Bool
+        private var p: AstralPalette { theme.palette }
+        private var agents: [ConsoleAgent] {
+            console.catalog.agents.filter {
+                query.isEmpty || ($0.name + " " + $0.description).localizedCaseInsensitiveContains(query)
+            }
+        }
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 12) {
                 Text(model.consoleLabel("agent_directory")).font(ConsoleTypography.headline)
-                TextField(model.consoleLabel("search_agents"), text: $query).textFieldStyle(.roundedBorder)
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(
-                            console.catalog.agents.filter {
-                                query.isEmpty
-                                    || ($0.name + " " + $0.description).localizedCaseInsensitiveContains(query)
+                    .accessibilityAddTraits(.isHeader)
+                MacSearchField(
+                    prompt: model.consoleLabel("search_agents"), text: $query, focused: $searchFocused,
+                    identifier: "workbench-agent-search"
+                )
+                .onSubmit { if let first = agents.first { open(first) } }
+                if agents.isEmpty {
+                    Text(console.catalog.agents.isEmpty ? "No agents available" : "No matching agents")
+                        .font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
+                        .accessibilityIdentifier("workbench-agent-empty")
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(Array(agents.enumerated()), id: \.element.id) { index, agent in
+                                if index > 0 { Divider().overlay(p.border) }
+                                row(agent)
                             }
-                        ) { agent in
-                            Button {
-                                guard !model.mandatorySurface else { return }
-                                model.openSurface("agent_intro", params: .object(["agent_id": .string(agent.id)]))
-                                dismiss()
-                            } label: {
-                                HStack(alignment: .top, spacing: 12) {
-                                    Circle().fill(agent.state == .ready ? theme.palette.success : theme.palette.muted)
-                                        .frame(width: 7, height: 7).padding(.top, 6)
-                                        .accessibilityHidden(true)
-                                    Text(agent.name).font(ConsoleTypography.subheadline.weight(.semibold))
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                                .padding(.vertical, 12).contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(agent.name)
-                            .accessibilityValue(agent.state == .ready ? "Available" : "Offline")
-                            .accessibilityHint(agent.description)
-                            .accessibilityIdentifier("workbench-agent-\(agent.id)")
-                            Divider()
                         }
                     }
+                    .frame(maxHeight: 440).fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .foregroundStyle(theme.palette.text).padding(20).background(theme.palette.surface)
-            .frame(width: 360, height: 480)
+            .foregroundStyle(p.text).padding(20)
+            .frame(minWidth: 320, idealWidth: 360, maxWidth: 440, minHeight: 160, maxHeight: 560, alignment: .top)
+            .background(p.surface)
+            .onAppear { DispatchQueue.main.async { searchFocused = true } }
+        }
+
+        private func row(_ agent: ConsoleAgent) -> some View {
+            let ready = agent.state == .ready
+            return Button {
+                open(agent)
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: ready ? "circle.fill" : "circle.slash")
+                        .font(.system(size: ready ? 8 : 12, weight: .semibold))
+                        .foregroundStyle(ready ? p.success : p.muted)
+                        .frame(width: 14).accessibilityHidden(true)
+                    Text(agent.name).font(ConsoleTypography.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if !ready {
+                        Text("Offline").font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                    }
+                }
+                .padding(.vertical, 10).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(agent.description)
+            .accessibilityLabel(agent.name)
+            .accessibilityValue(ready ? "Available" : "Offline")
+            .accessibilityHint(agent.description)
+            .accessibilityIdentifier("workbench-agent-\(agent.id)")
+        }
+
+        private func open(_ agent: ConsoleAgent) {
+            guard !model.mandatorySurface else { return }
+            model.openSurface("agent_intro", params: .object(["agent_id": .string(agent.id)]))
+            dismiss()
         }
     }
 #endif
