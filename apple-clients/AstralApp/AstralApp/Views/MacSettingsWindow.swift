@@ -143,6 +143,7 @@
             }
             .buttonStyle(.plain)
             .disabled(handoff || model.mandatorySurface)
+            .accessibilityLabel(item.label)
             .accessibilityValue(handoff ? item.availability?.message ?? "" : "")
             .accessibilityIdentifier("settings-account-\(item.key)")
         }

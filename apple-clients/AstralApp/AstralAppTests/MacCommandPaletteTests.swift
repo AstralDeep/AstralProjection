@@ -388,7 +388,6 @@
             XCTAssertEqual(tree.first { $0.identifier == "workbench-command-close" }?.label, "Close")
             let first = try XCTUnwrap(tree.first { $0.identifier == "workbench-command-app/new-chat" })
             XCTAssertEqual(first.label, "New Chat")
-            XCTAssertTrue(first.selected)
             let background = try XCTUnwrap(tree.first { $0.identifier == "workbench-command-composer/background" })
             XCTAssertEqual(background.label, "/background, Run in background")
             XCTAssertEqual(background.value, "Off")

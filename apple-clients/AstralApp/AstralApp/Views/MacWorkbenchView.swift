@@ -253,6 +253,7 @@
                     commandsPresented = false
                     activityPresented = false
                     agentsPresented = false
+                    renamingChat = nil
                     model.consoleDrawerOpen = false
                 }
             }
