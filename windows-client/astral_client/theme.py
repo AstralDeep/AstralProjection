@@ -15,23 +15,35 @@ from PySide6.QtGui import QFont, QFontDatabase
 # Must byte-match webrender's PRESETS (cross-client parity)
 PRESETS = {
     "graphite": {"bg": "#121214", "surface": "#1B1B1F", "primary": "#7C3AED",
-                 "secondary": "#6E6E78", "text": "#ECECEF", "muted": "#8C8C95",
-                 "accent": "#A78BFA"},
+                 "secondary": "#6E6E78", "text": "#ECECEF", "muted": "#93939B",
+                 "accent": "#A78BFA", "success": "#5EC28F", "warning": "#D4A94A",
+                 "error": "#E17272", "info": "#9A8CF2", "on_error": "#121214",
+                 "field_border": "#6E6E75"},
     "midnight": {"bg": "#0F1221", "surface": "#1A1E2E", "primary": "#6366F1",
                  "secondary": "#8B5CF6", "text": "#F3F4F6", "muted": "#9CA3AF",
-                 "accent": "#06B6D4"},
+                 "accent": "#06B6D4", "success": "#5EC28F", "warning": "#D4A94A",
+                 "error": "#E27777", "info": "#9A8CF2", "on_error": "#0F1221",
+                 "field_border": "#686F7E"},
     "daylight": {"bg": "#F8FAFC", "surface": "#FFFFFF", "primary": "#4F46E5",
-                 "secondary": "#7C3AED", "text": "#1E293B", "muted": "#64748B",
-                 "accent": "#0891B2"},
+                 "secondary": "#7C3AED", "text": "#1E293B", "muted": "#58667B",
+                 "accent": "#067590", "success": "#147739", "warning": "#955B06",
+                 "error": "#B91C1C", "info": "#4338CA", "on_error": "#FFFFFF",
+                 "field_border": "#7F8A9B"},
     "ocean": {"bg": "#0C1222", "surface": "#132038", "primary": "#0EA5E9",
               "secondary": "#06B6D4", "text": "#E2E8F0", "muted": "#94A3B8",
-              "accent": "#2DD4BF"},
+              "accent": "#2DD4BF", "success": "#5EC28F", "warning": "#D4A94A",
+              "error": "#E27777", "info": "#9A8CF2", "on_error": "#0C1222",
+              "field_border": "#66758A"},
     "sunset": {"bg": "#1C1017", "surface": "#2D1B24", "primary": "#F97316",
                "secondary": "#EF4444", "text": "#FEF2F2", "muted": "#A8A29E",
-               "accent": "#FBBF24"},
+               "accent": "#FBBF24", "success": "#5EC28F", "warning": "#D4A94A",
+               "error": "#E37B7B", "info": "#9A8CF2", "on_error": "#1C1017",
+               "field_border": "#7B7172"},
     "forest": {"bg": "#0F1A14", "surface": "#1A2E22", "primary": "#22C55E",
                "secondary": "#10B981", "text": "#ECFDF5", "muted": "#86EFAC",
-               "accent": "#A3E635"},
+               "accent": "#A3E635", "success": "#5EC28F", "warning": "#D4A94A",
+               "error": "#E78C8C", "info": "#A69AF4", "on_error": "#0F1A14",
+               "field_border": "#508965"},
 }
 
 PALETTE: dict = dict(PRESETS["graphite"])
@@ -39,17 +51,13 @@ PALETTE: dict = dict(PRESETS["graphite"])
 FONT = "'Open Sans', 'Segoe UI', sans-serif"
 MONO = "'JetBrains Mono', 'Cascadia Code', Consolas, monospace"
 
-_SEMANTIC = {
-    "info": ("#3B82F6", "rgba(59,130,246,0.14)"),
-    "success": ("#22C55E", "rgba(34,197,94,0.14)"),
-    "warning": ("#EAB308", "rgba(234,179,8,0.14)"),
-    "error": ("#EF4444", "rgba(239,68,68,0.14)"),
-}
+_SEMANTIC: dict = {}
 
 _HEX_RE = re.compile(r"^#?[0-9a-fA-F]{6}$")
 
-BG = SURFACE = SURFACE_2 = BORDER = TEXT = MUTED = ""
+BG = SURFACE = SURFACE_2 = BORDER = FIELD_BORDER = TEXT = MUTED = ""
 PRIMARY = SECONDARY = ACCENT = PRIMARY_SOFT = GRAD = ""
+ERROR = ON_ERROR = ERROR_HOVER = ""
 VARIANT_COLORS: dict = {}
 _ROOT_BG = ""
 ROOT_BG_STYLE = ""
@@ -103,9 +111,9 @@ def _normalize_hex(value) -> str:
 
 
 def _derive() -> None:
-    global BG, SURFACE, SURFACE_2, BORDER, TEXT, MUTED
+    global BG, SURFACE, SURFACE_2, BORDER, FIELD_BORDER, TEXT, MUTED
     global PRIMARY, SECONDARY, ACCENT, PRIMARY_SOFT, GRAD, VARIANT_COLORS
-    global _ROOT_BG, ROOT_BG_STYLE
+    global ERROR, ON_ERROR, ERROR_HOVER, _SEMANTIC, _ROOT_BG, ROOT_BG_STYLE
     bg = PALETTE["bg"]
     surface = PALETTE["surface"]
     primary = PALETTE["primary"]
@@ -117,6 +125,7 @@ def _derive() -> None:
     SURFACE = _mix(bg, surface, 0.5)
     SURFACE_2 = surface
     BORDER = _rgba(text, 0.10)
+    FIELD_BORDER = PALETTE["field_border"]
     TEXT = text
     MUTED = muted
     PRIMARY = primary
@@ -125,6 +134,11 @@ def _derive() -> None:
     PRIMARY_SOFT = _rgba(primary, 0.15)
     GRAD = (f"qlineargradient(x1:0, y1:0, x2:1, y2:1, "
             f"stop:0 {primary}, stop:1 {secondary})")
+    ERROR = PALETTE["error"]
+    ON_ERROR = PALETTE["on_error"]
+    ERROR_HOVER = _mix(ERROR, text, 0.12)
+    _SEMANTIC = {role: (PALETTE[role], _rgba(PALETTE[role], 0.14))
+                 for role in ("info", "success", "warning", "error")}
     VARIANT_COLORS = {
         **_SEMANTIC,
         "accent": (accent, _rgba(accent, 0.14)),
@@ -158,15 +172,15 @@ QLabel#voiceRequestTerminalNotice[noticeKind="speech_error"] {{
 }}
 QMainWindow, QWidget#root {{ background: {BG}; }}
 QScrollArea {{ background: transparent; border: none; }}
-QLineEdit, QPlainTextEdit, QTextEdit {{ background: {_rgba(TEXT, 0.05)}; border: 1px solid {_rgba(TEXT, 0.10)};
+QLineEdit, QPlainTextEdit, QTextEdit {{ background: {_rgba(TEXT, 0.05)}; border: 1px solid {FIELD_BORDER};
            border-radius: 8px; padding: 8px 12px; color: {TEXT};
            selection-background-color: {PRIMARY}; }}
 QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus {{
-           border: 1px solid {_rgba(PRIMARY, 0.6)};
+           border: 1px solid {PRIMARY};
            background: {_rgba(TEXT, 0.08)}; }}
 QPushButton:focus, QToolButton:focus, QComboBox:focus, QCheckBox:focus, QRadioButton:focus {{
            border: 2px solid {PRIMARY}; }}
-QComboBox {{ background: {_rgba(TEXT, 0.05)}; border: 1px solid {_rgba(TEXT, 0.10)};
+QComboBox {{ background: {_rgba(TEXT, 0.05)}; border: 1px solid {FIELD_BORDER};
            border-radius: 8px; padding: 6px 10px; color: {TEXT}; }}
 QComboBox:hover {{ border-color: {_rgba(PRIMARY, 0.6)}; }}
 QComboBox::drop-down {{ border: none; width: 22px; }}
@@ -176,7 +190,7 @@ QComboBox QAbstractItemView {{ background: {SURFACE_2}; color: {TEXT};
            selection-color: {TEXT}; outline: none; }}
 QCheckBox {{ color: {TEXT}; spacing: 8px; }}
 QCheckBox::indicator {{ width: 16px; height: 16px; border-radius: 4px;
-           border: 1px solid {_rgba(TEXT, 0.20)}; background: {_rgba(TEXT, 0.10)}; }}
+           border: 1px solid {FIELD_BORDER}; background: {_rgba(TEXT, 0.10)}; }}
 QCheckBox::indicator:checked {{ background: {PRIMARY}; border-color: {PRIMARY}; }}
 /* Neutral outline button — the web pager/utility treatment (border-white/10,
    hover bg-white/10). Named variants below override it. */
@@ -228,8 +242,8 @@ QPushButton#iconGhost:disabled, QPushButton#voiceComposerControl[iconOnly="true"
    control's aria-pressed styling — the state is not carried by color alone. */
 QPushButton#voiceComposerControl[iconOnly="true"][pressed="true"] {{
            background: {_rgba(PRIMARY, 0.22)}; border-color: {PRIMARY}; color: {TEXT}; }}
-QPushButton#danger {{ background: {_SEMANTIC["error"][0]}; border: none; color: white; font-weight: 600; }}
-QPushButton#danger:hover {{ background: #DC2626; }}
+QPushButton#danger {{ background: {ERROR}; border: none; color: {ON_ERROR}; font-weight: 600; }}
+QPushButton#danger:hover {{ background: {ERROR_HOVER}; }}
 QTableWidget {{ background: transparent; border: none;
            alternate-background-color: {_rgba(TEXT, 0.02)};
            selection-background-color: {_rgba(PRIMARY, 0.20)}; }}

@@ -21,8 +21,14 @@
   --astral-primary:   124 58 237;
   --astral-secondary: 110 110 120;
   --astral-text:      236 236 239;
-  --astral-muted:     140 140 149;
+  --astral-muted:     147 147 155;
   --astral-accent:    167 139 250;
+  --astral-success:      94 194 143;
+  --astral-warning:      212 169 74;
+  --astral-error:        225 114 114;
+  --astral-info:         154 140 242;
+  --astral-on-error:     18 18 20;
+  --astral-field-border: 110 110 117;
 
   /* --font-sans and --font-mono alias --astral-font so no consumer can reintroduce a second family */
   --astral-font: 'Open Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -56,10 +62,10 @@
   --accent: rgb(var(--astral-primary));
   --accent-strong: rgb(var(--astral-secondary));
   --accent-grad: linear-gradient(135deg, rgb(var(--astral-primary)) 0%, rgb(var(--astral-secondary)) 100%);
-  --color-success: 34 197 94;
-  --color-warning: 234 179 8;
-  --color-error:   239 68 68;
-  --color-info:    59 130 246;
+  --color-success: var(--astral-success);
+  --color-warning: var(--astral-warning);
+  --color-error:   var(--astral-error);
+  --color-info:    var(--astral-info);
 
   --text-primary: rgb(var(--astral-text));
   --text-secondary: rgb(var(--astral-text) / 0.78);
@@ -103,7 +109,7 @@ body {
 }
 
 :focus-visible {
-  outline: 2px solid rgb(var(--astral-primary) / 0.75);
+  outline: 2px solid rgb(var(--astral-primary));
   outline-offset: 2px;
 }
 
@@ -187,7 +193,7 @@ html, body { overflow: hidden; }
   min-height: 36px;
   padding: 8px 12px 8px 32px;
   border-radius: var(--radius-md);
-  border: 1px solid rgb(var(--astral-text) / 0.14);
+  border: 1px solid rgb(var(--astral-field-border));
   background: rgb(var(--astral-surface) / 0.6);
   color: var(--text-primary);
   font-family: var(--astral-font);
@@ -195,7 +201,7 @@ html, body { overflow: hidden; }
 }
 .astral-search-input::placeholder { color: var(--text-muted); }
 .astral-search-input:focus-visible {
-  outline: 2px solid rgb(var(--astral-primary) / 0.65);
+  outline: 2px solid rgb(var(--astral-primary));
   outline-offset: 1px;
 }
 .astral-agent-list {
@@ -541,7 +547,7 @@ html, body { overflow: hidden; }
   font-family: var(--astral-font);
   font-size: var(--font-sm);
   background: rgb(var(--astral-surface) / 0.6);
-  border: 1px solid rgb(var(--astral-text) / 0.16);
+  border: 1px solid rgb(var(--astral-field-border));
 }
 .astral-send-btn {
   flex: 0 0 auto;
@@ -618,9 +624,10 @@ html, body { overflow: hidden; }
 :is(#astral-canvas, .astral-start-slot) [data-welcome="more"] > div > * { margin: 0; }
 
 .astral-field { border-radius: var(--radius-sm); }
+.astral-field.border { border-color: rgb(var(--astral-field-border)); }
 .astral-field:focus {
   outline: none;
-  border-color: rgb(var(--astral-primary) / 0.6);
+  border-color: rgb(var(--astral-primary));
   box-shadow: var(--glow-accent);
   background: rgb(var(--astral-text) / 0.08);
 }
@@ -640,7 +647,7 @@ select.astral-field { color-scheme: dark; }
 
 .astral-btn { letter-spacing: 0.01em; }
 .astral-btn:focus-visible {
-  outline: 2px solid rgb(var(--astral-primary) / 0.8);
+  outline: 2px solid rgb(var(--astral-primary));
   outline-offset: 2px;
 }
 .astral-btn-primary {
@@ -653,6 +660,7 @@ select.astral-field { color-scheme: dark; }
 .astral-btn-ghost:hover { text-decoration: none; }
 .astral-btn-danger {
   background: rgb(var(--color-error));
+  color: rgb(var(--astral-on-error));
   box-shadow: var(--shadow-1), inset 0 1px 0 rgb(var(--astral-text) / 0.15);
   text-shadow: 0 1px 2px rgb(var(--astral-bg) / 0.25);
 }
@@ -1411,7 +1419,7 @@ details > summary::-webkit-details-marker { display: none; }
   border-color: rgb(var(--astral-primary) / 0.28);
 }
 .astral-history-item:focus-visible {
-  outline: 2px solid rgb(var(--astral-primary) / 0.75);
+  outline: 2px solid rgb(var(--astral-primary));
   outline-offset: 1px;
 }
 .astral-history-avatar {
@@ -1693,7 +1701,7 @@ details > summary::-webkit-details-marker { display: none; }
 }
 
 .astral-chat-form .astral-composer-row:focus-within #astral-input {
-  border-color: rgb(var(--astral-primary) / 0.75);
+  border-color: rgb(var(--astral-primary));
   box-shadow: 0 0 0 3px rgb(var(--astral-primary) / 0.09);
 }
 .astral-chat-form #astral-input::placeholder { color: var(--text-muted); opacity: 1; }
@@ -3057,7 +3065,7 @@ body[data-astral-view="start"] .astral-start-slot:empty { display: none !importa
   box-sizing: border-box;
   padding: 8px 12px;
   border-radius: var(--radius-sm);
-  border: 1px solid rgb(var(--astral-text) / 0.14);
+  border: 1px solid rgb(var(--astral-field-border));
   background: rgb(var(--astral-bg) / 0.45);
   color: var(--text-primary);
   font-family: var(--astral-font);
