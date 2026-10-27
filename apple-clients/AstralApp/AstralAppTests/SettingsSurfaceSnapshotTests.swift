@@ -40,15 +40,7 @@
         }
 
         private func contract(_ path: String) throws -> JSONValue {
-            var root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-            for _ in 0..<8 {
-                let file = root.appendingPathComponent("contracts/fixtures/\(path)")
-                if FileManager.default.fileExists(atPath: file.path) {
-                    return try JSONValue.parse(Data(contentsOf: file))
-                }
-                root.deleteLastPathComponent()
-            }
-            throw CocoaError(.fileNoSuchFile)
+            try bundled(URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent)
         }
 
         private func bundled(_ name: String) throws -> JSONValue {
@@ -219,6 +211,20 @@
                 let own = node["type"]?.stringValue == "button" ? [node] : []
                 return own + buttons((node["content"]?.arrayValue ?? []) + (node["children"]?.arrayValue ?? []))
             }
+        }
+
+        func testEverySurfaceFixtureLoadsFromTheTestBundle() throws {
+            let bundle = Bundle(for: SettingsSurfaceSnapshotTests.self).bundleURL.standardizedFileURL.path
+            for name in [
+                "SettingsSurfaceSnapshotFixtures", "chrome-console", "rote-console", "agents_surface", "notes_surface",
+                "skills_surface", "monitor_surface", "panel_surface", "saved_results_surface",
+                "recurring_work_surface", "connections_surface",
+            ] {
+                let url = try XCTUnwrap(
+                    Bundle(for: SettingsSurfaceSnapshotTests.self).url(forResource: name, withExtension: "json"), name)
+                XCTAssertTrue(url.standardizedFileURL.path.hasPrefix(bundle), name)
+            }
+            XCTAssertGreaterThanOrEqual(try allSurfaces().count, 18)
         }
 
         func testEverySettingsSurfaceRendersInGraphiteMidnightAndDaylight() async throws {
