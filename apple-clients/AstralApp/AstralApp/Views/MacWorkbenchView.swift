@@ -158,6 +158,7 @@
                                     model.dismissBanner()
                                 }
                             }
+                            if let prompt = model.approvalPrompts.first { MacApprovalBanner(prompt: prompt) }
                             ViewportRefreshNotice()
                             HStack(spacing: 0) {
                                 conversation

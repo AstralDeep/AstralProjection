@@ -89,9 +89,10 @@
         private(set) var monitoringAllowed = false
         private(set) var lastError: String?
         private(set) var awaitingApproval = false
+        private(set) var working = false
         let files: MacComputerFiles
         @ObservationIgnored private let defaults: UserDefaults
-        @ObservationIgnored private let authority = ComputerHostAuthority()
+        @ObservationIgnored private let authority: ComputerHostAuthority
         @ObservationIgnored private let driver: any MacComputerDriving
         @ObservationIgnored private let monitor: any MacComputerMonitoring
         @ObservationIgnored private let permissionProvider: @MainActor () -> MacComputerPermissions
@@ -137,8 +138,10 @@
             system: any MacComputerSystemIO = MacComputerLiveSystem.shared,
             panelPresenter: (@MainActor (NSPanel) -> Void)? = nil,
             commands: MacComputerCommands? = nil,
-            appActivator: (@MainActor () -> Void)? = nil
+            appActivator: (@MainActor () -> Void)? = nil,
+            authority: ComputerHostAuthority = ComputerHostAuthority()
         ) {
+            self.authority = authority
             self.available = available ?? Self.executionDistribution()
             self.defaults = defaults
             self.files = files ?? MacComputerFiles(defaults: defaults)
@@ -601,7 +604,12 @@
             for task in auxiliary.values { task.cancel() }
             auxiliary = [:]
             browserTail = nil
+            refreshWorking()
             if resetDriver { Task { await driver.reset() } }
+        }
+        private func refreshWorking() {
+            let busy = worker != nil || !queue.isEmpty || !auxiliary.isEmpty
+            if working != busy { working = busy }
         }
         private func retire(commands state: String = "interrupted") {
             resolvePauseWaiters(accepted: false)
@@ -700,6 +708,7 @@
         private static func browserVerb(_ verb: String) -> Bool { verb.hasPrefix("browser_") }
         private static func nonPhysical(_ verb: String) -> Bool { browserVerb(verb) || commandVerbs.contains(verb) }
         private func drain() {
+            defer { refreshWorking() }
             while let index = queue.firstIndex(where: { Self.nonPhysical($0.0.verb) }) {
                 let (request, ticket) = queue.remove(at: index)
                 runAuxiliary(request, ticket)
@@ -727,19 +736,7 @@
                         })
                 } catch { result = .failure(error) }
                 guard let self, self.workerId == id else { return }
-                do {
-                    try authority.verify(ticket)
-                    switch result {
-                    case .success(let value): self.respond(request.id, result: value)
-                    case .failure(let error):
-                        self.respond(request.id, error: error)
-                        self.lastError = error.localizedDescription
-                    }
-                } catch {
-                    self.lastError =
-                        "The operation was interrupted; inspect the current computer state before retrying."
-                }
-                authority.complete(ticket)
+                self.answer(request, ticket: ticket, with: result)
                 self.worker = nil
                 self.drain()
             }
@@ -770,19 +767,8 @@
                         try await host.performAuxiliary(request, ticket: ticket, roots: roots, authorize: authorize))
                 } catch { result = .failure(error) }
                 guard let self, self.auxiliary.removeValue(forKey: id) != nil else { return }
-                do {
-                    try authority.verify(ticket)
-                    switch result {
-                    case .success(let value): self.respond(request.id, result: value)
-                    case .failure(let error):
-                        self.respond(request.id, error: error)
-                        self.lastError = error.localizedDescription
-                    }
-                } catch {
-                    self.lastError =
-                        "The operation was interrupted; inspect the current computer state before retrying."
-                }
-                authority.complete(ticket)
+                self.refreshWorking()
+                self.answer(request, ticket: ticket, with: result)
             }
             auxiliary[id] = task
             if serial { browserTail = task }
@@ -802,6 +788,23 @@
                 throw ComputerHostError("unsupported", "The browser pane is turned off on this Mac.")
             }
             return try await browser.handle(request, ticket: ticket, authorize: authorize)
+        }
+        private func answer(
+            _ request: ComputerHostRequest, ticket: ComputerHostTicket, with result: Result<[String: JSONValue], Error>
+        ) {
+            do {
+                try authority.verify(ticket)
+                switch result {
+                case .success(let value): respond(request.id, result: value)
+                case .failure(let error):
+                    respond(request.id, error: error)
+                    lastError = error.localizedDescription
+                }
+            } catch {
+                respond(request.id, error: error)
+                lastError = "The operation was interrupted; inspect the current computer state before retrying."
+            }
+            authority.complete(ticket)
         }
         private func respond(_ id: String, result: [String: JSONValue]? = nil, error: Error? = nil) {
             var payload: [String: JSONValue] = ["request_id": .string(id), "ok": .bool(error == nil)]

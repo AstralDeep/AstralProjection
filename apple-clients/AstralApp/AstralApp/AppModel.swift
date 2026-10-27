@@ -320,7 +320,23 @@ final class AppModel: NSObject {
     static let maximumActivityRows = 200
     static let maximumActivityChats = 32
     var activity: [ActivityRow] { activityLog[activityKey(activeChatId)] ?? [] }
-    var canCancelTurn: Bool { signedIn && connected && turnActive }
+    var canCancelTurn: Bool { signedIn && connected && turnBusy }
+    private static let turnOperations: Set<String> = ["chat_message", "authorize_action", "remote_op_decision"]
+    var turnBusy: Bool {
+        if turnActive || activity.contains(where: { $0.state == .running && $0.approval != .waiting }) { return true }
+        if operationStatuses.values.contains(where: {
+            !$0.terminal && Self.turnOperations.contains($0.action)
+                && $0.connectionGeneration == continuity.connectionGeneration
+                && ($0.chatId == nil || $0.chatId == activeChatId)
+        }) {
+            return true
+        }
+        #if os(macOS)
+            return macComputerHost.working
+        #else
+            return false
+        #endif
+    }
     var asyncDetached = false
     var operationStatuses: [String: OperationStatus] = [:]
     var agentLifecycles: [String: AgentLifecycle] = [:]
@@ -423,6 +439,12 @@ final class AppModel: NSObject {
     }
     @ObservationIgnored private var ws: WSClient?
     @ObservationIgnored private var initialWebSocket: WSClient?
+    #if os(macOS)
+        @ObservationIgnored var socketLiveness: LivenessPolicy? = .standard
+    #else
+        @ObservationIgnored var socketLiveness: LivenessPolicy?
+    #endif
+    @ObservationIgnored let connectionActivity: ConnectionActivity
     @ObservationIgnored private var registeredAccessToken: String?
     @ObservationIgnored private var refreshedWithinMarginAccessToken: String?
     @ObservationIgnored private var wsTask: Task<Void, Never>?
@@ -511,8 +533,10 @@ final class AppModel: NSObject {
         webSocket: WSClient? = nil,
         voiceController: AppleVoiceSessionController? = nil,
         credentialClock: @escaping @Sendable () -> Date = { Date() },
-        computerHost: LocalComputerHost? = nil
+        computerHost: LocalComputerHost? = nil,
+        processActivity: (any ProcessActivityScheduling)? = nil
     ) {
+        connectionActivity = ConnectionActivity(scheduler: processActivity ?? ProcessInfo.processInfo)
         #if os(macOS)
             let host = computerHost ?? MacComputerHost()
             macComputerHost = host
@@ -573,7 +597,33 @@ final class AppModel: NSObject {
         #if os(iOS)
             WatchOverrideSync.shared.activate()
             if !storedBase.isEmpty { WatchOverrideSync.shared.push(serverBaseText) }
+        #else
+            trackConnectionActivity()
         #endif
+    }
+
+    var connectionActivityLevel: ConnectionActivity.Level {
+        guard signedIn else { return .idle }
+        #if os(macOS)
+            if turnBusy || macComputerHost.taskActive { return .active }
+        #else
+            if turnActive { return .active }
+        #endif
+        return .signedIn
+    }
+
+    private func trackConnectionActivity() {
+        let level = withObservationTracking {
+            connectionActivityLevel
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in self?.trackConnectionActivity() }
+        }
+        connectionActivity.update(level)
+    }
+
+    func verifyConnection() {
+        guard signedIn, let socket = ws else { return }
+        Task { _ = await socket.confirmLive() }
     }
 
     func bindConversationAccount(_ account: ConversationAccount) {
@@ -1812,7 +1862,7 @@ final class AppModel: NSObject {
         let client =
             initialWebSocket
             ?? WSClient(
-                url: socketURL,
+                url: socketURL, liveness: socketLiveness,
                 requestHeaders: { [weak self] in
                     await self?.serverSocketHeaders(url: socketURL, owner: socketOwner, server: socketServer)
                 })
@@ -2050,6 +2100,7 @@ final class AppModel: NSObject {
         case "chat_deleted":
             if let chatId = nestedChatId(frame) { clearConfirmedDeletion(chatId) }
         case "chat_status":
+            if let target = frame.payload["chat_id"]?.stringValue, let active = activeChatId, target != active { break }
             if frame.payload["status"]?.stringValue == "done", frame.payload["message"]?.stringValue == "Cancelled" {
                 recordActivityCancellation(chatId: nestedChatId(frame) ?? activeChatId)
             }
@@ -3247,11 +3298,39 @@ final class AppModel: NSObject {
         }
     #endif
 
+    struct ApprovalPrompt: Equatable, Identifiable {
+        struct Choice: Equatable {
+            let action: String
+            let payload: [String: JSONValue]
+        }
+        let requestId: String
+        let site: String?
+        let summary: String
+        let allow: Choice
+        let deny: Choice
+        var id: String { requestId }
+    }
+
+    private(set) var approvalPrompts: [ApprovalPrompt] = []
+    var waitingApprovals: Int { max(activity.filter { $0.approval == .waiting }.count, approvalPrompts.count) }
+
+    func decideApproval(_ prompt: ApprovalPrompt, allow: Bool) {
+        guard approvalPrompts.contains(prompt) else { return }
+        let choice = allow ? prompt.allow : prompt.deny
+        emit(choice.action, payload: choice.payload)
+    }
+
     static func pendingComputerApprovals(in components: [AstralComponent]) -> [PendingApproval] {
-        var found: [PendingApproval] = []
+        approvalCards(in: components).map(\.approval)
+    }
+
+    private static func approvalCards(in components: [AstralComponent]) -> [(
+        card: AstralComponent, approval: PendingApproval
+    )] {
+        var found: [(card: AstralComponent, approval: PendingApproval)] = []
         func visit(_ component: AstralComponent, depth: Int) {
             if component.type == "card", let approval = computerApproval(component) {
-                found.append(approval)
+                found.append((component, approval))
                 return
             }
             guard depth < 3 else { return }
@@ -3259,6 +3338,35 @@ final class AppModel: NSObject {
         }
         for component in components { visit(component, depth: 0) }
         return found
+    }
+
+    private static func approvalPrompt(_ card: AstralComponent, _ approval: PendingApproval) -> ApprovalPrompt? {
+        let choices = card.children.compactMap { child -> (decision: String, choice: ApprovalPrompt.Choice)? in
+            guard child.type == "button", child.raw["disabled"]?.boolValue != true,
+                let action = child.raw["action"]?.stringValue, let payload = child.raw["payload"]?.objectValue,
+                let decision = payload["decision"]?.stringValue
+            else { return nil }
+            return (decision, ApprovalPrompt.Choice(action: action, payload: payload))
+        }
+        guard
+            let allow = choices.first(where: { $0.decision == "approve" })
+                ?? choices.first(where: { $0.decision == "approve_and_resume" }),
+            let deny = choices.first(where: { $0.decision == "decline" })
+        else { return nil }
+        let texts = card.children.filter { $0.type == "text" }.compactMap(\.textContent)
+        let summary = activityLine(texts.first { !$0.hasPrefix("Tool: ") } ?? approval.summary, limit: 300)
+        return ApprovalPrompt(
+            requestId: approval.requestId, site: approvalSite(summary), summary: summary, allow: allow.choice,
+            deny: deny.choice)
+    }
+
+    static func approvalSite(_ summary: String) -> String? {
+        guard summary.hasPrefix("Open "), summary.contains(" browser pane") else { return nil }
+        let token = String(summary.dropFirst(5).prefix { !$0.isWhitespace })
+        guard let url = URL(string: token), let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),
+            let host = url.host, !host.isEmpty
+        else { return nil }
+        return "\(scheme)://\(host)" + (url.port.map { ":\($0)" } ?? "")
     }
 
     private static func computerApproval(_ card: AstralComponent) -> PendingApproval? {
@@ -3541,8 +3649,11 @@ final class AppModel: NSObject {
     private func observeActivityComponents() {
         guard !activityObservationPaused else { return }
         let live = transientCanvas ?? canvas
-        let pending = Self.pendingComputerApprovals(in: visibleTurns.suffix(8).flatMap(\.components) + live)
-            .filter { !decidedApprovals.contains($0.requestId) }
+        let cards = Self.approvalCards(in: visibleTurns.suffix(8).flatMap(\.components) + live)
+            .filter { !decidedApprovals.contains($0.approval.requestId) }
+        let pending = cards.map(\.approval)
+        let prompts = cards.compactMap { Self.approvalPrompt($0.card, $0.approval) }
+        if prompts != approvalPrompts { approvalPrompts = prompts }
         for approval in pending where approvalRows[approval.requestId] == nil { linkApproval(approval) }
         #if os(macOS)
             if macComputerHost.awaitingApproval == pending.isEmpty { macComputerHost.approvalWaiting(!pending.isEmpty) }
@@ -3599,6 +3710,7 @@ final class AppModel: NSObject {
 
     private func clearActivity() {
         activityLog = [:]
+        approvalPrompts = []
         activityAliases = [:]
         activityOrder = []
         decidedApprovals = []
@@ -4548,6 +4660,9 @@ final class AppModel: NSObject {
             }
             guard allowed else {
                 if owner == downloadOwner {
+                    if await sendOnRenewedSocket(text, replacing: socket, navigation: navigation, chatId: chatId) {
+                        return
+                    }
                     retireUnsentOperation(text)
                     restoreUnsentQuery(text, navigation: navigation, chatId: chatId)
                 }
@@ -4584,9 +4699,21 @@ final class AppModel: NSObject {
                 }
                 if !sent && owner == downloadOwner { retireUnsentOperation(text) }
             } else {
+                _ = await socket.confirmLive()
                 await socket.send(text)
             }
         }
+    }
+
+    private func sendOnRenewedSocket(_ text: String, replacing original: WSClient, navigation: Int, chatId: String?)
+        async -> Bool
+    {
+        guard signedIn, let current = ws, current !== original, navigation == conversationNavigationGeneration,
+            activeChatId == chatId, screen == .chat,
+            InboundFrame.parse(text)?.payload["action"]?.stringValue == "chat_message"
+        else { return false }
+        await current.sendThroughReplay(text)
+        return true
     }
 
     private func computerChannelIsCurrent(socket: WSClient, owner: DownloadOwner, connection: String?) -> Bool {

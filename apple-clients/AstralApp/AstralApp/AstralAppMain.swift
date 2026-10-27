@@ -1,6 +1,7 @@
 // SwiftUI app entry point for the shared iOS/macOS AstralDeep client; selects a deterministic UI-test fixture
 // model over the real AppModel when running under XCTest.
-// On macOS it also starts the Sparkle updater, gates connecting on the signed minimum build and hosts Settings.
+// On macOS it also starts the Sparkle updater, gates connecting on the signed minimum build, hosts Settings and
+// rechecks the server connection after wake or reactivation.
 
 import AVFoundation
 import AstralCore
@@ -154,6 +155,16 @@ struct AstralApp: App {
                             for: NSWorkspace.sessionDidBecomeActiveNotification)
                     ) { _ in
                         model.voiceSessionUnlocked()
+                    }
+                    .onReceive(
+                        NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)
+                    ) { _ in
+                        model.verifyConnection()
+                    }
+                    .onReceive(
+                        NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+                    ) { _ in
+                        model.verifyConnection()
                     }
                     .onReceive(
                         NotificationCenter.default.publisher(

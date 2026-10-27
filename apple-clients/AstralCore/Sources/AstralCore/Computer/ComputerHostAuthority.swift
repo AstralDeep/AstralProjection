@@ -8,7 +8,10 @@ public final class ComputerHostAuthority: @unchecked Sendable {
     private var fence = ComputerHostFence()
     private var desktopAvailable = false
     private var desktopRearmRequired = false
-    public init() {}
+    private let now: @Sendable () -> Double
+    public init(now: @escaping @Sendable () -> Double = { ProcessInfo.processInfo.systemUptime }) {
+        self.now = now
+    }
     public func begin(_ session: String) throws {
         lock.lock()
         defer { lock.unlock() }
@@ -59,12 +62,12 @@ public final class ComputerHostAuthority: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         guard desktopAvailable else { throw ComputerHostError("screen_locked", "This desktop is unavailable.") }
-        return try fence.admit(request, now: ProcessInfo.processInfo.systemUptime)
+        return try fence.admit(request, now: now())
     }
     public func verify(_ ticket: ComputerHostTicket) throws {
         lock.lock()
         defer { lock.unlock() }
-        guard desktopAvailable, fence.permits(ticket, now: ProcessInfo.processInfo.systemUptime) else {
+        guard desktopAvailable, fence.permits(ticket, now: now()) else {
             throw ComputerHostError(
                 "interrupted", "The request expired or computer authority changed. Inspect the result before retrying.")
         }
