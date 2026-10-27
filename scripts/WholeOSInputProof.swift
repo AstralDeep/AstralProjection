@@ -71,6 +71,7 @@ func classify() -> SyntaxResult {
         case .inactive: result.decision = "inactive"
         case .active: result.decision = "active"
         case .unparsed: break
+        @unknown default: break
         }
     } catch {
         return result

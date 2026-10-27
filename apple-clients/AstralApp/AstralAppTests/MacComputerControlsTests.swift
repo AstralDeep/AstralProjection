@@ -83,7 +83,10 @@
                     contentRect: NSRect(x: 0, y: 0, width: 560, height: 900), styleMask: .borderless,
                     backing: .buffered, defer: false)
                 window.isReleasedWhenClosed = false
-                let view = NSHostingView(rootView: MacComputerControls(host: host).environment(ThemeStore()))
+                let theme = ThemeStore()
+                window.appearance = NSAppearance(named: theme.colorScheme == .dark ? .darkAqua : .aqua)
+                let view = NSHostingView(
+                    rootView: MacComputerControls(host: host).environment(theme).background(theme.palette.bg))
                 window.contentView = view
                 defer {
                     window.contentView = nil
@@ -99,7 +102,9 @@
                 try VNImageRequestHandler(cgImage: XCTUnwrap(bitmap.cgImage)).perform([request])
                 let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
                     .joined(separator: "\n")
-                let kept = ["Computer access on this Mac", "Permissions", "Workspaces", "Accessibility", host.statusLabel]
+                let kept = [
+                    "Computer access on this Mac", "Permissions", "Workspaces", "Accessibility", host.statusLabel,
+                ]
                 for kept in kept {
                     XCTAssertTrue(text.contains(kept), "Missing \(kept) in \(text)")
                 }

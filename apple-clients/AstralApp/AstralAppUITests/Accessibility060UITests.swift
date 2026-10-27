@@ -110,8 +110,6 @@ final class Accessibility060UITests: XCTestCase {
     }
 
     private func waitForNonExistence(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
-        let expectation = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "exists == false"), object: element)
-        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+        waitUntil(timeout: timeout) { !element.exists }
     }
 }

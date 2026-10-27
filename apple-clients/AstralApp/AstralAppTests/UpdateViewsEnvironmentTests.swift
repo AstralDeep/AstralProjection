@@ -26,7 +26,8 @@
         func testRequiredViewAndChipRenderWithoutThemeStoreInEnvironment() {
             let coordinator = UpdateCoordinator(isBusy: { false })
             let requirement = UpdateRequirement(minimumBuild: 71, installedBuild: 70, message: "Update required")
-            XCTAssertGreaterThan(host(UpdateRequiredView(requirement: requirement, coordinator: coordinator)).fittingSize.height, 0)
+            XCTAssertGreaterThan(
+                host(UpdateRequiredView(requirement: requirement, coordinator: coordinator)).fittingSize.height, 0)
             XCTAssertGreaterThanOrEqual(host(UpdateStatusChip(coordinator: coordinator)).fittingSize.height, 0)
         }
     }

@@ -376,7 +376,7 @@ final class WorkspacePresentationUITests: XCTestCase {
             let composer = app.descendants(matching: .any).matching(identifier: "chat-composer-input").firstMatch
             composer.press()
             composer.typeText("Still responsive")
-            XCTAssertTrue((composer.value as? String ?? "").contains("Still responsive"))
+            XCTAssertTrue(waitUntil(timeout: 3) { (composer.value as? String ?? "").contains("Still responsive") })
             capture(app, name: "workspace-088-canvas-collapse-scroll-synthetic-fixture")
         #endif
     }

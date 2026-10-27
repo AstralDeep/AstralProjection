@@ -20,9 +20,7 @@
             app.launchEnvironment["ASTRAL_UI_WORKSPACE_PORT"] = String(try XCTUnwrap(peer.port))
             app.launch()
             XCTAssertTrue(app.buttons["workspace-action-export"].waitForExistence(timeout: 10))
-            let ready = XCTNSPredicateExpectation(
-                predicate: NSPredicate { _, _ in self.peer.registrations == 1 }, object: nil)
-            wait(for: [ready], timeout: 5)
+            XCTAssertTrue(waitUntil(timeout: 5) { peer.registrations == 1 })
             try peer.sendWorkFrame([
                 "type": "chrome_menu",
                 "model": [
@@ -44,9 +42,7 @@
         }
 
         private func request(_ count: Int, action: String) throws -> [String: Any] {
-            let ready = XCTNSPredicateExpectation(
-                predicate: NSPredicate { _, _ in self.peer.workFrames.count >= count }, object: nil)
-            wait(for: [ready], timeout: 3)
+            XCTAssertTrue(waitUntil(timeout: 3) { peer.workFrames.count >= count })
             let frame = try XCTUnwrap(
                 try JSONSerialization.jsonObject(with: XCTUnwrap(peer.workFrames.last)) as? [String: Any])
             XCTAssertEqual(frame["action"] as? String, action)
@@ -109,9 +105,7 @@
             let retry = try request(3, action: "save_theme")
             XCTAssertNotEqual(save["request_generation"] as? String, retry["request_generation"] as? String)
             try reply(retry, surface: "theme", components: colors("#123ABC"))
-            let accepted = XCTNSPredicateExpectation(
-                predicate: NSPredicate(format: "value == %@", "#123ABC"), object: field)
-            wait(for: [accepted], timeout: 3)
+            XCTAssertTrue(waitUntil(timeout: 3) { field.value as? String == "#123ABC" })
             XCTAssertTrue(app.buttons["Apply Primary color"].isEnabled)
         }
 

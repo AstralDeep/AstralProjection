@@ -664,7 +664,7 @@
         }
 
         private func host(_ view: NSView, model: AppModel, width: Int) -> NSWindow {
-            let window = NSWindow(
+            let window = WorkbenchMountWindow(
                 contentRect: NSRect(x: 0, y: 0, width: width, height: 900),
                 styleMask: [.titled, .resizable], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
@@ -803,6 +803,11 @@
             }
             throw NSError(domain: "MacWorkbenchViewTests", code: 1)
         }
+    }
+
+    private final class WorkbenchMountWindow: NSWindow {
+        // Ordering a window on screen clamps it to the display, and hosted runners have a 1024-point display.
+        override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
     }
 
     @MainActor

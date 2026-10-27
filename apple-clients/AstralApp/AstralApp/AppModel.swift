@@ -3401,9 +3401,11 @@ final class AppModel: NSObject {
         let position = activityPosition(chatId)
         updateActivity(chatId) { rows in
             var index = rows.firstIndex { $0.id == (activityAliases[stepId] ?? stepId) }
-            if index == nil, let reuse = rows.lastIndex(where: {
-                redispatchable.contains($0.id) && $0.tool == tool && $0.arguments == arguments
-            }) {
+            if index == nil,
+                let reuse = rows.lastIndex(where: {
+                    redispatchable.contains($0.id) && $0.tool == tool && $0.arguments == arguments
+                })
+            {
                 activityAliases[stepId] = rows[reuse].id
                 redispatchable.remove(rows[reuse].id)
                 index = reuse

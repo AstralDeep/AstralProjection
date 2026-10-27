@@ -1853,7 +1853,8 @@ struct ParamPickerComponent: View {
             if let title = component.title, !title.isEmpty {
                 formText(title)
                     .font(
-                        compactSettings ? ConsoleTypography.subheadline.weight(.semibold) : ConsoleTypography.headline)
+                        compactSettings ? ConsoleTypography.subheadline.weight(.semibold) : ConsoleTypography.headline
+                    )
                     .foregroundStyle(p.text)
                     .fieldHelp(component.raw["description"]?.stringValue)
                     .accessibilityIdentifier(
@@ -1917,7 +1918,8 @@ struct ParamPickerComponent: View {
         .padding(compactSettings ? 0 : 14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            compactSettings ? Color.clear : p.surface.opacity(0.5), in: RoundedRectangle(cornerRadius: AstralRadius.lg))
+            compactSettings ? Color.clear : p.surface.opacity(0.5), in: RoundedRectangle(cornerRadius: AstralRadius.lg)
+        )
         .overlay(RoundedRectangle(cornerRadius: AstralRadius.lg).stroke(compactSettings ? Color.clear : p.border))
         .onChange(of: values) { _, _ in updateEditing() }
         .onChange(of: flags) { _, _ in updateEditing() }
@@ -2150,9 +2152,11 @@ struct ParamPickerComponent: View {
             .frame(minHeight: compactSettings ? 64 : 80)
             .background(
                 compactSettings ? p.text.opacity(0.04) : Color.clear,
-                in: RoundedRectangle(cornerRadius: AstralRadius.sm))
+                in: RoundedRectangle(cornerRadius: AstralRadius.sm)
+            )
             .overlay(
-                RoundedRectangle(cornerRadius: AstralRadius.sm).strokeBorder(compactSettings ? p.border : Color.clear))
+                RoundedRectangle(cornerRadius: AstralRadius.sm).strokeBorder(compactSettings ? p.border : Color.clear)
+            )
             .autocorrectionDisabled(true)
             #if os(iOS)
                 .textInputAutocapitalization(.never)
@@ -2344,7 +2348,8 @@ struct CollapsibleComponent: View {
         .background(welcome ? Color.clear : p.surface.opacity(0.4), in: RoundedRectangle(cornerRadius: AstralRadius.md))
         .overlay(
             RoundedRectangle(cornerRadius: AstralRadius.md).strokeBorder(
-                compactSettings && !welcome ? p.border : Color.clear))
+                compactSettings && !welcome ? p.border : Color.clear)
+        )
         .astralChartBackdrop(p, color: p.surface, opacity: welcome ? 0 : 0.4)
         .onAppear {
             if let retained = model.canvasCapture.state(for: captureNode)?.boolValue { expanded = retained }

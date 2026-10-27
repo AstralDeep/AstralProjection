@@ -25,6 +25,24 @@
             harness = nil
         }
 
+        private static func closedLoopbackPort() -> Int {
+            let descriptor = socket(AF_INET, SOCK_STREAM, 0)
+            XCTAssertGreaterThanOrEqual(descriptor, 0)
+            defer { close(descriptor) }
+            var address = sockaddr_in()
+            address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+            address.sin_family = sa_family_t(AF_INET)
+            address.sin_addr.s_addr = inet_addr("127.0.0.1")
+            var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+            let bound = withUnsafeMutablePointer(to: &address) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    Darwin.bind(descriptor, $0, length) == 0 && getsockname(descriptor, $0, &length) == 0
+                }
+            }
+            XCTAssertTrue(bound)
+            return Int(UInt16(bigEndian: address.sin_port))
+        }
+
         func testNavigationApprovesOnlyTheForwardedOriginAndRejectsTrickURLs() async throws {
             await harness.expectCode("browser_snapshot", [:], nil)
             let blank = try await harness.run("browser_snapshot")
@@ -357,23 +375,28 @@
             let snap = try await harness.snapshot()
             let notify = try harness.ref(snap.lines, containing: "button \"Notify\"")
             let name = try harness.ref(snap.lines, containing: "button \"Name\"")
-            let alerted = try await harness.run("browser_click", ["ref": .string(notify), "snapshot_id": .string(snap.id)])
+            let alerted = try await harness.run(
+                "browser_click", ["ref": .string(notify), "snapshot_id": .string(snap.id)])
             XCTAssertEqual(alerted["pending_dialog"]?["type"], .string("alert"))
             XCTAssertEqual(alerted["pending_dialog"]?["message"], .string("Saved"))
             let accepted = try await harness.run("browser_dialog", ["action": .string("accept")])
             XCTAssertEqual(accepted["answered"], .string("alert"))
-            let prompted = try await harness.run("browser_click", ["ref": .string(name), "snapshot_id": .string(snap.id)])
+            let prompted = try await harness.run(
+                "browser_click", ["ref": .string(name), "snapshot_id": .string(snap.id)])
             XCTAssertEqual(prompted["pending_dialog"]?["default_text"], .string("Ada"))
             _ = try await harness.run("browser_dialog", ["action": .string("accept"), "text": .string("Grace")])
             try await harness.expectEventually { try await self.harness.page("window.reply") as? String == "Grace" }
             for label in ["link \"Custom\"", "link \"Inline\""] {
                 let ref = try harness.ref(snap.lines, containing: label)
-                let result = try await harness.run("browser_click", ["ref": .string(ref), "snapshot_id": .string(snap.id)])
+                let result = try await harness.run(
+                    "browser_click", ["ref": .string(ref), "snapshot_id": .string(snap.id)])
                 let kinds = (result["blocked"]?.arrayValue ?? []).compactMap { $0["kind"]?.stringValue }
                 XCTAssertTrue(kinds.contains("scheme"), "\(result)")
             }
             XCTAssertEqual(harness.pane.webView.url?.path, "/prompts")
-            let unreachable = await harness.failure("browser_navigate", ["url": .string("http://127.0.0.1:1/")])
+            let closed = Self.closedLoopbackPort()
+            let unreachable = await harness.failure(
+                "browser_navigate", ["url": .string("http://127.0.0.1:\(closed)/")])
             XCTAssertEqual(unreachable?.code, "navigation_failed")
             XCTAssertTrue(unreachable?.message.contains("desktop path") == true)
             _ = try await harness.open("/prompts")

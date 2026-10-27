@@ -58,7 +58,7 @@
                 output.finish(.stderr)
                 process.exit(.exited(3))
             }
-            let host = commands(spawner)
+            let host = commands(spawner, clock: MacComputerFakeClock { $0 >= 20 })
             let result = try await host.run(
                 run(root, ["env": .object(["APP_FOO": .string("bar")]), "stdin": .string("in")]), session: session,
                 roots: [root], authorize: {})
@@ -184,8 +184,10 @@
                 authorize: {})
             XCTAssertEqual(
                 partial["chunks"],
-                .array([.object(["stream": .string("stdout"), "offset": .number(2), "data": .string("e\n")]),
-                    .object(["stream": .string("stderr"), "offset": .number(4), "data": .string("e")])]))
+                .array([
+                    .object(["stream": .string("stdout"), "offset": .number(2), "data": .string("e\n")]),
+                    .object(["stream": .string("stderr"), "offset": .number(4), "data": .string("e")]),
+                ]))
             XCTAssertEqual(partial["next_offset"], .number(5))
             XCTAssertEqual(partial["truncated"], .bool(true))
             let waiting = Task {
@@ -325,7 +327,7 @@
                 output.finish(.stderr)
                 process.exit(.exited(0))
             }
-            let host = commands(spawner)
+            let host = commands(spawner, clock: MacComputerFakeClock { $0 >= 20 })
             let result = try await host.run(run(root), session: session, roots: [root], authorize: {})
             XCTAssertEqual(result["truncated"], .bool(true))
             XCTAssertEqual(result["stdout"]?.stringValue?.utf8.count, MacComputerCommands.tailBytes)

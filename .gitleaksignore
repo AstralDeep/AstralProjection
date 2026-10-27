@@ -4,3 +4,4 @@
 330bc85d07cac8fabc5cf8e1f7d313d2eb47e7d8:windows-client/tests/test_win_agent_startup_gate.py:generic-api-key:201
 330bc85d07cac8fabc5cf8e1f7d313d2eb47e7d8:windows-client/tests/test_win_agent_inbound_auth.py:generic-api-key:124
 330bc85d07cac8fabc5cf8e1f7d313d2eb47e7d8:windows-client/tests/test_win_agent_inbound_auth.py:generic-api-key:267
+f99deae033af29b71cb5543b1dc21c4b9666eff6:apple-clients/AstralApp/AstralAppTests/UpdateCoordinatorTests.swift:generic-api-key:280

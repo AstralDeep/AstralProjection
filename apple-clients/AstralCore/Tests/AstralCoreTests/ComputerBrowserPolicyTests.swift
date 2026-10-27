@@ -1,8 +1,9 @@
 // Exercises the browser pane policy: exact URL acceptance and origin normalization shared with the server,
 // secret-field detection and redaction, and the consequential-control classifier.
 
-@testable import AstralCore
 import XCTest
+
+@testable import AstralCore
 
 final class ComputerBrowserPolicyTests: XCTestCase {
     private func rejected(_ text: String, file: StaticString = #filePath, line: UInt = #line) {

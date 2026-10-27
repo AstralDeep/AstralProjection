@@ -8,6 +8,7 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import textwrap
@@ -28,6 +29,7 @@ REVIEWED_GITLEAKS_FIXTURE_FINGERPRINTS = frozenset(
         "330bc85d07cac8fabc5cf8e1f7d313d2eb47e7d8:windows-client/tests/test_win_agent_startup_gate.py:generic-api-key:201",
         "330bc85d07cac8fabc5cf8e1f7d313d2eb47e7d8:windows-client/tests/test_win_agent_inbound_auth.py:generic-api-key:124",
         "330bc85d07cac8fabc5cf8e1f7d313d2eb47e7d8:windows-client/tests/test_win_agent_inbound_auth.py:generic-api-key:267",
+        "f99deae033af29b71cb5543b1dc21c4b9666eff6:apple-clients/AstralApp/AstralAppTests/UpdateCoordinatorTests.swift:generic-api-key:280",
     }
 )
 
@@ -322,7 +324,7 @@ APPLE_RETRY_POLICY = (
     "-default-test-execution-time-allowance 120",
     "-maximum-test-execution-time-allowance 300",
     "-retry-tests-on-failure",
-    "-test-iterations 3",
+    "-test-iterations 2",
 )
 WHOLE_OS_STEP = "Qualify standalone whole-source compiler helper"
 WHOLE_OS_UPLOAD = "Retain standalone compiler helper raw evidence"
@@ -335,7 +337,7 @@ def _assert_whole_os_helper_contract(apple: str) -> None:
     assert "--configuration apple-clients/.swift-format" in lint
     assert "scripts/WholeOSInputProof.swift" in lint
     core = _job_block(apple, "core-tests")
-    assert "timeout-minutes: 20" in core and "runs-on: macos-26" in core
+    assert "timeout-minutes: 12" in core and "runs-on: macos-26" in core
     assert "continue-on-error" not in core
     setup = _step_block(core, "Set up helper test Python")
     assert "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1" in setup
@@ -348,10 +350,7 @@ def _assert_whole_os_helper_contract(apple: str) -> None:
         "set -euo pipefail",
         WHOLE_OS_VERSION,
         'evidence="$PWD/build/099/swift-inactive-input"',
-        'if [[ -e "$evidence" || -L "$evidence" ]]; then',
-        'echo "::error::helper evidence directory already exists" >&2',
-        "exit 1",
-        'mkdir -p "$evidence"',
+        'rm -rf "$evidence"\n          mkdir -p "$evidence"',
         'chmod 700 "$evidence"',
         "python -m pytest tests/test_swift_inactive_input.py tests/test_swift_inactive_input_native.py",
         '-q -p no:cacheprovider --basetemp="$evidence/pytest"',
@@ -478,13 +477,15 @@ def _assert_apple_platform_contract(apple: str) -> None:
         in first_login
     )
     assert '"${workspace_actions[@]}"' in first_login
+    assert "COMPILER_INDEX_STORE_ENABLE=NO -derivedDataPath \"$derived\" build-for-testing" in first_login
+    assert all("-parallel-testing" not in job for job in (first_login, app_unit, core_ios))
     assert 'result="${COVERAGE_ROOT}/AstralApp-${{ matrix.slug }}-first-login.xcresult"' in first_login
     assert APPLE_RESULT_GUARD in first_login
     assert "test ! -e" not in first_login
     assert 'rm -rf "$result"' not in first_login
     assert first_login.count("-resultBundlePath") == 1
     assert "-retry-tests-on-failure" in first_login
-    assert "-test-iterations 3" in first_login
+    assert "-test-iterations 2" in first_login
     assert "-test-timeouts-enabled YES \\\n" in first_login
     assert first_login.count("-default-test-execution-time-allowance") == 1
     assert "-default-test-execution-time-allowance 120 \\\n" in first_login
@@ -880,6 +881,27 @@ def test_core_android_and_apple_jobs_are_capped_at_thirty_minutes(workflow_name:
     _assert_jobs_capped_at_thirty_minutes((ACTIVE / workflow_name).read_text(encoding="utf-8"))
 
 
+APPLE_TEST_JOBS = ("core-tests", "core-ios-tests", "app-unit-tests", "watch-continuity")
+
+
+def _assert_apple_test_jobs_within_twenty_minutes(text: str) -> None:
+    for job_id in APPLE_TEST_JOBS:
+        limits = re.findall(r"(?m)^    timeout-minutes: (\d+)$", _job_block(text, job_id))
+        assert len(limits) == 1 and 0 < int(limits[0]) <= 20, (job_id, limits)
+
+
+def test_apple_test_jobs_fit_the_twenty_minute_budget() -> None:
+    _assert_apple_test_jobs_within_twenty_minutes((ACTIVE / "apple-ci.yml").read_text(encoding="utf-8"))
+
+
+def test_apple_test_job_budget_rejects_a_longer_limit() -> None:
+    text = (ACTIVE / "apple-ci.yml").read_text(encoding="utf-8")
+    mutated = text.replace("    timeout-minutes: 16\n", "    timeout-minutes: 25\n", 1)
+    assert mutated != text
+    with pytest.raises(AssertionError):
+        _assert_apple_test_jobs_within_twenty_minutes(mutated)
+
+
 @pytest.mark.parametrize(
     ("workflow_name", "needle", "replacement"),
     (
@@ -887,7 +909,7 @@ def test_core_android_and_apple_jobs_are_capped_at_thirty_minutes(workflow_name:
         ("ci.yml", "    timeout-minutes: 10\n", ""),
         ("android-ci.yml", "    timeout-minutes: 30\n", "    timeout-minutes: 45\n"),
         ("android-ci.yml", "    timeout-minutes: 15\n", ""),
-        ("apple-ci.yml", "    timeout-minutes: 30\n", "    timeout-minutes: 31\n"),
+        ("apple-ci.yml", "    timeout-minutes: 20\n", "    timeout-minutes: 31\n"),
         ("apple-ci.yml", "    timeout-minutes: 15\n", ""),
     ),
 )
@@ -1029,7 +1051,7 @@ def test_apple_required_lane_qualifies_and_retains_real_compiler_helper() -> Non
         ('python-version: "3.11"', 'python-version: "3.12"'),
         ("--require-hashes -r tooling/python-ci/requirements.lock.txt", "-r tooling/python-ci/requirements.lock.txt"),
         (WHOLE_OS_VERSION, "true"),
-        ('if [[ -e "$evidence" || -L "$evidence" ]]; then', "if false; then"),
+        ('rm -rf "$evidence"\n', ""),
         ("tests/test_swift_inactive_input_native.py", ""),
         ('--basetemp="$evidence/pytest"', "--basetemp=/tmp/helper"),
         ('2>&1 | tee "$evidence/pytest.log"', '2>&1 | tee "$evidence/pytest.log" || true'),
@@ -1071,7 +1093,7 @@ def test_helper_workflow_preserves_test_failure_through_tee(tmp_path, test_exit)
 
 
 @pytest.mark.parametrize("existing", ["directory", "symlink"])
-def test_helper_workflow_refuses_preexisting_evidence_without_running_tests(tmp_path, existing):
+def test_helper_workflow_replaces_preexisting_evidence_without_following_links(tmp_path, existing):
     core = _job_block((ACTIVE / "apple-ci.yml").read_text(), "core-tests")
     step = _step_block(core, WHOLE_OS_STEP)
     evidence = tmp_path / "build/099/swift-inactive-input"
@@ -1081,6 +1103,7 @@ def test_helper_workflow_refuses_preexisting_evidence_without_running_tests(tmp_
     (operator / "preimage").write_bytes(b"original")
     if existing == "directory":
         evidence.mkdir()
+        (evidence / "stale.xml").write_bytes(b"stale")
     else:
         evidence.symlink_to(operator, target_is_directory=True)
     shims = tmp_path / "bin"
@@ -1096,7 +1119,11 @@ def test_helper_workflow_refuses_preexisting_evidence_without_running_tests(tmp_
         capture_output=True,
         timeout=10,
     )
-    assert result.returncode != 0 and not (tmp_path / "tests-ran").exists()
+    assert result.returncode == 0 and (tmp_path / "tests-ran").exists()
+    assert evidence.is_dir() and not evidence.is_symlink()
+    assert sorted(path.name for path in evidence.iterdir()) == ["pytest.log"]
+    assert stat.S_IMODE(evidence.stat().st_mode) == 0o700
+    assert sorted(path.name for path in operator.iterdir()) == ["preimage"]
     assert (operator / "preimage").read_bytes() == b"original"
 
 
@@ -1436,6 +1463,8 @@ def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, platform, l
     assert xcode[-1][xcode[-1].index("-project") + 1] == "Owned Fixture.xcodeproj"
     assert "CODE_SIGNING_ALLOWED=NO" in xcode[-1]
     _assert_retried_test_run(xcode)
+    assert not any(value.startswith("-parallel") for call in xcode for value in call)
+    assert ("COMPILER_INDEX_STORE_ENABLE=NO" in xcode[0]) == (lane == "ui")
     if lane == "ui":
         selectors = {arg for arg in xcode[-1] if arg.startswith("-only-testing:")}
         assert "-only-testing:AstralAppUITests/WorkspacePresentationUITests" in selectors
@@ -1467,7 +1496,7 @@ def _assert_retried_test_run(xcode):
         "-default-test-execution-time-allowance",
         "-maximum-test-execution-time-allowance",
         "-test-iterations",
-    )] == ["YES", "120", "300", "3"]
+    )] == ["YES", "120", "300", "2"]
     assert run.count("-retry-tests-on-failure") == 1
     assert not [call for call in xcode[:-1] if "-retry-tests-on-failure" in call]
     assert not [call for call in xcode if "-test-repetition-relaunch-enabled" in call]
@@ -1649,7 +1678,7 @@ def test_watch_workflow_requires_both_suites_before_export(tmp_path, failing_com
         assert "-test-repetition-relaunch-enabled" not in build
     assert "-retry-tests-on-failure" not in builds[0]
     assert "-retry-tests-on-failure" in builds[1]
-    assert builds[1][builds[1].index("-test-iterations") + 1] == "3"
+    assert builds[1][builds[1].index("-test-iterations") + 1] == "2"
     assert builds[1][builds[1].index("-default-test-execution-time-allowance") + 1] == "120"
     merges = [call for call in calls if call[0] == "xcrun"]
     assert len(merges) == (1 if failing_command in {"none", "merge"} else 0)
