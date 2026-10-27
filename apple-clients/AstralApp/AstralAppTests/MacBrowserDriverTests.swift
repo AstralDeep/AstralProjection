@@ -1,6 +1,7 @@
 // Drives MacBrowserDriver through real WebKit loads: origin approval, URL rejection, secret refusal, the one-shot
-// consequential permit, dialogs, blocked popups, downloads and uploads, screenshots, the native click fallback,
-// takeover classification, the per-account pane preference and the pane view.
+// consequential permit and its withdrawal when authorization is refused, dialogs, blocked popups, downloads and
+// uploads, screenshots, the native click fallback, takeover classification, the per-account pane preference and the
+// pane view.
 
 #if os(macOS)
     import AppKit
@@ -41,6 +42,18 @@
             }
             XCTAssertTrue(bound)
             return Int(UInt16(bigEndian: address.sin_port))
+        }
+
+        private func refusal(_ verb: String, _ args: [String: JSONValue], at call: Int) async -> ComputerHostError? {
+            let gate = RefusingAuthorization(refusing: call)
+            do {
+                _ = try await harness.driver.execute(
+                    verb, args: args, session: MacBrowserHarness.session, remaining: 20, authorize: { try gate.check() }
+                )
+                return nil
+            } catch {
+                return error as? ComputerHostError
+            }
         }
 
         func testNavigationApprovesOnlyTheForwardedOriginAndRejectsTrickURLs() async throws {
@@ -184,6 +197,114 @@
             XCTAssertEqual(filled["filled"]?.arrayValue?.count, 3)
             try await harness.expectPage("document.getElementById('holder').value", "A Lovelace")
             await harness.expectCode("browser_fill", args, "confirmation_required")
+        }
+
+        func testRefusedAuthorizationAfterAValidPermitLeavesNothingApproved() async throws {
+            _ = try await harness.open("/form")
+            let snap = try await harness.snapshot()
+            let pay = try harness.ref(snap.lines, containing: "button \"Pay now\"")
+            let click: [String: JSONValue] = ["ref": .string(pay), "snapshot_id": .string(snap.id)]
+            let permitted = click.merging([
+                "permit": .object([
+                    "ref": .string(pay), "origin": .string(harness.origin), "snapshot_id": .string(snap.id),
+                ])
+            ]) { $1 }
+            await harness.expectCode("browser_click", click, "confirmation_required")
+            let refused = await refusal("browser_click", permitted, at: 2)
+            XCTAssertEqual(refused?.code, "interrupted")
+            try await harness.expectPage("document.title", "Order form")
+            await harness.expectCode("browser_click", click, "confirmation_required")
+            try await harness.expectPage("document.title", "Order form")
+            let done = try await harness.run("browser_click", permitted)
+            XCTAssertEqual(done["clicked"], .string(pay))
+            try await harness.expectPage("document.title", "paid")
+        }
+
+        func testRefusedAuthorizationDropsFillPermitsAlreadyAccepted() async throws {
+            _ = try await harness.open("/form")
+            let snap = try await harness.snapshot()
+            let holder = try harness.ref(snap.lines, containing: "textbox \"Card holder\"")
+            let recipient = try harness.ref(snap.lines, containing: "textbox \"Send to\"")
+            let name = try harness.ref(snap.lines, containing: "textbox \"Name\"")
+            var args: [String: JSONValue] = [
+                "snapshot_id": .string(snap.id),
+                "fields": .array([
+                    .object(["ref": .string(name), "value": .string("Ada")]),
+                    .object(["ref": .string(holder), "value": .string("A Lovelace")]),
+                    .object(["ref": .string(recipient), "value": .string("Charles")]),
+                ]),
+            ]
+            func permit(_ ref: String) -> JSONValue {
+                .object([
+                    "refs": .array([.string(ref)]), "origin": .string(harness.origin),
+                    "snapshot_id": .string(snap.id),
+                ])
+            }
+            await harness.expectCode("browser_fill", args, "confirmation_required")
+            args["permit"] = permit(holder)
+            await harness.expectCode("browser_fill", args, "confirmation_required")
+            args["permit"] = permit(recipient)
+            let refused = await refusal("browser_fill", args, at: 2)
+            XCTAssertEqual(refused?.code, "interrupted")
+            args["permit"] = nil
+            let again = await harness.failure("browser_fill", args)
+            XCTAssertEqual(again?.code, "confirmation_required")
+            XCTAssertTrue(again?.message.contains("[\(holder)]") == true, again?.message ?? "")
+            for field in ["name", "holder", "recipient"] {
+                try await harness.expectPage("document.getElementById('\(field)').value", "")
+            }
+        }
+
+        func testDiscardingPermitsWithdrawsReviewsAndAcceptedApprovals() async throws {
+            _ = try await harness.open("/form")
+            let snap = try await harness.snapshot()
+            let holder = try harness.ref(snap.lines, containing: "textbox \"Card holder\"")
+            let recipient = try harness.ref(snap.lines, containing: "textbox \"Send to\"")
+            let pay = try harness.ref(snap.lines, containing: "button \"Pay now\"")
+            func permit(_ ref: String) -> JSONValue {
+                .object([
+                    "refs": .array([.string(ref)]), "ref": .string(ref), "origin": .string(harness.origin),
+                    "snapshot_id": .string(snap.id),
+                ])
+            }
+            var fill: [String: JSONValue] = [
+                "snapshot_id": .string(snap.id),
+                "fields": .array([
+                    .object(["ref": .string(holder), "value": .string("A Lovelace")]),
+                    .object(["ref": .string(recipient), "value": .string("Charles")]),
+                ]),
+            ]
+            await harness.expectCode("browser_fill", fill, "confirmation_required")
+            fill["permit"] = permit(holder)
+            await harness.expectCode("browser_fill", fill, "confirmation_required")
+            harness.driver.discardPermits()
+            fill["permit"] = permit(recipient)
+            let reviewed = await harness.failure("browser_fill", fill)
+            XCTAssertEqual(reviewed?.code, "confirmation_required")
+            XCTAssertTrue(reviewed?.message.contains("[\(holder)]") == true, reviewed?.message ?? "")
+            try await harness.expectPage("document.getElementById('holder').value", "")
+            let click: [String: JSONValue] = ["ref": .string(pay), "snapshot_id": .string(snap.id)]
+            let permitted = click.merging(["permit": permit(pay)]) { $1 }
+            await harness.expectCode("browser_click", click, "confirmation_required")
+            harness.driver.discardPermits()
+            await harness.expectCode("browser_click", permitted, "confirmation_required")
+            try await harness.expectPage("document.title", "Order form")
+            let done = try await harness.run("browser_click", permitted)
+            XCTAssertEqual(done["clicked"], .string(pay))
+            try await harness.expectPage("document.title", "paid")
+        }
+
+        func testRefusedNavigationApprovesNoOrigin() async throws {
+            let local = "http://localhost:\(harness.server.port)/next"
+            let refused = await refusal("browser_navigate", ["url": .string(local)], at: 2)
+            XCTAssertEqual(refused?.code, "interrupted")
+            XCTAssertTrue(harness.driver.approved.isEmpty)
+            XCTAssertTrue(harness.pane.webView.url.map { $0.absoluteString == "about:blank" } ?? true)
+            harness.driver.userNavigate(local)
+            try await harness.expectEventually { self.harness.pane.webView.url?.host == "localhost" }
+            try await harness.expectEventually { !self.harness.pane.isLoading }
+            await harness.expectCode("browser_navigate", ["action": .string("reload")], "origin_not_approved")
+            await harness.expectCode("browser_snapshot", [:], "origin_not_approved")
         }
 
         func testDialogsQueueAndBlockOtherVerbsUntilAnswered() async throws {
@@ -479,6 +600,21 @@
             harness.driver.userHistory("back")
             try await harness.expectEventually { self.harness.pane.webView.url?.path == "/prompts" }
             view.layoutSubtreeIfNeeded()
+        }
+    }
+
+    private final class RefusingAuthorization: @unchecked Sendable {
+        private let lock = NSLock()
+        private let refused: Int
+        private var calls = 0
+
+        init(refusing call: Int) { refused = call }
+
+        func check() throws {
+            lock.lock()
+            defer { lock.unlock() }
+            calls += 1
+            if calls == refused { throw ComputerHostError("interrupted", "The human paused the task.") }
         }
     }
 
