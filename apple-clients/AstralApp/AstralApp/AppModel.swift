@@ -1763,7 +1763,7 @@ final class AppModel: NSObject {
             let accepted = projectAck?["version"] == .number(1) && projectAck?["mode"] == .string("projects_only")
             projects.negotiate(accepted)
             macComputerHost.workspaceNegotiated(projects: accepted)
-            if accepted { Task { await projects.refresh() } }
+            if accepted, connected { Task { await projects.refresh() } }
         #endif
         viewportSnapshotSupported = frame.payload["viewport_snapshot_supported"]?.boolValue == true
     }
@@ -1949,6 +1949,16 @@ final class AppModel: NSObject {
         let resumeState = AppRegistrationResumeState(initial: initialResumed)
         wsTask = Task {
             let events = await client.events()
+            #if os(macOS)
+                let onRegistration: (@Sendable (InboundFrame, String) async -> Bool)? = {
+                    [weak self] frame, generation in
+                    guard let self else { return false }
+                    return await self.acceptRegistrationConfiguration(
+                        frame, socket: client, owner: owner, generation: generation)
+                }
+            #else
+                let onRegistration: (@Sendable (InboundFrame, String) async -> Bool)? = nil
+            #endif
             await client.start(
                 onConnect: { [weak self] in
                     guard let self else { return nil }
@@ -1962,7 +1972,7 @@ final class AppModel: NSObject {
                 onReplay: { [weak self] replay in
                     guard let self else { return false }
                     return await self.replayQueuedOperation(replay, socket: client, owner: owner)
-                })
+                }, onRegistration: onRegistration)
             for await event in events {
                 guard !Task.isCancelled, self.ws === client, self.downloadOwner == owner else { break }
                 await self.handle(event)
@@ -2002,6 +2012,18 @@ final class AppModel: NSObject {
         return frame
     }
 
+    #if os(macOS)
+        private func acceptRegistrationConfiguration(
+            _ frame: InboundFrame, socket: WSClient, owner: DownloadOwner, generation: String
+        ) -> Bool {
+            guard !Task.isCancelled, ws === socket, downloadOwner == owner,
+                continuity.connectionGeneration == generation
+            else { return false }
+            handleFrame(frame)
+            return true
+        }
+    #endif
+
     private func replayQueuedOperation(_ replay: QueuedOperationReplay, socket: WSClient, owner: DownloadOwner) -> Bool
     {
         guard !Task.isCancelled, ws === socket, downloadOwner == owner else { return false }
@@ -2012,6 +2034,9 @@ final class AppModel: NSObject {
         switch event {
         case .connected:
             connected = true
+            #if os(macOS)
+                if projects.enabled { Task { await projects.refresh() } }
+            #endif
             everConnected = true
             initialConnectionFailed = false
             resumeAuthenticatedRead()
@@ -2027,6 +2052,8 @@ final class AppModel: NSObject {
             retireSubmittedApprovals()
             #if os(macOS)
                 macComputerHost.disconnect()
+                projects.awaitNegotiation()
+                cancelProjectChoice()
             #endif
             resetViewportRefresh()
             invalidateWorkRead()
@@ -4109,6 +4136,7 @@ final class AppModel: NSObject {
     @discardableResult
     func replayQueuedOperation(_ replay: QueuedOperationReplay) -> Bool {
         #if os(macOS)
+            if projects.negotiating { return false }
             if projects.enabled, replay.conversationPurpose != nil, replay.chatId == nil {
                 bannerIsError = true
                 errorBanner = "Select a project and resend this message."
@@ -4354,6 +4382,10 @@ final class AppModel: NSObject {
 
     func sendChat(_ text: String) {
         #if os(macOS)
+            if projects.negotiating {
+                composerDraft = text
+                return
+            }
             if projects.enabled, activeChatId.flatMap({ projects.project(for: $0) }) == nil {
                 composerDraft = text
                 let attachments = staged
@@ -4555,6 +4587,7 @@ final class AppModel: NSObject {
 
     func sendEvent(_ action: String, _ payload: JSONValue = .object([:])) {
         #if os(macOS)
+            if projects.negotiating, ["chat_message", "new_chat", "load_chat"].contains(action) { return }
             if projects.enabled, action == "new_chat" {
                 newChat()
                 return
@@ -5199,6 +5232,11 @@ final class AppModel: NSObject {
             return token
         }
         func selectProject(_ id: String) { projects.select(id) }
+        func presentProjectCreation() {
+            guard projects.enabled, !mandatorySurface else { return }
+            cancelProjectChoice()
+            projectChooserPresented = true
+        }
         private func retireProjectCatalog() {
             cancelProjectChoice()
             projectCreationTask?.cancel()
@@ -5281,12 +5319,8 @@ final class AppModel: NSObject {
                 self.cancelProjectChoice()
                 action?()
             }
-            if projectChooserPresented {
-                projectChoiceAfterDismissal = finish
-                projectChooserPresented = false
-            } else {
-                finish()
-            }
+            projectChoiceAfterDismissal = finish
+            projectChooserPresented = false
         }
         private func createProjectChat(force: Bool = false, then action: (() -> Void)? = nil) {
             if needsProjectSelection(force: force) {
@@ -5305,6 +5339,7 @@ final class AppModel: NSObject {
             }
         }
         private func prepareProjectChat(force: Bool = false) async -> Bool {
+            guard !projects.negotiating else { return false }
             guard projects.enabled else { return true }
             guard !mandatorySurface, !timelineReadOnly else { return false }
             if !force, let activeChatId, projects.project(for: activeChatId) != nil { return true }
@@ -5342,6 +5377,7 @@ final class AppModel: NSObject {
     func newChat() {
         if mandatorySurface { return }
         #if os(macOS)
+            if projects.negotiating { return }
             if projects.enabled {
                 createProjectChat(force: true)
                 return
@@ -5360,6 +5396,7 @@ final class AppModel: NSObject {
 
     func openChat(_ chatId: String) {
         #if os(macOS)
+            if projects.negotiating { return }
             if projects.enabled {
                 guard let project = projects.project(for: chatId) else {
                     errorBanner = "This chat is not in the current project catalog. Refresh projects and retry."

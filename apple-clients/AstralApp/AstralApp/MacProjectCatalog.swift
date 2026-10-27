@@ -8,6 +8,8 @@
 
     @MainActor @Observable final class MacProjectCatalog {
         private(set) var enabled = false
+        private(set) var negotiating = false
+        var projectPresentation: Bool { enabled || negotiating }
         private(set) var projects: [ProjectRecord] = []
         private(set) var chats: [String: [ChatSummary]] = [:]
         private(set) var selectedId: String?
@@ -29,6 +31,7 @@
             refreshEpoch = UUID()
             mutationEpoch = UUID()
             enabled = false
+            negotiating = scope != nil && client != nil
             loading = false
             creatingChat = false
             self.client = client
@@ -43,7 +46,14 @@
             self.scope = scope
             errorMessage = nil
         }
-        func negotiate(_ accepted: Bool) { enabled = accepted && scope != nil && client != nil }
+        func awaitNegotiation() {
+            enabled = false
+            negotiating = scope != nil && client != nil
+        }
+        func negotiate(_ accepted: Bool) {
+            negotiating = false
+            enabled = accepted && scope != nil && client != nil
+        }
         func select(_ id: String?) {
             guard id == nil || projects.contains(where: { $0.id == id }) else { return }
             guard id != selectedId else { return }

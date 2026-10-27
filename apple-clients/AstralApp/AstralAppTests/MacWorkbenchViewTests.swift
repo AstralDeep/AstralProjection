@@ -15,6 +15,61 @@
 
     @MainActor
     final class MacWorkbenchViewTests: XCTestCase {
+        func testSidebarCreationUsesTheProjectSheetAndReconnectKeepsProjectControlsUnavailable() async throws {
+            XCTAssertNotNil(ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"])
+            let (model, suite) = try panelModel()
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            let project = "12345678-1234-4234-9234-123456789abc"
+            let page =
+                #"{"projects":[{"project_id":"12345678-1234-4234-9234-123456789abc","name":"Retained project","position":0,"revision":1,"created_at":1,"updated_at":1}],"next_cursor":null}"#
+            let (_, window) = try mountWorkbench(model, width: 1440, activity: false)
+            defer { window.close() }
+            model.projects.bind(
+                scope: "owner",
+                client: RestClient(
+                    serverBase: URL(string: "https://example.test")!, tokenProvider: { nil },
+                    transport: { request in
+                        (
+                            200,
+                            Data(
+                                (request.url!.path == "/api/projects"
+                                    ? page
+                                    : #"{"project_id":"12345678-1234-4234-9234-123456789abc","chats":[],"next_cursor":null}"#)
+                                    .utf8
+                            )
+                        )
+                    }))
+            model.projects.negotiate(true)
+            await model.projects.refresh()
+            model.selectProject(project)
+            model.composerDraft = "preserved draft"
+            XCTAssertNil(model.projects.errorMessage)
+            func elements(_ value: Any, depth: Int = 0) -> [any NSAccessibilityProtocol] {
+                guard depth < 32, let element = value as? any NSAccessibilityProtocol else { return [] }
+                return [element] + (element.accessibilityChildren() ?? []).flatMap { elements($0, depth: depth + 1) }
+            }
+            let content = try XCTUnwrap(window.contentView)
+            try await settle()
+            let create = try XCTUnwrap(elements(content).first { $0.accessibilityIdentifier() == "project-create" })
+            XCTAssertTrue(create.accessibilityPerformPress())
+            try await settle()
+            XCTAssertTrue(model.projectChooserPresented)
+            XCTAssertNotNil(window.attachedSheet)
+            XCTAssertEqual(model.projects.selectedId, project)
+            XCTAssertEqual(model.composerDraft, "preserved draft")
+            model.cancelProjectChoice()
+            try await settle()
+            XCTAssertNil(window.attachedSheet)
+            await model.handle(.disconnected(reason: "reconnect"))
+            try await settle()
+            let controls = elements(content)
+            XCTAssertNotNil(controls.first { $0.accessibilityIdentifier() == "project-select-" + project })
+            XCTAssertFalse(controls.contains { $0.accessibilityIdentifier()?.hasPrefix("workbench-chat-") == true })
+            let unavailable = try XCTUnwrap(controls.first { $0.accessibilityIdentifier() == "project-create" })
+            XCTAssertFalse(unavailable.isAccessibilityEnabled())
+            XCTAssertFalse(model.projects.enabled)
+        }
+
         func testSlashInAnEmptyComposerOpensThePaletteAndRunsTheChosenAction() async throws {
             let (model, suite) = try panelModel()
             defer { UserDefaults.standard.removePersistentDomain(forName: suite) }

@@ -333,7 +333,8 @@ private final class GuidanceModelPeer: @unchecked Sendable {
             }
             let text = String(decoding: data, as: UTF8.self)
             if InboundFrame.parse(text)?.name == "register_ui" {
-                self.send(#"{"type":"ready"}"#, to: connection)
+                self.send(
+                    #"{"type":"rote_config","device_profile":{"device_type":"macos","console":{}}}"#, to: connection)
             } else {
                 self.received.append(text)
             }

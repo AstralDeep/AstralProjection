@@ -9,7 +9,6 @@
         @Environment(AppModel.self) private var model
         @Environment(ThemeStore.self) private var theme
         let query: String
-        @State private var creating = false
         @State private var renaming: ProjectRecord?
         @State private var name = ""
         private var p: AstralPalette { theme.palette }
@@ -19,8 +18,7 @@
                     Text("Projects").font(ConsoleTypography.subheadline.weight(.semibold))
                     Spacer()
                     Button {
-                        name = ""
-                        creating = true
+                        model.presentProjectCreation()
                     } label: {
                         Image(systemName: "plus")
                     }
@@ -33,7 +31,7 @@
                     .buttonStyle(.plain).accessibilityLabel("Refresh projects").accessibilityIdentifier(
                         "project-refresh")
                 }
-                if model.projects.loading { ProgressView().controlSize(.small) }
+                if model.projects.loading || model.projects.negotiating { ProgressView().controlSize(.small) }
                 if let error = model.projects.errorMessage {
                     Text(error).font(ConsoleTypography.caption).foregroundStyle(p.error)
                         .accessibilityIdentifier("project-error")
@@ -149,18 +147,6 @@
                     }
                     .accessibilityElement(children: .contain).accessibilityLabel(project.name)
                 }
-            }
-            .alert("New project", isPresented: $creating) {
-                TextField("Project name", text: $name)
-                Button("Create and choose folders…") {
-                    let value = name
-                    Task { await model.createProject(name: value, chooseFolders: true) }
-                }
-                Button("Create text-only project") {
-                    let value = name
-                    Task { await model.createProject(name: value, chooseFolders: false) }
-                }
-                Button("Cancel", role: .cancel) {}
             }
             .alert("Rename project", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } }))
             {

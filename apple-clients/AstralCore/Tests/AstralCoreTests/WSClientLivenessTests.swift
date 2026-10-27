@@ -36,6 +36,80 @@
             XCTAssertTrue(met)
         }
 
+        func testProjectConnectionWaitsForFinalRegistrationProfileBeforeReplaying() async throws {
+            let peer = try LivenessPeer(registrationReply: #"{"type":"heartbeat"}"#)
+            try await peer.start()
+            defer { peer.stop() }
+            let client = WSClient(url: try peer.url())
+            let log = EventLog()
+            let events = await client.events()
+            Task { for await event in events { await log.append(event) } }
+            addTeardownBlock { await client.stop() }
+            let message = frame("queued until registration finishes")
+            await client.send(message)
+            let acknowledged = Counter()
+            await client.start(
+                onConnect: {
+                    #"{"type":"register_ui","device":{"device_type":"macos","project_workspaces_v1":true},"connection_generation":"12345678-1234-4234-9234-123456789abc"}"#
+                }, onReplay: { _ in acknowledged.value == 1 },
+                onRegistration: { _, generation in
+                    XCTAssertEqual(generation, "12345678-1234-4234-9234-123456789abc")
+                    acknowledged.increment()
+                    return true
+                })
+            try await until { await log.frames == 1 }
+            var connections = await log.connections
+            XCTAssertEqual(connections, 0)
+            var live = await client.confirmLive()
+            XCTAssertFalse(live)
+            XCTAssertFalse(peer.texts(on: 0).contains(message))
+            for text in [
+                #"{"type":"chrome_menu","model":{}}"#,
+                #"{"type":"auth_required","reason":"invalid"}"#,
+                #"{"type":"rote_config","device_profile":{}}"#,
+                #"{"type":"rote_config","device_profile":{"device_type":"macos"},"request_generation":"old"}"#,
+                #"{"type":"heartbeat"}"#,
+            ] { peer.send(text, connection: 0) }
+            try await until { await log.frames == 4 }
+            connections = await log.connections
+            XCTAssertEqual(connections, 0)
+            XCTAssertFalse(peer.texts(on: 0).contains(message))
+            peer.send(#"{"type":"rote_config","device_profile":{"device_type":"macos","console":{}}}"#, connection: 0)
+            try await until { peer.texts(on: 0).contains(message) }
+            connections = await log.connections
+            XCTAssertEqual(connections, 1)
+            live = await client.confirmLive()
+            XCTAssertTrue(live)
+        }
+
+        func testRejectedRegistrationCannotEstablishOrReplayTheOldOwnerQueue() async throws {
+            let peer = try LivenessPeer(
+                registrationReply: #"{"type":"rote_config","device_profile":{"device_type":"macos"}}"#)
+            try await peer.start()
+            defer { peer.stop() }
+            let client = WSClient(url: try peer.url())
+            let log = EventLog()
+            let events = await client.events()
+            Task { for await event in events { await log.append(event) } }
+            addTeardownBlock { await client.stop() }
+            let attempts = Counter()
+            let message = frame("old owner queue")
+            await client.send(message)
+            await client.start(
+                onConnect: {
+                    #"{"type":"register_ui","connection_generation":"12345678-1234-4234-9234-123456789abc"}"#
+                },
+                onRegistration: { _, _ in
+                    attempts.increment()
+                    return false
+                })
+            try await until { attempts.value > 0 }
+            await client.stop()
+            let connections = await log.connections
+            XCTAssertEqual(connections, 0)
+            XCTAssertFalse(peer.texts(on: 0).contains(message))
+        }
+
         func testASilentSocketIsAbandonedBeforeSendingAndTheFrameReplaysOnTheNextConnection() async throws {
             let peer = try LivenessPeer()
             try await peer.start()
@@ -128,6 +202,7 @@
         private(set) var disconnections = 0
         private(set) var dropped = 0
         private(set) var rejected = 0
+        private(set) var frames = 0
 
         func append(_ event: WSEvent) {
             switch event {
@@ -135,7 +210,8 @@
             case .disconnected: disconnections += 1
             case .queuedOperationDropped: dropped += 1
             case .sendRejected: rejected += 1
-            case .frame, .sendDropped: break
+            case .frame: frames += 1
+            case .sendDropped: break
             }
         }
     }
@@ -148,7 +224,10 @@
         private var received: [Int: [String]] = [:]
         private var pinged: [Int: Int] = [:]
 
-        init() throws {
+        private let registrationReply: String
+
+        init(registrationReply: String = #"{"type":"ready"}"#) throws {
+            self.registrationReply = registrationReply
             let options = NWProtocolWebSocket.Options()
             options.autoReplyPing = false
             let parameters = NWParameters.tcp
@@ -181,6 +260,10 @@
             for await _ in ready {}
         }
 
+        func send(_ text: String, connection index: Int) {
+            queue.sync { write(Data(text.utf8), opcode: .text, to: connections[index]) }
+        }
+
         func silence(connection index: Int) { queue.sync { _ = silent.insert(index) } }
         func texts(on index: Int) -> [String] { queue.sync { received[index] ?? [] } }
         func pings(on index: Int) -> Int { queue.sync { pinged[index] ?? 0 } }
@@ -206,7 +289,7 @@
                     case .text:
                         let text = String(decoding: data ?? Data(), as: UTF8.self)
                         if text.contains("\"register_ui\"") {
-                            self.write(Data(#"{"type":"ready"}"#.utf8), opcode: .text, to: connection)
+                            self.write(Data(self.registrationReply.utf8), opcode: .text, to: connection)
                         } else {
                             self.received[index, default: []].append(text)
                         }

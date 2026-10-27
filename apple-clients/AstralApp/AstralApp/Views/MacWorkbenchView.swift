@@ -505,8 +505,8 @@
                     prompt: "Search chats", text: $query, focused: $searchFocused, identifier: "workbench-chat-search")
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 3) {
-                        if model.projects.enabled {
-                            MacProjectSidebar(query: query)
+                        if model.projects.projectPresentation {
+                            MacProjectSidebar(query: query).disabled(!model.projects.enabled)
                         } else {
                             if model.historyLoading { ProgressView().controlSize(.small).padding(8) }
                             if chats.isEmpty && !model.historyLoading && !query.isEmpty {

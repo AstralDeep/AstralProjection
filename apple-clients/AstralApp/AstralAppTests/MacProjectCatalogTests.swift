@@ -250,11 +250,66 @@
             }
         }
 
-        func testSidebarCreationChoosesFoldersWithoutWaitingForSheetCallback() async throws {
+        func testReconnectNegotiationCannotFallBackToLegacyChatActions() async throws {
+            let (model, _, server, _) = await projectChoiceFixture()
+            await model.createProject(name: "Existing project", chooseFolders: false)
+            model.projectChoiceDidDismiss()
+            _ = model.beginConversationConnection(UUID().uuidString.lowercased())
+            let replay = try XCTUnwrap(
+                QueuedOperationReplay(
+                    frameText: Outbound.uiEvent(
+                        action: "chat_message", sessionId: UUID().uuidString.lowercased(),
+                        payload: .object(["message": .string("queued project turn")]), snapshotPurpose: .commit)))
+            XCTAssertTrue(model.replayQueuedOperation(replay))
+            await model.handle(.disconnected(reason: "reconnect"))
+            XCTAssertTrue(model.projects.projectPresentation)
+            XCTAssertFalse(model.projects.enabled)
+            model.projects.bind(
+                scope: "owner",
+                client: RestClient(
+                    serverBase: URL(string: "https://example.test")!, tokenProvider: { nil },
+                    transport: { try await server.respond($0) }))
+            model.composerDraft = "retained draft"
+            model.activeChatId = "existing-chat"
+            var sent: [JSONValue] = []
+            model.outboundTap = { if let value = try? JSONValue.parse(Data($0.utf8)) { sent.append(value) } }
+            model.newChat()
+            model.sendEvent("new_chat")
+            model.sendChat("retained draft")
+            model.sendEvent("chat_message", .object(["message": .string("component")]))
+            model.openChat("other-chat")
+            XCTAssertEqual(model.activeChatId, "existing-chat")
+            XCTAssertEqual(model.composerDraft, "retained draft")
+            XCTAssertFalse(model.replayQueuedOperation(replay))
+            XCTAssertFalse(
+                sent.contains { ["new_chat", "chat_message", "load_chat"].contains($0["action"]?.stringValue ?? "") })
+            XCTAssertFalse(model.projects.enabled)
+            XCTAssertTrue(model.projects.projectPresentation)
+            XCTAssertEqual(model.projects.projects.count, 1)
+            model.projects.negotiate(false)
+            XCTAssertFalse(model.projects.projectPresentation)
+            model.newChat()
+            XCTAssertTrue(sent.contains { $0["action"] == .string("new_chat") })
+        }
+
+        func testGenericErrorDoesNotWithdrawProjectNegotiation() async throws {
+            let (model, _, _, _) = await projectChoiceFixture()
+            let frame = try XCTUnwrap(
+                InboundFrame.parse(#"{"type":"error","code":"operation_failed","message":"Retry the request"}"#))
+            await model.handle(.frame(frame))
+            XCTAssertTrue(model.projects.enabled)
+        }
+
+        func testSidebarCreationWaitsForSheetDismissalBeforeChoosingFolders() async throws {
             let (model, io, server, _) = await projectChoiceFixture()
+            await model.createProject(name: "Existing project", chooseFolders: false)
+            model.projectChoiceDidDismiss()
+            XCTAssertNotNil(model.projects.selectedId)
+            model.presentProjectCreation()
+            XCTAssertTrue(model.projectChooserPresented)
             await model.createProject(name: "New project", chooseFolders: true)
             XCTAssertFalse(model.projectChooserPresented)
-            XCTAssertEqual(io.choices, 1)
+            XCTAssertEqual(io.choices, 0)
             XCTAssertEqual(model.projects.projects.count, 1)
             XCTAssertNotNil(model.projects.selectedId)
             XCTAssertNil(model.activeChatId)
