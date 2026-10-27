@@ -1,5 +1,6 @@
 // Renders representative settings surfaces through ComponentView in the compact Mac settings style and measures
-// that controls keep one size across selection and stay compact; ASTRAL_SETTINGS_SNAPSHOT_DIR collects the PNGs.
+// that controls keep one size across selection, stay compact and outline inputs in field_border. The
+// ASTRAL_SETTINGS_SNAPSHOT_DIR environment variable collects the PNGs.
 
 #if os(macOS)
     import AppKit
@@ -366,6 +367,88 @@
             regular.layoutSubtreeIfNeeded()
             XCTAssertLessThan(toggle.height, regular.fittingSize.height, "boolean fields use the small control size")
             write(try mount.png(), name: "compact-form-column")
+        }
+
+        private func longestRun(_ png: Data, near color: Color) throws -> (length: Int, scale: CGFloat) {
+            let bitmap = try XCTUnwrap(NSBitmapImageRep(data: png))
+            let image = try XCTUnwrap(bitmap.cgImage)
+            var buffer = [UInt8](repeating: 0, count: image.width * image.height * 4)
+            let context = try XCTUnwrap(
+                CGContext(
+                    data: &buffer, width: image.width, height: image.height, bitsPerComponent: 8,
+                    bytesPerRow: image.width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            let resolved = color.resolve(in: EnvironmentValues())
+            let target = [resolved.red, resolved.green, resolved.blue].map { Int(($0 * 255).rounded()) }
+            var longest = 0
+            for y in 0..<image.height {
+                var run = 0
+                for x in 0..<image.width {
+                    let offset = (y * image.width + x) * 4
+                    let hit = zip(buffer[offset..<offset + 3], target).allSatisfy { abs(Int($0) - $1) <= 4 }
+                    run = hit ? run + 1 : 0
+                    longest = max(longest, run)
+                }
+            }
+            return (longest, CGFloat(image.width) / CGFloat(bitmap.size.width))
+        }
+
+        func testCompactInputOutlinesUseFieldBorderInsteadOfMuted() async throws {
+            func form(_ kind: String, extra: String = "") -> String {
+                #"{"type":"param_picker","title":"Add","fields":[{"name":"value","label":"Value","kind":"\#(kind)"\#(extra)}],"submit_action":"chrome_add","submit_label":"Add"}"#
+            }
+            let cases: [(name: String, json: String, minimum: CGFloat)] = [
+                ("text", form("text"), 150),
+                ("number", form("number"), 150),
+                ("password", form("password"), 150),
+                ("textarea", form("textarea"), 150),
+                ("select", form("select", extra: #","default":"linux","options":["linux","windows"]"#), 24),
+                ("input", #"{"type":"input","label":"Rename","placeholder":"New name","action":"rename"}"#, 150),
+            ]
+            for preset in ["graphite", "midnight", "daylight"] {
+                let theme = ThemeStore()
+                theme.apply(preset: preset)
+                let p = theme.palette
+                for (name, json, minimum) in cases {
+                    let mount = try await mount(
+                        Surface(name: name, key: "remote_machines", title: "", components: [try component(json)]),
+                        preset: preset)
+                    defer { mount.close() }
+                    let png = try mount.png()
+                    write(png, name: "field-outline-\(name)-\(preset)")
+                    let border = try longestRun(png, near: p.fieldBorder)
+                    XCTAssertGreaterThanOrEqual(CGFloat(border.length), minimum * border.scale, "\(preset) \(name)")
+                    let muted = try longestRun(png, near: p.muted)
+                    XCTAssertLessThan(
+                        CGFloat(muted.length), 24 * muted.scale, "\(preset) \(name) still outlined in muted")
+                }
+            }
+        }
+
+        func testSettingsCheckboxOutlineUsesFieldBorderUntilChecked() async throws {
+            for preset in ["graphite", "midnight", "daylight"] {
+                let theme = ThemeStore()
+                theme.apply(preset: preset)
+                for on in [false, true] {
+                    let size = CGSize(width: 420, height: 300)
+                    let mount = Mount(
+                        SettingsSheetChrome("Probe", identifier: "probe", close: {}) {
+                            Toggle("Allow", isOn: .constant(on))
+                        }
+                        .frame(width: size.width, height: size.height)
+                        .environment(theme),
+                        size: size, scheme: theme.colorScheme, fitHeight: false)
+                    defer { mount.close() }
+                    try await mount.settle(fitHeight: false)
+                    let border = try longestRun(try mount.png(), near: theme.palette.fieldBorder)
+                    if on {
+                        XCTAssertLessThan(CGFloat(border.length), 6 * border.scale, "\(preset) checked")
+                    } else {
+                        XCTAssertGreaterThanOrEqual(CGFloat(border.length), 8 * border.scale, "\(preset) unchecked")
+                    }
+                }
+            }
         }
 
         func testCardTextIsNeverClampedBehindAHoverTooltip() async throws {

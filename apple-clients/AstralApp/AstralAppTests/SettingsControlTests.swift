@@ -422,7 +422,8 @@ final class SettingsControlTests: XCTestCase {
                 XCTAssertGreaterThanOrEqual(
                     contrast(channels(p.muted), tinted(p.muted, over: base)), 4.5, "\(preset) neutral badge")
             }
-            for (role, color) in [("success", p.success), ("warning", p.warning), ("error", p.error), ("info", p.info)] {
+            for (role, color) in [("success", p.success), ("warning", p.warning), ("error", p.error), ("info", p.info)]
+            {
                 XCTAssertGreaterThanOrEqual(
                     contrast(channels(color), tinted(color, over: p.surface)), 4.5, "\(preset) \(role) badge")
             }
@@ -431,6 +432,55 @@ final class SettingsControlTests: XCTestCase {
                 XCTAssertGreaterThanOrEqual(
                     contrast(channels(p.fieldBorder), channels(surface)), 3, "\(preset) field border")
             }
+        }
+    }
+
+    private func tinted(_ color: Color, over base: Color, opacity: Double) -> [Double] {
+        zip(channels(color), channels(base)).map { $0 * opacity + $1 * (1 - opacity) }
+    }
+
+    func testRendererContrastPairsHoldInEveryPreset() {
+        let theme = ThemeStore()
+        for preset in ["graphite", "midnight", "daylight", "ocean", "sunset", "forest"] {
+            theme.apply(preset: preset)
+            let p = theme.palette
+            let surfaces = [p.bg, p.surface, p.surface2]
+            XCTAssertGreaterThanOrEqual(contrast(channels(p.onError), channels(p.error)), 4.5, "\(preset) danger fill")
+            for base in [p.bg, p.surface] {
+                XCTAssertGreaterThanOrEqual(
+                    contrast(channels(p.error), tinted(p.error, over: base, opacity: 0.12)), 4.5,
+                    "\(preset) compact danger label")
+                XCTAssertGreaterThanOrEqual(
+                    contrast(channels(p.error), tinted(p.text, over: base, opacity: 0.06)), 4.5,
+                    "\(preset) destructive settings label")
+            }
+            for surface in surfaces {
+                XCTAssertGreaterThanOrEqual(
+                    contrast(channels(p.fieldBorder), channels(surface)), 3, "\(preset) field border")
+                XCTAssertGreaterThanOrEqual(
+                    contrast(channels(p.readablePrimary), channels(surface)), 4.5, "\(preset) primary text")
+                XCTAssertEqual(
+                    AstralPalette.contrast(p.readablePrimary, surface),
+                    contrast(channels(p.readablePrimary), channels(surface)), accuracy: 0.01, preset)
+            }
+            XCTAssertEqual(p.textVariant(nil), p.readablePrimary, preset)
+            XCTAssertEqual(p.textVariant("primary"), p.readablePrimary, preset)
+            XCTAssertEqual(p.variant(nil), p.primary, "fills keep the primary role")
+            for variant in ["error", "danger", "warning", "success", "info", "accent"] {
+                XCTAssertEqual(p.textVariant(variant), p.variant(variant), "\(preset) \(variant)")
+            }
+        }
+    }
+
+    func testPrimaryTextSwitchesToAccentOnlyInPresetsWherePrimaryFails() {
+        let theme = ThemeStore()
+        for (preset, usesAccent) in [
+            ("graphite", true), ("midnight", true), ("daylight", false), ("ocean", false), ("sunset", false),
+            ("forest", false),
+        ] {
+            theme.apply(preset: preset)
+            let p = theme.palette
+            XCTAssertEqual(p.readablePrimary, usesAccent ? p.accent : p.primary, preset)
         }
     }
 
