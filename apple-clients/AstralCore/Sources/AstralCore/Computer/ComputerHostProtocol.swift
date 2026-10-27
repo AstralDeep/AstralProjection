@@ -67,9 +67,10 @@ public struct ComputerHostDescriptor: Sendable, Equatable {
     public let screens: [ComputerHostScreen]
     public let verbs: [String]
     public let workspaceRoots: [ComputerHostWorkspaceRoot]
+    public let projectManifest: ComputerProjectManifest?
     public init(
         hostId: String, name: String, clientVersion: String, screens: [ComputerHostScreen], verbs: [String],
-        workspaceRoots: [ComputerHostWorkspaceRoot] = []
+        workspaceRoots: [ComputerHostWorkspaceRoot] = [], projectManifest: ComputerProjectManifest? = nil
     ) throws {
         guard computerUUID(hostId), !name.isEmpty, name.count <= 64,
             !name.unicodeScalars.contains(where: { $0.value < 32 }),
@@ -84,7 +85,8 @@ public struct ComputerHostDescriptor: Sendable, Equatable {
             }),
             !verbs.isEmpty, Set(verbs).count == verbs.count, Set(verbs).isSubset(of: ComputerHostRequest.verbs),
             workspaceRoots.count <= Self.maximumWorkspaceRoots, workspaceRoots.allSatisfy(\.isValid),
-            Set(workspaceRoots.map(\.path)).count == workspaceRoots.count
+            Set(workspaceRoots.map(\.path)).count == workspaceRoots.count,
+            projectManifest == nil || workspaceRoots.isEmpty
         else { throw ComputerHostError("out_of_range", "The computer descriptor is invalid.") }
         self.hostId = hostId
         self.name = name
@@ -92,6 +94,7 @@ public struct ComputerHostDescriptor: Sendable, Equatable {
         self.screens = screens
         self.verbs = verbs.sorted()
         self.workspaceRoots = workspaceRoots
+        self.projectManifest = projectManifest
     }
     public var json: JSONValue {
         var object: [String: JSONValue] = [
@@ -100,6 +103,7 @@ public struct ComputerHostDescriptor: Sendable, Equatable {
             "verbs": .array(verbs.map(JSONValue.string)), "protocol": .number(1),
         ]
         if !workspaceRoots.isEmpty { object["workspace_roots"] = .array(workspaceRoots.map(\.json)) }
+        if let projectManifest { object["project_manifest"] = projectManifest.json }
         return .object(object)
     }
 }
@@ -110,6 +114,7 @@ public struct ComputerHostSession: Sendable, Equatable {
     public let state: String
     public let controller: String
     public let bypass: Bool?
+    public let projectContext: ComputerProjectContext?
     public init(json: JSONValue) throws {
         guard let id = json["session_id"]?.stringValue, computerUUID(id),
             let host = json["host_id"]?.stringValue, computerUUID(host),
@@ -120,6 +125,7 @@ public struct ComputerHostSession: Sendable, Equatable {
         self.state = state
         controller = String((json["controller_label"]?.stringValue ?? "your device").prefix(100))
         bypass = json["bypass"]?.boolValue
+        projectContext = try json["project_context"].map(ComputerProjectContext.init(json:))
     }
 }
 
@@ -145,10 +151,12 @@ public struct ComputerHostRequest: Sendable, Equatable {
     public let deadline: Double
     public let digest: String
     public let approvalSource: String?
+    public let projectContext: ComputerProjectContext?
 
     public init(json: JSONValue) throws {
         let envelope: Set<String> = ["type", "request_id", "session_id", "verb", "args", "deadline_ms"]
-        guard let object = json.objectValue, Set(object.keys).subtracting(["approval_source"]) == envelope,
+        guard let object = json.objectValue,
+            Set(object.keys).subtracting(["approval_source", "project_context"]) == envelope,
             object["type"] == .string("computer_request"), let id = object["request_id"]?.stringValue,
             id.range(of: "^creq_[0-9a-f]{32}$", options: .regularExpression) != nil,
             let session = object["session_id"]?.stringValue, computerUUID(session),
@@ -162,6 +170,7 @@ public struct ComputerHostRequest: Sendable, Equatable {
             Set(sources.compactMap(\.stringValue)).count <= 1
         else { throw ComputerHostError("out_of_range", "The computer request envelope is invalid.") }
         approvalSource = sources.first?.stringValue
+        projectContext = try object["project_context"].map(ComputerProjectContext.init(json:))
         self.id = id
         sessionId = session
         self.verb = verb
@@ -536,6 +545,10 @@ public enum ComputerHostOutbound {
         else { return false }
         if event == "announce" {
             return Set(payload.keys) == ["host_id", "event", "host"] && payload["host"]?["host_id"] == .string(host)
+        }
+        if event == "project_workspaces_changed" {
+            return Set(payload.keys) == ["host_id", "event", "project_manifest"]
+                && payload["project_manifest"].flatMap { try? ComputerProjectManifest(json: $0) } != nil
         }
         if event == "withdraw" { return Set(payload.keys) == ["host_id", "event"] }
         return ["paused", "resumed", "stopped", "heartbeat"].contains(event)

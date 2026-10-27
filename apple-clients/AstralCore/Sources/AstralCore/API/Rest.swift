@@ -176,11 +176,21 @@ public enum OperationSubmissionProjection: Sendable, Equatable {
     }
 }
 
+public struct ProjectConnection: Sendable, Equatable {
+    public let deviceId: String
+    public let generation: String
+    public init(deviceId: String, generation: String) {
+        self.deviceId = deviceId
+        self.generation = generation
+    }
+}
+
 public struct RestClient: Sendable {
     public typealias Transport = @Sendable (URLRequest) async throws -> (Int, Data)
     public typealias PresentationTransport = @Sendable (URLRequest) async throws -> (Int, Data, String?)
 
     public let serverBase: URL
+    public let projectConnection: ProjectConnection?
     private let transport: Transport
     private let workspaceTransport: Transport
     private let presentationTransport: PresentationTransport
@@ -189,12 +199,14 @@ public struct RestClient: Sendable {
 
     public init(
         serverBase: URL,
+        projectConnection: ProjectConnection? = nil,
         tokenProvider: @escaping @Sendable () async -> String?,
         transport: Transport? = nil,
         downloadSession: URLSession? = nil,
         presentationTransport: PresentationTransport? = nil
     ) {
         self.serverBase = serverBase
+        self.projectConnection = projectConnection
         self.tokenProvider = tokenProvider
         self.downloadSession = downloadSession
         self.transport =
@@ -261,6 +273,10 @@ public struct RestClient: Sendable {
             contentType: body == nil ? nil : "application/json")
         if let token = await tokenProvider() {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        if let projectConnection, path.hasPrefix("api/projects") || path.hasPrefix("api/chats") {
+            request.setValue(projectConnection.deviceId, forHTTPHeaderField: "X-Astral-Device-Id")
+            request.setValue(projectConnection.generation, forHTTPHeaderField: "X-Astral-Connection-Generation")
         }
         let (status, data) = try await transport(request)
         return (status, (try? JSONValue.parse(data)) ?? .object([:]))

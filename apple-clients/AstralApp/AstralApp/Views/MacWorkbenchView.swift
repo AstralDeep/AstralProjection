@@ -233,6 +233,12 @@
             .sheet(isPresented: $commandsPresented, onDismiss: finishPalette) {
                 MacWorkbenchCommandPalette(context: paletteContext, query: $paletteQuery) { paletteChoice = $0 }
             }
+            .sheet(
+                isPresented: Binding(
+                    get: { model.projectChooserPresented }, set: { if !$0 { model.cancelProjectChoice() } })
+            ) {
+                MacProjectChoiceSheet()
+            }
             .sheet(item: $renamingChat) { chat in MacRenameChatSheet(chat: chat) }
             .bypassConfirmation(host: model.macComputerHost, origin: .palette)
             .onChange(of: model.composerDraft) { old, new in
@@ -497,28 +503,32 @@
                     prompt: "Search chats", text: $query, focused: $searchFocused, identifier: "workbench-chat-search")
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 3) {
-                        if model.historyLoading { ProgressView().controlSize(.small).padding(8) }
-                        if chats.isEmpty && !model.historyLoading && !query.isEmpty {
-                            Text("No matching chats").font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                                .padding(8)
-                        }
-                        ForEach(chats) { chat in
-                            Button {
-                                model.openChat(chat.id)
-                            } label: {
-                                HistoryRow(chat: chat, showsDetails: false)
-                                    .background(
-                                        model.activeChatId == chat.id ? p.primary.opacity(0.13) : .clear,
-                                        in: RoundedRectangle(cornerRadius: 8))
+                        if model.projects.enabled {
+                            MacProjectSidebar(query: query)
+                        } else {
+                            if model.historyLoading { ProgressView().controlSize(.small).padding(8) }
+                            if chats.isEmpty && !model.historyLoading && !query.isEmpty {
+                                Text("No matching chats").font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                                    .padding(8)
                             }
-                            .buttonStyle(.plain).disabled(model.mandatorySurface)
-                            .accessibilityIdentifier("workbench-chat-\(chat.id)")
-                            .accessibilityValue(
-                                [chat.displayPreview, chat.relativeTime()].filter { !$0.isEmpty }.joined(
-                                    separator: ", ")
-                            )
-                            .contextMenu {
-                                Button("Delete conversation", role: .destructive) { model.deleteChat(chat.id) }
+                            ForEach(chats) { chat in
+                                Button {
+                                    model.openChat(chat.id)
+                                } label: {
+                                    HistoryRow(chat: chat, showsDetails: false)
+                                        .background(
+                                            model.activeChatId == chat.id ? p.primary.opacity(0.13) : .clear,
+                                            in: RoundedRectangle(cornerRadius: 8))
+                                }
+                                .buttonStyle(.plain).disabled(model.mandatorySurface)
+                                .accessibilityIdentifier("workbench-chat-\(chat.id)")
+                                .accessibilityValue(
+                                    [chat.displayPreview, chat.relativeTime()].filter { !$0.isEmpty }.joined(
+                                        separator: ", ")
+                                )
+                                .contextMenu {
+                                    Button("Delete conversation", role: .destructive) { model.deleteChat(chat.id) }
+                                }
                             }
                         }
                     }

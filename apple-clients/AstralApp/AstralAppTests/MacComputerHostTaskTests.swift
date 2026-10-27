@@ -21,7 +21,8 @@
             return url
         }
         private func makeHost(
-            roots: [URL] = [], driver: any MacComputerDriving = MacComputerTaskDriver(),
+            roots: [URL] = [], projectGrants: MacProjectGrants? = nil,
+            driver: any MacComputerDriving = MacComputerTaskDriver(),
             monitor: MacComputerTaskMonitor? = nil,
             commands: MacComputerCommands? = nil, presented: (() -> Void)? = nil, activated: (() -> Void)? = nil,
             authority: ComputerHostAuthority = ComputerHostAuthority()
@@ -37,7 +38,7 @@
             files.bind("task-owner")
             if !roots.isEmpty { files.choose() }
             let host = MacComputerHost(
-                available: true, defaults: defaults, files: files, driver: driver,
+                available: true, defaults: defaults, files: files, projectGrants: projectGrants, driver: driver,
                 monitor: monitor ?? MacComputerTaskMonitor(),
                 permissionProvider: { MacComputerPermissions(accessibility: true, screen: true, monitoring: true) },
                 desktopProbe: { true }, desktopRearm: { true }, system: MacComputerTestSystem(),
@@ -95,6 +96,162 @@
         }
         private var events: [JSONValue] {
             sent.compactMap { $0["payload"] }.filter { $0["event"] != nil }
+        }
+
+        func testProjectHostWaitsForNegotiationCatalogAndExactManifestAcknowledgment() async throws {
+            let project = "12345678-1234-1234-9234-123456789abc"
+            let root = try folder().resolvingSymlinksInPath()
+            let io = MacComputerTestWorkspaceGrants()
+            io.selection = [root]
+            var stored: [String: Data] = [:]
+            let grants = MacProjectGrants(
+                grants: io.port, persistence: .init(read: { stored[$0] }, write: { stored[$0] = $1 }))
+            let host = try makeHost(roots: [root], projectGrants: grants)
+            let hostId = try XCTUnwrap(host.descriptor?.hostId)
+            host.beginWorkspaceNegotiation(server: URL(string: "https://example.test")!, account: "owner")
+            XCTAssertNil(host.descriptor)
+            host.workspaceNegotiated(projects: true)
+            XCTAssertNil(host.descriptor)
+            try host.reconcileProjects([project])
+            let first = try XCTUnwrap(grants.manifest)
+            XCTAssertTrue(host.descriptor!.workspaceRoots.isEmpty)
+            XCTAssertTrue(host.descriptor!.verbs.contains("write_file"))
+            XCTAssertTrue(first.projects.isEmpty)
+            let sessionId = UUID().uuidString.lowercased()
+            let origin = try ComputerProjectContext(
+                chatId: "chat", projectId: project, grantRevision: nil, manifestGeneration: first.generation)
+            let incoming = try frame(
+                .object([
+                    "type": .string("computer_session"), "host_id": .string(hostId),
+                    "session_id": .string(sessionId), "state": .string("active"), "project_context": origin.json,
+                ]))
+            host.consume(incoming)
+            XCTAssertNil(host.session)
+            host.consume(
+                try frame(
+                    .object([
+                        "type": .string("computer_host"), "host_id": .string(hostId),
+                        "project_manifest_ack": .object([
+                            "generation": .number(Double(first.generation)), "digest": .string("wrong"),
+                            "accepted": .bool(true),
+                        ]),
+                    ])))
+            host.consume(incoming)
+            XCTAssertNil(host.session)
+            host.consume(
+                try frame(
+                    .object([
+                        "type": .string("computer_host"), "host_id": .string(hostId),
+                        "project_manifest_ack": .object([
+                            "generation": .number(Double(first.generation)), "digest": .string(first.digest),
+                            "accepted": .bool(true),
+                        ]),
+                    ])))
+            host.consume(incoming)
+            XCTAssertEqual(host.session?.projectContext, origin)
+            host.requestBypass(true, from: .controls)
+            host.confirmBypass()
+            XCTAssertTrue(host.bypass)
+            _ = await host.flushCurrentSends()
+            let announcements = events.filter { $0["event"] == .string("announce") }.count
+            host.updateProjectFolders { try grants.choose(project: project) }
+            _ = await host.flushCurrentSends()
+            XCTAssertTrue(host.bypass)
+            XCTAssertEqual(events.filter { $0["event"] == .string("announce") }.count, announcements)
+            XCTAssertEqual(events.filter { $0["event"] == .string("project_workspaces_changed") }.count, 1)
+            XCTAssertEqual(grants.roots(project: project), [root.path])
+        }
+
+        func testProjectRemovalStopsRunningAndQueuedCommandsBeforeReleasingFolders() async throws {
+            for queued in [false, true] {
+                let project = "12345678-1234-1234-9234-123456789abc"
+                let root = try folder().resolvingSymlinksInPath()
+                let spawner = MacComputerFakeSpawner()
+                let barrier = ProjectCommandStartBarrier(hold: queued)
+                let commands = MacComputerCommands(
+                    spawner: spawner, clock: MacComputerFakeClock { _ in true }, inherited: [:],
+                    loginPath: { await barrier.path() })
+                let io = MacComputerTestWorkspaceGrants()
+                io.selection = [root]
+                var stored: [String: Data] = [:]
+                let grants = MacProjectGrants(
+                    grants: io.port, persistence: .init(read: { stored[$0] }, write: { stored[$0] = $1 }))
+                let host = try makeHost(projectGrants: grants, commands: commands)
+                let hostId = try XCTUnwrap(host.descriptor?.hostId)
+                host.beginWorkspaceNegotiation(server: URL(string: "https://example.test")!, account: "owner")
+                host.workspaceNegotiated(projects: true)
+                try host.reconcileProjects([project])
+                host.updateProjectFolders { try grants.choose(project: project) }
+                let manifest = try XCTUnwrap(grants.manifest)
+                host.consume(
+                    try frame(
+                        .object([
+                            "type": .string("computer_host"), "host_id": .string(hostId),
+                            "project_manifest_ack": .object([
+                                "generation": .number(Double(manifest.generation)), "digest": .string(manifest.digest),
+                                "accepted": .bool(true),
+                            ]),
+                        ])))
+                let id = UUID().uuidString.lowercased()
+                let context = try ComputerProjectContext(
+                    chatId: "chat", projectId: project, grantRevision: manifest.projects[0].grantRevision,
+                    manifestGeneration: manifest.generation)
+                host.consume(
+                    try frame(
+                        .object([
+                            "type": .string("computer_session"), "host_id": .string(hostId), "session_id": .string(id),
+                            "state": .string("active"), "project_context": context.json,
+                        ])))
+                for digit in ["a", "b"] {
+                    host.consume(
+                        try frame(
+                            .object([
+                                "type": .string("computer_request"),
+                                "request_id": .string("creq_" + String(repeating: digit, count: 32)),
+                                "session_id": .string(id), "project_context": context.json,
+                                "verb": .string("run_command"),
+                                "args": .object(["argv": .array([.string("echo")]), "cwd": .string(root.path)]),
+                                "deadline_ms": .number(30000),
+                            ])))
+                }
+                for _ in 0..<2000 {
+                    if queued ? await barrier.calls > 0 : spawner.plans.count == 2 { break }
+                    await Task.yield()
+                }
+                let expected = queued ? 0 : 2
+                XCTAssertEqual(spawner.plans.count, expected)
+                host.updateProjectFolders { try grants.remove(project: project, path: root.path) }
+                await barrier.release()
+                XCTAssertTrue(spawner.processes.allSatisfy { !$0.signals.isEmpty })
+                XCTAssertEqual(io.started.count, io.stopped.count)
+                for _ in 0..<20 { await Task.yield() }
+                XCTAssertEqual(spawner.plans.count, expected)
+                XCTAssertTrue(grants.roots(project: project).isEmpty)
+                host.consume(
+                    try frame(
+                        .object([
+                            "type": .string("computer_request"),
+                            "request_id": .string("creq_" + String(repeating: "c", count: 32)),
+                            "session_id": .string(id),
+                            "project_context": context.json, "verb": .string("run_command"),
+                            "args": .object(["argv": .array([.string("echo")]), "cwd": .string(root.path)]),
+                            "deadline_ms": .number(30000),
+                        ])))
+                let refused = await response("creq_" + String(repeating: "c", count: 32), host: host)
+                XCTAssertEqual(refused?["ok"], .bool(false))
+                XCTAssertEqual(spawner.plans.count, expected)
+            }
+        }
+
+        func testLateEndedFrameCannotRetireNewerSession() throws {
+            let host = try makeHost()
+            let old = UUID().uuidString.lowercased()
+            let current = UUID().uuidString.lowercased()
+            host.consume(try session(host, old))
+            host.consume(try session(host, current))
+            host.consume(try session(host, old, "ended"))
+            XCTAssertEqual(host.session?.id, current)
+            XCTAssertEqual(host.session?.state, "active")
         }
 
         func testDescriptorAdvertisesCommandsWithFoldersAndBrowserOnlyWhenEnabled() throws {
@@ -475,5 +632,20 @@
             return ["snapshot_id": .string("s1")]
         }
         func discardPermits() { discarded += 1 }
+    }
+    private actor ProjectCommandStartBarrier {
+        var calls = 0
+        let hold: Bool
+        init(hold: Bool) { self.hold = hold }
+        private var pending: CheckedContinuation<Void, Never>?
+        func path() async -> String {
+            calls += 1
+            if hold { await withCheckedContinuation { pending = $0 } }
+            return "/usr/bin:/bin"
+        }
+        func release() {
+            pending?.resume()
+            pending = nil
+        }
     }
 #endif

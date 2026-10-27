@@ -90,27 +90,29 @@
                         .accessibilityIdentifier("mac-computer-resume-access")
                     }
                 }
-                Divider().overlay(palette.border)
-                VStack(alignment: .leading, spacing: 10) {
-                    SettingsSectionTitle("Workspaces")
-                    Text("File tools reach only these folders.")
-                        .font(ConsoleTypography.caption).foregroundStyle(palette.muted)
-                    ForEach(host.files.roots, id: \.self) { path in
-                        HStack {
-                            Text(path).textSelection(.enabled)
-                            Spacer()
-                            Button(
-                                "Remove", action: MacComputerControlCommand.removeWorkspace(path).action(on: host))
+                if !host.projectMode {
+                    Divider().overlay(palette.border)
+                    VStack(alignment: .leading, spacing: 10) {
+                        SettingsSectionTitle("Workspaces")
+                        Text("File tools reach only these folders.")
+                            .font(ConsoleTypography.caption).foregroundStyle(palette.muted)
+                        ForEach(host.files.roots, id: \.self) { path in
+                            HStack {
+                                Text(path).textSelection(.enabled)
+                                Spacer()
+                                Button(
+                                    "Remove", action: MacComputerControlCommand.removeWorkspace(path).action(on: host))
+                            }
                         }
-                    }
-                    Button(
-                        "Choose workspace folders…",
-                        action: MacComputerControlCommand.chooseWorkspaces.action(on: host)
-                    )
-                    .disabled(!host.available || !host.ownerBound)
-                    if let error = host.files.errorMessage {
-                        Text(error.leadSentence).foregroundStyle(palette.error)
-                            .accessibilityIdentifier("mac-computer-workspace-error")
+                        Button(
+                            "Choose workspace folders…",
+                            action: MacComputerControlCommand.chooseWorkspaces.action(on: host)
+                        )
+                        .disabled(!host.available || !host.ownerBound)
+                        if let error = host.files.errorMessage {
+                            Text(error.leadSentence).foregroundStyle(palette.error)
+                                .accessibilityIdentifier("mac-computer-workspace-error")
+                        }
                     }
                 }
                 if host.session != nil { MacComputerSessionControls(host: host) }

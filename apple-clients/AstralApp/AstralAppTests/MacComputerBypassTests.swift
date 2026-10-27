@@ -253,8 +253,10 @@
             let (unbypassed, otherSuite) = try modelWith(try makeHost())
             suites.append(otherSuite)
             unbypassed.outboundTap = { _ in }
-            unbypassed.canvas = [card(automatic, source: "bypass"), card(floor, source: nil)]
-            XCTAssertEqual(unbypassed.approvalPrompts.map(\.requestId), [automatic, floor])
+            unbypassed.canvas = [
+                card(automatic, source: "bypass"), card("project", source: "project_grant"), card(floor, source: nil),
+            ]
+            XCTAssertEqual(unbypassed.approvalPrompts.map(\.requestId), [floor])
         }
 
         func testBrowserControlsSkipTheLocalReviewOnlyForBypassRequestsAndNeverForSecrets() async throws {

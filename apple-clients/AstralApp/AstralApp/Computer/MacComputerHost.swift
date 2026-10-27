@@ -97,6 +97,12 @@
         private(set) var bypass = false
         var bypassConfirmation: MacBypassOrigin?
         let files: MacComputerFiles
+        let projectGrants: MacProjectGrants
+        private(set) var projectMode = false
+        private(set) var projectGrantError: String?
+        @ObservationIgnored private var workspaceNegotiated = true
+        @ObservationIgnored private var projectHostAnnounced = false
+        @ObservationIgnored private var pendingManifest: ComputerProjectManifest?
         @ObservationIgnored var announcer: (String) -> Void = { AccessibilityNotification.Announcement($0).post() }
         @ObservationIgnored private var bypassReleaseOwed = false
         @ObservationIgnored private let defaults: UserDefaults
@@ -136,6 +142,7 @@
 
         init(
             available: Bool? = nil, defaults: UserDefaults = .standard, files: MacComputerFiles? = nil,
+            projectGrants: MacProjectGrants? = nil,
             driver: (any MacComputerDriving)? = nil,
             monitor: (any MacComputerMonitoring)? = nil,
             permissionProvider: (@MainActor () -> MacComputerPermissions)? = nil,
@@ -153,6 +160,7 @@
             self.available = available ?? Self.executionDistribution()
             self.defaults = defaults
             self.files = files ?? MacComputerFiles(defaults: defaults)
+            self.projectGrants = projectGrants ?? MacProjectGrants()
             self.system = system
             self.panelPresenter = panelPresenter ?? { $0.orderFrontRegardless() }
             self.commands = commands ?? MacComputerCommands()
@@ -213,6 +221,11 @@
                         Task { @MainActor in host.sessionLocked() }
                     })
             }
+            self.projectGrants.onRevoke = { [weak self] project in
+                guard let self else { return }
+                self.authority.revokeProject(project)
+                if self.session?.projectContext?.projectId == project { self.cancelWork() }
+            }
             refreshPermissions()
         }
         private static func executionDistribution() -> Bool {
@@ -271,7 +284,8 @@
             "macOS checks: Accessibility trust = \(accessibilityTrusted); event posting = \(eventPostingAllowed); event listening = \(monitoringAllowed)."
         }
         var descriptor: ComputerHostDescriptor? {
-            guard available, enabled, desktopAvailable, authority.desktopIsAvailable, owner != nil, permissionsReady,
+            guard workspaceNegotiated, !projectMode || projectGrants.manifest != nil,
+                available, enabled, desktopAvailable, authority.desktopIsAvailable, owner != nil, permissionsReady,
                 monitor.running
             else { return nil }
             let (countResult, count) = system.displayCount()
@@ -300,7 +314,7 @@
                         scale: Double(pixels.width) / max(1, bounds.width), primary: id == primary))
             }
             var verbs = ComputerHostRequest.verbs
-            if files.roots.isEmpty {
+            if !projectMode && files.roots.isEmpty {
                 verbs.subtract(Self.commandVerbs.union(["read_file", "list_dir", "write_file", "delete_path"]))
             }
             if browser?.isEnabled != true { verbs = verbs.filter { !Self.browserVerb($0) } }
@@ -317,7 +331,67 @@
             return try? ComputerHostDescriptor(
                 hostId: hostId, name: Self.computerName, clientVersion: version, screens: screens,
                 verbs: verbs.sorted(),
-                workspaceRoots: Array(roots.prefix(ComputerHostDescriptor.maximumWorkspaceRoots)))
+                workspaceRoots: projectMode ? [] : Array(roots.prefix(ComputerHostDescriptor.maximumWorkspaceRoots)),
+                projectManifest: projectMode ? projectGrants.manifest : nil)
+        }
+        private func announceDescriptor(_ descriptor: ComputerHostDescriptor) {
+            if projectMode {
+                pendingManifest = descriptor.projectManifest
+                projectHostAnnounced = true
+            }
+            sendEvent("announce", additional: ["host": descriptor.json])
+        }
+        func beginWorkspaceNegotiation(server: URL, account: String?) {
+            workspaceNegotiated = false
+            pendingManifest = nil
+            projectHostAnnounced = false
+            projectMode = false
+            authority.configureProjects(false)
+            projectGrants.bind(server: server, account: account, device: hostId)
+            projectGrants.awaitReconciliation()
+        }
+        func workspaceNegotiated(projects: Bool) {
+            guard !workspaceNegotiated else { return }
+            workspaceNegotiated = true
+            projectMode = projects
+            authority.configureProjects(projects)
+            if !projects, let descriptor { announceDescriptor(descriptor) }
+        }
+        func reconcileProjects(_ ids: Set<String>) throws {
+            guard workspaceNegotiated, projectMode else { return }
+            try projectGrants.reconcile(projectIds: ids)
+            guard let descriptor, let manifest = projectGrants.manifest else { return }
+            pendingManifest = manifest
+            if projectHostAnnounced {
+                sendEvent("project_workspaces_changed", additional: ["project_manifest": manifest.json])
+            } else {
+                projectHostAnnounced = true
+                announceDescriptor(descriptor)
+            }
+        }
+        func updateProjectFolders(_ operation: () throws -> Void) {
+            guard projectMode else { return }
+            do {
+                try operation()
+                guard let manifest = projectGrants.manifest else { return }
+                pendingManifest = manifest
+                sendEvent("project_workspaces_changed", additional: ["project_manifest": manifest.json])
+            } catch { projectGrantError = error.localizedDescription }
+        }
+        private func acceptManifest(_ value: JSONValue) {
+            guard projectMode, let pendingManifest, projectGrants.manifest == pendingManifest,
+                ProjectIdentity.integer(value["generation"], positive: true) == pendingManifest.generation,
+                value["digest"]?.stringValue == pendingManifest.digest
+            else { return }
+            guard value["accepted"]?.boolValue == true else {
+                projectGrantError = "The server refused this Mac's project folders. Refresh the project catalog."
+                return
+            }
+            do {
+                try authority.acceptProjectManifest(pendingManifest)
+                self.pendingManifest = nil
+                projectGrantError = nil
+            } catch { projectGrantError = error.localizedDescription }
         }
         func bind(owner: String?, sender: @escaping @MainActor (String) async -> Bool) {
             let epoch = UUID()
@@ -378,6 +452,10 @@
             enabled = false
             consentEnabled = false
             files.bind(nil)
+            projectGrants.bind(server: nil, account: nil, device: hostId)
+            pendingManifest = nil
+            projectMode = false
+            authority.configureProjects(false)
             commands.forget()
         }
         func showControls() {
@@ -485,7 +563,7 @@
                 consentEnabled = true
                 lastError = nil
                 if let key = consentKey { defaults.set(true, forKey: key) }
-                if let descriptor { sendEvent("announce", additional: ["host": descriptor.json]) }
+                if let descriptor { announceDescriptor(descriptor) }
             } else {
                 consentEnabled = false
                 if let key = consentKey { defaults.set(false, forKey: key) }
@@ -507,7 +585,7 @@
         }
         func workspacesChanged() {
             stop()
-            if enabled, let descriptor { sendEvent("announce", additional: ["host": descriptor.json]) }
+            if enabled, let descriptor { announceDescriptor(descriptor) }
         }
         func sessionLocked() {
             suspendAccess()
@@ -708,6 +786,7 @@
             if frame.name == "computer_host" {
                 if frame.payload["host_id"]?.stringValue == hostId {
                     reconcileBypass(frame.payload["bypass"]?.boolValue)
+                    if let ack = frame.payload["project_manifest_ack"] { acceptManifest(ack) }
                 }
                 return true
             }
@@ -739,7 +818,7 @@
                                 additional: ["session_id": .string(incoming.id), "reason": .string("local_pause")])
                             return true
                         }
-                        try authority.begin(incoming.id)
+                        try authority.begin(incoming.id, projectContext: incoming.projectContext)
                         if incoming.id == session?.id && session?.state == "paused" { authority.resume() }
                         localResumeSession = nil
                         localPauseReason = nil
@@ -747,7 +826,9 @@
                         let locallyPaused =
                             incoming.id == session?.id && session?.state == "paused"
                             && localPauseReason == "local_pause"
-                        if incoming.id != session?.id { try authority.begin(incoming.id) }
+                        if incoming.id != session?.id {
+                            try authority.begin(incoming.id, projectContext: incoming.projectContext)
+                        }
                         authority.pause()
                         cancelWork(resetDriver: false)
                         awaitingPauseAcknowledgment = false
@@ -801,7 +882,17 @@
             let authority = authority
             let driver = driver
             let desktopProbe = desktopProbe
-            let workspaces = files.snapshot()
+            let workspaces: [ComputerWorkspace]
+            do {
+                workspaces =
+                    projectMode
+                    ? (["read_file", "list_dir", "write_file", "delete_path"].contains(request.verb)
+                        ? try projectGrants.snapshot(context: request.projectContext) : []) : files.snapshot()
+            } catch {
+                respond(request.id, error: error)
+                drain()
+                return
+            }
             let id = UUID()
             workerId = id
             worker = Task { [weak self] in
@@ -827,7 +918,15 @@
         private func runAuxiliary(_ request: ComputerHostRequest, _ ticket: ComputerHostTicket) {
             let authority = authority
             let desktopProbe = desktopProbe
-            let roots = files.roots
+            let roots: [String]
+            do {
+                roots =
+                    projectMode && Self.commandVerbs.contains(request.verb)
+                    ? try projectGrants.snapshot(context: request.projectContext).map(\.root) : files.roots
+            } catch {
+                respond(request.id, error: error)
+                return
+            }
             let authorize: @Sendable () throws -> Void = {
                 try authority.verify(ticket)
                 guard desktopProbe() else {

@@ -26,7 +26,7 @@ public enum ProjectIdentity {
     }
     public static func name(_ text: String, maximum: Int = 128) -> Bool {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && text.unicodeScalars.count <= maximum
-            && !text.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 })
+            && !text.unicodeScalars.contains(where: { $0.value < 32 || (maximum == 128 && $0.value == 127) })
     }
 }
 

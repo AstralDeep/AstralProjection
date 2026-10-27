@@ -64,13 +64,16 @@ final class ProjectWorkspacesTests: XCTestCase {
     func testProjectPaginationUsesQueryItemsAndBearerWithoutCookie() async throws {
         let record = projectJSON()
         let client = RestClient(
-            serverBase: URL(string: "https://example.test")!, tokenProvider: { "token" },
+            serverBase: URL(string: "https://example.test")!,
+            projectConnection: .init(deviceId: "device", generation: "connection"), tokenProvider: { "token" },
             transport: { request in
                 XCTAssertEqual(request.url?.path, "/api/projects")
                 let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!
                 XCTAssertEqual(items.first(where: { $0.name == "cursor" })?.value, "a+b/=?&x")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer token")
                 XCTAssertNil(request.value(forHTTPHeaderField: "Cookie"))
+                XCTAssertEqual(request.value(forHTTPHeaderField: "X-Astral-Device-Id"), "device")
+                XCTAssertEqual(request.value(forHTTPHeaderField: "X-Astral-Connection-Generation"), "connection")
                 return (200, try JSONValue.object(["projects": .array([record]), "next_cursor": .null]).encoded())
             })
         let page = try await client.projects(cursor: "a+b/=?&x")

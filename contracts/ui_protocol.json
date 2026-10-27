@@ -3480,7 +3480,23 @@
         "binding": "Fresh session identity for changed origin/project/grant; every request, review fingerprint, native ticket and command job retains and verifies immutable origin binding."
       },
       "updates": "Existing ui_event.computer_event event project_workspaces_changed carries host_id and project_manifest. Existing computer_host presence optionally carries project_manifest_ack {generation,digest,accepted,code?}. No re-registration on folder edits; accepted acknowledgment binds exactly current full bytes; removals revoke locally before send and persist a monotonic revision/tombstone.",
-      "consent": "Ordinary in-grant files/commands and their necessary session lifecycle use project_grant standing consent through both gates and effect checks. Missing, stale or foreign grants directly refuse. Human Pause/Stop, permission, privacy, policy and exact terminal permit checks remain. Commands validate cwd but are not OS filesystem sandboxes."
+      "consent": "Ordinary in-grant files/commands and their necessary session lifecycle use project_grant standing consent through both gates and effect checks. Missing, stale or foreign folder grants directly refuse file/command verbs. A valid text-only project uses ordinary bypass or explicit review for desktop/browser session lifecycle. Human Pause/Stop, permission, privacy, policy and exact terminal permit checks remain. Commands validate cwd but are not OS filesystem sandboxes.",
+      "approval_decisions": {
+        "frame": "chat_status",
+        "status": "approval_decision",
+        "field": "approval_decision",
+        "shape": {
+          "request_id": "canonical HITL UUID or remote proposal hex identity",
+          "decision": "approve | approve_and_resume | grant_task | decline",
+          "state": "accepted | refused | expired | cancelled | error | uncertain",
+          "message": "bounded 1000 Unicode scalars",
+          "revision": 1
+        },
+        "binding": "Only explicit decisions on negotiated Mac connections emit receipts. Owner, current connection_generation and origin chat_id bind the receipt; a bounded connection-local first-outcome cache serializes duplicates without effect replay. Standing/bypass execution emits no receipt or approval UI.",
+        "presentation": "Submitting a decision displays pending, never Approved. Only a matching server receipt settles it; stale/foreign, duplicate or contradictory later receipts cannot overwrite the first canonical outcome. Consume before ordinary status handling so acknowledgments do not alter busy state. Uncertain outcomes never trigger automatic replay. Legacy clients do not receive this negotiated status."
+      },
+      "recovery": "A failed folder change revokes current-process authority, including refresh/reconnect/rebind, and visibly reports that it was not saved. A restart may restore the last successfully committed folders only after exact scope/bookmark/physical identity verification and durable fresh revision allocation. Failed restoration writes admit no grant; total storage failure cannot guarantee durable revocation. Explicit successful retry restores current-process access.",
+      "creation": "Every chatless entry uses the selected project or opens a chooser/create flow. Creation offers an optional native folder picker and text-only use; cancelling folder selection preserves the created text project. Pending intent, draft and current chat remain fenced to owner/server/connection/navigation until success."
     }
   },
   "frame_contracts": {
@@ -4970,6 +4986,15 @@
         "history_list"
       ],
       "scope": "Owner-only catalog invalidation; refresh all pages before reconciling local folder grants.",
+      "contract": "presentation_contracts.project_workspaces_v1"
+    },
+    {
+      "field": "approval_decision",
+      "shape": "object {request_id,decision,state,message,revision:1}",
+      "carried_on": [
+        "chat_status"
+      ],
+      "scope": "Negotiated Mac explicit decision acknowledgment only; connection_generation and chat_id bind the receipt. Never emitted for standing consent or other clients.",
       "contract": "presentation_contracts.project_workspaces_v1"
     }
   ],
