@@ -1171,6 +1171,11 @@ private final class SocketAuthenticationPeer: @unchecked Sendable {
                 registrationExpectation?.fulfill()
                 registrationExpectation = nil
                 send(#"{"type":"ready"}"#, to: connection)
+                #if os(macOS)
+                    send(
+                        #"{"type":"rote_config","device_profile":{"device_type":"macos","console":{}}}"#,
+                        to: connection)
+                #endif
             } else {
                 observedEvents.append(Event(socket: connection.socket, frame: frame))
             }
