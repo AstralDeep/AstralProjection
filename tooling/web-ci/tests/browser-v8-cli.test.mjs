@@ -2,13 +2,14 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, lstatSync, symlinkSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
 
 import { convertBrowserV8Reports } from "../browser-v8-cli.mjs";
 import { BROWSER_COVERAGE_PRODUCER } from "../coverage-conversion.mjs";
+import * as clientCoverage from "./client-coverage-fixture.mjs";
 
 const CLI = resolve(import.meta.dirname, "../browser-v8-cli.mjs");
 const PATH = "backend/webrender/static/client.js";
@@ -33,6 +34,58 @@ function fixture(entries = [observation()]) {
   writeFileSync(input, JSON.stringify(entries));
   return { root, source, input, inputs: [input], repoRoot: root };
 }
+
+test("bounded browser reports preserve every observation and the canonical union", async () => {
+  const entries = [observation(0), observation(1), observation(0)];
+  const options = fixture(entries);
+  const maximum = Math.max(...entries.map(entry => Buffer.byteLength(JSON.stringify([entry]) + "\n")));
+  const directory = resolve(options.root, "bounded");
+  const paths = await clientCoverage.writeClientCoverageReports(directory, "work", entries, maximum);
+  assert.equal(paths.length, 3);
+  assert.deepEqual(paths.flatMap(path => JSON.parse(readFileSync(path, "utf8"))), entries);
+  for (const path of paths) {
+    assert.ok(lstatSync(path).size <= maximum);
+    assert.equal(lstatSync(path).mode & 0o777, 0o600);
+  }
+  assert.deepEqual(await convertBrowserV8Reports({...options, inputs: paths}),
+    await convertBrowserV8Reports(options));
+});
+
+test("bounded writer counts UTF8 bytes and rejects a single excessive observation", async () => {
+  const options = fixture();
+  const entry = {...observation(), source: "é".repeat(20)};
+  const directory = resolve(options.root, "bounded");
+  await assert.rejects(clientCoverage.writeClientCoverageReports(directory, "work", [entry],
+    JSON.stringify([entry]).length + 1));
+  assert.equal(existsSync(resolve(directory, "work.json")), false);
+});
+
+test("bounded writer refuses invalid counts, names and larger caps", async () => {
+  const options = fixture();
+  const directory = resolve(options.root, "bounded");
+  for (const [name, entries, maximum] of [["../work", [observation()], 1024], [null, [observation()], 1024], ["work", [], 1024],
+    ["work", Array(1025).fill(observation()), 1024], ["work", [observation()], NaN],
+    ["work", [observation()], 64 * 1024 * 1024], ["work", [undefined], 1024]]) {
+    await assert.rejects(clientCoverage.writeClientCoverageReports(directory, name, entries, maximum));
+  }
+});
+
+test("bounded writer replaces only its prior regular reports and refuses links", async () => {
+  const options = fixture();
+  const directory = resolve(options.root, "bounded");
+  const entries = [observation(0), observation(1)];
+  const maximum = Math.max(...entries.map(entry => Buffer.byteLength(JSON.stringify([entry]) + "\n")));
+  const old = await clientCoverage.writeClientCoverageReports(directory, "work", entries, maximum);
+  const unrelated = resolve(directory, "other.json");writeFileSync(unrelated, "preserved");
+  const current = await clientCoverage.writeClientCoverageReports(directory, "work", [entries[0]], maximum);
+  assert.equal(current.length, 1);
+  assert.ok(old.every(path => !existsSync(path)));
+  assert.equal(readFileSync(unrelated, "utf8"), "preserved");
+  const linked = resolve(directory, "work.part-001.json");symlinkSync(unrelated, linked);
+  await assert.rejects(clientCoverage.writeClientCoverageReports(directory, "work", entries, maximum));
+  assert.equal(readFileSync(unrelated, "utf8"), "preserved");
+  assert.ok(lstatSync(linked).isSymbolicLink());
+});
 
 test("unions independent browser observations without inventing an unobserved line", async () => {
   const options = fixture();

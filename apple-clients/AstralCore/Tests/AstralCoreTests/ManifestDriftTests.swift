@@ -1,8 +1,9 @@
 // Tests AstralCore's ClientDispositions against contracts/ui_protocol.json: vocabulary parity, voice and
 // runtime frame classification, and per-client (iOS, macOS, watch) disposition completeness.
 
-@testable import AstralCore
 import XCTest
+
+@testable import AstralCore
 
 final class ManifestDriftTests: XCTestCase {
 

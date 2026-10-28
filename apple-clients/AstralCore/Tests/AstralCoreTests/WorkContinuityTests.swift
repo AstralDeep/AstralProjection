@@ -1,6 +1,7 @@
-@testable import AstralCore
 // Verifies closed Work continuity payloads and current-connection request correlation for all Apple consumers.
 import XCTest
+
+@testable import AstralCore
 
 final class WorkContinuityTests: XCTestCase {
     let operation = "180cd30b-cc38-432d-8349-1851b0d3ad7e"
