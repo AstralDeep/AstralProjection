@@ -143,7 +143,7 @@ def render_button(c):
         "primary": "astral-btn-primary bg-astral-primary text-white",
         "secondary": "astral-btn-secondary bg-transparent hover:bg-astral-primary/10 text-astral-text border border-astral-primary/40",
         "ghost": "astral-btn-ghost bg-transparent hover:bg-white/5 text-astral-muted hover:text-astral-text",
-        "danger": "astral-btn-danger text-white",
+        "danger": "astral-btn-danger",
     }.get(variant, "astral-btn-primary bg-astral-primary text-white")
     data = _attr(json.dumps(payload))
     # _base_attrs must come last — HTML keeps the first duplicate attr

@@ -5,6 +5,7 @@
     import AppKit
     import AstralCore
     import SwiftUI
+    import Vision
     import XCTest
     @testable import AstralDeep
 
@@ -67,6 +68,61 @@
                 host.signedOut()
             }
         }
+        func testControlsGroupPermissionsAndWorkspacesAndDrawOnlyTheLeadSentenceOfState() throws {
+            for available in [false, true] {
+                let host = MacComputerHost(
+                    available: available, defaults: defaults(), driver: MacComputerControlsTestDriver(),
+                    monitor: MacComputerControlsTestMonitor(),
+                    permissionProvider: {
+                        MacComputerPermissions(accessibility: false, screen: false, monitoring: false)
+                    },
+                    permissionRequester: { _ in false }, settingsOpener: { _ in false },
+                    desktopProbe: { true }, desktopRearm: { false }, system: MacComputerTestSystem())
+                if available { MacComputerControlCommand.permission(.accessibility).perform(on: host) }
+                let window = NSWindow(
+                    contentRect: NSRect(x: 0, y: 0, width: 560, height: 900), styleMask: .borderless,
+                    backing: .buffered, defer: false)
+                window.isReleasedWhenClosed = false
+                let theme = ThemeStore()
+                window.appearance = NSAppearance(named: theme.colorScheme == .dark ? .darkAqua : .aqua)
+                let view = NSHostingView(
+                    rootView: MacComputerControls(host: host).environment(theme).background(theme.palette.bg))
+                window.contentView = view
+                defer {
+                    window.contentView = nil
+                    window.close()
+                    host.signedOut()
+                }
+                view.layoutSubtreeIfNeeded()
+                let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+                view.cacheDisplay(in: view.bounds, to: bitmap)
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.usesLanguageCorrection = false
+                try VNImageRequestHandler(cgImage: XCTUnwrap(bitmap.cgImage)).perform([request])
+                let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                    .joined(separator: "\n")
+                let kept = [
+                    "Computer access on this Mac", "Permissions", "Workspaces", "Accessibility", host.statusLabel,
+                ]
+                for kept in kept {
+                    XCTAssertTrue(text.contains(kept), "Missing \(kept) in \(text)")
+                }
+                for cut in [
+                    "macOS checks", "Install the direct-download", "Saved for this account", "Astral can observe",
+                    "File tools can access only", "Writes and deletes", "permission check immediately",
+                ] {
+                    XCTAssertFalse(text.contains(cut), "Unexpected \(cut)")
+                }
+                if available {
+                    XCTAssertTrue(host.lastError?.contains("permission check immediately") == true)
+                    XCTAssertTrue(text.contains("returned not granted"))
+                } else {
+                    XCTAssertEqual(host.statusLabel, "This build is a computer controller")
+                }
+            }
+        }
+
         func testCommandAdapterKeepsNativeConsentAndHIDRearmGuards() {
             var hardware = false
             let host = MacComputerHost(

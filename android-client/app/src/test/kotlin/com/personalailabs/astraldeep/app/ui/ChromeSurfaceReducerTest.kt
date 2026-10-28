@@ -228,6 +228,28 @@ class ChromeSurfaceReducerTest {
     }
 
     @Test
+    fun an_accepted_surface_navigation_offer_is_retired_by_connection_rebinding() {
+        val connection = "22222222-2222-4222-8222-222222222222"
+        val request = "33333333-3333-4333-8333-333333333333"
+        val initial =
+            UiState(
+                screen = Screen.Surface,
+                pendingSurfaceKey = "search",
+                connectionGeneration = connection,
+                privateSurfaceRequest = PrivateSurfaceRequest(request, connection, "search"),
+            )
+        val accepted = vm.reduce(initial, Inbound.ChromeSurface("search", "Search", emptyList(), requestGeneration = request))
+        assertEquals(connection, accepted.pendingSurfaceConnectionGeneration)
+        val replaced =
+            vm.bindConversationGeneration(
+                accepted,
+                ConversationGenerationBinding("44444444-4444-4444-8444-444444444444", null, null, null),
+            )
+        assertNull(replaced.pendingSurfaceConnectionGeneration)
+        assertEquals(accepted.pendingSurface, replaced.pendingSurface)
+    }
+
+    @Test
     fun audit_and_agents_open_shared_server_surface_with_filters_and_preserve_draft() {
         val params = buildJsonObject { put("q", "deny") }
         vm.updateComposerDraft("keep drafting")

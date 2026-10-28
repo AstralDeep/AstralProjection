@@ -6,7 +6,7 @@
 
 const CACHE_PREFIX = "astraldeep-public-offline-";
 // BEGIN GENERATED PUBLIC ASSETS
-const CACHE_NAME = CACHE_PREFIX + "4b32912a5220ca76b268fb01";
+const CACHE_NAME = CACHE_PREFIX + "bb9925727a08b387ff694ff5";
 const PUBLIC_ASSETS = [
   {
     "path": "/static/offline.html",
@@ -23,8 +23,8 @@ const PUBLIC_ASSETS = [
   {
     "path": "/static/astral.css",
     "type": "text/css",
-    "bytes": 104786,
-    "sha256": "f2098f2c7892a4cbd7bd28c050811651004fd66d0b53caec219e9c34dcc42634"
+    "bytes": 105127,
+    "sha256": "42b23bb38ada18804a9a92097ddcde8dc13305f8f7ffd89d1c2fba4dd51f3ac6"
   },
   {
     "path": "/static/fonts/open-sans-latin.woff2",
@@ -42,7 +42,7 @@ const PUBLIC_ASSETS = [
     "path": "/static/manifest.webmanifest",
     "type": "application/manifest+json",
     "bytes": 386,
-    "sha256": "2f39375c2e7e67807d5970f61480b154268820475859e7c009bc5f791fb8f38d"
+    "sha256": "e31f9c02295534b8959cc214b12b0549940af4659c1b74793eb68eb24d63e73f"
   }
 ];
 // END GENERATED PUBLIC ASSETS

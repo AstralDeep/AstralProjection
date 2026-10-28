@@ -68,7 +68,7 @@ final class LLMFirstLoginUITests: XCTestCase {
             waitForStatus(containingAny: ["Check your provider credentials"], timeout: 3))
         XCTAssertTrue(apiKey.isEnabled)
         XCTAssertTrue(waitForEnabled(save, enabled: true, timeout: 2))
-        XCTAssertEqual(save.value as? String, "Ready")
+        XCTAssertEqual((save.value as? String) ?? "", "", "an idle Save button carries no spoken value")
 
         focusAndType(apiKey, "-corrected")
     }
@@ -106,7 +106,7 @@ final class LLMFirstLoginUITests: XCTestCase {
                 timeout: 11))
         XCTAssertTrue(apiKey.isEnabled)
         XCTAssertTrue(save.isEnabled)
-        XCTAssertEqual(save.value as? String, "Ready")
+        XCTAssertEqual((save.value as? String) ?? "", "", "an idle Save button carries no spoken value")
 
         save.press()
         XCTAssertTrue(save.isEnabled)
@@ -125,14 +125,13 @@ final class LLMFirstLoginUITests: XCTestCase {
     }
 
     private func focusAndType(_ field: XCUIElement, _ text: String) {
-        for attempt in 0..<5 {
-            if attempt > 0 { Thread.sleep(forTimeInterval: 0.4) }
+        for _ in 0..<5 {
             guard field.exists else {
                 XCTFail("The provider field disappeared before the editing assertion completed")
                 return
             }
             field.press()
-            if fieldHasFocus(field) { break }
+            if waitUntil(timeout: 0.4, { fieldHasFocus(field) }) { break }
         }
         XCTAssertTrue(field.exists, "The provider field must remain available for typing")
         field.typeText(text)
@@ -169,22 +168,14 @@ final class LLMFirstLoginUITests: XCTestCase {
         enabled: Bool,
         timeout: TimeInterval
     ) -> Bool {
-        let predicate = NSPredicate { candidate, _ in
-            (candidate as? XCUIElement)?.isEnabled == enabled
-        }
-        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
-        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+        waitUntil(timeout: timeout) { element.isEnabled == enabled }
     }
 
     private func exerciseSceneOrWindowResponsiveness() {
         #if os(iOS)
             XCUIDevice.shared.press(.home)
             app.activate()
-            let foreground = NSPredicate { candidate, _ in
-                (candidate as? XCUIApplication)?.state == .runningForeground
-            }
-            let expectation = XCTNSPredicateExpectation(predicate: foreground, object: app)
-            XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 2), .completed)
+            XCTAssertTrue(waitUntil(timeout: 2) { app.state == .runningForeground })
         #else
             app.activate()
             XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 1))

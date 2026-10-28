@@ -20,11 +20,18 @@ enum OfflineChartDocument {
         let background: UInt32
         let text: UInt32
         let muted: UInt32
+        let primary: UInt32
+        let secondary: UInt32
+        let accent: UInt32
 
         var style: String {
             func css(_ color: UInt32) -> String { String(format: "#%06X", color & 0xFFFFFF) }
+            let series =
+                ":root{--astral-chart-primary:\(css(primary));--astral-chart-secondary:\(css(secondary));"
+                + "--astral-chart-accent:\(css(accent))}"
             return
-                "<style>html,body{background:\(css(background));color:\(css(text))}#status{color:\(css(muted))}</style>"
+                "<style>\(series)html,body{background:\(css(background));color:\(css(text))}"
+                + "#status{color:\(css(muted))}</style>"
         }
     }
 
@@ -352,7 +359,10 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
                 appearance: .init(
                     background: (backdrop ?? AstralChartBackdrop(theme.palette.bg)).hex,
                     text: AstralChartBackdrop(theme.palette.text).hex,
-                    muted: AstralChartBackdrop(theme.palette.muted).hex),
+                    muted: AstralChartBackdrop(theme.palette.muted).hex,
+                    primary: AstralChartBackdrop(theme.palette.primary).hex,
+                    secondary: AstralChartBackdrop(theme.palette.secondary).hex,
+                    accent: AstralChartBackdrop(theme.palette.accent).hex),
                 captureRegistry: model.canvasCapture,
                 captureNode: model.canvasCapture.node(path: capturePath, component: component))
         }

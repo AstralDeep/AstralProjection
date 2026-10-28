@@ -80,11 +80,42 @@ final class ConsoleModelTests: XCTestCase {
         }
     }
 
+    func testCutCopyLabelsMayBeAbsentOrEmptyWhileControlLabelsStayRequired() throws {
+        let console = try fixture("chrome-console")["console"]!
+        let optional = [
+            "title", "subtitle", "start_here", "example", "empty_title", "empty_subtitle", "message_placeholder",
+        ]
+        var stripped = console["labels"]!.objectValue!
+        for key in optional { stripped[key] = nil }
+        let bare = try XCTUnwrap(ConsoleModel(json: replacing(console, ["labels"], with: .object(stripped))))
+        XCTAssertTrue(optional.allSatisfy { bare.labels[$0] == nil })
+        XCTAssertEqual(bare.labels["send"], console["labels"]?["send"]?.stringValue)
+        for key in optional {
+            for blank in [JSONValue.string(""), .string(" \n ")] {
+                let model = try XCTUnwrap(ConsoleModel(json: replacing(console, ["labels", key], with: blank)), key)
+                XCTAssertNil(model.labels[key], key)
+            }
+            XCTAssertNotNil(ConsoleModel(json: replacing(console, ["labels", key], with: nil)), key)
+            let kept = try XCTUnwrap(ConsoleModel(json: replacing(console, ["labels", key], with: .string("Kept"))))
+            XCTAssertEqual(kept.labels[key], "Kept")
+            let longest = JSONValue.string(String(repeating: "x", count: 500))
+            XCTAssertNotNil(ConsoleModel(json: replacing(console, ["labels", key], with: longest)))
+            for bad in [JSONValue.string("a\0b"), .number(4), .null, .string(String(repeating: "x", count: 501))] {
+                XCTAssertNil(ConsoleModel(json: replacing(console, ["labels", key], with: bad)), key)
+            }
+        }
+        for key in ["brand", "send", "attach", "new_chat", "history"] {
+            XCTAssertNil(ConsoleModel(json: replacing(console, ["labels", key], with: nil)), key)
+            XCTAssertNil(ConsoleModel(json: replacing(console, ["labels", key], with: .string(""))), key)
+        }
+        XCTAssertNil(ConsoleModel(json: replacing(console, ["labels", "future_caption"], with: .string(""))))
+    }
+
     func testConsoleTextAndCatalogBoundsAreEnforcedWithoutTruncation() throws {
         let console = try fixture("chrome-console")["console"]!
         for (path, maximum) in [
             (["identity", "name"], 120), (["identity", "role"], 40), (["identity", "initials"], 40),
-            (["labels", "title"], 500),
+            (["labels", "brand"], 500),
         ] {
             XCTAssertNotNil(
                 ConsoleModel(json: replacing(console, path, with: .string(String(repeating: "x", count: maximum)))))
@@ -95,7 +126,7 @@ final class ConsoleModelTests: XCTestCase {
                 XCTAssertNil(ConsoleModel(json: replacing(console, path, with: bad)))
             }
         }
-        XCTAssertNil(ConsoleModel(json: replacing(console, ["labels", "title"], with: nil)))
+        XCTAssertNil(ConsoleModel(json: replacing(console, ["labels", "brand"], with: nil)))
         var labels = console["labels"]!.objectValue!
         labels[String(repeating: "x", count: 81)] = .string("text")
         XCTAssertNil(ConsoleModel(json: replacing(console, ["labels"], with: .object(labels))))

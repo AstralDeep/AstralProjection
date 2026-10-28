@@ -109,7 +109,7 @@
             share.tap()
             waitForRequests(2)
             app.buttons["new-chat-button"].tap()
-            XCTAssertTrue(app.staticTexts["How can I help?"].waitForExistence(timeout: 3))
+            XCTAssertTrue(app.buttons["Research brief"].waitForExistence(timeout: 3))
             let afterNewChat = UIPasteboard.general.changeCount
             peer.releaseHeldReplies()
             XCTAssertFalse(app.buttons["Save or share astraldeep-canvas.html"].waitForExistence(timeout: 1))
@@ -147,9 +147,10 @@
             XCTAssertFalse(app.staticTexts["Provenance: grounded"].exists)
             retainScreenshot("Server-owned component actions")
             app.buttons["component-action-component-empty-history"].tap()
-            XCTAssertTrue(
-                app.staticTexts["No earlier versions yet — refine the component to create one."].waitForExistence(
-                    timeout: 3))
+            XCTAssertTrue(app.navigationBars["Version history"].waitForExistence(timeout: 3))
+            XCTAssertFalse(
+                app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "component-restore-")).firstMatch
+                    .exists)
             app.buttons["Close"].tap()
             actions[1].tap()
             XCTAssertTrue(app.buttons["component-restore-2"].waitForExistence(timeout: 3))
@@ -185,9 +186,7 @@
             XCTAssertEqual((refine["payload"] as? [String: Any])?["instruction"] as? String, "Sort by value")
             XCTAssertNotEqual(refine["submission_id"] as? String, restore["submission_id"] as? String)
             peer.refuseLastComponent()
-            let enabled = XCTNSPredicateExpectation(
-                predicate: NSPredicate { _, _ in actions[0].isEnabled }, object: nil)
-            XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 3), .completed)
+            XCTAssertTrue(waitUntil(timeout: 3) { actions[0].isEnabled })
             XCTAssertTrue(app.staticTexts["Component action result"].exists)
             XCTAssertEqual(
                 app.descendants(matching: .any).matching(identifier: "chat-composer-input").firstMatch.value as? String,
@@ -220,11 +219,10 @@
             let activity = app.otherElements["ActivityListView"]
             XCTAssertTrue(activity.waitForExistence(timeout: 8))
             retainScreenshot("Explicit component share handoff")
-            let preview = XCTNSPredicateExpectation(
-                predicate: NSPredicate { [weak self] _, _ in
-                    self?.peer.nativePreviewRequests.contains("/share/synthetic_workspace_ui_link") == true
-                }, object: nil)
-            XCTAssertEqual(XCTWaiter.wait(for: [preview], timeout: 5), .completed)
+            XCTAssertTrue(
+                waitUntil(timeout: 5) {
+                    peer.nativePreviewRequests.contains("/share/synthetic_workspace_ui_link")
+                })
             let dismissRegion = app.otherElements.matching(identifier: "PopoverDismissRegion")
                 .allElementsBoundByIndex.last { $0.isHittable }
             try XCTUnwrap(dismissRegion).tap()
@@ -269,7 +267,7 @@
             waitForRequests(3)
             app.buttons["Close"].tap()
             app.buttons["new-chat-button"].tap()
-            XCTAssertTrue(app.staticTexts["How can I help?"].waitForExistence(timeout: 3))
+            XCTAssertTrue(app.buttons["Research brief"].waitForExistence(timeout: 3))
             let baseline = UIPasteboard.general.changeCount
             peer.releaseHeldReplies()
             XCTAssertFalse(app.buttons["Copy link"].waitForExistence(timeout: 1))
@@ -304,11 +302,9 @@
             app.buttons["Refine"].firstMatch.tap()
             XCTAssertTrue(app.staticTexts["Reconnect before changing this component."].waitForExistence(timeout: 3))
             app.buttons["new-chat-button"].tap()
-            XCTAssertTrue(app.staticTexts["How can I help?"].waitForExistence(timeout: 3))
+            XCTAssertTrue(app.buttons["Research brief"].waitForExistence(timeout: 3))
             peer.resumeSocketConnections()
-            let reconnected = XCTNSPredicateExpectation(
-                predicate: NSPredicate { [weak self] _, _ in (self?.peer.registrations ?? 0) >= 2 }, object: nil)
-            XCTAssertEqual(XCTWaiter.wait(for: [reconnected], timeout: 35), .completed)
+            XCTAssertTrue(waitUntil(timeout: 35) { peer.registrations >= 2 })
             XCTAssertTrue(peer.componentFrames.isEmpty)
         }
 
@@ -334,15 +330,11 @@
             app.launchEnvironment["ASTRAL_UI_WORKSPACE_PORT"] = String(port)
             app.launch()
             XCTAssertTrue(app.staticTexts["Component action result"].waitForExistence(timeout: 10))
-            let registered = XCTNSPredicateExpectation(
-                predicate: NSPredicate { [weak self] _, _ in self?.peer.registrations == 1 }, object: nil)
-            XCTAssertEqual(XCTWaiter.wait(for: [registered], timeout: 5), .completed)
+            XCTAssertTrue(waitUntil(timeout: 5) { peer.registrations == 1 })
         }
 
         private func waitForComponentFrames(_ count: Int) {
-            let observed = XCTNSPredicateExpectation(
-                predicate: NSPredicate { [weak self] _, _ in self?.peer.componentFrames.count == count }, object: nil)
-            XCTAssertEqual(XCTWaiter.wait(for: [observed], timeout: 5), .completed)
+            XCTAssertTrue(waitUntil(timeout: 5) { peer.componentFrames.count == count })
         }
 
         private func launch(replies: [WorkspaceActionLoopback.Route: [WorkspaceActionLoopback.Reply]]) throws {
@@ -360,11 +352,7 @@
         }
 
         private func waitForRequests(_ count: Int) {
-            let observed = XCTNSPredicateExpectation(
-                predicate: NSPredicate { [weak self] _, _ in
-                    self?.peer.requests.count == count
-                }, object: nil)
-            XCTAssertEqual(XCTWaiter.wait(for: [observed], timeout: 5), .completed)
+            XCTAssertTrue(waitUntil(timeout: 5) { peer.requests.count == count })
         }
 
         private func assertCapturedVisibleCanvas() throws {

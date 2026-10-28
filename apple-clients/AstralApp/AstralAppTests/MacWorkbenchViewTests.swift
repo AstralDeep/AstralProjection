@@ -15,59 +15,273 @@
 
     @MainActor
     final class MacWorkbenchViewTests: XCTestCase {
-        func testCommandPaletteGroupsDirectActionsAndUsesTheAuthorizedSurface() async throws {
+        func testSlashInAnEmptyComposerOpensThePaletteAndRunsTheChosenAction() async throws {
             let (model, suite) = try panelModel()
             defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
             var sent: [JSONValue] = []
             model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
-            let (view, window) = panel(MacWorkbenchCommandPalette(), model: model, width: 560)
+            let (_, window) = try mountWorkbench(model, width: 1440, activity: false)
             defer { window.close() }
             try await settle()
-            let lines = try recognizedText(view).lowercased().components(separatedBy: "\n")
-            XCTAssertEqual(
-                lines.filter { $0 == "account" }.count, 1,
-                "Rendered command rows: \(lines.joined(separator: " | "))")
-            let snapshot = try XCTUnwrap(WorkbenchAccessibility.snapshot(windowTitle: window.title))
-            XCTAssertEqual(
-                snapshot.elements.filter { $0.role == kAXButtonRole }.compactMap(\.identifier)
-                    .filter { $0.hasPrefix("workbench-command-") },
-                [
-                    "workbench-command-account/agents", "workbench-command-account/llm",
-                    "workbench-command-account/personalization", "workbench-command-account/audit",
-                    "workbench-command-account/theme", "workbench-command-account/guidance",
-                    "workbench-command-help/guide",
-                ])
-            try attach(view, name: "workbench-grouped-commands")
-            XCTAssertTrue(
-                WorkbenchAccessibility.press(identifier: "workbench-command-account/llm", windowTitle: window.title))
+            func sheet() async throws -> NSWindow {
+                try await settle()
+                return try XCTUnwrap(window.attachedSheet, "The palette sheet did not open")
+            }
+            func type(_ text: String, in sheet: NSWindow) {
+                (sheet.firstResponder as? NSTextView)?.insertText(
+                    text, replacementRange: NSRange(location: NSNotFound, length: 0))
+            }
+            model.composerDraft = "/"
+            var palette = try await sheet()
+            XCTAssertEqual(model.composerDraft, "")
+            type("back", in: palette)
             try await settle()
+            palette.sendEvent(try SurfaceKey.returnKey.event(windowNumber: palette.windowNumber))
+            try await settle()
+            XCTAssertNil(window.attachedSheet)
+            XCTAssertTrue(model.runInBackground)
+            XCTAssertFalse(sent.contains { $0["action"]?.stringValue == "chat_message" })
+
+            model.composerDraft = ""
+            try await settle()
+            model.composerDraft = "/"
+            palette = try await sheet()
+            type("he", in: palette)
+            try await settle()
+            XCTAssertTrue(
+                palette.performKeyEquivalent(with: try SurfaceKey.escape.event(windowNumber: palette.windowNumber)))
+            try await settle()
+            XCTAssertNil(window.attachedSheet)
+            XCTAssertEqual(model.composerDraft, "/he")
+
+            model.composerDraft = ""
+            try await settle()
+            model.composerDraft = "/"
+            palette = try await sheet()
+            palette.sendEvent(try SurfaceKey.delete.event(windowNumber: palette.windowNumber))
+            try await settle()
+            type("llm", in: palette)
+            try await settle()
+            palette.sendEvent(try SurfaceKey.returnKey.event(windowNumber: palette.windowNumber))
+            try await settle()
+            XCTAssertNil(window.attachedSheet)
             XCTAssertEqual(sent.last?["action"], .string("chrome_open"))
             XCTAssertEqual(sent.last?["payload"]?["surface"], .string("llm"))
+
+            model.screen = .chat
+            model.mandatorySurface = true
+            model.composerDraft = ""
+            try await settle()
+            model.composerDraft = "/"
+            try await settle()
+            XCTAssertNil(window.attachedSheet)
+            XCTAssertEqual(model.composerDraft, "/")
         }
 
-        func testAgentRowsKeepStatusAndDescriptionAccessibleAndOpenTheirDetail() async throws {
+        func testPaletteRenamesPinsAndArchivesTheCurrentChat() async throws {
             let (model, suite) = try panelModel()
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            var sent: [JSONValue] = []
+            model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+            model.activeChatId = "c1"
+            model.history = [
+                try XCTUnwrap(
+                    ChatSummary(json: .object(["id": .string("c1"), "title": .string("Roll notes")])))
+            ]
+            let (_, window) = try mountWorkbench(model, width: 1440, activity: false)
+            defer { window.close() }
+            try await settle()
+            func choose(_ query: String) async throws {
+                model.composerDraft = ""
+                try await settle()
+                model.composerDraft = "/"
+                try await settle()
+                let palette = try XCTUnwrap(window.attachedSheet, "The palette sheet did not open")
+                palette.sendEvent(try SurfaceKey.delete.event(windowNumber: palette.windowNumber))
+                try await settle()
+                (palette.firstResponder as? NSTextView)?.insertText(
+                    query, replacementRange: NSRange(location: NSNotFound, length: 0))
+                try await settle()
+                palette.sendEvent(try SurfaceKey.returnKey.event(windowNumber: palette.windowNumber))
+                try await settle()
+            }
+            try await choose("pin chat")
+            XCTAssertEqual(sent.last?["action"], .string("chat_pin"))
+            XCTAssertEqual(sent.last?["payload"]?["chat_id"], .string("c1"))
+            model.history = [
+                try XCTUnwrap(
+                    ChatSummary(
+                        json: .object([
+                            "id": .string("c1"), "title": .string("Roll notes"), "pinned": .bool(true),
+                            "archived": .bool(true),
+                        ])))
+            ]
+            try await choose("unpin")
+            XCTAssertEqual(sent.last?["action"], .string("chat_unpin"))
+            try await choose("unarchive")
+            XCTAssertEqual(sent.last?["action"], .string("chat_unarchive"))
+            try await choose("rename")
+            let rename = try XCTUnwrap(window.attachedSheet, "The rename sheet did not open")
+            (rename.firstResponder as? NSTextView)?.insertText(
+                "Dice log", replacementRange: NSRange(location: NSNotFound, length: 0))
+            try await settle()
+            rename.sendEvent(try SurfaceKey.returnKey.event(windowNumber: rename.windowNumber))
+            try await settle()
+            XCTAssertNil(window.attachedSheet)
+            XCTAssertEqual(sent.last?["action"], .string("chat_rename"))
+            XCTAssertEqual(sent.last?["payload"]?["title"], .string("Dice log"))
+            model.activeChatId = nil
+            let count = sent.count
+            try await choose("archive chat")
+            XCTAssertEqual(sent.count, count)
+        }
+
+        func testAgentDirectoryFocusesSearchAndMarksOfflineAgentsByShapeAndText() async throws {
+            let (model, suite) = try SurfaceFixtures.model(menu: Self.twoAgentMenu())
             defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
             var sent: [JSONValue] = []
             model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
             let console = try XCTUnwrap(model.console)
-            let (view, window) = panel(MacWorkbenchAgents(console: console), model: model, width: 360)
-            defer { window.close() }
-            try await settle()
-            let text = try recognizedText(view)
-            XCTAssertTrue(text.contains("Dice Roller"))
-            XCTAssertFalse(text.contains("Rolls dice"))
-            let snapshot = try XCTUnwrap(WorkbenchAccessibility.snapshot(windowTitle: window.title))
-            let agent = try XCTUnwrap(snapshot.elements.first { $0.identifier == "workbench-agent-dice" })
-            XCTAssertEqual(agent.label, "Dice Roller")
-            XCTAssertEqual(agent.value, "Available")
-            XCTAssertEqual(agent.help, "Rolls dice")
-            try attach(view, name: "workbench-agent-choices")
-            XCTAssertTrue(WorkbenchAccessibility.press(identifier: "workbench-agent-dice", windowTitle: window.title))
-            try await settle()
+            for preset in SurfaceFixtures.presets {
+                for size in [DynamicTypeSize.large, .accessibility3] {
+                    let mount = SurfaceMount(
+                        MacWorkbenchAgents(console: console).environment(\.dynamicTypeSize, size), model: model,
+                        size: CGSize(width: 360, height: 360), preset: preset)
+                    defer { mount.close() }
+                    try await mount.settle()
+                    XCTAssertEqual(mount.focusedPrompt(), "Search agents", "\(preset) \(size)")
+                    let text = try mount.text()
+                    for kept in ["Agent Directory", "Dice Roller", "Clinical Notes", "Offline"] {
+                        XCTAssertTrue(text.contains(kept), "\(preset) \(size) missing \(kept): \(text)")
+                    }
+                    XCTAssertFalse(text.contains("Rolls dice"), preset)
+                    XCTAssertFalse(text.contains("Available"), preset)
+                    try mount.snapshot(self, name: "agent_directory-\(preset)-\(size == .large ? "large" : "ax3")")
+                }
+            }
+            let mount = SurfaceMount(
+                MacWorkbenchAgents(console: console), model: model, size: CGSize(width: 360, height: 360))
+            defer { mount.close() }
+            try await mount.settle()
+            try mount.click(text: "Dice Roller")
+            try await mount.settle()
             XCTAssertEqual(sent.last?["action"], .string("chrome_open"))
             XCTAssertEqual(sent.last?["payload"]?["surface"], .string("agent_intro"))
             XCTAssertEqual(sent.last?["payload"]?["params"]?["agent_id"], .string("dice"))
+            model.mandatorySurface = true
+            sent = []
+            try mount.click(text: "Clinical Notes")
+            try await mount.settle()
+            XCTAssertTrue(sent.isEmpty, "\(sent)")
+        }
+
+        func testAgentDirectoryRowsExposeNamesStatusDescriptionAndOrder() async throws {
+            try SurfaceAccessibility.requireTrust()
+            let (model, suite) = try SurfaceFixtures.model(menu: Self.twoAgentMenu())
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            let mount = SurfaceMount(
+                MacWorkbenchAgents(console: try XCTUnwrap(model.console)), model: model,
+                size: CGSize(width: 360, height: 360))
+            defer { mount.close() }
+            try await mount.settle()
+            let tree = mount.accessibility
+            let dice = try XCTUnwrap(tree.first { $0.identifier == "workbench-agent-dice" })
+            XCTAssertEqual(dice.label, "Dice Roller")
+            XCTAssertEqual(dice.value, "Available")
+            XCTAssertEqual(dice.help, "Rolls dice")
+            XCTAssertEqual(tree.first { $0.identifier == "workbench-agent-notes" }?.value, "Offline")
+            XCTAssertEqual(tree.first { $0.identifier == "workbench-agent-search" }?.label, "Search agents")
+            XCTAssertEqual(
+                tree.compactMap(\.identifier).filter { $0.hasPrefix("workbench-agent-") },
+                ["workbench-agent-search", "workbench-agent-dice", "workbench-agent-notes"])
+            XCTAssertFalse(
+                tree.contains { $0.label == "magnifyingglass" || $0.label == "Search" && $0.role == "AXImage" })
+        }
+
+        func testAgentDirectoryShowsNoMatchAndEmptyStatesAndOpensTheFirstMatchOnReturn() async throws {
+            let (model, suite) = try SurfaceFixtures.model()
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            var sent: [JSONValue] = []
+            model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+            for preset in SurfaceFixtures.presets {
+                let mount = SurfaceMount(
+                    MacWorkbenchAgents(console: try XCTUnwrap(model.console)), model: model,
+                    size: CGSize(width: 360, height: 220), preset: preset)
+                defer { mount.close() }
+                try await mount.settle()
+                mount.type("zzz")
+                try await mount.settle()
+                let text = try mount.text()
+                XCTAssertTrue(text.contains("No matching agents"), "\(preset): \(text)")
+                XCTAssertFalse(text.contains("Dice Roller"), preset)
+                try mount.snapshot(self, name: "agent_directory_no_match-\(preset)")
+            }
+            let mount = SurfaceMount(
+                MacWorkbenchAgents(console: try XCTUnwrap(model.console)), model: model,
+                size: CGSize(width: 360, height: 220))
+            defer { mount.close() }
+            try await mount.settle()
+            mount.type("dice")
+            try mount.key(.returnKey)
+            try await mount.settle()
+            XCTAssertEqual(sent.last?["payload"]?["params"]?["agent_id"], .string("dice"))
+            let (empty, emptySuite) = try SurfaceFixtures.model(menu: SurfaceFixtures.menu(agents: []))
+            defer { UserDefaults.standard.removePersistentDomain(forName: emptySuite) }
+            for preset in SurfaceFixtures.presets {
+                let mount = SurfaceMount(
+                    MacWorkbenchAgents(console: try XCTUnwrap(empty.console)), model: empty,
+                    size: CGSize(width: 360, height: 220), preset: preset)
+                defer { mount.close() }
+                try await mount.settle()
+                XCTAssertTrue(try mount.text().contains("No agents available"), preset)
+                try mount.snapshot(self, name: "agent_directory_empty-\(preset)")
+            }
+        }
+
+        func testAgentDirectoryPopoverPointsAtTheWorkspaceActionsControl() async throws {
+            let (model, suite) = try panelModel()
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            model.outboundTap = { _ in }
+            let state = try MountState(model: model, fixture: fixture("mac-workbench"))
+            state.width = 1440
+            let console = try XCTUnwrap(model.console)
+            let presentation = try XCTUnwrap(model.consolePresentation)
+            let view = NSHostingView(
+                rootView: MacWorkbenchView(
+                    console: console, presentation: presentation, workbench: try XCTUnwrap(presentation.workbench),
+                    agentsPresented: true
+                )
+                .environment(model).environment(model.themeStore)
+                .font(ConsoleTypography.body).tint(model.themeStore.palette.primary))
+            let window = host(view, model: model, width: 900)
+            window.setFrameOrigin(.zero)
+            defer { window.close() }
+            try await settle()
+            func buttons(_ view: NSView) -> [NSView] {
+                (view is NSButton ? [view] : []) + view.subviews.flatMap(buttons)
+            }
+            let menus = buttons(view).filter {
+                $0 is NSPopUpButton || String(describing: type(of: $0)).contains("Menu")
+            }
+            let anchors = menus.map { window.convertToScreen($0.convert($0.bounds, to: nil)) }
+                .filter { $0.minY >= window.frame.maxY - 120 && $0.midX > window.frame.midX }
+            let anchor = try XCTUnwrap(anchors.first, "\(menus)")
+            let popover = try XCTUnwrap(
+                NSApp.windows.first { $0.isVisible && String(describing: type(of: $0)).contains("Popover") },
+                "No popover window")
+            defer { popover.close() }
+            XCTAssertLessThanOrEqual(popover.frame.maxY, anchor.minY + 2, "\(popover.frame) vs \(anchor)")
+            XCTAssertTrue(
+                (anchor.minX - 24...anchor.maxX + 24).contains(popover.frame.midX), "\(popover.frame) vs \(anchor)")
+            XCTAssertLessThanOrEqual(popover.frame.height, 560 + 40)
+            XCTAssertGreaterThanOrEqual(popover.frame.width, 320)
+        }
+
+        private static func twoAgentMenu() throws -> JSONValue {
+            try SurfaceFixtures.menu(agents: [
+                SurfaceFixtures.agent("dice", name: "Dice Roller", description: "Rolls dice", state: "ready"),
+                SurfaceFixtures.agent("notes", name: "Clinical Notes", description: "Drafts notes", state: "offline"),
+            ])
         }
 
         func testWelcomeUsesDirectChoicesAndRetainsAccessiblePromptLoading() async throws {
@@ -360,6 +574,343 @@
             }
         }
 
+        func testActivityPanelShowsToolRowsBesideTheConversationWithoutASheet() async throws {
+            let (model, suite) = try activityModel()
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            let entries = MacTranscriptEntry.build(turns: model.visibleTurns, activity: model.activity)
+            XCTAssertEqual(entries.map(\.id), ["u", "tool-steps-1", "a"])
+            let (view, window) = try mountWorkbench(model, width: 1440, activity: true)
+            defer { window.close() }
+            try await settle()
+            XCTAssertNil(window.attachedSheet)
+            let lines = try recognizedLines(view)
+            let text = lines.joined(separator: "\n")
+            for expected in ["Activity", "Approval waiting", "Exit 0", "Open TextEdit and type", "Finished typing"] {
+                XCTAssertTrue(text.contains(expected), "Missing \(expected) in \(lines)")
+            }
+            XCTAssertGreaterThanOrEqual(lines.filter { $0.contains("notes.txt") }.count, 2, "\(lines)")
+            XCTAssertFalse(text.contains("No activity"))
+            try attach(view, name: "workbench-activity-panel")
+            let (compact, compactWindow) = try mountWorkbench(model, width: 390, activity: true)
+            defer { compactWindow.close() }
+            try await settle()
+            XCTAssertTrue(try recognizedText(compact).contains("notes.txt"))
+            try attach(compact, name: "workbench-activity-panel-overlay")
+        }
+
+        func testActivityRowsAndToggleKeepAccessibleLabelsAndValues() async throws {
+            let (model, suite) = try activityModel()
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            let (_, window, _) = try mount(model, width: 1440)
+            defer { window.close() }
+            try await settle()
+            let initial = try XCTUnwrap(
+                WorkbenchAccessibility.snapshot(windowTitle: window.title),
+                "Missing test window in the accessibility tree")
+            let toggle = try XCTUnwrap(initial.elements.first { $0.identifier == "workbench-activity-toggle" })
+            XCTAssertEqual(toggle.label, "Activity")
+            XCTAssertEqual(toggle.value, "Hidden")
+            XCTAssertNil(initial.elements.first { $0.identifier == "workbench-activity-panel" })
+            let inline = try XCTUnwrap(initial.elements.first { $0.identifier == "conversation-tool-step-command" })
+            XCTAssertEqual(inline.label, "run command, wc -l notes.txt")
+            XCTAssertEqual(inline.value, "Done, Exit 0")
+            XCTAssertTrue(
+                WorkbenchAccessibility.press(identifier: "workbench-activity-toggle", windowTitle: window.title))
+            try await settle()
+            let elements = try XCTUnwrap(WorkbenchAccessibility.snapshot(windowTitle: window.title)).elements
+            XCTAssertNotNil(elements.first { $0.identifier == "workbench-activity-panel" })
+            XCTAssertNotNil(elements.first { $0.identifier == "chat-composer-input" })
+            let click = try XCTUnwrap(elements.first { $0.identifier == "activity-row-step-click" })
+            XCTAssertEqual(click.label, "click, at 10, 20")
+            XCTAssertEqual(click.value, "Approval waiting, Running")
+            XCTAssertEqual(elements.first { $0.identifier == "workbench-activity-close" }?.label, "Hide activity")
+            XCTAssertTrue(
+                WorkbenchAccessibility.press(identifier: "workbench-activity-close", windowTitle: window.title))
+            try await settle()
+            XCTAssertNil(
+                WorkbenchAccessibility.snapshot(windowTitle: window.title)?.elements.first {
+                    $0.identifier == "workbench-activity-panel"
+                })
+        }
+
+        func testCutCopyStaysOffTheWorkbenchAndTheCanvasHeaderShowsTheResultTitle() async throws {
+            let (model, suite) = try panelModel()
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            model.outboundTap = { _ in }
+            model.history = []
+            model.historyLoaded = true
+            model.activeChatId = "copy-chat"
+            model.workspaceStarted = true
+            model.consoleDashboardVisible = false
+            model.turns = [.init(id: "u", role: "user", text: "Summarize the rolls")]
+            model.canvas = [
+                try XCTUnwrap(
+                    AstralComponent(
+                        json: .object([
+                            "type": .string("card"), "component_id": .string("copy-result"),
+                            "title": .string("Roll Summary"), "source_agent": .string("dice"),
+                            "content": .array([.object(["type": .string("text"), "content": .string("Total 18")])]),
+                        ])))
+            ]
+            XCTAssertEqual(model.consoleResultTitle, "Roll Summary")
+            XCTAssertEqual(model.consoleResultAgent, "Dice Roller")
+            XCTAssertEqual(model.consoleResultAccessibilityLabel, "Roll Summary, Dice Roller")
+            let (view, window) = try mountWorkbench(model, width: 1440, activity: true)
+            defer { window.close() }
+            try await settle()
+            let lines = try recognizedLines(view)
+            let text = lines.joined(separator: "\n")
+            XCTAssertGreaterThanOrEqual(lines.filter { $0.contains("Roll Summary") }.count, 2, "\(lines)")
+            for cut in [
+                "AstralDeep", "No chats", "No activity", "Interface", "Specialist", "Click to interact",
+                "Multi-agent orchestrator and server-driven UI workspace", "Ask anything", "How can I help?",
+                "More examples", "Your generated interface appears here",
+            ] {
+                XCTAssertFalse(text.contains(cut), "Unexpected cut copy: \(cut)")
+            }
+            try attach(view, name: "workbench-cut-copy")
+            model.canvas = [
+                AstralComponent(
+                    type: "text", raw: .object(["content": .string("Untitled"), "source_agent": .string("dice")]))
+            ]
+            XCTAssertEqual(model.consoleResultTitle, "Dice Roller")
+            XCTAssertEqual(model.consoleResultAccessibilityLabel, "Dice Roller")
+            model.canvas = [AstralComponent(type: "text", raw: .object(["content": .string("Untitled")]))]
+            XCTAssertEqual(model.consoleResultTitle, "")
+            XCTAssertEqual(model.consoleResultAccessibilityLabel, "Canvas")
+        }
+
+        func testStopAppearsOnlyDuringAComputerTaskAndCancelsTheTurnWithTheSession() async throws {
+            let computer = try MacComputerLifecycleFixture()
+            defer { computer.close() }
+            let suite = "MacWorkbenchViewTests.\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            let model = AppModel(
+                conversationResumeStore: ConversationResumeStore(defaults: defaults),
+                tokenStore: InMemoryTokenStore(), defaults: defaults, computerHost: computer.host)
+            model.signedIn = true
+            model.connected = true
+            model.chromeMenu = try XCTUnwrap(ChromeMenuModel.fromJSON(fixture("chrome-console")))
+            model.activeChatId = "stop-chat"
+            var sent: [JSONValue] = []
+            model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+            try computer.enable()
+            let (view, window) = try mountWorkbench(model, width: 1440, activity: false)
+            defer { window.close() }
+            try await settle()
+            XCTAssertNil(try stopControl(view))
+            computer.host.consume(try computer.session())
+            XCTAssertEqual(computer.host.session?.state, "active")
+            model.turnActive = true
+            try await settle()
+            let stop = try XCTUnwrap(try stopControl(view))
+            try attach(view, name: "workbench-stop")
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                window.sendEvent(
+                    try XCTUnwrap(
+                        NSEvent.mouseEvent(
+                            with: type, location: stop, modifierFlags: [],
+                            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                            context: nil, eventNumber: 0, clickCount: 1, pressure: 1)))
+            }
+            try await settle()
+            XCTAssertNil(computer.host.session)
+            XCTAssertEqual(sent.filter { $0["action"] == .string("cancel_task") }.count, 1)
+            XCTAssertNil(try stopControl(view))
+        }
+
+        func testEscapeCancelsOnlyOutsideTextEditingSheetsAndBlockedSurfaces() throws {
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 320, height: 200), styleMask: [.titled], backing: .buffered,
+                defer: false)
+            window.isReleasedWhenClosed = false
+            let field = NSTextView(frame: NSRect(x: 0, y: 0, width: 200, height: 40))
+            let container = NSView(frame: window.contentLayoutRect)
+            container.addSubview(field)
+            window.contentView = container
+            window.orderBack(nil)
+            defer { window.close() }
+            func key(_ code: UInt16, _ flags: NSEvent.ModifierFlags = [], in target: NSWindow? = nil) throws
+                -> NSEvent
+            {
+                try XCTUnwrap(
+                    NSEvent.keyEvent(
+                        with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0,
+                        windowNumber: (target ?? window).windowNumber, context: nil, characters: "\u{1b}",
+                        charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: code))
+            }
+            var cancels = 0
+            let cancel: () -> Bool = {
+                cancels += 1
+                return true
+            }
+            let escape = try key(53)
+            XCTAssertNil(MacWorkbenchEscapeMonitor.consume(escape, in: window, blocked: false, cancel: cancel))
+            XCTAssertEqual(cancels, 1)
+            XCTAssertNotNil(MacWorkbenchEscapeMonitor.consume(escape, in: window, blocked: true, cancel: cancel))
+            XCTAssertNotNil(MacWorkbenchEscapeMonitor.consume(escape, in: nil, blocked: false, cancel: cancel))
+            XCTAssertNotNil(
+                MacWorkbenchEscapeMonitor.consume(try key(53, .shift), in: window, blocked: false, cancel: cancel))
+            XCTAssertNotNil(MacWorkbenchEscapeMonitor.consume(try key(36), in: window, blocked: false, cancel: cancel))
+            XCTAssertNotNil(MacWorkbenchEscapeMonitor.consume(escape, in: window, blocked: false) { false })
+            XCTAssertEqual(cancels, 1)
+            XCTAssertTrue(window.makeFirstResponder(field))
+            XCTAssertNil(MacWorkbenchEscapeMonitor.consume(escape, in: window, blocked: false, cancel: cancel))
+            XCTAssertEqual(cancels, 2)
+            field.string = "Unsent draft"
+            XCTAssertNotNil(MacWorkbenchEscapeMonitor.consume(escape, in: window, blocked: false, cancel: cancel))
+            field.string = ""
+            field.setMarkedText(
+                "か", selectedRange: NSRange(location: 1, length: 0),
+                replacementRange: NSRange(location: 0, length: 0))
+            XCTAssertTrue(field.hasMarkedText())
+            XCTAssertNotNil(MacWorkbenchEscapeMonitor.consume(escape, in: window, blocked: false, cancel: cancel))
+            field.unmarkText()
+            let other = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 100, height: 100), styleMask: [.titled], backing: .buffered,
+                defer: false)
+            other.isReleasedWhenClosed = false
+            other.orderBack(nil)
+            defer { other.close() }
+            XCTAssertNotNil(
+                MacWorkbenchEscapeMonitor.consume(try key(53, in: other), in: window, blocked: false, cancel: cancel))
+            XCTAssertEqual(cancels, 2)
+        }
+
+        func testBrowserPaneTakesTheCanvasSlotWhenPresentedAndSignOutUnbindsIt() async throws {
+            let (model, suite) = try panelModel()
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            model.outboundTap = { _ in }
+            model.activeChatId = "browser-chat"
+            model.workspaceStarted = true
+            model.consoleDashboardVisible = false
+            model.turns = [.init(id: "u", role: "user", text: "Open the fixture page")]
+            model.canvas = [
+                AstralComponent(
+                    type: "card",
+                    raw: .object([
+                        "type": .string("card"), "component_id": .string("browser-result"), "title": .string("Notes"),
+                        "content": .array([.object(["type": .string("text"), "content": .string("Kept result")])]),
+                    ]))
+            ]
+            XCTAssertFalse(model.macBrowser.isEnabled)
+            model.macBrowser.setPaneEnabled(true)
+            XCTAssertFalse(model.macBrowser.isEnabled)
+            model.macBrowser.bind(owner: "browser-owner")
+            model.macBrowser.setPaneEnabled(true)
+            XCTAssertTrue(model.macBrowser.isEnabled)
+            let (view, window) = try mountWorkbench(model, width: 1440, activity: false)
+            defer { window.close() }
+            try await settle()
+            let webView = model.macBrowser.pane.webView
+            XCTAssertNil(webView.window)
+            XCTAssertTrue(try recognizedText(view).contains("Kept result"))
+            model.macBrowser.isPresented = true
+            try await settle()
+            XCTAssertTrue(webView.window === window)
+            XCTAssertFalse(try recognizedText(view).contains("Kept result"))
+            try attach(view, name: "workbench-browser-slot")
+            model.macBrowser.isPresented = false
+            try await settle()
+            XCTAssertNil(webView.window)
+            XCTAssertTrue(try recognizedText(view).contains("Kept result"))
+            model.macBrowser.isPresented = true
+            window.close()
+            await model.signOut(revokeRemote: false)
+            XCTAssertFalse(model.macBrowser.accountBound)
+            XCTAssertFalse(model.macBrowser.isEnabled)
+            XCTAssertFalse(model.macBrowser.isPresented)
+            XCTAssertTrue(model.activityLog.isEmpty)
+        }
+
+        private func activityModel() throws -> (AppModel, String) {
+            let (model, suite) = try panelModel()
+            model.outboundTap = { _ in }
+            model.activeChatId = "activity-chat"
+            model.workspaceStarted = true
+            model.consoleDashboardVisible = false
+            model.turns = [.init(id: "u", role: "user", text: "Open TextEdit and type")]
+            for frame in [
+                ActivityFrames.step(
+                    "step-click", chat: "activity-chat", status: "in_progress",
+                    arguments: #"{"x":10,"y":20,"hwnd":5}"#),
+                ActivityFrames.step(
+                    "step-click", chat: "activity-chat", status: "completed",
+                    result: #"{"_data":{"status":"confirmation_required"}}"#),
+                ActivityFrames.step(
+                    "step-command", chat: "activity-chat", name: "run_command", status: "in_progress",
+                    arguments: #"{"command":"wc -l notes.txt"}"#),
+                ActivityFrames.step(
+                    "step-command", chat: "activity-chat", name: "run_command", status: "completed",
+                    result: #"{"exit_code":0,"stdout":"3 notes.txt"}"#),
+            ] {
+                model.handleFrame(frame)
+            }
+            model.turns.append(.init(id: "a", role: "assistant", text: "Finished typing"))
+            return (model, suite)
+        }
+
+        private func mount(_ model: AppModel, width: Int) throws -> (NSHostingView<MountView>, NSWindow, MountState) {
+            let state = try MountState(model: model, fixture: fixture("mac-workbench"))
+            state.width = width
+            let view = NSHostingView(rootView: MountView(state: state))
+            return (view, host(view, model: model, width: width), state)
+        }
+
+        private func mountWorkbench(_ model: AppModel, width: Int, activity: Bool) throws -> (
+            NSHostingView<AnyView>, NSWindow
+        ) {
+            let state = try MountState(model: model, fixture: fixture("mac-workbench"))
+            state.width = width
+            let console = try XCTUnwrap(model.console)
+            let presentation = try XCTUnwrap(model.consolePresentation)
+            let view = NSHostingView(
+                rootView: AnyView(
+                    MacWorkbenchView(
+                        console: console, presentation: presentation, workbench: try XCTUnwrap(presentation.workbench),
+                        activityPresented: activity
+                    )
+                    .environment(model).environment(model.themeStore)
+                    .font(ConsoleTypography.body).tint(model.themeStore.palette.primary)
+                    .preferredColorScheme(model.themeStore.colorScheme)))
+            return (view, host(view, model: model, width: width))
+        }
+
+        private func host(_ view: NSView, model: AppModel, width: Int) -> NSWindow {
+            let window = WorkbenchMountWindow(
+                contentRect: NSRect(x: 0, y: 0, width: width, height: 900),
+                styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.title = "Workbench mount \(UUID().uuidString)"
+            window.appearance = NSAppearance(named: model.themeStore.colorScheme == .dark ? .darkAqua : .aqua)
+            window.contentView = view
+            window.orderBack(nil)
+            return window
+        }
+
+        private func recognizedLines(_ view: NSView) throws -> [String] {
+            try recognizedText(view).components(separatedBy: "\n")
+        }
+
+        private func stopControl(_ view: NSView) throws -> CGPoint? {
+            let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            let scale = CGFloat(bitmap.pixelsWide) / view.bounds.width
+            var found: CGRect?
+            for y in 0..<Int(56 * scale) {
+                for x in stride(from: bitmap.pixelsWide / 2, to: bitmap.pixelsWide, by: 1) {
+                    guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB),
+                        color.redComponent > color.greenComponent + 0.25,
+                        color.redComponent > color.blueComponent + 0.2
+                    else { continue }
+                    let pixel = CGRect(x: x, y: y, width: 1, height: 1)
+                    found = found.map { $0.union(pixel) } ?? pixel
+                }
+            }
+            return found.map { CGPoint(x: $0.midX / scale, y: view.bounds.height - $0.midY / scale) }
+        }
+
         private func bubbleBounds(_ bitmap: NSBitmapImageRep, user: Bool) -> CGRect? {
             var result: CGRect?
             for y in stride(from: 0, to: bitmap.pixelsHigh, by: 2) {
@@ -466,6 +1017,11 @@
             }
             throw NSError(domain: "MacWorkbenchViewTests", code: 1)
         }
+    }
+
+    private final class WorkbenchMountWindow: NSWindow {
+        // Ordering a window on screen clamps it to the display, and hosted runners have a 1024-point display.
+        override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
     }
 
     @MainActor

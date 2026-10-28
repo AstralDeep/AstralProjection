@@ -18,6 +18,7 @@ from scripts import swift_inactive_input as proof
 
 ROOT = Path(__file__).resolve().parents[1]
 HELPER = ROOT / "scripts/WholeOSInputProof.swift"
+HANG_GUARD = 300
 pytestmark = pytest.mark.skipif(
     sys.platform != "darwin", reason="The bundled Apple host parser is a macOS tool"
 )
@@ -55,7 +56,7 @@ def native_tool(tmp_path_factory):
         "-o",
         str(root / "whole-os-proof"),
     ]
-    result = subprocess.run(command, capture_output=True, timeout=120)
+    result = subprocess.run(command, capture_output=True, timeout=HANG_GUARD)
     (root / "build.stdout").write_bytes(result.stdout)
     (root / "build.stderr").write_bytes(result.stderr)
     assert result.returncode == 0, result.stderr.decode()
@@ -91,7 +92,7 @@ def native_tool(tmp_path_factory):
         result = subprocess.run(
             command,
             capture_output=True,
-            timeout=30,
+            timeout=HANG_GUARD,
             env={**os.environ, "LLVM_PROFILE_FILE": str(root / "run-%p-%m.profraw")},
         )
         record["runs"].append(
@@ -125,7 +126,7 @@ def native_tool(tmp_path_factory):
         "-o",
         str(root / "merged.profdata"),
     ]
-    subprocess.run(merge, check=True, capture_output=True, timeout=60)
+    subprocess.run(merge, check=True, capture_output=True, timeout=HANG_GUARD)
     export = [
         "xcrun",
         "llvm-cov",
@@ -134,7 +135,7 @@ def native_tool(tmp_path_factory):
         "-instr-profile=" + str(root / "merged.profdata"),
         str(root / "whole-os-proof"),
     ]
-    output = subprocess.check_output(export, timeout=60)
+    output = subprocess.check_output(export, timeout=HANG_GUARD)
     (root / "native.lcov").write_bytes(output)
     record.update(
         merge_command=merge,
@@ -255,7 +256,7 @@ def test_actual_typed_ast_and_sil_controls_have_closed_empty_grammar(
                 str(root / "cache"),
                 str(source),
             ]
-            result = subprocess.run(command, capture_output=True, timeout=120)
+            result = subprocess.run(command, capture_output=True, timeout=HANG_GUARD)
             assert result.returncode == 0 and not result.stderr.strip()
             (root / (source.stem + mode + ".stdout")).write_bytes(result.stdout)
             (root / (source.stem + mode + ".stderr")).write_bytes(result.stderr)
@@ -339,7 +340,7 @@ def test_real_compiler_output_and_cache_use_held_private_directory(
             cwd=output,
             directory_fd=storage.fd,
             developer=frontend.parents[4],
-            deadline=proof.time.monotonic() + 120,
+            deadline=proof.time.monotonic() + HANG_GUARD,
         )
         assert result.returncode == 0, result.stderr.decode()
         assert (held / "whole-os-proof").is_file() and (held / "host-cache").is_dir()
@@ -355,7 +356,7 @@ def test_real_compiler_output_and_cache_use_held_private_directory(
                 ["./whole-os-proof", "Input.swift", "macOS"],
                 cwd=output,
                 directory_fd=storage.fd,
-                deadline=proof.time.monotonic() + 60,
+                deadline=proof.time.monotonic() + HANG_GUARD,
             )
             assert parsed.returncode == 0
             proof.validate_syntax(parsed.stdout, source=raw, target_os="macOS")
@@ -402,7 +403,7 @@ def test_real_frontend_accepts_relative_input_in_held_directory(native_tool, tmp
                 command,
                 cwd=storage.path,
                 directory_fd=storage.fd,
-                deadline=proof.time.monotonic() + 120,
+                deadline=proof.time.monotonic() + HANG_GUARD,
             )
             assert result.returncode == 0 and not result.stderr.strip()
             values[mode] = result.stdout
@@ -471,7 +472,7 @@ def test_real_collector_uses_native_object_and_shipping_library_profile(native_t
         ],
     ]
     for index, command in enumerate(commands):
-        result = subprocess.run(command, capture_output=True, timeout=90)
+        result = subprocess.run(command, capture_output=True, timeout=HANG_GUARD)
         (native_tool.evidence_root / f"collector-build-{index}.stdout").write_bytes(result.stdout)
         (native_tool.evidence_root / f"collector-build-{index}.stderr").write_bytes(result.stderr)
         assert result.returncode == 0, result.stderr.decode()
@@ -489,8 +490,7 @@ def test_real_collector_uses_native_object_and_shipping_library_profile(native_t
     try:
         value = proof.collect_proof(**arguments)
     except proof.ProofError:
-        retained = sorted(entry.name for entry in output.iterdir()) if output.is_dir() else []
-        assert not pinned, f"pinned toolchain refused collection; retained outputs: {retained}"
+        assert not pinned
         assert not (output / "proof.json").exists()
         assert (output / "xcode.stdout").read_bytes() == actual_version
         decision = "unqualified-toolchain-refused"

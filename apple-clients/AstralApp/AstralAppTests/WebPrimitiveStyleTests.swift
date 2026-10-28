@@ -1,8 +1,10 @@
 // Tests for web-parity primitive styling (ComponentView.swift): card translucency and padding, metric variant
-// colors and clamped progress, and the New Chat button's native target at the web breakpoint.
+// colors and clamped progress, and the New Chat button's native target at the web breakpoint. Also checks danger
+// labels draw on_error and primary-colored text falls back to accent where the preset primary is below 4.5:1.
 
 import AstralCore
 import SwiftUI
+import Vision
 import XCTest
 
 @testable import AstralDeep
@@ -10,8 +12,8 @@ import XCTest
 @MainActor
 final class WebPrimitiveStyleTests: XCTestCase {
     private func render(
-        _ json: String, viewport: CGFloat = 411, preset: String = "midnight",
-        width: CGFloat = 320, textSize: DynamicTypeSize = .large
+        _ json: String, viewport: CGFloat = 411, preset: String = "graphite",
+        width: CGFloat = 320, textSize: DynamicTypeSize = .large, scale: CGFloat = 1
     ) throws -> CGImage {
         let model = AppModel(tokenStore: InMemoryTokenStore())
         let theme = ThemeStore()
@@ -25,7 +27,7 @@ final class WebPrimitiveStyleTests: XCTestCase {
                 .frame(width: width).padding(20).background(theme.palette.bg)
                 .environment(\.dynamicTypeSize, textSize)
         )
-        renderer.scale = 1
+        renderer.scale = scale
         return try XCTUnwrap(renderer.cgImage)
     }
 
@@ -47,8 +49,106 @@ final class WebPrimitiveStyleTests: XCTestCase {
         }
     }
 
+    private func bytes(_ image: CGImage) throws -> [UInt8] {
+        var buffer = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        let context = try XCTUnwrap(
+            CGContext(
+                data: &buffer, width: image.width, height: image.height, bitsPerComponent: 8,
+                bytesPerRow: image.width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        return buffer
+    }
+
+    private func channels(_ color: Color) -> [Int] {
+        let resolved = color.resolve(in: EnvironmentValues())
+        return [resolved.red, resolved.green, resolved.blue].map { Int(($0 * 255).rounded()) }
+    }
+
+    private func count(_ image: CGImage, near color: Color, inside box: CGRect? = nil) throws -> Int {
+        let target = channels(color)
+        let pixels = try bytes(image)
+        let area = box ?? CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        var total = 0
+        for y in Int(area.minY)..<Int(area.maxY) {
+            for x in Int(area.minX)..<Int(area.maxX) {
+                let offset = (y * image.width + x) * 4
+                if zip(pixels[offset..<offset + 3], target).allSatisfy({ abs(Int($0) - $1) <= 6 }) { total += 1 }
+            }
+        }
+        return total
+    }
+
+    private func bounds(of color: Color, in image: CGImage) throws -> CGRect {
+        let target = channels(color)
+        let pixels = try bytes(image)
+        var box = CGRect.null
+        for y in 0..<image.height {
+            for x in 0..<image.width {
+                let offset = (y * image.width + x) * 4
+                if zip(pixels[offset..<offset + 3], target).allSatisfy({ abs(Int($0) - $1) <= 6 }) {
+                    box = box.union(CGRect(x: x, y: y, width: 1, height: 1))
+                }
+            }
+        }
+        return box
+    }
+
+    private static let presets = ["graphite", "midnight", "daylight", "ocean", "sunset", "forest"]
+
+    private func palette(_ preset: String) -> AstralPalette {
+        let theme = ThemeStore()
+        theme.apply(preset: preset)
+        return theme.palette
+    }
+
+    func testDangerButtonLabelUsesOnErrorOnTheErrorFillInEveryPreset() throws {
+        for preset in Self.presets {
+            let p = palette(preset)
+            let image = try render(
+                #"{"type":"button","label":"Delete","variant":"danger"}"#, preset: preset, scale: 3)
+            let fill = try bounds(of: p.error, in: image)
+            XCTAssertGreaterThan(fill.width, 60, preset)
+            let label = fill.insetBy(dx: 18, dy: 18)
+            XCTAssertGreaterThan(try count(image, near: p.onError, inside: label), 150, preset)
+            if preset != "daylight" { XCTAssertEqual(try count(image, near: .white), 0, preset) }
+            XCTAssertGreaterThanOrEqual(AstralPalette.contrast(p.onError, p.error), 4.5, preset)
+            let attachment = XCTAttachment(image: platformImage(image))
+            attachment.name = "danger-button-\(preset)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
+    func testPrimaryTextFallsBackToAccentOnlyWherePrimaryIsBelowFourAndAHalf() throws {
+        for preset in Self.presets {
+            let p = palette(preset)
+            let readable = p.readablePrimary
+            let dim = [p.bg, p.surface, p.surface2].contains { AstralPalette.contrast(p.primary, $0) < 4.5 }
+            XCTAssertEqual(readable, dim ? p.accent : p.primary, preset)
+            XCTAssertEqual(dim, ["graphite", "midnight"].contains(preset), preset)
+            let other = dim ? p.primary : p.accent
+            for json in [
+                #"{"type":"hero","title":"Report","eyebrow":"Today"}"#, #"{"type":"badge","label":"Live"}"#,
+            ] {
+                let image = try render(json, preset: preset, scale: 3)
+                XCTAssertGreaterThan(try count(image, near: readable), 40, "\(preset) \(json)")
+                XCTAssertEqual(try count(image, near: other), 0, "\(preset) \(json)")
+            }
+        }
+    }
+
+    func testStatusVariantTextKeepsItsStatusColorInsteadOfFallingBackToAccent() throws {
+        let p = palette("graphite")
+        let image = try render(#"{"type":"badge","label":"Live","variant":"error"}"#, scale: 3)
+        XCTAssertGreaterThan(try count(image, near: p.error), 40)
+        XCTAssertEqual(try count(image, near: p.accent), 0)
+    }
+
     func testCardUsesWebTranslucencyWithoutPaintingShadowInsideInBothThemes() throws {
-        for (preset, expected) in [("midnight", [20, 23, 39]), ("daylight", [251, 252, 253])] {
+        for (preset, expected) in [
+            ("graphite", [22, 22, 25]), ("midnight", [20, 23, 39]), ("daylight", [251, 252, 253]),
+        ] {
             let image = try render(#"{"type":"card","content":[]}"#, preset: preset)
             assertRGB(try rgb(image, x: 180, y: image.height / 2), expected)
             let attachment = XCTAttachment(image: platformImage(image))
@@ -56,6 +156,69 @@ final class WebPrimitiveStyleTests: XCTestCase {
             attachment.lifetime = .keepAlways
             add(attachment)
         }
+    }
+
+    func testCodeUsesPaletteSuccessOnSurface2AndMarkdownFencesUseSurface2() throws {
+        let code = try render(#"{"type":"code","content":"ok"}"#)
+        assertRGB(try rgb(code, x: 300, y: code.height / 2), [35, 35, 40])
+        #if os(macOS)
+            let model = AppModel(tokenStore: InMemoryTokenStore())
+            let theme = ThemeStore()
+            let component = try XCTUnwrap(
+                AstralComponent(json: JSONValue.parse(Data(#"{"type":"code","content":"OK OK OK"}"#.utf8))))
+            let window = NSWindow(
+                contentRect: CGRect(x: 0, y: 0, width: 360, height: 100), styleMask: .borderless,
+                backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            let view = NSHostingView(
+                rootView: ComponentView(component: component).environment(model).environment(theme)
+                    .frame(width: 320).padding(20).background(theme.palette.bg))
+            window.contentView = view
+            defer {
+                window.contentView = nil
+                window.close()
+            }
+            view.layoutSubtreeIfNeeded()
+            let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            var brightest = [0.0, 0.0, 0.0]
+            for y in 0..<bitmap.pixelsHigh {
+                for x in 0..<bitmap.pixelsWide {
+                    guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                    if color.greenComponent * 255 > brightest[1] {
+                        brightest = [color.redComponent, color.greenComponent, color.blueComponent].map { $0 * 255 }
+                    }
+                }
+            }
+            XCTAssertEqual(brightest[1], 194, accuracy: 12)
+            XCTAssertGreaterThan(brightest[1], brightest[0] + 40)
+            XCTAssertGreaterThan(brightest[1], brightest[2] + 20)
+        #endif
+        let fence = try render(#"{"type":"text","variant":"markdown","content":"```\nok\n```"}"#)
+        assertRGB(try rgb(fence, x: 300, y: fence.height / 2), [35, 35, 40])
+        let midnight = try render(#"{"type":"code","content":"ok"}"#, preset: "midnight")
+        assertRGB(try rgb(midnight, x: 300, y: midnight.height / 2), [30, 35, 56])
+    }
+
+    private func recognized(_ image: CGImage) throws -> [String] {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = false
+        try VNImageRequestHandler(cgImage: image).perform([request])
+        return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+    }
+
+    func testUploadHintEmptyHistoryAndUntitledWelcomeDisclosureDrawNoHelperCopy() throws {
+        let upload = try recognized(render(#"{"type":"file_upload","label":"Quarterly report"}"#))
+        XCTAssertTrue(upload.contains { $0.contains("Quarterly report") })
+        XCTAssertFalse(upload.contains { $0.contains("paperclip") || $0.contains("chat input") })
+        XCTAssertTrue(try recognized(render(#"{"type":"chat_history","items":[]}"#)).isEmpty)
+        let more = try recognized(
+            render(
+                #"{"type":"collapsible","title":"","data-welcome":"more","aria-label":"More examples","content":[]}"#))
+        XCTAssertFalse(more.contains { $0.contains("More examples") || $0.contains("Details") })
+        let details = try recognized(render(#"{"type":"collapsible","title":"","content":[]}"#))
+        XCTAssertTrue(details.contains { $0.contains("Details") })
     }
 
     func testCardPaddingFollowsViewportEvenInNarrowGridSlot() throws {
@@ -78,8 +241,8 @@ final class WebPrimitiveStyleTests: XCTestCase {
     func testMetricRendersCanonicalTitleVariantEdgeAndClampedProgress() throws {
         let image = try render(
             #"{"type":"metric","title":"Total","value":18,"subtitle":"Six dice","variant":"success","progress":2}"#)
-        assertRGB(try rgb(image, x: 21, y: image.height / 2), [32, 172, 84])
-        assertRGB(try rgb(image, x: 300, y: image.height - 40), [239, 68, 68])
+        assertRGB(try rgb(image, x: 21, y: image.height / 2), [84, 171, 127])
+        assertRGB(try rgb(image, x: 300, y: image.height - 40), [225, 114, 114])
         let empty = try render(#"{"type":"metric","title":"Total","value":18,"progress":-1}"#)
         let noProgress = try render(#"{"type":"metric","title":"Total","value":18}"#)
         XCTAssertEqual(empty.height - noProgress.height, 18)
@@ -99,8 +262,8 @@ final class WebPrimitiveStyleTests: XCTestCase {
         for viewport: CGFloat in [639, 640] {
             let renderer = ImageRenderer(
                 content:
-                    AstralNewChatButton(viewportWidth: viewport, palette: .midnight, action: {})
-                    .fixedSize().background(AstralPalette.midnight.surface)
+                    AstralNewChatButton(viewportWidth: viewport, palette: .graphite, action: {})
+                    .fixedSize().background(AstralPalette.graphite.surface)
                     .environment(\.dynamicTypeSize, .large)
             )
             renderer.scale = 1
@@ -108,7 +271,7 @@ final class WebPrimitiveStyleTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(image.height, 44)
             XCTAssertGreaterThanOrEqual(image.width, 44)
             widths.append(image.width)
-            assertRGB(try rgb(image, x: 8, y: image.height / 2), [26, 30, 46])
+            assertRGB(try rgb(image, x: 8, y: image.height / 2), [27, 27, 31])
         }
         XCTAssertGreaterThan(widths[1], widths[0] + 40)
     }
@@ -122,7 +285,7 @@ final class WebPrimitiveStyleTests: XCTestCase {
             #"{"type":"donut_chart","title":"Shares","labels":["A","B","C","D","E","F","G"],"data":[10,20,10,10,20,20,10],"center_label":"Total","center_value":"100"}"#,
             #"{"type":"radar_chart","title":"Quality","axes":["Speed","Accuracy","Cost"],"datasets":[{"label":"One","data":[1,2,3]},{"label":"Two","data":[2,3,1]},{"label":"Three","data":[3,1,2]},{"label":"Four","data":[2,2,2]}]}"#,
         ]
-        for preset in ["midnight", "daylight"] {
+        for preset in ["graphite", "midnight", "daylight"] {
             for (index, component) in components.enumerated() {
                 let image = try render(component, preset: preset)
                 XCTAssertEqual(image.width, 360)

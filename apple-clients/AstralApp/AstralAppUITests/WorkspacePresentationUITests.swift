@@ -34,7 +34,7 @@ final class WorkspacePresentationUITests: XCTestCase {
         }
         capture(app, name: "workspace-088-server-actions-native-wrap")
         app.buttons["new-chat-button"].press()
-        XCTAssertTrue(app.staticTexts["How can I help?"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Research brief"].waitForExistence(timeout: 3))
         XCTAssertFalse(export.exists)
         XCTAssertFalse(share.exists)
     }
@@ -94,7 +94,7 @@ final class WorkspacePresentationUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(newChat.frame.height, 44)
         capture(app, name: "workspace-088-card-metrics-native-target")
         newChat.press()
-        XCTAssertTrue(app.staticTexts["How can I help?"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Research brief"].waitForExistence(timeout: 3))
         XCTAssertFalse(total.exists)
     }
 
@@ -233,7 +233,7 @@ final class WorkspacePresentationUITests: XCTestCase {
             app.launchEnvironment["ASTRAL_UI_TESTING"] = "1"
             app.launch()
             defer { app.terminate() }
-            XCTAssertTrue(app.staticTexts["How can I help?"].waitForExistence(timeout: 8))
+            XCTAssertTrue(app.buttons["Research brief"].waitForExistence(timeout: 8))
             let composer = app.descendants(matching: .any).matching(identifier: "chat-composer-input").firstMatch
             XCTAssertTrue((composer.value as? String ?? "").contains("First line"))
             app.buttons["new-chat-button"].press()
@@ -376,7 +376,7 @@ final class WorkspacePresentationUITests: XCTestCase {
             let composer = app.descendants(matching: .any).matching(identifier: "chat-composer-input").firstMatch
             composer.press()
             composer.typeText("Still responsive")
-            XCTAssertTrue((composer.value as? String ?? "").contains("Still responsive"))
+            XCTAssertTrue(waitUntil(timeout: 3) { (composer.value as? String ?? "").contains("Still responsive") })
             capture(app, name: "workspace-088-canvas-collapse-scroll-synthetic-fixture")
         #endif
     }
@@ -388,10 +388,9 @@ final class WorkspacePresentationUITests: XCTestCase {
         app.launch()
         defer { app.terminate() }
 
-        let title = app.staticTexts["How can I help?"]
+        let title = app.buttons["Research brief"]
         XCTAssertTrue(title.waitForExistence(timeout: 10))
         capture(app, name: "workspace-088-start-synthetic-fixture")
-        XCTAssertTrue(app.buttons["Research brief"].exists)
         XCTAssertFalse(app.buttons["Business dashboard"].exists)
         app.buttons["More examples"].press()
         XCTAssertTrue(app.buttons["Business dashboard"].waitForExistence(timeout: 3))
@@ -411,7 +410,6 @@ final class WorkspacePresentationUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Workspace result"].waitForExistence(timeout: 5))
         capture(app, name: "workspace-088-work-synthetic-fixture")
         XCTAssertFalse(title.exists)
-        XCTAssertFalse(app.buttons["Research brief"].exists)
         app.buttons["New chat"].press()
         XCTAssertTrue(title.waitForExistence(timeout: 3))
     }

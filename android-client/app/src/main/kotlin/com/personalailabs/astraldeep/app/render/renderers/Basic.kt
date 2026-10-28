@@ -56,7 +56,7 @@ fun Renderer.registerBasicRenderers(): Renderer =
         register("card") { c -> CardPrimitive(c) { child -> render(child) } }
         register("container") { c -> ContainerPrimitive(c) { child -> render(child) } }
         register("alert") { c -> AlertPrimitive(c) }
-        register("button") { c -> ButtonPrimitive(c, emit) }
+        register("button") { c -> ButtonPrimitive(c, if (c.str("action") == "load_chat") navigationEmit(c) else emit) }
     }
 
 @Composable

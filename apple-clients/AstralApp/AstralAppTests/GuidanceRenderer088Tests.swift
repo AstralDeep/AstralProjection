@@ -77,7 +77,7 @@ final class GuidanceRenderer088Tests: XCTestCase {
 
     func testLiteralFormInstructionsAndOrdinaryFormDispositionRemainScoped() throws {
         var raw = try JSONValue.parse(Data(Self.frames.utf8))["edit"]!["components"]!.arrayValue!.last!.objectValue!
-        raw["description"] = .string("**Keep** <b>these instructions</b> [literal](https://example.invalid)")
+        raw["title"] = .string("**Keep** <b>these instructions</b> [literal](https://example.invalid)")
         let component = AstralComponent(json: .object(raw))!
         #if os(watchOS)
             let model = WatchModel()

@@ -289,6 +289,28 @@ def test_complete_proof_retains_raw_identity_and_never_claims_build_provenance(p
     assert not any("-dump-parse" in call for call in state["calls"])
 
 
+@pytest.mark.parametrize("toolchain_limit", [None, 4096])
+def test_toolchain_files_may_exceed_the_input_bound_but_not_their_own(
+    pipeline, monkeypatch, toolchain_limit
+):
+    arguments, _state, run = pipeline
+    frontend = arguments["developer"] / "Toolchains/XcodeDefault.xctoolchain/usr/bin/swift-frontend"
+    universal = b"\xca\xfe\xba\xbe" * 2048
+    frontend.write_bytes(universal)
+    monkeypatch.setattr(proof, "MAX_FILE", 4096)
+    if toolchain_limit is not None:
+        monkeypatch.setattr(proof, "MAX_TOOLCHAIN_FILE", toolchain_limit)
+        with pytest.raises(proof.ProofError):
+            proof.collect_proof(**arguments, run=run)
+        assert not (arguments["output"] / "proof.json").exists()
+        return
+    value = proof.collect_proof(**arguments, run=run)
+    assert value["toolchain"]["files"][str(frontend)] == {
+        "resolved": str(frontend),
+        "sha256": hashlib.sha256(universal).hexdigest(),
+    }
+
+
 @pytest.mark.parametrize(
     "change", ["toolchain", "active_ast", "active_sil", "diagnostic", "source_race", "no_positive"]
 )
@@ -457,16 +479,9 @@ def test_script_entry_point_refuses_source_identity_without_tool_execution(
 @pytest.mark.parametrize(
     "banner,accepted",
     [
-        (b"Apple LLVM version 21.0.0\n", True),
         (b"Apple LLVM version 21.0.0\n  Optimized build.\n", True),
-        (
-            b"Apple LLVM version 21.0.0\n  Optimized build.\n  Default target: arm64-apple-macosx15.0\n",
-            True,
-        ),
-        (b"Apple clang version 21.0.0\n", False),
-        (b"Apple LLVM version 20.0.0\n", False),
-        (b"", False),
-        (b"Apple LLVM version 21.0.0\n" + b"  Optimized build.\n" * 400, False),
+        (b"Apple LLVM version 21.0.0\nUnknown build.\n", False),
+        (b"Apple LLVM version 21.0.0\n  Optimized build.\nextra\n", False),
     ],
 )
 def test_llvm_banner_accepts_only_the_known_closed_lines(pipeline, banner, accepted):

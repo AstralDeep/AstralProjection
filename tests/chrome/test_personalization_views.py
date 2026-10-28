@@ -5,7 +5,9 @@ skills, scheduler, dreaming, pulse, theme and shell tab routing states.
 from __future__ import annotations
 
 from astralprojection.chrome import render_html
+from astralprojection.models import ThemeView
 from astralprojection.chrome.personalization import (
+    THEME_COLOR_ROLES,
     THEME_PRESETS,
     build_dreaming_view,
     build_llm_view,
@@ -28,6 +30,23 @@ def _actions(view) -> list[str]:
                 found.append(value["action"])
             if isinstance(value.get("submit_action"), str):
                 found.append(value["submit_action"])
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    visit(view.to_dict())
+    return found
+
+
+def _helps(view) -> list[str]:
+    found: list[str] = []
+
+    def visit(value) -> None:
+        if isinstance(value, dict):
+            if "help" in value:
+                found.append(value["help"])
             for child in value.values():
                 visit(child)
         elif isinstance(value, list):
@@ -74,14 +93,19 @@ def test_llm_user_and_system_views_never_emit_secret_values() -> None:
         "chrome_llm_clear",
     } <= actions
     html = render_html(first_run)
-    assert "leave blank" in html
+    assert "leave blank" not in html
+    assert "Stored encrypted" not in html
+    assert "never displayed" not in html
     assert "Connection succeeded" in html
+    assert _helps(first_run) == []
     system = build_llm_view(
         {"provider": "unknown", "providers": [], "configured": False}, system=True
     )
     assert {"chrome_llm_sys_models", "chrome_llm_sys_test", "chrome_llm_sys_save"} <= set(
         _actions(system)
     )
+    assert _helps(system) == []
+    assert "deployment-wide" not in render_html(system)
     assert "chrome_llm_sys_clear" not in _actions(system)
 
 
@@ -99,11 +123,14 @@ def test_profile_and_memory_views_cover_phi_safe_empty_and_mutation_states() -> 
     html = render_html(profile)
     assert "<script>" not in html
     assert "Goal one\nGoal two" in html
-    assert "never overrides safety" in html
+    assert "never overrides safety" not in html
+    assert "protected health information" not in html
     assert _actions(profile) == ["chrome_profile_save"]
     assert "Memory offline" in render_html(build_memory_view([], error="Memory offline"))
     empty = build_memory_view([])
-    assert "No memory items" in render_html(empty)
+    assert "No memory items" not in render_html(empty)
+    assert "Durable" not in render_html(empty)
+    assert empty.to_dict()["components"] == []
     memory = build_memory_view(
         [
             {"id": "m1", "category": "goal", "value": "Finish paper", "created_at": "today"},
@@ -116,7 +143,7 @@ def test_profile_and_memory_views_cover_phi_safe_empty_and_mutation_states() -> 
 
 def test_skills_authorization_is_visible_and_fail_closed() -> None:
     assert "Permissions offline" in render_html(build_skills_view([], error="Permissions offline"))
-    assert "No skills" in render_html(build_skills_view([]))
+    assert build_skills_view([]).to_dict()["components"] == []
     view = build_skills_view(
         [
             {
@@ -146,7 +173,8 @@ def test_scheduler_requires_host_supplied_idempotency_for_run_now() -> None:
     )
     disabled = build_scheduler_view([], execution_enabled=False)
     assert "Unattended execution is unavailable" in render_html(disabled)
-    assert "No scheduled jobs" in render_html(disabled)
+    assert "No scheduled jobs" not in render_html(disabled)
+    assert "created in chat" not in render_html(disabled)
     jobs = build_scheduler_view(
         [
             {
@@ -173,7 +201,15 @@ def test_scheduler_requires_host_supplied_idempotency_for_run_now() -> None:
     assert actions.count("chrome_job_pause") == 2
     assert actions.count("chrome_job_resume") == 1
     assert actions.count("chrome_job_delete") == 4
-    assert "No runs yet" in render_html(jobs)
+    assert "No runs yet" not in render_html(jobs)
+    assert "Sent" in render_html(jobs)
+    run_cards = [
+        part["title"]
+        for job in jobs.to_dict()["components"]
+        for part in job["content"]
+        if part["type"] == "card"
+    ]
+    assert run_cards == ["Recent runs"]
     no_run = build_scheduler_view(
         [{"id": "j", "status": "active", "run_submission_id": "id"}],
         execution_enabled=False,
@@ -186,7 +222,8 @@ def test_dreaming_and_pulse_states() -> None:
         build_dreaming_view(enabled=True, error="Dreaming offline")
     )
     empty = build_dreaming_view(enabled=False)
-    assert "No sweeps" in render_html(empty)
+    assert "No sweeps" not in render_html(empty)
+    assert "Dreaming reviews" not in render_html(empty)
     assert {"chrome_dreaming_toggle", "chrome_dreaming_trigger"} <= set(_actions(empty))
     sweeps = build_dreaming_view(
         enabled=True,
@@ -203,7 +240,10 @@ def test_dreaming_and_pulse_states() -> None:
     assert "Promoted goals" in render_html(sweeps)
     assert "turned off" in render_html(build_pulse_view(enabled=False))
     assert "Pulse offline" in render_html(build_pulse_view(error="Pulse offline"))
-    assert "Nothing to show yet" in render_html(build_pulse_view())
+    quiet = render_html(build_pulse_view())
+    assert "Nothing to show yet" not in quiet
+    assert "read-only summary" not in quiet
+    assert "Want this on a schedule" not in quiet
     pulse = build_pulse_view(
         [
             {"title": "Clinical AI", "category": "topic", "summary": "Recurring interest"},
@@ -212,23 +252,29 @@ def test_dreaming_and_pulse_states() -> None:
     )
     html = render_html(pulse)
     assert "Clinical AI" in html and "Publish" in html
-    assert "Want this on a schedule" in html
+    assert "Want this on a schedule" not in html
 
 
 def test_theme_view_preserves_presets_custom_colors_and_shared_types() -> None:
     default = build_theme_view({})
-    assert "default (Midnight)" in render_html(default)
-    assert len(THEME_PRESETS) == 5
-    assert _actions(default).count("chrome_theme_preset") == 5
+    assert "default (Graphite)" in render_html(default)
+    assert len(THEME_PRESETS) == 6
+    assert next(iter(THEME_PRESETS)) == "graphite"
+    assert _actions(default).count("chrome_theme_preset") == 6
+    cards = [item for item in default.to_dict()["components"] if item.get("type") == "card"]
+    assert [item["title"] for item in cards][:2] == ["Graphite", "Midnight"]
     types = [item["type"] for item in default.to_dict()["components"]]
     assert types.count("color_picker") == 7
+    pickers = [item["color_key"] for item in default.to_dict()["components"] if item.get("type") == "color_picker"]
+    assert pickers == list(THEME_COLOR_ROLES)
     assert "theme_apply" not in types
     ocean = build_theme_view({"preset": "ocean"})
     ocean_html = render_html(ocean)
     assert "Ocean preset" in ocean_html
-    assert _actions(ocean).count("chrome_theme_preset") == 5
+    assert _actions(ocean).count("chrome_theme_preset") == 6
     assert ocean.to_dict()["components"][0]["type"] == "theme_apply"
     assert ocean.to_dict()["components"][0]["preset"] == "ocean"
+    assert ocean.to_dict()["components"][0]["colors"] == dict(THEME_PRESETS["ocean"])
     applied = [
         item
         for item in ocean.to_dict()["components"]
@@ -243,7 +289,7 @@ def test_theme_view_preserves_presets_custom_colors_and_shared_types() -> None:
     assert payload["type"] == "theme_apply"
     assert "preset" not in payload
     assert payload["colors"]["primary"] == "#112233"
-    assert payload["colors"]["accent"] == THEME_PRESETS["midnight"]["accent"]
+    assert payload["colors"]["accent"] == THEME_PRESETS["graphite"]["accent"]
     assert "custom colors" in render_html(custom)
 
 
@@ -252,12 +298,39 @@ def test_personalization_shell_routes_tabs_and_defaults_invalid_tab() -> None:
     assert "chrome_profile_save" in _actions(soul)
     assert _actions(soul).count("chrome_open") == 5
     memory = build_personalization_view("memory", memories=[])
-    assert "No memory" in render_html(memory)
+    assert "No memory" not in render_html(memory)
+    assert "chrome_open" in _actions(memory)
     skills = build_personalization_view("skills", skills=[])
-    assert "No skills" in render_html(skills)
+    assert "No skills" not in render_html(skills)
     schedule = build_personalization_view("schedule", jobs=[], execution_enabled=False)
-    assert "No scheduled jobs" in render_html(schedule)
+    assert "No scheduled jobs" not in render_html(schedule)
     dreaming = build_personalization_view("dreaming", dreaming_enabled=False)
     assert "Background consolidation" in render_html(dreaming)
     failed = build_personalization_view("soul", error="Profile failed")
     assert "Profile failed" in render_html(failed)
+
+
+def test_graphite_is_the_first_preset_and_the_default_theme_name() -> None:
+    assert list(THEME_PRESETS)[0] == "graphite"
+    assert dict(THEME_PRESETS["graphite"]) == {
+        "bg": "#121214",
+        "surface": "#1B1B1F",
+        "primary": "#7C3AED",
+        "secondary": "#6E6E78",
+        "text": "#ECECEF",
+        "muted": "#93939B",
+        "accent": "#A78BFA",
+        "success": "#5EC28F",
+        "warning": "#D4A94A",
+        "error": "#E17272",
+        "info": "#9A8CF2",
+        "on_error": "#121214",
+        "field_border": "#6E6E75",
+    }
+    assert dict(THEME_PRESETS["midnight"])["bg"] == "#0F1221"
+    assert ThemeView().name == "graphite"
+    assert build_theme_view({}).theme.name == "graphite"
+    saved = build_theme_view({"preset": "midnight"})
+    assert "Midnight preset" in render_html(saved)
+    assert saved.to_dict()["components"][0]["preset"] == "midnight"
+    assert saved.to_dict()["components"][0]["colors"]["bg"] == "#0F1221"

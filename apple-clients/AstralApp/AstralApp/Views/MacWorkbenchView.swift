@@ -1,5 +1,6 @@
 // Presents the native Mac chat workbench using server chrome, shared components, and existing action fences.
-// A single canvas renderer retains generated work while the conversation and navigation adapt around it.
+// A single canvas renderer retains generated work while the conversation, browser pane and activity panel adapt
+// around it; Esc and Command-period cancel the current turn through AppModel.
 
 #if os(macOS)
     import AppKit
@@ -14,8 +15,23 @@
         let activity: () -> Void
         let conversation: () -> Void
         let canvas: () -> Void
+        let cancelTurn: () -> Void
+        let agents: () -> Void
+        let agentDirectoryTitle: String
         let hasCanvas: Bool
         let canNavigate: Bool
+        let canCancelTurn: Bool
+    }
+
+    private struct MacUpdateCoordinatorKey: EnvironmentKey {
+        static var defaultValue: UpdateCoordinator? { nil }
+    }
+
+    extension EnvironmentValues {
+        var astralUpdateCoordinator: UpdateCoordinator? {
+            get { self[MacUpdateCoordinatorKey.self] }
+            set { self[MacUpdateCoordinatorKey.self] = newValue }
+        }
     }
 
     private struct MacWorkbenchActionsKey: FocusedValueKey {
@@ -48,10 +64,8 @@
                     .keyboardShortcut("n").disabled(actions?.canNavigate != true)
             }
             CommandGroup(after: .appSettings) {
-                if let computerControls {
-                    Button("Computer controls…", action: computerControls)
-                        .keyboardShortcut("c", modifiers: [.command, .shift])
-                }
+                Button("Computer Controls…") { computerControls?() }
+                    .keyboardShortcut("c", modifiers: [.command, .shift]).disabled(computerControls == nil)
             }
             CommandMenu("Workspace") {
                 Button("Search commands…") { actions?.commands() }
@@ -65,13 +79,23 @@
                     .keyboardShortcut("2").disabled(actions?.hasCanvas != true || actions?.canNavigate != true)
                 Button("Activity") { actions?.activity() }
                     .keyboardShortcut("3").disabled(actions == nil)
+                Divider()
+                Button("Cancel turn") { actions?.cancelTurn() }
+                    .keyboardShortcut(".", modifiers: .command).disabled(actions?.canCancelTurn != true)
+                Divider()
+                Button("\(actions?.agentDirectoryTitle ?? "Agent Directory")…") { actions?.agents() }
+                    .disabled(actions?.canNavigate != true)
             }
         }
     }
 
     struct MacWorkbenchView: View {
+        static let activityPanelWidth = 320.0
+        static let activityDockMinimumWidth = 720.0
         @Environment(AppModel.self) private var model
         @Environment(ThemeStore.self) private var theme
+        @Environment(\.astralUpdateCoordinator) private var updates
+        @Environment(\.openSettings) private var openSettings
         let console: ConsoleModel
         let presentation: ConsolePresentation
         let workbench: ConsoleWorkbenchPresentation
@@ -80,9 +104,27 @@
         @State private var commandsPresented = false
         @State private var activityPresented = false
         @State private var agentsPresented = false
+        @State private var paletteQuery = ""
+        @State private var paletteChoice: MacPaletteAction?
+        @State private var paletteFromComposer = false
+        @State private var restoringDraft = false
+        @State private var renamingChat: MacPaletteChat?
         @State private var networkMonitor: NWPathMonitor?
+
+        init(
+            console: ConsoleModel, presentation: ConsolePresentation, workbench: ConsoleWorkbenchPresentation,
+            activityPresented: Bool = false, agentsPresented: Bool = false
+        ) {
+            self.console = console
+            self.presentation = presentation
+            self.workbench = workbench
+            _activityPresented = State(initialValue: activityPresented)
+            _agentsPresented = State(initialValue: agentsPresented)
+        }
+
         private var p: AstralPalette { theme.palette }
-        private var hasCanvas: Bool { !model.workspaceCanvas.isEmpty || model.showSkeleton }
+        private var hasCanvas: Bool { !model.workspaceCanvas.isEmpty || model.showSkeleton || browserPresented }
+        private var browserPresented: Bool { model.macBrowser.isPresented }
         private var title: String {
             model.history.first { $0.id == model.activeChatId }?.displayTitle
                 ?? model.visibleTurns.first { $0.role == "user" }?.text
@@ -93,7 +135,10 @@
             GeometryReader { geometry in
                 let showsSidebar = sidebarVisible && presentation.navigationMode == .sidebar && !model.consoleFullscreen
                 let sidebarWidth = showsSidebar ? min(presentation.sidebarWidth, geometry.size.width) : 0
-                let contentWidth = max(0, geometry.size.width - sidebarWidth)
+                let available = max(0, geometry.size.width - sidebarWidth)
+                let activityDocked = activityPresented && available >= Self.activityDockMinimumWidth
+                let activityWidth = min(Self.activityPanelWidth, max(0, available - 32))
+                let contentWidth = activityDocked ? available - activityWidth : available
                 let pane = showsSidebar ? workbench.withSidebar : workbench.withoutSidebar
                 let layout = MacWorkbenchLayout.resolve(
                     width: contentWidth, pane: pane, hasCanvas: hasCanvas, selectedPane: selectedPane,
@@ -113,6 +158,7 @@
                                     model.dismissBanner()
                                 }
                             }
+                            if let prompt = model.approvalPrompts.first { MacApprovalBanner(prompt: prompt) }
                             ViewportRefreshNotice()
                             HStack(spacing: 0) {
                                 conversation
@@ -121,7 +167,7 @@
                                     .clipped().opacity(layout.conversationVisible ? 1 : 0)
                                     .allowsHitTesting(layout.conversationVisible)
                                     .accessibilityHidden(!layout.conversationVisible)
-                                MacWorkbenchCanvas()
+                                MacWorkbenchCanvasSlot(browserPresented: browserPresented)
                                     .frame(width: layout.canvasVisible ? layout.canvasWidth : contentWidth)
                                     .frame(width: layout.canvasWidth)
                                     .clipped().opacity(layout.canvasVisible ? 1 : 0)
@@ -134,12 +180,23 @@
                             )
                             .frame(maxWidth: workbench.composerMaxWidth)
                             .frame(maxWidth: .infinity)
+                            MacStatusFooter { activityPresented = true }
+                                .frame(maxWidth: workbench.composerMaxWidth).frame(maxWidth: .infinity)
                         }
                         .frame(width: contentWidth)
+                        if activityDocked {
+                            MacWorkbenchActivityPanel { activityPresented = false }
+                                .frame(width: activityWidth)
+                        }
                     }
-                    .blur(radius: model.screen == .surface ? 5 : 0)
-                    .allowsHitTesting(model.screen != .surface)
-                    .accessibilityHidden(model.screen == .surface)
+                    .overlay(alignment: .trailing) {
+                        if activityPresented && !activityDocked {
+                            MacWorkbenchActivityPanel { activityPresented = false }
+                                .frame(width: activityWidth)
+                                .shadow(color: p.bg.opacity(0.5), radius: 24, x: -12)
+                        }
+                    }
+                    .settingsOverlayBackground(model.screen == .surface, blur: 5)
                     if presentation.navigationMode != .sidebar && model.consoleDrawerOpen && !model.mandatorySurface {
                         p.bg.opacity(0.7).ignoresSafeArea().onTapGesture { model.consoleDrawerOpen = false }
                         MacWorkbenchSidebar(console: console)
@@ -152,28 +209,51 @@
                 }
             }
             .background(p.bg)
+            .background(
+                MacWorkbenchEscapeMonitor(
+                    blocked: commandsPresented || agentsPresented || model.screen == .surface,
+                    cancel: { model.cancelCurrentTurn() })
+            )
             .foregroundStyle(p.text)
             .focusedSceneValue(
                 \.astralWorkbench,
                 MacWorkbenchActions(
-                    newChat: { model.newChat() }, commands: { commandsPresented = true },
-                    sidebar: toggleSidebar, activity: { activityPresented = true },
+                    newChat: { model.newChat() }, commands: { presentPalette(query: "") },
+                    sidebar: toggleSidebar, activity: { activityPresented.toggle() },
                     conversation: {
                         model.consoleFullscreen = false
                         selectedPane = .conversation
                     },
                     canvas: { selectedPane = .canvas },
-                    hasCanvas: hasCanvas, canNavigate: !model.mandatorySurface)
+                    cancelTurn: { model.cancelCurrentTurn() },
+                    agents: { agentsPresented = true },
+                    agentDirectoryTitle: model.consoleLabel("agent_directory"),
+                    hasCanvas: hasCanvas, canNavigate: !model.mandatorySurface, canCancelTurn: model.canCancelTurn)
             )
-            .sheet(isPresented: $commandsPresented) { MacWorkbenchCommandPalette() }
-            .sheet(isPresented: $activityPresented) { MacWorkbenchActivity() }
-            .popover(isPresented: $agentsPresented, arrowEdge: .top) { MacWorkbenchAgents(console: console) }
+            .sheet(isPresented: $commandsPresented, onDismiss: finishPalette) {
+                MacWorkbenchCommandPalette(context: paletteContext, query: $paletteQuery) { paletteChoice = $0 }
+            }
+            .sheet(item: $renamingChat) { chat in MacRenameChatSheet(chat: chat) }
+            .bypassConfirmation(host: model.macComputerHost, origin: .palette)
+            .onChange(of: model.composerDraft) { old, new in
+                if restoringDraft {
+                    restoringDraft = false
+                } else if old.isEmpty, new == "/", !commandsPresented, !model.mandatorySurface {
+                    model.composerDraft = ""
+                    paletteFromComposer = true
+                    presentPalette(query: "/")
+                }
+            }
             .onChange(of: model.activeChatId) { _, _ in selectedPane = .conversation }
+            .onChange(of: browserPresented) { _, presented in
+                if presented { selectedPane = .canvas }
+            }
             .onChange(of: model.mandatorySurface) { _, mandatory in
                 if mandatory {
                     commandsPresented = false
                     activityPresented = false
                     agentsPresented = false
+                    renamingChat = nil
                     model.consoleDrawerOpen = false
                 }
             }
@@ -238,16 +318,27 @@
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden)
                 .disabled(model.mandatorySurface).help("Workspace actions").accessibilityLabel("Workspace actions")
-                iconButton("waveform.path", label: "Activity") { activityPresented = true }
+                .accessibilityIdentifier("workbench-actions-menu")
+                .popover(isPresented: $agentsPresented, arrowEdge: .bottom) { MacWorkbenchAgents(console: console) }
+                if let updates { UpdateStatusChip(coordinator: updates) }
+                iconButton("waveform.path", label: "Activity") { activityPresented.toggle() }
+                    .accessibilityValue(activityPresented ? "Shown" : "Hidden")
+                    .accessibilityIdentifier("workbench-activity-toggle")
+                if model.macBrowser.isEnabled {
+                    iconButton("globe", label: "Browser pane") { model.macBrowser.isPresented.toggle() }
+                        .accessibilityValue(browserPresented ? "Shown" : "Hidden")
+                        .accessibilityIdentifier("workbench-browser-toggle")
+                }
                 if model.macComputerHost.available {
                     iconButton("desktopcomputer", label: "Computer controls") { model.macComputerHost.showControls() }
-                    if model.macComputerHost.enabled {
-                        Button("Stop") { model.macComputerHost.stop() }
+                    if model.macComputerHost.taskActive {
+                        Button("Stop") { model.stopComputerTask() }
                             .font(ConsoleTypography.caption.weight(.semibold)).foregroundStyle(p.error)
                             .buttonStyle(.bordered).help("Stop this Mac computer session")
+                            .accessibilityIdentifier("workbench-stop")
                     }
                 }
-                iconButton("magnifyingglass", label: "Search commands (⌘K)") { commandsPresented = true }
+                iconButton("magnifyingglass", label: "Search commands (⌘K)") { presentPalette(query: "") }
                     .disabled(model.mandatorySurface)
             }
             .padding(.horizontal, 12).frame(height: 56)
@@ -259,6 +350,76 @@
                 Image(systemName: icon).frame(width: 36, height: 40).contentShape(Rectangle())
             }
             .buttonStyle(.plain).foregroundStyle(p.muted).help(label).accessibilityLabel(label)
+        }
+
+        private var paletteContext: MacPaletteContext {
+            MacPaletteContext(
+                canNavigate: !model.mandatorySurface, connected: model.connected,
+                chat: model.activeChatId.map { id in
+                    let summary = model.history.first { $0.id == id }
+                    return MacPaletteChat(
+                        id: id, title: summary?.displayTitle ?? title, pinned: summary?.pinned == true,
+                        archived: summary?.archived == true)
+                },
+                sidebarVisible: presentation.navigationMode == .sidebar ? sidebarVisible : model.consoleDrawerOpen,
+                activityVisible: activityPresented, browserEnabled: model.macBrowser.isEnabled,
+                browserVisible: browserPresented, computerAvailable: model.macComputerHost.available,
+                updatesEnabled: updates?.isEnabled == true, canCancelTurn: model.canCancelTurn,
+                signedIn: model.signedIn, composerLocked: model.mutationsLocked,
+                runInBackground: model.runInBackground, computerEnabled: model.macComputerHost.enabled,
+                bypass: model.macComputerHost.bypass)
+        }
+
+        private func presentPalette(query: String) {
+            guard !model.mandatorySurface else { return }
+            paletteQuery = query
+            paletteChoice = nil
+            commandsPresented = true
+        }
+
+        private func finishPalette() {
+            let choice = paletteChoice
+            let fromComposer = paletteFromComposer
+            paletteChoice = nil
+            paletteFromComposer = false
+            guard let choice else {
+                if fromComposer, paletteQuery.hasPrefix("/"), model.composerDraft.isEmpty {
+                    restoringDraft = true
+                    model.composerDraft = paletteQuery
+                }
+                return
+            }
+            guard MacCommandPaletteModel.runnable(choice, context: paletteContext, menu: model.chromeMenu) else {
+                return
+            }
+            switch choice {
+            case .newChat: model.newChat()
+            case .toggleSidebar: toggleSidebar()
+            case .toggleActivity: activityPresented.toggle()
+            case .toggleBrowser: model.macBrowser.isPresented.toggle()
+            case .computerControls: model.macComputerHost.showControls()
+            case .agentDirectory: agentsPresented = true
+            case .updates: updates?.settingsPresented = true
+            case .settings: openSettings()
+            case .cancelTurn: _ = model.cancelCurrentTurn()
+            case .toggleBypass: model.macComputerHost.requestBypass(!model.macComputerHost.bypass, from: .palette)
+            case .signOut: Task { await model.signOut() }
+            case .renameChat: renamingChat = paletteContext.chat
+            case .togglePin:
+                guard let chat = paletteContext.chat else { return }
+                model.emit(chat.pinned ? "chat_unpin" : "chat_pin", payload: ["chat_id": .string(chat.id)])
+            case .toggleArchive:
+                guard let chat = paletteContext.chat else { return }
+                model.emit(chat.archived ? "chat_unarchive" : "chat_archive", payload: ["chat_id": .string(chat.id)])
+            case .composer(let key):
+                guard let control = model.console?.composerActions.first(where: { $0.key == key }) else { return }
+                if control.kind == .toggle {
+                    model.runInBackground.toggle()
+                } else if let action = control.action {
+                    model.openSurface(action.surface, params: action.params)
+                }
+            case .menu(_, let item): model.openMenuItem(item)
+            }
         }
 
         private func toggleSidebar() {
@@ -293,6 +454,7 @@
         @Environment(ThemeStore.self) private var theme
         let console: ConsoleModel
         @State private var query = ""
+        @FocusState private var searchFocused: Bool
         private var p: AstralPalette { theme.palette }
         private var chats: [ChatSummary] {
             model.history.filter {
@@ -304,8 +466,9 @@
             VStack(alignment: .leading, spacing: 16) {
                 HStack(spacing: 10) {
                     Image("AstralIcon").resizable().frame(width: 26, height: 26).clipShape(
-                        RoundedRectangle(cornerRadius: 7))
-                    Text("AstralDeep").font(ConsoleTypography.subheadline.weight(.semibold))
+                        RoundedRectangle(cornerRadius: 7)
+                    )
+                    .accessibilityLabel("AstralDeep")
                     Spacer(minLength: 0)
                     if model.consoleDrawerOpen {
                         Button {
@@ -330,19 +493,14 @@
                 }
                 .buttonStyle(.plain).disabled(model.mandatorySurface)
                 .accessibilityIdentifier("new-chat-button")
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                    TextField("Search chats", text: $query).textFieldStyle(.plain)
-                }
-                .font(ConsoleTypography.caption).foregroundStyle(p.muted).padding(10)
-                .background(p.bg.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
-                .accessibilityLabel("Search chats")
+                MacSearchField(
+                    prompt: "Search chats", text: $query, focused: $searchFocused, identifier: "workbench-chat-search")
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 3) {
                         if model.historyLoading { ProgressView().controlSize(.small).padding(8) }
-                        if chats.isEmpty && !model.historyLoading {
-                            Text(query.isEmpty ? "No chats" : "No matching chats")
-                                .font(ConsoleTypography.caption).foregroundStyle(p.muted).padding(8)
+                        if chats.isEmpty && !model.historyLoading && !query.isEmpty {
+                            Text("No matching chats").font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                                .padding(8)
                         }
                         ForEach(chats) { chat in
                             Button {
@@ -453,7 +611,7 @@
                 HStack(spacing: 4) {
                     Text(model.consoleResultTitle).font(ConsoleTypography.caption.weight(.semibold)).lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .accessibilityLabel("\(model.consoleResultTitle), \(model.consoleResultAgent)")
+                        .accessibilityLabel(model.consoleResultAccessibilityLabel)
                         .accessibilityIdentifier("workbench-canvas-title")
                     WorkspaceActionButtons()
                     Button {
@@ -496,107 +654,177 @@
         }
     }
 
-    struct MacWorkbenchCommandPalette: View {
+    struct MacWorkbenchActivityPanel: View {
         @Environment(AppModel.self) private var model
         @Environment(ThemeStore.self) private var theme
-        @Environment(\.dismiss) private var dismiss
-        @State private var query = ""
-        @FocusState private var focused: Bool
-        private var commands: [MacWorkbenchCommand] { MacWorkbenchCommand.search(menu: model.chromeMenu, query: query) }
+        let close: () -> Void
+        private var p: AstralPalette { theme.palette }
 
         var body: some View {
             VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 12) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(theme.palette.muted)
-                    TextField("Search commands", text: $query).textFieldStyle(.plain).focused($focused)
-                        .onSubmit { if let first = commands.first { open(first) } }
-                    Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
-                }
-                .padding(20)
-                Divider()
-                List {
-                    if commands.isEmpty {
-                        Text("No matching commands.").foregroundStyle(theme.palette.muted)
+                HStack(spacing: 8) {
+                    Text("Activity").font(ConsoleTypography.headline)
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: 0)
+                    Button(action: close) {
+                        Image(systemName: "xmark").frame(width: 32, height: 40).contentShape(Rectangle())
                     }
-                    ForEach(model.chromeMenu?.menu ?? []) { group in
-                        let matches = commands.filter { $0.groupKey == group.key }
-                        if !matches.isEmpty {
-                            Section(group.label) {
-                                ForEach(matches) { command in
-                                    Button {
-                                        open(command)
-                                    } label: {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(command.item.label).foregroundStyle(theme.palette.text)
-                                            if let message = command.item.availability?.message {
-                                                Text(message).font(ConsoleTypography.caption).foregroundStyle(
-                                                    theme.palette.muted)
-                                            }
-                                        }
-                                        .padding(.vertical, 6).frame(maxWidth: .infinity, alignment: .leading)
-                                        .contentShape(Rectangle())
-                                    }
-                                    .buttonStyle(.plain)
-                                    .accessibilityIdentifier("workbench-command-\(command.id)")
-                                }
+                    .buttonStyle(.plain).foregroundStyle(p.muted).help("Hide activity")
+                    .accessibilityLabel("Hide activity").accessibilityIdentifier("workbench-activity-close")
+                }
+                .padding(.horizontal, 16).frame(height: 56)
+                .overlay(alignment: .bottom) { p.border.frame(height: 1) }
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 12) {
+                            if let status = model.statusText {
+                                StatusLine(text: status, showsActivity: model.statusShowsActivity)
+                            }
+                            ForEach(model.activity) { row in
+                                MacActivityRowView(row: row, compact: false)
+                                    .accessibilityIdentifier("activity-row-\(row.id)")
+                                    .id(row.id)
+                            }
+                            if model.macComputerHost.available {
+                                Divider().overlay(p.border)
+                                Label(model.macComputerHost.statusLabel, systemImage: "desktopcomputer")
+                                    .font(ConsoleTypography.caption).foregroundStyle(p.muted)
                             }
                         }
+                        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .onAppear { if let last = model.activity.last { proxy.scrollTo(last.id, anchor: .bottom) } }
+                    .onChange(of: model.activity.last?.id) { _, last in
+                        if let last { proxy.scrollTo(last, anchor: .bottom) }
                     }
                 }
-                .listStyle(.plain)
             }
-            .font(ConsoleTypography.subheadline).background(theme.palette.surface)
-            .frame(minWidth: 280, idealWidth: 560, maxWidth: 680, minHeight: 280, idealHeight: 460)
-            .onAppear { focused = true }
-        }
-
-        private func open(_ command: MacWorkbenchCommand) {
-            guard !model.mandatorySurface,
-                model.chromeMenu?.menu.first(where: { $0.key == command.groupKey })?.items.contains(command.item)
-                    == true
-            else { return }
-            model.openMenuItem(command.item)
-            dismiss()
+            .font(ConsoleTypography.subheadline).foregroundStyle(p.text)
+            .frame(maxHeight: .infinity)
+            .background(p.surface)
+            .overlay(alignment: .leading) { p.border.frame(width: 1) }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Activity")
+            .accessibilityIdentifier("workbench-activity-panel")
         }
     }
 
-    private struct MacWorkbenchActivity: View {
+    private struct MacWorkbenchCanvasSlot: View {
         @Environment(AppModel.self) private var model
-        @Environment(ThemeStore.self) private var theme
-        @Environment(\.dismiss) private var dismiss
+        let browserPresented: Bool
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack {
-                    Text("Activity").font(ConsoleTypography.headline)
-                    Spacer()
-                    Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
-                }
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        if let status = model.statusText {
-                            StatusLine(text: status, showsActivity: model.statusShowsActivity)
-                        }
-                        ForEach(Array(model.stepTrail.enumerated()), id: \.offset) { index, step in
-                            HStack(alignment: .top, spacing: 12) {
-                                Text("\(index + 1)").monospacedDigit().foregroundStyle(theme.palette.muted)
-                                Text(step).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
-                        if model.statusText == nil && model.stepTrail.isEmpty {
-                            Text("No activity").foregroundStyle(theme.palette.muted)
-                        }
-                        if model.macComputerHost.available {
-                            Divider()
-                            Label(model.macComputerHost.statusLabel, systemImage: "desktopcomputer")
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            ZStack {
+                MacWorkbenchCanvas()
+                    .opacity(browserPresented ? 0 : 1)
+                    .allowsHitTesting(!browserPresented).accessibilityHidden(browserPresented)
+                if browserPresented {
+                    MacWorkbenchBrowserSlot(driver: model.macBrowser)
                 }
             }
-            .font(ConsoleTypography.subheadline).foregroundStyle(theme.palette.text)
-            .padding(24).background(theme.palette.surface)
-            .frame(minWidth: 280, idealWidth: 480, minHeight: 280, idealHeight: 440)
+        }
+    }
+
+    private struct MacWorkbenchBrowserSlot: View {
+        @Environment(ThemeStore.self) private var theme
+        @Bindable var driver: MacBrowserDriver
+
+        var body: some View {
+            VStack(spacing: 0) {
+                HStack(spacing: 4) {
+                    Text(driver.pane.title).font(ConsoleTypography.caption.weight(.semibold)).lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button {
+                        driver.isPresented = false
+                    } label: {
+                        Image(systemName: "xmark").frame(width: 36, height: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).foregroundStyle(theme.palette.muted).help("Hide browser pane")
+                    .accessibilityLabel("Hide browser pane").accessibilityIdentifier("workbench-browser-close")
+                }
+                .padding(.horizontal, 14).frame(height: 56)
+                .overlay(alignment: .bottom) { theme.palette.border.frame(height: 1) }
+                MacBrowserPaneView(driver: driver)
+            }
+            .background(theme.palette.surface)
+            .overlay(alignment: .leading) { theme.palette.border.frame(width: 1) }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("workbench-browser-slot")
+        }
+    }
+
+    struct MacWorkbenchEscapeMonitor: NSViewRepresentable {
+        let blocked: Bool
+        let cancel: () -> Bool
+
+        static func cancels(
+            keyCode: UInt16, modifiers: NSEvent.ModifierFlags, editingText: Bool, sheetPresented: Bool, blocked: Bool
+        ) -> Bool {
+            keyCode == 53
+                && modifiers.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .function, .numericPad])
+                    .isEmpty
+                && !editingText && !sheetPresented && !blocked
+        }
+
+        static func editingText(_ responder: NSResponder?) -> Bool {
+            guard let text = responder as? NSTextView, text.isEditable else { return false }
+            return text.hasMarkedText() || !text.string.isEmpty
+        }
+
+        static func consume(_ event: NSEvent, in window: NSWindow?, blocked: Bool, cancel: () -> Bool) -> NSEvent? {
+            guard let window, event.window === window,
+                cancels(
+                    keyCode: event.keyCode, modifiers: event.modifierFlags,
+                    editingText: editingText(window.firstResponder),
+                    sheetPresented: window.attachedSheet != nil || NSApp.modalWindow != nil, blocked: blocked),
+                cancel()
+            else { return event }
+            return nil
+        }
+
+        func makeCoordinator() -> Coordinator { Coordinator() }
+
+        func makeNSView(context: Context) -> NSView {
+            let view = NSView()
+            context.coordinator.view = view
+            context.coordinator.update(blocked: blocked, cancel: cancel)
+            context.coordinator.start()
+            return view
+        }
+
+        func updateNSView(_ view: NSView, context: Context) {
+            context.coordinator.update(blocked: blocked, cancel: cancel)
+        }
+
+        static func dismantleNSView(_ view: NSView, coordinator: Coordinator) { coordinator.stop() }
+
+        @MainActor
+        final class Coordinator {
+            weak var view: NSView?
+            private var blocked = false
+            private var cancel: () -> Bool = { false }
+            private var monitor: Any?
+
+            func update(blocked: Bool, cancel: @escaping () -> Bool) {
+                self.blocked = blocked
+                self.cancel = cancel
+            }
+
+            func start() {
+                guard monitor == nil else { return }
+                monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                    MainActor.assumeIsolated { self?.consume(event) ?? event }
+                }
+            }
+
+            func stop() {
+                if let monitor { NSEvent.removeMonitor(monitor) }
+                monitor = nil
+            }
+
+            func consume(_ event: NSEvent) -> NSEvent? {
+                MacWorkbenchEscapeMonitor.consume(event, in: view?.window, blocked: blocked, cancel: cancel)
+            }
         }
     }
 
@@ -606,45 +834,76 @@
         @Environment(\.dismiss) private var dismiss
         let console: ConsoleModel
         @State private var query = ""
+        @FocusState private var searchFocused: Bool
+        private var p: AstralPalette { theme.palette }
+        private var agents: [ConsoleAgent] {
+            console.catalog.agents.filter {
+                query.isEmpty || ($0.name + " " + $0.description).localizedCaseInsensitiveContains(query)
+            }
+        }
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 12) {
                 Text(model.consoleLabel("agent_directory")).font(ConsoleTypography.headline)
-                TextField(model.consoleLabel("search_agents"), text: $query).textFieldStyle(.roundedBorder)
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(
-                            console.catalog.agents.filter {
-                                query.isEmpty
-                                    || ($0.name + " " + $0.description).localizedCaseInsensitiveContains(query)
+                    .accessibilityAddTraits(.isHeader)
+                MacSearchField(
+                    prompt: model.consoleLabel("search_agents"), text: $query, focused: $searchFocused,
+                    identifier: "workbench-agent-search"
+                )
+                .onSubmit { if let first = agents.first { open(first) } }
+                if agents.isEmpty {
+                    Text(console.catalog.agents.isEmpty ? "No agents available" : "No matching agents")
+                        .font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
+                        .accessibilityIdentifier("workbench-agent-empty")
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(Array(agents.enumerated()), id: \.element.id) { index, agent in
+                                if index > 0 { Divider().overlay(p.border) }
+                                row(agent)
                             }
-                        ) { agent in
-                            Button {
-                                guard !model.mandatorySurface else { return }
-                                model.openSurface("agent_intro", params: .object(["agent_id": .string(agent.id)]))
-                                dismiss()
-                            } label: {
-                                HStack(alignment: .top, spacing: 12) {
-                                    Circle().fill(agent.state == .ready ? theme.palette.success : theme.palette.muted)
-                                        .frame(width: 7, height: 7).padding(.top, 6)
-                                        .accessibilityHidden(true)
-                                    Text(agent.name).font(ConsoleTypography.subheadline.weight(.semibold))
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                                .padding(.vertical, 12).contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(agent.name)
-                            .accessibilityValue(agent.state == .ready ? "Available" : "Offline")
-                            .accessibilityHint(agent.description)
-                            .accessibilityIdentifier("workbench-agent-\(agent.id)")
-                            Divider()
                         }
                     }
+                    .frame(maxHeight: 440).fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .foregroundStyle(theme.palette.text).padding(20).background(theme.palette.surface)
-            .frame(width: 360, height: 480)
+            .foregroundStyle(p.text).padding(20)
+            .frame(minWidth: 320, idealWidth: 360, maxWidth: 440, minHeight: 160, maxHeight: 560, alignment: .top)
+            .background(p.surface)
+            .onAppear { DispatchQueue.main.async { searchFocused = true } }
+        }
+
+        private func row(_ agent: ConsoleAgent) -> some View {
+            let ready = agent.state == .ready
+            return Button {
+                open(agent)
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: ready ? "circle.fill" : "circle.slash")
+                        .font(.system(size: ready ? 8 : 12, weight: .semibold))
+                        .foregroundStyle(ready ? p.success : p.muted)
+                        .frame(width: 14).accessibilityHidden(true)
+                    Text(agent.name).font(ConsoleTypography.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if !ready {
+                        Text("Offline").font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                    }
+                }
+                .padding(.vertical, 10).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(agent.description)
+            .accessibilityLabel(agent.name)
+            .accessibilityValue(ready ? "Available" : "Offline")
+            .accessibilityHint(agent.description)
+            .accessibilityIdentifier("workbench-agent-\(agent.id)")
+        }
+
+        private func open(_ agent: ConsoleAgent) {
+            guard !model.mandatorySurface else { return }
+            model.openSurface("agent_intro", params: .object(["agent_id": .string(agent.id)]))
+            dismiss()
         }
     }
 #endif

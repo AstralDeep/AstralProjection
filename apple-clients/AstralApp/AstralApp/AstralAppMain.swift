@@ -1,5 +1,7 @@
 // SwiftUI app entry point for the shared iOS/macOS AstralDeep client; selects a deterministic UI-test fixture
 // model over the real AppModel when running under XCTest.
+// On macOS it also starts the Sparkle updater, gates connecting on the signed minimum build, hosts Settings and
+// rechecks the server connection after wake or reactivation.
 
 import AVFoundation
 import AstralCore
@@ -15,23 +17,49 @@ import SwiftUI
 @main
 struct AstralApp: App {
     @State private var model: AppModel
+    #if os(macOS)
+        @StateObject private var updates: UpdateCoordinator
+        @State private var updateRequirement: UpdateRequirement?
+    #endif
     @Environment(\.scenePhase) private var scenePhase
     private let unitTestHost =
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 
     init() {
         #if DEBUG
-            _model = State(initialValue: FirstLoginUITestFixture.workspaceActionsModel() ?? AppModel())
+            let launchModel = FirstLoginUITestFixture.workspaceActionsModel() ?? AppModel()
         #else
-            _model = State(initialValue: AppModel())
+            let launchModel = AppModel()
+        #endif
+        _model = State(initialValue: launchModel)
+        #if os(macOS)
+            let busy: @MainActor () -> Bool = { [launchModel] in
+                UpdateCoordinator.isTaskActive(
+                    turnActive: launchModel.turnActive, session: launchModel.macComputerHost.session)
+            }
+            _updates = StateObject(
+                wrappedValue: ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+                    ? UpdateCoordinator(isBusy: busy) : UpdateCoordinator.live(isBusy: busy))
         #endif
         NoStoreHTTP.prepareForLaunch()
         ConsoleTypography.registerFonts()
     }
 
+    @ViewBuilder private var gatedRoot: some View {
+        #if os(macOS)
+            if let updateRequirement {
+                UpdateRequiredView(requirement: updateRequirement, coordinator: updates)
+            } else {
+                RootView().environment(\.astralUpdateCoordinator, updates)
+            }
+        #else
+            RootView()
+        #endif
+    }
+
     var body: some Scene {
         WindowGroup {
-            RootView()
+            gatedRoot
                 .environment(model)
                 .font(ConsoleTypography.body)
                 .environment(model.themeStore)
@@ -50,6 +78,12 @@ struct AstralApp: App {
                     #if DEBUG
                         if let scenario = FirstLoginUITestFixture.requestedScenario() {
                             FirstLoginUITestFixture.install(scenario, on: model)
+                            return
+                        }
+                    #endif
+                    #if os(macOS)
+                        if !unitTestHost, let requirement = await updates.enforce(UpdatePolicyGate()) {
+                            updateRequirement = requirement
                             return
                         }
                     #endif
@@ -123,6 +157,16 @@ struct AstralApp: App {
                         model.voiceSessionUnlocked()
                     }
                     .onReceive(
+                        NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)
+                    ) { _ in
+                        model.verifyConnection()
+                    }
+                    .onReceive(
+                        NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+                    ) { _ in
+                        model.verifyConnection()
+                    }
+                    .onReceive(
                         NotificationCenter.default.publisher(
                             for: .AVAudioEngineConfigurationChange)
                     ) { _ in
@@ -133,17 +177,31 @@ struct AstralApp: App {
                             for: NSApplication.willTerminateNotification)
                     ) { _ in
                         model.voiceApplicationWillTerminate()
-                        model.macComputerHost.applicationWillTerminate()
+                        model.computerApplicationWillTerminate()
                     }
                 #endif
                 #if os(macOS)
+                    .modifier(MacSettingsRouter(updates: updates))
                     .frame(minWidth: 320, minHeight: 480)
                 #endif
         }
         #if os(macOS)
             .windowStyle(.titleBar)
             .defaultSize(width: 1280, height: 820)
-            .commands { MacWorkbenchCommands() }
+            .commands {
+                MacWorkbenchCommands()
+                CommandGroup(after: .appInfo) { UpdateMenuItems(coordinator: updates) }
+            }
+        #endif
+        #if os(macOS)
+            Settings {
+                MacSettingsView(updates: updates)
+                    .environment(model)
+                    .environment(model.themeStore)
+                    .font(ConsoleTypography.body)
+                    .tint(model.themeStore.palette.primary)
+                    .preferredColorScheme(model.themeStore.colorScheme)
+            }
         #endif
     }
 }

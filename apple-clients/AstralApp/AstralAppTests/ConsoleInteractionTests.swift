@@ -1,10 +1,74 @@
 // Verifies console actions retain authenticated dispatch and exact current-surface ownership.
-// Shared fixtures exercise catalog loading, confirmed selections, capability changes, and account cleanup.
+// Shared fixtures exercise catalog loading, confirmed selections, capability changes, account cleanup, turn
+// cancellation and the per-chat tool activity model built from status, step and component frames.
 
 import AstralCore
+import ImageIO
+import UniformTypeIdentifiers
 import XCTest
 
 @testable import AstralDeep
+
+enum ActivityFrames {
+    static func step(
+        _ id: String, chat: String = "c1", name: String = "click", status: String, arguments: String? = nil,
+        result: String? = nil, error: String? = nil
+    ) -> InboundFrame {
+        var step: [String: JSONValue] = [
+            "id": .string(id), "chat_id": .string(chat), "kind": .string("tool_call"), "name": .string(name),
+            "status": .string(status),
+        ]
+        if let arguments { step["args_truncated"] = .string(arguments) }
+        if let result { step["result_summary"] = .string(result) }
+        if let error { step["error_message"] = .string(error) }
+        return InboundFrame(
+            name: "chat_step",
+            payload: .object(["type": .string("chat_step"), "chat_id": .string(chat), "step": .object(step)]))
+    }
+
+    static func status(_ status: String, message: String? = nil) -> InboundFrame {
+        var payload: [String: JSONValue] = ["type": .string("chat_status"), "status": .string(status)]
+        if let message { payload["message"] = .string(message) }
+        return InboundFrame(name: "chat_status", payload: .object(payload))
+    }
+
+    static func approvalCard(_ request: String, image: String? = nil) -> AstralComponent {
+        var content: [JSONValue] = [
+            .object(["type": .string("text"), "content": .string("Tool: click · Agent: computer-use-1")]),
+            .object(["type": .string("text"), "content": .string("Click in TextEdit")]),
+        ]
+        if let image { content.append(.object(["type": .string("image"), "url": .string(image)])) }
+        for decision in ["approve", "grant_task", "decline"] {
+            content.append(
+                .object([
+                    "type": .string("button"), "label": .string(decision), "action": .string("authorize_action"),
+                    "payload": .object(["hitl_request_id": .string(request), "decision": .string(decision)]),
+                ]))
+        }
+        return AstralComponent(
+            type: "card",
+            raw: .object([
+                "type": .string("card"), "id": .string("hitl_\(request)"), "title": .string("Review action"),
+                "content": .array(content),
+            ]))
+    }
+
+    static func pngDataURL() throws -> String {
+        let context = try XCTUnwrap(
+            CGContext(
+                data: nil, width: 16, height: 12, bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(red: 0.4, green: 0.2, blue: 0.8, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: 16, height: 12))
+        let image = try XCTUnwrap(context.makeImage())
+        let data = NSMutableData()
+        let destination = try XCTUnwrap(
+            CGImageDestinationCreateWithData(data as CFMutableData, UTType.png.identifier as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, image, nil)
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+        return "data:image/png;base64," + (data as Data).base64EncodedString()
+    }
+}
 
 @MainActor
 final class ConsoleInteractionTests: XCTestCase {
@@ -303,4 +367,276 @@ final class ConsoleInteractionTests: XCTestCase {
         XCTAssertFalse(model.mandatorySurface)
         XCTAssertEqual(model.screen, .chat)
     }
+
+    func testCancelCurrentTurnSendsCancelTaskOnlyDuringAConnectedTurnAndRecordsTheCancellation() throws {
+        let model = try model()
+        var sent: [JSONValue] = []
+        model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+        model.activeChatId = "c1"
+        XCTAssertFalse(model.canCancelTurn)
+        XCTAssertFalse(model.cancelCurrentTurn())
+        model.turnActive = true
+        model.connected = false
+        XCTAssertFalse(model.cancelCurrentTurn())
+        XCTAssertTrue(sent.isEmpty)
+        model.connected = true
+        model.handleFrame(ActivityFrames.step("s1", status: "in_progress", arguments: #"{"x":10,"y":20,"hwnd":5}"#))
+        XCTAssertTrue(model.canCancelTurn)
+        XCTAssertTrue(model.cancelCurrentTurn())
+        XCTAssertEqual(sent.count, 1)
+        XCTAssertEqual(sent.first?["type"], .string("ui_event"))
+        XCTAssertEqual(sent.first?["action"], .string("cancel_task"))
+        XCTAssertEqual(sent.first?["session_id"], .string("c1"))
+        XCTAssertEqual(sent.first?["payload"]?["submission_id"], sent.first?["submission_id"])
+        XCTAssertEqual(model.activity.map(\.state), [.cancelled])
+        model.handleFrame(ActivityFrames.step("s1", status: "cancelled"))
+        model.handleFrame(ActivityFrames.status("done", message: "Cancelled"))
+        model.handleFrame(ActivityFrames.status("done", message: "Cancelled"))
+        XCTAssertFalse(model.turnActive)
+        XCTAssertFalse(model.cancelCurrentTurn())
+        XCTAssertEqual(model.activity.map(\.action), ["click", "Turn cancelled"])
+        XCTAssertEqual(model.activity.last?.accessibilityValue, "Cancelled")
+        XCTAssertEqual(sent.count, 1)
+    }
+
+    func testActivityRowsFollowToolStepsApprovalDecisionsAndTheApprovedRedispatch() throws {
+        let model = try model()
+        var sent: [JSONValue] = []
+        model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+        model.activeChatId = "c1"
+        model.turns = [.init(id: "u1", role: "user", text: "Type a sentence")]
+        let arguments = #"{"x":10,"y":20,"hwnd":5}"#
+        model.handleFrame(ActivityFrames.step("s1", status: "in_progress", arguments: arguments))
+        var row = try XCTUnwrap(model.activity.first)
+        XCTAssertEqual([row.action, row.target], ["click", "at 10, 20"])
+        XCTAssertEqual(row.state, .running)
+        XCTAssertEqual(row.position, 1)
+        XCTAssertEqual(row.accessibilityValue, "Running")
+        model.handleFrame(
+            ActivityFrames.step(
+                "s1", status: "completed",
+                result: #"{"_data":{"status":"confirmation_required","message":"An approval card is available."}}"#))
+        row = try XCTUnwrap(model.activity.first)
+        XCTAssertEqual(row.approval, .waiting)
+        XCTAssertEqual(row.state, .running)
+        XCTAssertEqual(row.accessibilityValue, "Approval waiting, Running")
+        model.canvas = [ActivityFrames.approvalCard("r1")]
+        XCTAssertEqual(AppModel.pendingComputerApprovals(in: model.canvas).map(\.requestId), ["r1"])
+        XCTAssertEqual(AppModel.pendingComputerApprovals(in: model.canvas).first?.summary, "Click in TextEdit")
+        XCTAssertEqual(model.activity.count, 1)
+        model.sendEvent(
+            "authorize_action", .object(["hitl_request_id": .string("r1"), "decision": .string("grant_task")]))
+        XCTAssertEqual(sent.last?["action"], .string("authorize_action"))
+        XCTAssertEqual(model.activity.first?.approval, .granted)
+        model.handleFrame(ActivityFrames.step("s2", status: "in_progress", arguments: arguments))
+        XCTAssertEqual(model.activity.count, 1)
+        XCTAssertEqual(model.activity.first?.state, .running)
+        model.handleFrame(
+            ActivityFrames.step(
+                "s2", status: "completed", result: #"{"_data":{"attempted":true,"message":"Clicked"}}"#))
+        row = try XCTUnwrap(model.activity.first)
+        XCTAssertEqual(row.state, .completed)
+        XCTAssertEqual(row.result, "Clicked")
+        XCTAssertEqual(row.accessibilityLabel, "click, at 10, 20")
+        XCTAssertEqual(row.accessibilityValue, "Allowed for this task, Clicked")
+        model.handleFrame(
+            ActivityFrames.step(
+                "s3", name: "run_command", status: "in_progress",
+                arguments: #"{"command":"wc -l notes.txt","cwd":"/Users/owner/Notes"}"#))
+        model.handleFrame(
+            ActivityFrames.step("s3", name: "run_command", status: "errored", error: "Folder\nnot shared"))
+        XCTAssertEqual(model.activity[1].action, "run command")
+        XCTAssertEqual(model.activity[1].target, "wc -l notes.txt")
+        XCTAssertEqual(model.activity[1].state, .failed)
+        XCTAssertEqual(model.activity[1].result, "Folder not shared")
+        model.handleFrame(
+            InboundFrame(
+                name: "tool_progress",
+                payload: .object([
+                    "type": .string("tool_progress"), "tool_name": .string("summarize"),
+                    "message": .string("Reading"), "percentage": .number(40),
+                ])))
+        XCTAssertEqual(model.activity.last?.result, "Reading (40%)")
+        XCTAssertEqual(model.activity.last?.state, .running)
+        model.handleFrame(ActivityFrames.status("idle"))
+        XCTAssertEqual(model.activity.last?.state, .completed)
+        model.activeChatId = "c2"
+        XCTAssertTrue(model.activity.isEmpty)
+        model.activeChatId = "c1"
+        XCTAssertEqual(model.activity.count, 3)
+    }
+
+    func testDeclinedApprovalAndOtherChatsStayInTheirOwnRows() throws {
+        let model = try model()
+        model.outboundTap = { _ in }
+        model.activeChatId = "c1"
+        model.canvas = [ActivityFrames.approvalCard("r9")]
+        let row = try XCTUnwrap(model.activity.first)
+        XCTAssertEqual(row.id, "approval-r9")
+        XCTAssertEqual([row.action, row.target], ["click", "Click in TextEdit"])
+        XCTAssertEqual(row.approval, .waiting)
+        model.sendEvent(
+            "authorize_action", .object(["hitl_request_id": .string("r9"), "decision": .string("decline")]))
+        XCTAssertEqual(model.activity.first?.approval, .denied)
+        XCTAssertEqual(model.activity.first?.state, .cancelled)
+        model.canvas = [ActivityFrames.approvalCard("r9")]
+        XCTAssertEqual(model.activity.count, 1)
+        model.handleFrame(ActivityFrames.step("other", chat: "c2", status: "in_progress", arguments: "{}"))
+        XCTAssertEqual(model.activity.count, 1)
+        model.activeChatId = "c2"
+        XCTAssertEqual(model.activity.map(\.id), ["other"])
+        XCTAssertEqual(model.activity.first?.position, Int.max)
+        model.clearConversationForAccountRemoval()
+        XCTAssertTrue(model.activityLog.isEmpty)
+    }
+
+    func testActivityKeepsTheLatestTwoHundredRowsPerChatAndAdoptsANewChat() throws {
+        let model = try model()
+        model.activeChatId = nil
+        model.handleFrame(ActivityFrames.step("first", chat: "", status: "completed", result: "{}"))
+        XCTAssertEqual(model.activityLog[""]?.count, 1)
+        model.handleFrame(
+            InboundFrame(
+                name: "chat_created",
+                payload: .object(["type": .string("chat_created"), "payload": .object(["chat_id": .string("c1")])])))
+        XCTAssertEqual(model.activeChatId, "c1")
+        XCTAssertNil(model.activityLog[""])
+        XCTAssertEqual(model.activity.map(\.id), ["first"])
+        for index in 0..<205 {
+            model.handleFrame(ActivityFrames.step("bulk-\(index)", status: "completed", result: #"{"exit_code":0}"#))
+        }
+        XCTAssertEqual(model.activity.count, AppModel.maximumActivityRows)
+        XCTAssertEqual(model.activity.first?.id, "bulk-5")
+        XCTAssertEqual(model.activity.last?.result, "Exit 0")
+    }
+
+    func testActivitySummariesStayShortAndReadable() {
+        XCTAssertEqual(AppModel.activityTarget(#"{"x1":1,"y1":2,"x2":30,"y2":40}"#), "from 1, 2 to 30, 40")
+        XCTAssertEqual(AppModel.activityTarget(#"{"keys":["cmd","s"],"hwnd":3}"#), "cmd+s")
+        XCTAssertEqual(AppModel.activityTarget(#"{"hwnd":3,"_token":"x"}"#), "hwnd 3")
+        XCTAssertEqual(AppModel.activityTarget(#"{"text":"truncated"#), "")
+        XCTAssertEqual(AppModel.activityTarget("plain words"), "plain words")
+        XCTAssertEqual(AppModel.activityTarget(""), "")
+        XCTAssertEqual(AppModel.activityLine(String(repeating: "a", count: 200)).count, 120)
+        XCTAssertEqual(AppModel.activityResult(#"{"_data":{"status":"confirmation_req"#).waiting, false)
+        XCTAssertTrue(AppModel.activityResult(#"{"_data":{"status":"confirmation_required","x":"#).waiting)
+        XCTAssertEqual(AppModel.activityResult(#"{"exit_code":1,"timed_out":true}"#).text, "Timed out")
+        XCTAssertEqual(AppModel.activityResult(#"{"error":{"message":"No access"}}"#).text, "No access")
+        XCTAssertEqual(AppModel.activityResult(#"{"_data":{"status":"opened_app"}}"#).text, "opened app")
+        XCTAssertEqual(AppModel.activityResult(#"["a","b"]"#).text, "a, b")
+        XCTAssertEqual(AppModel.activityResult("Finished").text, "Finished")
+        XCTAssertEqual(AppModel.activityResult(nil).text, "")
+        XCTAssertNil(AppModel.activityThumbnail("data:image/png;base64,not-an-image"))
+        XCTAssertNil(AppModel.activityThumbnail("https://example.test/image.png"))
+        let declined = AstralComponent(
+            type: "card",
+            raw: .object([
+                "type": .string("card"), "id": .string("hitl_r1"), "title": .string("Declined"),
+                "content": .array([.object(["type": .string("text"), "content": .string("Declined")])]),
+            ]))
+        XCTAssertTrue(AppModel.pendingComputerApprovals(in: [declined]).isEmpty)
+        let other = AstralComponent(
+            type: "card",
+            raw: .object([
+                "type": .string("card"), "id": .string("hitl_r2"),
+                "content": .array([
+                    .object(["type": .string("text"), "content": .string("Tool: search · Agent: research-1")]),
+                    .object([
+                        "type": .string("button"), "action": .string("authorize_action"),
+                        "payload": .object(["hitl_request_id": .string("r2"), "decision": .string("approve")]),
+                    ]),
+                ]),
+            ]))
+        XCTAssertTrue(AppModel.pendingComputerApprovals(in: [other]).isEmpty)
+        let remote = AstralComponent(
+            type: "card",
+            raw: .object([
+                "type": .string("card"), "id": .string("au_approval_abc"), "title": .string("Confirm an action on Mac"),
+                "content": .array([
+                    .object(["type": .string("text"), "content": .string("Run wc -l notes.txt")]),
+                    .object([
+                        "type": .string("button"), "action": .string("remote_op_decision"),
+                        "payload": .object(["proposal_id": .string("abc"), "decision": .string("approve")]),
+                    ]),
+                ]),
+            ]))
+        let container = AstralComponent(
+            type: "container", raw: .object(["type": .string("container"), "children": .array([remote.raw])]))
+        XCTAssertEqual(
+            AppModel.pendingComputerApprovals(in: [container]),
+            [AppModel.PendingApproval(requestId: "abc", tool: "", summary: "Run wc -l notes.txt", image: nil)])
+    }
+
+    func testActivityThumbnailComesFromTheLatestScreenImageAndApprovalCrop() async throws {
+        let model = try model()
+        model.outboundTap = { _ in }
+        model.activeChatId = "c1"
+        let image = try ActivityFrames.pngDataURL()
+        model.handleFrame(ActivityFrames.step("s1", status: "completed", result: "{}"))
+        model.canvas = [
+            AstralComponent(
+                type: "image",
+                raw: .object([
+                    "type": .string("image"), "id": .string("au_cuview_session"), "url": .string(image),
+                ]))
+        ]
+        model.canvas = model.canvas + [AstralComponent(type: "text", raw: .object(["content": .string("Later")]))]
+        model.canvas = [ActivityFrames.approvalCard("r1", image: image)] + model.canvas
+        let deadline = Date().addingTimeInterval(10)
+        while model.activity.contains(where: { $0.thumbnail == nil }), Date() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(model.activity.map(\.id), ["s1", "approval-r1"])
+        for row in model.activity {
+            let data = try XCTUnwrap(row.thumbnail)
+            let source = try XCTUnwrap(CGImageSourceCreateWithData(data as CFData, nil))
+            XCTAssertEqual(CGImageSourceGetType(source) as String?, UTType.jpeg.identifier)
+        }
+        XCTAssertTrue(model.activity[0].accessibilityValue.hasSuffix("Screenshot"))
+    }
+
+    #if os(macOS)
+        func testComputerApprovalCardTellsTheHostWhileItWaitsAndStopEndsTheTurnAndSession() async throws {
+            let fixture = try MacComputerLifecycleFixture()
+            defer { fixture.close() }
+            try fixture.enableAndStart()
+            let suite = "ConsoleInteractionTests.\(UUID().uuidString)"
+            suites.append(suite)
+            let defaults = UserDefaults(suiteName: suite)!
+            let model = AppModel(
+                conversationResumeStore: ConversationResumeStore(defaults: defaults),
+                tokenStore: InMemoryTokenStore(), defaults: defaults, computerHost: fixture.host)
+            XCTAssertTrue(model.macComputerHost === fixture.host)
+            XCTAssertTrue(fixture.host.browser === model.macBrowser)
+            model.signedIn = true
+            model.connected = true
+            model.activeChatId = "c1"
+            var sent: [JSONValue] = []
+            model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+            XCTAssertFalse(fixture.host.awaitingApproval)
+            model.canvas = [ActivityFrames.approvalCard("r1")]
+            XCTAssertTrue(fixture.host.awaitingApproval)
+            model.sendEvent(
+                "authorize_action", .object(["hitl_request_id": .string("r1"), "decision": .string("approve")]))
+            XCTAssertFalse(fixture.host.awaitingApproval)
+            XCTAssertEqual(model.activity.first?.approval, .approved)
+            model.canvas = [ActivityFrames.approvalCard("r2")]
+            XCTAssertTrue(fixture.host.awaitingApproval)
+            model.canvas = []
+            XCTAssertFalse(fixture.host.awaitingApproval)
+            model.turnActive = true
+            XCTAssertTrue(fixture.host.taskActive)
+            model.stopComputerTask()
+            XCTAssertNil(fixture.host.session)
+            XCTAssertEqual(sent.last?["action"], .string("cancel_task"))
+            let deadline = Date().addingTimeInterval(5)
+            while !fixture.channel.events.contains("stopped"), Date() < deadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertTrue(fixture.channel.events.contains("stopped"))
+            model.turnActive = false
+            model.stopComputerTask()
+            XCTAssertEqual(sent.filter { $0["action"] == .string("cancel_task") }.count, 1)
+        }
+    #endif
 }

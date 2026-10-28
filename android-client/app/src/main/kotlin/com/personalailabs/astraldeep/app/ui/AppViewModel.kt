@@ -136,6 +136,8 @@ data class UiState(
     val viewportRefresh: ViewportRefresh? = null,
     val pendingViewportConfig: Inbound.RoteConfig? = null,
     val viewportRefreshFailed: Boolean = false,
+    val conversationRenderConnection: String? = null,
+    val conversationRenderRequest: String? = null,
     val acceptedSnapshotId: String? = null,
     val acceptedSnapshot: Inbound.ConversationSnapshot? = null,
     val pendingCanvas: List<Component> = emptyList(),
@@ -179,6 +181,7 @@ data class UiState(
     val pendingSurfaceKey: String = "",
     val pendingSurfaceParams: JsonObject = JsonObject(emptyMap()),
     val pendingSurface: Inbound.ChromeSurface? = null,
+    val pendingSurfaceConnectionGeneration: String? = null,
     val privateSurfaceRequest: PrivateSurfaceRequest? = null,
     val privateSurfaceFailed: Boolean = false,
     val surfaceOutcomeRevision: Long = 0,
@@ -305,6 +308,87 @@ class AppViewModel(
 
     internal fun componentContext(component: Component): ComponentActionContext? =
         componentActionContext(_state.value, account, workspaceEpoch, component)
+
+    internal fun navigationEmitter(component: Component): com.personalailabs.astraldeep.app.render.Emit {
+        val captured = _state.value
+        val owner = account
+        val epoch = workspaceEpoch
+
+        fun contains(value: JsonElement): Boolean =
+            value === component.attributes ||
+                when (value) {
+                    is JsonObject -> value.values.any(::contains)
+                    is JsonArray -> value.any(::contains)
+                    else -> false
+                }
+        val surface =
+            captured.screen == Screen.Surface &&
+                captured.pendingSurface?.components?.any { contains(it.attributes) } == true
+
+        fun inTurns(turns: List<ChatTurn>): Boolean =
+            turns.any { turn ->
+                turn.segments.any { segment -> segment.components.any { contains(it.attributes) } }
+            }
+        val source =
+            when {
+                captured.screen != Screen.Chat -> null
+                captured.transientCanvas?.any { contains(it.attributes) } == true -> "transient-canvas"
+                captured.transientCanvas == null && captured.canvas.any { contains(it.attributes) } -> "canvas"
+                inTurns(captured.pendingTurns) -> "transient-transcript"
+                inTurns(captured.turns) -> "transcript"
+                else -> null
+            }
+        return com.personalailabs.astraldeep.app.render.Emit { action, payload ->
+            val current = _state.value
+            val target = (payload["chat_id"] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
+            val parsed = target?.let { runCatching { java.util.UUID.fromString(it) }.getOrNull() }
+            val offered =
+                when (component.type) {
+                    "chat_history" ->
+                        (component.attributes["items"] as? JsonArray).orEmpty()
+                            .mapNotNull { (it as? JsonObject)?.let(ChatSummary::fromHistoryItem) }.any { it.id == target }
+                    "button" ->
+                        surface && component.attributes["action"] == JsonPrimitive("load_chat") &&
+                            component.attributes["payload"] == payload && component.attributes["disabled"] != JsonPrimitive(true) &&
+                            component.attributes["enabled"] != JsonPrimitive(false)
+                    else -> false
+                }
+            val sameLifetime =
+                owner != null && owner == account && epoch == workspaceEpoch &&
+                    captured.connectionGeneration != null && captured.connectionGeneration == current.connectionGeneration &&
+                    captured.requestGeneration == current.requestGeneration && captured.activeChatId == current.activeChatId
+            val currentSource =
+                if (surface) {
+                    current.screen == Screen.Surface && current.pendingSurface === captured.pendingSurface &&
+                        current.pendingSurfaceConnectionGeneration == current.connectionGeneration &&
+                        current.privateSurfaceRequest == null && !current.privateSurfaceFailed && !current.surfaceReloadRequired
+                } else {
+                    val sameSource =
+                        when (source) {
+                            "transient-canvas" -> current.transientCanvas === captured.transientCanvas
+                            "canvas" -> current.transientCanvas == null && current.canvas === captured.canvas
+                            "transient-transcript" -> current.pendingTurns === captured.pendingTurns
+                            "transcript" -> current.turns === captured.turns
+                            else -> false
+                        }
+                    val acceptedSource =
+                        if (source == "transient-canvas" || source == "transient-transcript") {
+                            current.lastTransientFrameSequence > 0UL &&
+                                current.lastTransientFrameSequence == captured.lastTransientFrameSequence
+                        } else {
+                            current.conversationRenderConnection == current.connectionGeneration &&
+                                current.conversationRenderRequest == current.requestGeneration
+                        }
+                    current.screen == Screen.Chat && sameSource && acceptedSource
+                }
+            if (action == "load_chat" && payload.size == 1 && parsed?.version() == 4 && parsed.toString() == target &&
+                offered && sameLifetime && currentSource && current.connection == ConnectionState.Connected &&
+                !current.mandatorySurface && !current.mutationsLocked && current.viewingIndex == null
+            ) {
+                openChat(target!!)
+            }
+        }
+    }
 
     private var attachSeq: Long = 0
     private val seqState = mutableMapOf<String, Int>()
@@ -1003,6 +1087,22 @@ class AppViewModel(
             return
         }
         if (action == "chrome_open" || action == "chrome_close") _state.update { retirePrivateSurface(it) }
+        if (action == "load_chat") {
+            val state = _state.value
+            val target = (payload["chat_id"] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull ?: return
+            val parsed = runCatching { java.util.UUID.fromString(target) }.getOrNull() ?: return
+            if (parsed.version() != 4 || parsed.toString() != target || state.connection != ConnectionState.Connected ||
+                state.screen != Screen.Surface || state.mandatorySurface || state.mutationsLocked ||
+                state.privateSurfaceRequest != null || state.privateSurfaceFailed || state.surfaceReloadRequired ||
+                state.pendingSurfaceConnectionGeneration == null ||
+                state.pendingSurfaceConnectionGeneration != state.connectionGeneration ||
+                !surfaceOffers(state.pendingSurface, action, payload)
+            ) {
+                return
+            }
+            openChat(target)
+            return
+        }
         if (action == "attach_existing") {
             if (stageExistingAttachment(payload)) {
                 val filename = (payload["filename"] as? JsonPrimitive)?.contentOrNull ?: "file"
@@ -1512,6 +1612,7 @@ class AppViewModel(
 
     private fun retirePrivateSurface(s: UiState): UiState =
         finishPrivateSurface(s).copy(
+            pendingSurfaceConnectionGeneration = null,
             pendingSurface =
                 if (isPrivateChromeSurface(s.pendingSurfaceKey) || s.pendingSurfaceKey == "evidence") null else s.pendingSurface,
             privateSurfaceFailed = isPrivateChromeSurface(s.pendingSurfaceKey),
@@ -1634,7 +1735,9 @@ class AppViewModel(
         }
         cancelViewportRefresh()
         device?.let { client.updateDevice(it, chatId) }
-        sendEvent("load_chat", buildJsonObject { put("chat_id", chatId) })
+        client.sendEvent("load_chat", chatId, buildJsonObject { put("chat_id", chatId) }) { submission ->
+            _state.update { current -> projectLocalSubmission(current, submission) }
+        }
     }
 
     fun setToolEnabled(
@@ -1884,6 +1987,7 @@ class AppViewModel(
                         } else {
                             finishPrivateSurface(s).copy(
                                 pendingSurface = msg,
+                                pendingSurfaceConnectionGeneration = request.connectionGeneration,
                                 privateSurfaceFailed = false,
                                 themePalette = acceptedSurfacePalette(s, msg),
                                 surfaceOutcomeRevision = s.surfaceOutcomeRevision + 1,
@@ -1905,6 +2009,7 @@ class AppViewModel(
                         } else {
                             finishPrivateSurface(s).copy(
                                 pendingSurface = msg,
+                                pendingSurfaceConnectionGeneration = request.connectionGeneration,
                                 privateSurfaceFailed = false,
                                 turnSelection =
                                     if (msg.selection == null) s.turnSelection else msg.selection?.takeUnless { it.isEmpty },
@@ -2434,6 +2539,8 @@ class AppViewModel(
             lastCommittedRenderRevision = snapshot.renderRevision,
             lastTransientFrameSequence = 0UL,
             hydrationApplied = hydration,
+            conversationRenderConnection = snapshot.connectionGeneration,
+            conversationRenderRequest = if (hydration) s.requestGeneration else null,
             acceptedSnapshotId = if (hydration) snapshot.snapshotId else null,
             acceptedSnapshot = if (hydration) snapshot else null,
             requestGeneration = if (hydration) s.requestGeneration else null,

@@ -141,7 +141,11 @@
             await fulfillment(of: [interrupted], timeout: 5)
             XCTAssertEqual(fixture.events.posted.map(\.type), [.keyDown, .keyUp])
             XCTAssertTrue(fixture.host.lastError?.contains("operation was interrupted") == true)
-            XCTAssertNil(fixture.channel.response(id))
+            _ = await fixture.host.flushCurrentSends()
+            let answer = try XCTUnwrap(fixture.channel.response(id))
+            XCTAssertEqual(answer["ok"], .bool(false))
+            XCTAssertEqual(answer["error"]?["code"], .string("interrupted"))
+            XCTAssertNil(answer["result"])
             XCTAssertNil(fixture.host.descriptor)
             fixture.host.refreshPermissions()
             XCTAssertFalse(fixture.host.enabled)
@@ -163,6 +167,57 @@
             XCTAssertFalse(fixture.host.enabled)
             XCTAssertNil(fixture.host.session)
             XCTAssertFalse(fixture.monitor.running)
+        }
+
+        func testTakeoverThenActivationRefreshKeepsThePausedSessionResumable() async throws {
+            let fixture = try MacComputerLifecycleFixture()
+            defer { fixture.close() }
+            try fixture.enableAndStart()
+            let takeover = try XCTUnwrap(fixture.monitor.humanInput)
+            takeover()
+            XCTAssertEqual(fixture.host.session?.state, "paused")
+            fixture.host.consume(try fixture.session(state: "paused"))
+            fixture.io.set(nil, attribute: kAXFocusedApplicationAttribute, of: fixture.io.system)
+            XCTAssertNil(MacComputerObservation.context(system: fixture.io).pid)
+            let refreshed = expectation(description: "activation refresh ran")
+            fixture.onPermissionRead = { refreshed.fulfill() }
+            NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: NSApp)
+            await fulfillment(of: [refreshed], timeout: 5)
+            fixture.onPermissionRead = nil
+            fixture.host.refreshPermissions()
+            _ = await fixture.host.flushCurrentSends()
+            XCTAssertFalse(fixture.channel.events.contains("withdraw"))
+            XCTAssertEqual(fixture.channel.events.last, "paused")
+            XCTAssertTrue(fixture.host.enabled)
+            XCTAssertNotNil(fixture.host.descriptor)
+            XCTAssertEqual(fixture.host.session?.state, "paused")
+            XCTAssertTrue(fixture.host.canResume)
+            fixture.io.configure { $0.session?["CGSSessionScreenIsLocked"] = true }
+            fixture.host.refreshPermissions()
+            XCTAssertEqual(fixture.host.session?.state, "paused")
+            NSWorkspace.shared.notificationCenter.post(
+                name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
+            for _ in 0..<200 where fixture.host.session != nil { await Task.yield() }
+            XCTAssertNil(fixture.host.session)
+            XCTAssertFalse(fixture.host.enabled)
+        }
+
+        func testUnresolvableForegroundNeverWithdrawsAnActiveSessionButARealLockDoes() async throws {
+            let fixture = try MacComputerLifecycleFixture()
+            defer { fixture.close() }
+            try fixture.enableAndStart()
+            fixture.io.set(nil, attribute: kAXFocusedApplicationAttribute, of: fixture.io.system)
+            fixture.host.refreshPermissions()
+            fixture.io.configure { $0.bundles[200] = "com.apple.loginwindow" }
+            fixture.host.refreshPermissions()
+            _ = await fixture.host.flushCurrentSends()
+            XCTAssertFalse(fixture.channel.events.contains("withdraw"))
+            XCTAssertEqual(fixture.host.session?.state, "active")
+            fixture.io.configure { $0.session?["CGSSessionScreenIsLocked"] = true }
+            fixture.host.refreshPermissions()
+            _ = await fixture.host.flushCurrentSends()
+            XCTAssertTrue(fixture.channel.events.contains("withdraw"))
+            XCTAssertNil(fixture.host.session)
         }
 
         func testWrongHostAndUnmatchedEndCannotRetireCurrentSession() throws {
@@ -189,18 +244,21 @@
         let store: UserDefaults
         let host: MacComputerHost
         let suite = UUID().uuidString
+        var onPermissionRead: (() -> Void)?
         let sessionID = UUID().uuidString.lowercased()
         init() throws {
             store = UserDefaults(suiteName: suite)!
             let io = io
             let proof = proof
+            weak var current: MacComputerLifecycleFixture?
             host = MacComputerHost(
                 available: true, defaults: store,
                 driver: MacComputerDriver(
                     marker: 30, system: io, input: MacComputerInput(marker: 30, system: io, events: events)),
                 monitor: monitor,
                 permissionProvider: {
-                    MacComputerPermissions(
+                    current?.onPermissionRead?()
+                    return MacComputerPermissions(
                         accessibility: io.accessibilityTrusted(), screen: io.screenCaptureAccess(),
                         monitoring: io.listenEventAccess(), posting: io.postEventAccess())
                 }, desktopProbe: { MacComputerDesktopProbe.usable(system: io) },
@@ -209,6 +267,7 @@
                 }, system: io, panelPresenter: { _ in })
             let channel = channel
             host.bind(owner: "lifecycle-owner|lifecycle-server") { channel.send($0) }
+            current = self
         }
         func enable(expected: Bool = true) throws {
             io.configure { $0.nodes[1].pid = 100 }
@@ -259,8 +318,10 @@
         var controlsWindow: Int?
         var starts = 0
         var stops = 0
+        var humanInput: (@MainActor () -> Void)?
         func start(_ humanInput: @escaping @MainActor () -> Void) -> Bool {
             starts += 1
+            self.humanInput = humanInput
             running = allowed
             return running
         }

@@ -41,6 +41,10 @@ class Renderer(
     val download: Download = Download { _, _ -> },
     val theme: ThemeSink = ThemeSink { },
 ) {
+    internal var navigation: ((Component) -> Emit)? = null
+
+    internal fun navigationEmit(component: Component): Emit = navigation?.invoke(component) ?: emit
+
     internal var componentActions: com.personalailabs.astraldeep.app.ui.ComponentActionHandler? = null
     internal var capture: CanvasCaptureRegistry? = null
     internal var captureContext: (() -> WorkspaceContext?)? = null

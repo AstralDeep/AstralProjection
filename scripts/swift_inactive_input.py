@@ -22,9 +22,10 @@ from typing import Any
 
 
 MAX_FILE = 256 * 1024 * 1024
+MAX_TOOLCHAIN_FILE = 1024 * 1024 * 1024
 MAX_SOURCE = 16 * 1024 * 1024
 MAX_TOOL = 4 * 1024 * 1024
-TIME_BUDGET = 480
+TIME_BUDGET = 600
 HELPER = Path(__file__).resolve().with_name("WholeOSInputProof.swift")
 PLATFORMS = {
     7: ("iOS", "iphonesimulator", "iPhoneSimulator", "ios", "-simulator"),
@@ -47,20 +48,21 @@ def digest(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def read(path: Path, maximum: int = MAX_FILE) -> bytes:
+def read(path: Path, maximum: int | None = None) -> bytes:
+    limit = MAX_FILE if maximum is None else maximum
     require(path.is_absolute() and path == path.resolve() and not path.is_symlink())
     before = path.lstat()
-    require(stat.S_ISREG(before.st_mode) and before.st_size <= maximum)
+    require(stat.S_ISREG(before.st_mode) and before.st_size <= limit)
     fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns", "st_mode")
     with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as stream:
         opened = os.fstat(stream.fileno())
-        require(stat.S_ISREG(opened.st_mode) and opened.st_size <= maximum)
+        require(stat.S_ISREG(opened.st_mode) and opened.st_size <= limit)
         require(all(getattr(before, key) == getattr(opened, key) for key in fields))
-        raw = stream.read(maximum + 1)
+        raw = stream.read(limit + 1)
         after = os.fstat(stream.fileno())
     final = path.lstat()
     require(
-        len(raw) == opened.st_size <= maximum
+        len(raw) == opened.st_size <= limit
         and all(
             getattr(before, key)
             == getattr(opened, key)
@@ -523,7 +525,12 @@ def _collect_source(
     for path in tools:
         resolved = path.resolve()
         require(resolved.is_relative_to(developer) or path in {HELPER, implementation})
-        tool_bytes[path] = (resolved, digest(read(resolved)), path.lstat(), resolved.lstat())
+        tool_bytes[path] = (
+            resolved,
+            digest(read(resolved, MAX_TOOLCHAIN_FILE)),
+            path.lstat(),
+            resolved.lstat(),
+        )
     outputs, commands = {}, []
 
     def command(name, arguments, *, diagnostics=False, produces_binary=False):
@@ -552,16 +559,12 @@ def _collect_source(
     require(
         command("xcode", [str(tools[0]), "-version"]).strip() == b"Xcode 26.6\nBuild version 17F113"
     )
-    llvm_banner = command("llvm", [str(tools[3]), "--version"])
     require(
-        0 < len(llvm_banner) <= 4096
-        and llvm_banner.splitlines()[0] == b"Apple LLVM version 21.0.0"
+        command("llvm", [str(tools[3]), "--version"]).splitlines()
+        in ([b"Apple LLVM version 21.0.0"], [b"Apple LLVM version 21.0.0", b"  Optimized build."])
     )
     swift_version = command("swift", [str(tools[2]), "-version"]).decode("utf-8", "strict").strip()
-    require(
-        0 < len(swift_version) <= 1024
-        and all(character.isprintable() or character.isspace() for character in swift_version)
-    )
+    require(swift_version.startswith("Apple Swift version ") and len(swift_version) <= 1024)
     sdk_alias = (
         developer
         / "Platforms"
@@ -705,7 +708,7 @@ def _collect_source(
     )
     fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns", "st_mode")
     for path, (resolved, value, before, target_before) in tool_bytes.items():
-        require(path.resolve() == resolved and digest(read(resolved)) == value)
+        require(path.resolve() == resolved and digest(read(resolved, MAX_TOOLCHAIN_FILE)) == value)
         after = path.lstat()
         target_after = resolved.lstat()
         require(

@@ -767,9 +767,7 @@ public enum VoiceTerminalNoticeReducer {
             title: "Request did not start.",
             serverMessage: resolvedMessage(
                 rejection.message,
-                fallback: "That spoken request was not accepted."),
-            guidance: rejection.retryPolicy == "explicit_user_retry"
-                ? "Please say it again when you are ready." : nil)
+                fallback: "That spoken request was not accepted."))
     }
 
     public static func reduce(

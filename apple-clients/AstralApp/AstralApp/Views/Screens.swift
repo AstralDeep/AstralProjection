@@ -202,6 +202,7 @@ struct SurfaceView: View {
                         ForEach(Array(zip(Self.componentKeys(surface.components), surface.components)), id: \.0) {
                             key, comp in
                             ComponentView(component: comp)
+                                .environment(\.astralNavigationSurface, true)
                                 .environment(
                                     \.astralWorkReadSurface,
                                     ["work", "guidance", "evidence"].contains(surface.surfaceKey)
@@ -225,11 +226,8 @@ struct SurfaceView: View {
                 VStack(spacing: 12) {
                     Text("Couldn't load this screen")
                         .font(ConsoleTypography.headline).foregroundStyle(p.text).multilineTextAlignment(.center)
-                    Text(
-                        model.surfaceFailureMessage
-                            ?? "The server didn't send it in time. Check your connection and try again."
-                    )
-                    .font(ConsoleTypography.subheadline).foregroundStyle(p.muted).multilineTextAlignment(.center)
+                    Text((model.surfaceFailureMessage ?? "The server didn't send it in time.").leadSentence)
+                        .font(ConsoleTypography.subheadline).foregroundStyle(p.muted).multilineTextAlignment(.center)
                     Button("Retry") {
                         timedOut = false
                         retryGeneration = UUID()

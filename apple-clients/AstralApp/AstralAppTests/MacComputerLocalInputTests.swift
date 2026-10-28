@@ -1,4 +1,4 @@
-// Exercises local HID proof and takeover monitors through inert native events.
+// Exercises local HID proof and the takeover monitor through inert native events and a manual scheduler.
 // Registration is recorded without installing monitors or generating desktop effects.
 
 #if os(macOS)
@@ -44,32 +44,171 @@
             XCTAssertTrue(monitors.removed.isEmpty)
         }
 
-        func testIncompleteMonitorRegistrationFailsAndStopsOnlyAcquiredHandles() {
-            for (global, local) in [(false, true), (true, false), (false, false)] {
+        func testGlobalRegistrationAloneDecidesMonitorAvailability() {
+            for global in [false, true] {
                 let monitors = MacComputerTestMonitors()
                 monitors.globalAvailable = global
-                monitors.localAvailable = local
+                monitors.localAvailable = false
                 let input = MacComputerInputMonitor(marker: 30, monitors: monitors)
-                XCTAssertFalse(input.start {})
-                XCTAssertFalse(input.running)
+                XCTAssertEqual(input.start {}, global)
+                XCTAssertEqual(input.running, global)
+                XCTAssertTrue(monitors.locals.isEmpty)
                 input.stop()
-                XCTAssertEqual(monitors.removed.count, [global, local].filter { $0 }.count)
+                XCTAssertEqual(monitors.removed.count, global ? 1 : 0)
             }
         }
 
-        func testHostControlsWindowIsExcludedFromLocalTakeover() throws {
+        func testInputInsideAstralWindowsNeverRegistersTakeover() throws {
             let monitors = MacComputerTestMonitors()
-            let monitor = MacComputerInputMonitor(marker: 30, monitors: monitors)
-            monitors.associatedWindow = 100
-            monitor.controlsWindow = 100
+            let scheduler = MacComputerTestScheduler()
+            let monitor = MacComputerInputMonitor(
+                marker: 30, monitors: monitors, frontmost: { "com.personalailabs.astraldeep" },
+                hostBundle: "com.personalailabs.astraldeep", schedule: scheduler.schedule)
             var takeovers = 0
             XCTAssertTrue(monitor.start { takeovers += 1 })
             defer { monitor.stop() }
-            let native = try XCTUnwrap(NSEvent(cgEvent: event()))
-            XCTAssertTrue(monitors.emitLocal(native) === native)
+            XCTAssertTrue(monitors.locals.isEmpty)
+            monitors.emitGlobal(try XCTUnwrap(NSEvent(cgEvent: event())))
+            XCTAssertEqual(scheduler.delays, [MacComputerInputMonitor.frontmostDelay])
+            scheduler.runAll()
             XCTAssertEqual(takeovers, 0)
-            monitors.associatedWindow = 200
-            XCTAssertTrue(monitors.emitLocal(native) === native)
+        }
+
+        func testDiscreteInputOutsideAstralPausesOnlyWhenAnotherAppIsFrontmostLater() throws {
+            for (frontmost, expected) in [("com.apple.TextEdit", 1), (nil, 1), ("com.personalailabs.astraldeep", 0)] {
+                let kinds: [CGEvent] = [
+                    try event(),
+                    try XCTUnwrap(
+                        CGEvent(
+                            mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: .zero,
+                            mouseButton: .left)),
+                    try XCTUnwrap(
+                        CGEvent(
+                            mouseEventSource: nil, mouseType: .rightMouseDown, mouseCursorPosition: .zero,
+                            mouseButton: .right)),
+                    try XCTUnwrap(
+                        CGEvent(
+                            scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: 2, wheel2: 0,
+                            wheel3: 0)),
+                ]
+                for kind in kinds {
+                    let monitors = MacComputerTestMonitors()
+                    let scheduler = MacComputerTestScheduler()
+                    let current = MacComputerTestFrontmost()
+                    let monitor = MacComputerInputMonitor(
+                        marker: 30, monitors: monitors, frontmost: { current.bundle },
+                        hostBundle: "com.personalailabs.astraldeep", schedule: scheduler.schedule)
+                    var takeovers = 0
+                    XCTAssertTrue(monitor.start { takeovers += 1 })
+                    monitors.emitGlobal(try XCTUnwrap(NSEvent(cgEvent: kind)))
+                    XCTAssertEqual(takeovers, 0)
+                    current.bundle = frontmost
+                    scheduler.runAll()
+                    XCTAssertEqual(takeovers, expected, "\(kind.type) \(String(describing: frontmost))")
+                    monitor.stop()
+                }
+            }
+        }
+
+        func testPointerMovementMustExceedTheThresholdWithinTheWindow() throws {
+            func move(_ x: Double, _ y: Double) throws -> NSEvent {
+                try XCTUnwrap(
+                    NSEvent(
+                        cgEvent: XCTUnwrap(
+                            CGEvent(
+                                mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: CGPoint(x: x, y: y),
+                                mouseButton: .left))))
+            }
+            let monitors = MacComputerTestMonitors()
+            let scheduler = MacComputerTestScheduler()
+            let monitor = MacComputerInputMonitor(
+                marker: 30, monitors: monitors, frontmost: { "com.apple.TextEdit" },
+                hostBundle: "com.personalailabs.astraldeep", schedule: scheduler.schedule)
+            var takeovers = 0
+            XCTAssertTrue(monitor.start { takeovers += 1 })
+            defer { monitor.stop() }
+            monitors.uptime = 10
+            monitors.emitGlobal(try move(100, 100))
+            monitors.uptime = 10.1
+            monitors.emitGlobal(try move(110, 110))
+            monitors.uptime = 10.2
+            monitors.emitGlobal(try move(116, 116))
+            XCTAssertTrue(scheduler.delays.isEmpty)
+            monitors.uptime = 10.6
+            monitors.emitGlobal(try move(130, 130))
+            monitors.uptime = 10.9
+            monitors.emitGlobal(try move(140, 140))
+            XCTAssertTrue(scheduler.delays.isEmpty)
+            monitors.uptime = 11.0
+            monitors.emitGlobal(try move(165, 140))
+            XCTAssertEqual(scheduler.delays.count, 1)
+            monitors.emitGlobal(try XCTUnwrap(NSEvent(cgEvent: event())))
+            XCTAssertEqual(scheduler.delays.count, 1)
+            scheduler.runAll()
+            XCTAssertEqual(takeovers, 1)
+            let marked = try XCTUnwrap(
+                CGEvent(
+                    mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: CGPoint(x: 900, y: 900),
+                    mouseButton: .left))
+            marked.setIntegerValueField(.eventSourceUserData, value: 30)
+            monitors.uptime = 11.05
+            monitors.emitGlobal(try XCTUnwrap(NSEvent(cgEvent: marked)))
+            XCTAssertEqual(scheduler.delays.count, 1)
+        }
+
+        func testPointerInputEndingOverAstralWindowsIsNotTakeoverButKeysAre() throws {
+            let monitors = MacComputerTestMonitors()
+            let scheduler = MacComputerTestScheduler()
+            let pointer = MacComputerTestFlag(true)
+            let monitor = MacComputerInputMonitor(
+                marker: 30, monitors: monitors, frontmost: { "com.apple.TextEdit" },
+                hostBundle: "com.personalailabs.astraldeep", pointerOverHost: { pointer.value },
+                schedule: scheduler.schedule)
+            var takeovers = 0
+            XCTAssertTrue(monitor.start { takeovers += 1 })
+            defer { monitor.stop() }
+            let click = try XCTUnwrap(
+                CGEvent(
+                    mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: .zero, mouseButton: .left))
+            monitors.emitGlobal(try XCTUnwrap(NSEvent(cgEvent: click)))
+            for x in [0.0, 30, 60] {
+                monitors.uptime += 0.05
+                monitors.emitGlobal(
+                    try XCTUnwrap(
+                        NSEvent(
+                            cgEvent: XCTUnwrap(
+                                CGEvent(
+                                    mouseEventSource: nil, mouseType: .mouseMoved,
+                                    mouseCursorPosition: CGPoint(x: x, y: 0), mouseButton: .left)))))
+            }
+            scheduler.runAll()
+            XCTAssertEqual(takeovers, 0)
+            monitors.emitGlobal(try XCTUnwrap(NSEvent(cgEvent: event())))
+            monitors.emitGlobal(try XCTUnwrap(NSEvent(cgEvent: click)))
+            scheduler.runAll()
+            XCTAssertEqual(takeovers, 1)
+            pointer.value = false
+            monitors.emitGlobal(try XCTUnwrap(NSEvent(cgEvent: click)))
+            scheduler.runAll()
+            XCTAssertEqual(takeovers, 2)
+        }
+
+        func testStopCancelsAPendingFrontmostCheck() throws {
+            let monitors = MacComputerTestMonitors()
+            let scheduler = MacComputerTestScheduler()
+            let monitor = MacComputerInputMonitor(
+                marker: 30, monitors: monitors, frontmost: { "com.apple.TextEdit" },
+                hostBundle: "com.personalailabs.astraldeep", schedule: scheduler.schedule)
+            var takeovers = 0
+            XCTAssertTrue(monitor.start { takeovers += 1 })
+            monitors.emitGlobal(try XCTUnwrap(NSEvent(cgEvent: event())))
+            monitor.stop()
+            XCTAssertTrue(monitor.start { takeovers += 1 })
+            defer { monitor.stop() }
+            scheduler.runAll()
+            XCTAssertEqual(takeovers, 0)
+            monitors.emitGlobal(try XCTUnwrap(NSEvent(cgEvent: event())))
+            scheduler.runAll()
             XCTAssertEqual(takeovers, 1)
         }
 
@@ -114,36 +253,64 @@
             XCTAssertFalse(input.consume(current: nil))
         }
 
-        func testMonitorStartIsIdempotentAndStopRemovesBothRegistrations() {
+        func testMonitorStartIsIdempotentAndStopRemovesTheRegistration() {
             let monitors = MacComputerTestMonitors()
             let monitor = MacComputerInputMonitor(marker: 30, monitors: monitors)
             XCTAssertFalse(monitor.running)
             XCTAssertTrue(monitor.start {})
             XCTAssertTrue(monitor.start {})
             XCTAssertEqual(monitors.globals.count, 1)
-            XCTAssertEqual(monitors.locals.count, 1)
-            XCTAssertTrue(monitors.globalMasks[0].contains([.keyDown, .flagsChanged, .mouseMoved, .scrollWheel]))
+            XCTAssertTrue(monitors.locals.isEmpty)
+            XCTAssertTrue(
+                monitors.globalMasks[0].contains([.keyDown, .flagsChanged, .mouseMoved, .scrollWheel, .leftMouseDown]))
             monitor.stop()
             monitor.stop()
             XCTAssertFalse(monitor.running)
-            XCTAssertEqual(monitors.removed, [1, 2])
+            XCTAssertEqual(monitors.removed, [1])
         }
 
-        func testGlobalAndLocalTakeoverIgnoreMarkedPostsAndPreserveEvent() throws {
+        func testMarkedPostsNeverScheduleTakeover() throws {
             let monitors = MacComputerTestMonitors()
-            let monitor = MacComputerInputMonitor(marker: 30, monitors: monitors)
-            monitor.controlsWindow = 100
+            let scheduler = MacComputerTestScheduler()
+            let monitor = MacComputerInputMonitor(
+                marker: 30, monitors: monitors, frontmost: { "com.apple.TextEdit" },
+                hostBundle: "com.personalailabs.astraldeep", schedule: scheduler.schedule)
             var takeovers = 0
             XCTAssertTrue(monitor.start { takeovers += 1 })
             defer { monitor.stop() }
-            let marked = try XCTUnwrap(NSEvent(cgEvent: event(marker: 30)))
-            monitors.emitGlobal(marked)
-            XCTAssertTrue(monitors.emitLocal(marked) === marked)
-            XCTAssertEqual(takeovers, 0)
-            let physical = try XCTUnwrap(NSEvent(cgEvent: event()))
-            monitors.emitGlobal(physical)
-            XCTAssertTrue(monitors.emitLocal(physical) === physical)
-            XCTAssertEqual(takeovers, 2)
+            monitors.emitGlobal(try XCTUnwrap(NSEvent(cgEvent: event(marker: 30))))
+            XCTAssertTrue(scheduler.delays.isEmpty)
+            monitors.emitGlobal(try XCTUnwrap(NSEvent(cgEvent: event())))
+            scheduler.runAll()
+            XCTAssertEqual(takeovers, 1)
+        }
+    }
+
+    @MainActor
+    final class MacComputerTestFlag {
+        var value: Bool
+        init(_ value: Bool) { self.value = value }
+    }
+
+    @MainActor
+    final class MacComputerTestFrontmost {
+        var bundle: String? = "com.personalailabs.astraldeep"
+    }
+
+    @MainActor
+    final class MacComputerTestScheduler {
+        private(set) var delays: [TimeInterval] = []
+        private var pending: [@MainActor () -> Void] = []
+        var schedule: @MainActor (TimeInterval, @escaping @MainActor () -> Void) -> Void {
+            { [unowned self] delay, body in
+                self.delays.append(delay)
+                self.pending.append(body)
+            }
+        }
+        func runAll() {
+            let work = pending
+            pending = []
+            for body in work { body() }
         }
     }
 

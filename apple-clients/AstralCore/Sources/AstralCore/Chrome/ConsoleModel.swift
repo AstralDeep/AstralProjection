@@ -161,10 +161,11 @@ public struct ConsoleModel: Equatable, Sendable {
         else { return nil }
         var labels: [String: String] = [:]
         for (key, raw) in rawLabels {
+            let optional = Self.optionalLabels.contains(key)
             guard ConsoleDecoding.text(.string(key), maximum: 80) != nil,
-                let label = ConsoleDecoding.text(raw, maximum: 500)
+                let label = ConsoleDecoding.text(raw, maximum: 500, empty: optional)
             else { return nil }
-            labels[key] = label
+            if !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { labels[key] = label }
         }
         let composerActions = actions.compactMap(ConsoleComposerAction.init(json:))
         guard composerActions.count == actions.count,
@@ -193,10 +194,12 @@ public struct ConsoleModel: Equatable, Sendable {
     }
 
     private static let requiredLabels: Set<String> = [
-        "brand", "title", "subtitle", "start_here", "history", "agent_directory", "search_agents",
-        "dashboard", "dashboard_suffix", "new_chat", "all_categories", "example", "run", "load_prompt",
-        "empty_title", "empty_subtitle", "message_placeholder", "attach", "more", "send", "background",
-        "advanced", "fullscreen", "exit_fullscreen", "collapse", "expand", "clear_selection",
+        "brand", "history", "agent_directory", "search_agents", "dashboard", "dashboard_suffix", "new_chat",
+        "all_categories", "run", "load_prompt", "attach", "more", "send", "background", "advanced", "fullscreen",
+        "exit_fullscreen", "collapse", "expand", "clear_selection",
+    ]
+    private static let optionalLabels: Set<String> = [
+        "title", "subtitle", "start_here", "example", "empty_title", "empty_subtitle", "message_placeholder",
     ]
 }
 
