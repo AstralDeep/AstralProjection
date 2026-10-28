@@ -65,6 +65,42 @@
             frames.filter { $0["action"] == .string("remote_op_decision") }.compactMap { $0["payload"] }
         }
 
+        func testLegacyDecisionsStayUnconfirmedSendOnceAndSettleOnServerTurnCompletion() throws {
+            for decision in ["approve", "grant_task", "decline"] {
+                let (model, sent) = try model()
+                let connection = UUID().uuidString.lowercased()
+                XCTAssertTrue(model.beginConversationConnection(connection))
+                XCTAssertFalse(model.projects.enabled)
+                model.canvas = [originCard()]
+                let payload: [String: JSONValue] = [
+                    "proposal_id": .string(proposal), "decision": .string(decision),
+                ]
+                model.emit("remote_op_decision", payload: payload)
+                XCTAssertEqual(decisions(sent()).count, 1)
+                XCTAssertEqual(model.activity.last?.approval, .uncertain)
+                XCTAssertTrue(model.activity.last?.result.contains("does not confirm") == true)
+                XCTAssertTrue(model.canCancelTurn)
+                model.handleFrame(receipt(connection, chat: model.activeChatId!, state: "accepted", decision: decision))
+                XCTAssertEqual(model.activity.last?.approval, .uncertain)
+                model.projects.bind(
+                    scope: "owner",
+                    client: RestClient(serverBase: URL(string: "https://example.test")!, tokenProvider: { nil }))
+                model.projects.negotiate(true)
+                model.handleFrame(receipt(connection, chat: model.activeChatId!, state: "accepted", decision: decision))
+                XCTAssertEqual(model.activity.last?.approval, .uncertain)
+                model.emit("remote_op_decision", payload: payload)
+                XCTAssertEqual(decisions(sent()).count, 1)
+                model.handleFrame(ActivityFrames.status("done"))
+                XCTAssertEqual(model.activity.last?.approval, .uncertain)
+                XCTAssertEqual(model.activity.last?.state, .completed)
+                XCTAssertFalse(model.canCancelTurn)
+                XCTAssertTrue(model.beginConversationConnection(UUID().uuidString.lowercased()))
+                model.emit("remote_op_decision", payload: payload)
+                XCTAssertEqual(decisions(sent()).count, 1)
+                XCTAssertEqual(model.activity.last?.approval, .uncertain)
+            }
+        }
+
         func testDecisionWaitsForCurrentConnectionReceiptAndCannotBeOverwritten() throws {
             let (model, _) = try model()
             let connection = UUID().uuidString.lowercased()
@@ -178,20 +214,26 @@
         }
 
         func testDisconnectAndConnectionReplacementRetireSubmittedWithoutReplay() async throws {
-            for disconnect in [true, false] {
-                let (model, sent) = try model()
-                let old = UUID().uuidString.lowercased()
-                negotiated(model, connection: old)
-                let chat = try XCTUnwrap(model.activeChatId)
-                model.canvas = [originCard()]
-                model.decideApproval(try XCTUnwrap(model.approvalPrompts.first), allow: true)
-                if disconnect { await model.handle(.disconnected(reason: "test")) }
-                XCTAssertTrue(model.beginConversationConnection(UUID().uuidString.lowercased()))
-                XCTAssertEqual(model.activity.last?.approval, .uncertain)
-                model.handleFrame(receipt(old, chat: chat, state: "accepted"))
-                XCTAssertEqual(model.activity.last?.approval, .uncertain)
-                XCTAssertTrue(model.approvalPrompts.isEmpty)
-                XCTAssertEqual(decisions(sent()).count, 1)
+            for supportsReceipt in [true, false] {
+                for disconnect in [true, false] {
+                    let (model, sent) = try model()
+                    let old = UUID().uuidString.lowercased()
+                    if supportsReceipt {
+                        negotiated(model, connection: old)
+                    } else {
+                        XCTAssertTrue(model.beginConversationConnection(old))
+                    }
+                    let chat = try XCTUnwrap(model.activeChatId)
+                    model.canvas = [originCard()]
+                    model.decideApproval(try XCTUnwrap(model.approvalPrompts.first), allow: true)
+                    if disconnect { await model.handle(.disconnected(reason: "test")) }
+                    XCTAssertTrue(model.beginConversationConnection(UUID().uuidString.lowercased()))
+                    XCTAssertEqual(model.activity.last?.approval, .uncertain)
+                    model.handleFrame(receipt(old, chat: chat, state: "accepted"))
+                    XCTAssertEqual(model.activity.last?.approval, .uncertain)
+                    XCTAssertTrue(model.approvalPrompts.isEmpty)
+                    XCTAssertEqual(decisions(sent()).count, 1)
+                }
             }
         }
 

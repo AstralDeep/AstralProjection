@@ -345,6 +345,14 @@ final class AppModel: NSObject {
         let chat: String?
         let row: String?
         let decision: String
+        let expectsReceipt: Bool
+    }
+    private var approvalReceiptsSupported: Bool {
+        #if os(macOS)
+            return projects.enabled
+        #else
+            return false
+        #endif
     }
     @ObservationIgnored private var submittedApprovals: [String: SubmittedApproval] = [:]
     @ObservationIgnored private var decidedApprovals: Set<String> = []
@@ -3735,9 +3743,22 @@ final class AppModel: NSObject {
     }
 
     private func finishActivityProgress() {
+        let unconfirmed = submittedApprovals.filter {
+            !$0.value.expectsReceipt && $0.value.owner == downloadOwner
+                && $0.value.connection == continuity.connectionGeneration && $0.value.chat == activeChatId
+        }
+        let unconfirmedRows = Set(unconfirmed.values.compactMap(\.row))
+        for id in unconfirmed.keys {
+            submittedApprovals.removeValue(forKey: id)
+            decidedApprovals.insert(id)
+        }
         updateActivity(activeChatId) { rows in
-            for index in rows.indices where rows[index].id.hasPrefix("progress-") && rows[index].state == .running {
+            for index in rows.indices
+            where rows[index].state == .running
+                && (rows[index].id.hasPrefix("progress-") || unconfirmedRows.contains(rows[index].id))
+            {
                 rows[index].state = .completed
+                redispatchable.remove(rows[index].id)
             }
         }
     }
@@ -3777,24 +3798,57 @@ final class AppModel: NSObject {
             !decidedApprovals.contains(requestId), !withdrawingApprovals.contains(requestId),
             submittedApprovals[requestId] == nil
         else { return false }
-        guard submittedApprovals.count < 512 else { return false }
-        if let origin = approvalOrigins[requestId],
-            origin.owner != downloadOwner || origin.connection != continuity.connectionGeneration
-                || origin.chat != activeChatId
-        {
-            errorBanner = "Open the original conversation to answer this review."
-            return false
-        }
-        let linked = approvalRows[requestId]
-        submittedApprovals[requestId] = SubmittedApproval(
-            owner: downloadOwner, connection: continuity.connectionGeneration,
-            chat: activeChatId, row: linked, decision: decision)
-        updateActivity(activeChatId) { rows in
-            guard let index = linked.flatMap({ id in rows.firstIndex { $0.id == id } }) else { return }
-            rows[index].approval = .submitted
-        }
-        observeActivityComponents()
-        return true
+        #if !os(macOS)
+            let approval: ActivityRow.Approval
+            switch decision {
+            case "approve", "approve_and_resume": approval = .approved
+            case "grant_task": approval = .granted
+            default: approval = .denied
+            }
+            if decidedApprovals.count >= 512 { decidedApprovals.removeAll() }
+            decidedApprovals.insert(requestId)
+            let linked = approvalRows[requestId]
+            updateActivity(activeChatId) { rows in
+                guard
+                    let index = linked.flatMap({ id in rows.firstIndex { $0.id == id } })
+                        ?? rows.lastIndex(where: { $0.approval == .waiting })
+                else { return }
+                rows[index].approval = approval
+                if approval == .denied {
+                    rows[index].state = .cancelled
+                } else {
+                    redispatchable.insert(rows[index].id)
+                }
+            }
+            observeActivityComponents()
+            return true
+        #else
+            guard submittedApprovals.count < 512 else { return false }
+            if let origin = approvalOrigins[requestId],
+                origin.owner != downloadOwner || origin.connection != continuity.connectionGeneration
+                    || origin.chat != activeChatId
+            {
+                errorBanner = "Open the original conversation to answer this review."
+                return false
+            }
+            let linked = approvalRows[requestId]
+            submittedApprovals[requestId] = SubmittedApproval(
+                owner: downloadOwner, connection: continuity.connectionGeneration,
+                chat: activeChatId, row: linked, decision: decision, expectsReceipt: approvalReceiptsSupported)
+            updateActivity(activeChatId) { rows in
+                guard let index = linked.flatMap({ id in rows.firstIndex { $0.id == id } }) else { return }
+                if approvalReceiptsSupported {
+                    rows[index].approval = .submitted
+                } else {
+                    rows[index].approval = .uncertain
+                    rows[index].result =
+                        "Decision sent. This server does not confirm review outcomes. Inspect the action result."
+                    if decision != "decline" { redispatchable.insert(rows[index].id) }
+                }
+            }
+            observeActivityComponents()
+            return true
+        #endif
     }
 
     private func withdrawLocalComputerReviews(_ host: String) {
@@ -3884,7 +3938,7 @@ final class AppModel: NSObject {
         guard let value = frame.payload["approval_decision"], let id = value["request_id"]?.stringValue,
             let pending = submittedApprovals[id]
                 ?? (value["decision"] == .string("withdraw") ? approvalOrigins[id] : nil),
-            !decidedApprovals.contains(id), pending.owner == downloadOwner,
+            !decidedApprovals.contains(id), pending.expectsReceipt, pending.owner == downloadOwner,
             let connection = pending.connection, connection == continuity.connectionGeneration,
             frame.payload["connection_generation"] == .string(connection),
             frame.payload["chat_id"]?.stringValue == pending.chat,
@@ -3995,7 +4049,8 @@ final class AppModel: NSObject {
         approvalRows[approval.requestId] = linked
         approvalOrigins[approval.requestId] = SubmittedApproval(
             owner: downloadOwner,
-            connection: continuity.connectionGeneration, chat: chatId, row: linked, decision: "")
+            connection: continuity.connectionGeneration, chat: chatId, row: linked, decision: "",
+            expectsReceipt: approvalReceiptsSupported)
         announce(approval.summary.isEmpty ? "Approval waiting" : "Approval waiting: \(approval.summary)")
         if let image = approval.image { attachActivityThumbnail(image, to: linked, chatId: chatId) }
     }
