@@ -244,7 +244,8 @@ struct ComponentView: View {
             Image(systemName: alertIcon).foregroundStyle(color)
             VStack(alignment: .leading, spacing: 2) {
                 if let title = component.title, !title.isEmpty {
-                    markdown(title).font(ConsoleTypography.subheadline.bold()).foregroundStyle(color)
+                    markdown(title).font(ConsoleTypography.subheadline.bold())
+                        .foregroundStyle(p.textVariant(component.variant))
                 }
                 ComponentAlertMessage(text: component.message ?? component.fallbackText, literal: workReadSurface)
                     .foregroundStyle(p.text)
@@ -384,7 +385,7 @@ struct ComponentView: View {
     }
 
     private var badgeView: some View {
-        let color = p.variant(component.variant)
+        let color = p.textVariant(component.variant)
         return Text(component.label ?? component.fallbackText)
             .font(ConsoleTypography.caption.bold())
             .foregroundStyle(color)
@@ -418,7 +419,8 @@ struct ComponentView: View {
             }
             VStack(alignment: .leading, spacing: 6) {
                 if let eyebrow = component.raw["eyebrow"]?.stringValue, !eyebrow.isEmpty {
-                    Text(eyebrow).font(ConsoleTypography.caption.bold()).foregroundStyle(p.primary).textCase(.uppercase)
+                    Text(eyebrow).font(ConsoleTypography.caption.bold()).foregroundStyle(p.readablePrimary)
+                        .textCase(.uppercase)
                 }
                 markdown(component.raw["heading"]?.stringValue ?? component.title ?? "")
                     .font(ConsoleTypography.title.bold()).foregroundStyle(p.text)
@@ -615,20 +617,28 @@ struct ComponentView: View {
         let variant = component.variant ?? "primary"
         let action = component.raw["action"]?.stringValue ?? "component_action"
         let navigate = model.navigationCallback(component, surface: navigationSurface, transcript: navigationTranscript)
+        let serverDisabled =
+            component.raw["disabled"]?.boolValue == true || component.raw["enabled"]?.boolValue == false
+        let chip = CompactSettingsLayout.chipState(
+            serverDisabled: serverDisabled, selected: compactSettings && compactChip == true)
         let button = Button {
+            guard !chip.inert else { return }
             let payload = component.raw["payload"]?.objectValue ?? [:]
             if action == "load_chat" { navigate(payload) } else { model.emit(action, payload: payload) }
         } label: {
-            Text(label).fixedSize(horizontal: false, vertical: true)
-                .frame(
-                    maxWidth: variant == "primary" && !compactSettings && !WorkspaceWelcome.isExample(component)
-                        ? .infinity : nil)
+            if compactSettings {
+                CompactButtonLabel(text: label)
+            } else {
+                Text(label).fixedSize(horizontal: false, vertical: true)
+                    .frame(
+                        maxWidth: variant == "primary" && !WorkspaceWelcome.isExample(component) ? .infinity : nil)
+            }
         }
         .disabled(
-            component.raw["disabled"]?.boolValue == true || component.raw["enabled"]?.boolValue == false
+            chip.disabled
                 || (model.screen == .surface && (!model.connected || model.paramPickerPending(action: action)))
         )
-        .accessibilityValue(model.paramPickerPending(action: action) ? "Submitting" : "Ready")
+        .accessibilityValue(ComponentAccessibility.buttonValue(pending: model.paramPickerPending(action: action)))
         .accessibilityAddTraits(compactSettings && compactChip == true ? .isSelected : [])
         if WorkspaceWelcome.isExample(component) {
             button.buttonStyle(WelcomeExampleButtonStyle(palette: p))
@@ -929,6 +939,10 @@ struct ComponentView: View {
     }
 }
 
+enum ComponentAccessibility {
+    static func buttonValue(pending: Bool) -> String { pending ? "Submitting" : "" }
+}
+
 enum CompactSettingsLayout {
     static let rendered: Set<String> = ["text", "alert", "card", "container", "badge", "keyvalue", "code", "list"]
     private static let inline: Set<String> = ["button", "badge", "text", "link"]
@@ -1007,6 +1021,10 @@ enum CompactSettingsLayout {
         return !disabled.contains(true) && primary.filter({ $0 }).count == 1 ? primary : nil
     }
 
+    static func chipState(serverDisabled: Bool, selected: Bool) -> (disabled: Bool, inert: Bool) {
+        (serverDisabled && !selected, serverDisabled && selected)
+    }
+
     static func isNumeric(_ cells: [String]) -> Bool {
         let values = cells.map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty && $0 != "-" && $0 != "—" }
@@ -1043,8 +1061,6 @@ extension ComponentView {
         } else {
             markdown(text)
                 .font(compactTextFont).foregroundStyle(compactTextColor)
-                .lineLimit(compactCardContent && component.variant != "caption" && !workReadSurface ? 3 : nil)
-                .compactTooltip(compactCardContent && !workReadSurface ? text : nil)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1163,7 +1179,7 @@ extension ComponentView {
 
     private var compactBadge: some View {
         let neutral = (component.variant ?? "default") == "default"
-        let color = neutral ? p.muted : p.variant(component.variant)
+        let color = neutral ? p.muted : p.textVariant(component.variant)
         let shape = RoundedRectangle(cornerRadius: AstralRadius.md)
         return Text(component.label ?? component.fallbackText)
             .font(ConsoleTypography.caption.weight(.medium))
@@ -1372,7 +1388,7 @@ private struct AstralButtonBody: View {
                     .opacity(configuration.isPressed ? 0.7 : 1))
         case "danger":
             return AnyView(
-                label.foregroundStyle(.white)
+                label.foregroundStyle(palette.onError)
                     .background(palette.error, in: RoundedRectangle(cornerRadius: AstralRadius.sm))
                     .opacity(configuration.isPressed ? 0.8 : 1))
         default:
@@ -1383,15 +1399,16 @@ private struct AstralButtonBody: View {
         }
     }
 
-    // Chips keep one weight, padding and minimum width so selection never resizes or shifts a row
+    // Every compact button keeps one height, weight and minimum width so state never resizes or shifts a row
     private var compactBody: some View {
         let shape = RoundedRectangle(cornerRadius: AstralRadius.sm)
         let colors = compactColors
         return configuration.label
             .font(ConsoleTypography.caption.weight(.medium))
             .lineLimit(1)
-            .padding(.horizontal, 10).padding(.vertical, chip == nil ? 4 : 6)
-            .frame(minWidth: chip == nil ? 0 : 64, minHeight: chip == nil ? 24 : 28)
+            .padding(.horizontal, 10)
+            .frame(minWidth: SettingsControlMetrics.minimumWidth)
+            .frame(height: SettingsControlMetrics.height)
             .foregroundStyle(colors.foreground)
             .background(colors.fill, in: shape)
             .overlay(shape.strokeBorder(colors.stroke))
@@ -1409,6 +1426,17 @@ private struct AstralButtonBody: View {
         case "secondary", "ghost": return (palette.text, palette.text.opacity(0.06), palette.border)
         case "danger": return (palette.error, palette.error.opacity(0.12), palette.error.opacity(0.4))
         default: return (.white, palette.primary, palette.primary)
+        }
+    }
+}
+
+private struct CompactButtonLabel: View {
+    let text: String
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            Text(text).fixedSize()
+            Text(text).lineLimit(1).truncationMode(.tail).help(text)
         }
     }
 }
@@ -1486,7 +1514,7 @@ struct DownloadComponent: View {
                             NSWorkspace.shared.activateFileViewerSelecting([file])
                         }
                         .font(ConsoleTypography.callout)
-                        .tint(p.primary)
+                        .tint(p.readablePrimary)
                     }
                 #else
                     ShareLink(item: file) {
@@ -1502,7 +1530,7 @@ struct DownloadComponent: View {
                         .foregroundStyle(p.warning)
                     Text(why).font(ConsoleTypography.caption).foregroundStyle(p.muted)
                     Button("Retry") { download() }
-                        .font(ConsoleTypography.callout).tint(p.primary)
+                        .font(ConsoleTypography.callout).tint(p.readablePrimary)
                 }
             }
             if urlString == nil,
@@ -1510,7 +1538,7 @@ struct DownloadComponent: View {
                 let pageURL = URL(string: page), !page.isEmpty
             {
                 Link("Open the releases page", destination: pageURL)
-                    .font(ConsoleTypography.caption).tint(p.primary)
+                    .font(ConsoleTypography.caption).tint(p.readablePrimary)
             }
         }
         .task {
@@ -1762,7 +1790,7 @@ struct TableComponent: View {
                     .disabled(end >= Int(total))
             }
             .font(ConsoleTypography.caption)
-            .tint(p.primary)
+            .tint(p.readablePrimary)
             .padding(.top, 4)
         }
     }
@@ -1782,6 +1810,7 @@ struct InputComponent: View {
     let component: AstralComponent
     @Environment(ThemeStore.self) var theme
     @Environment(AppModel.self) var model
+    @Environment(\.astralCompactSettings) private var compactSettings
     @State private var value = ""
     @State private var editingOwner = UUID()
     @State private var initialValue = ""
@@ -1789,16 +1818,24 @@ struct InputComponent: View {
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
+        let placeholder = component.raw["placeholder"]?.stringValue ?? ""
         VStack(alignment: .leading, spacing: 3) {
             if let label = component.label, !label.isEmpty {
-                Text(label).font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                Text(label).font(compactSettings ? ConsoleTypography.footnote : ConsoleTypography.caption)
+                    .foregroundStyle(compactSettings ? p.text : p.muted)
+                    .accessibilityHidden(true)
             }
-            HStack {
-                TextField(component.raw["placeholder"]?.stringValue ?? "", text: $value)
-                    .textFieldStyle(.roundedBorder)
+            HStack(spacing: compactSettings ? 6 : 8) {
+                TextField(placeholder, text: $value)
+                    .astralFieldStyle(compactSettings, palette: p)
                     .focused($editingFocused)
                     .onSubmit(submit)
-                Button("Send", action: submit).tint(p.primary)
+                    .accessibilityLabel(component.label.flatMap { $0.isEmpty ? nil : $0 } ?? placeholder)
+                if compactSettings {
+                    Button("Send", action: submit).buttonStyle(AstralButtonStyle(palette: p, variant: "primary"))
+                } else {
+                    Button("Send", action: submit).tint(p.readablePrimary)
+                }
             }
         }
         .onAppear {
@@ -1853,7 +1890,8 @@ struct ParamPickerComponent: View {
             if let title = component.title, !title.isEmpty {
                 formText(title)
                     .font(
-                        compactSettings ? ConsoleTypography.subheadline.weight(.semibold) : ConsoleTypography.headline)
+                        compactSettings ? ConsoleTypography.subheadline.weight(.semibold) : ConsoleTypography.headline
+                    )
                     .foregroundStyle(p.text)
                     .fieldHelp(component.raw["description"]?.stringValue)
                     .accessibilityIdentifier(
@@ -1917,7 +1955,8 @@ struct ParamPickerComponent: View {
         .padding(compactSettings ? 0 : 14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            compactSettings ? Color.clear : p.surface.opacity(0.5), in: RoundedRectangle(cornerRadius: AstralRadius.lg))
+            compactSettings ? Color.clear : p.surface.opacity(0.5), in: RoundedRectangle(cornerRadius: AstralRadius.lg)
+        )
         .overlay(RoundedRectangle(cornerRadius: AstralRadius.lg).stroke(compactSettings ? Color.clear : p.border))
         .onChange(of: values) { _, _ in updateEditing() }
         .onChange(of: flags) { _, _ in updateEditing() }
@@ -1974,6 +2013,7 @@ struct ParamPickerComponent: View {
                     }
                 }
             }
+            .controlSize(.small)
             .compactGroupBox(!compactCardContent, palette: p)
         }
     }
@@ -1987,6 +2027,7 @@ struct ParamPickerComponent: View {
         if kind == "textarea" || kind == "checklist" {
             VStack(alignment: .leading, spacing: 6) {
                 Text(title).font(ConsoleTypography.footnote).foregroundStyle(p.text)
+                    .accessibilityHidden(kind == "textarea")
                 fieldControl(field, name: name, label: label, kind: kind).fieldHelp(field["help"]?.stringValue)
             }
         } else {
@@ -1994,6 +2035,7 @@ struct ParamPickerComponent: View {
                 Text(title).font(ConsoleTypography.footnote).foregroundStyle(p.text)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityHidden(true)
                 compactControl(field, name: name, label: label, kind: kind).layoutPriority(1)
             }
         }
@@ -2002,14 +2044,17 @@ struct ParamPickerComponent: View {
     @ViewBuilder
     private func compactControl(_ field: JSONValue, name: String, label: String, kind: String) -> some View {
         let control = fieldControl(field, name: name, label: label, kind: kind).fieldHelp(field["help"]?.stringValue)
-        switch kind {
-        case "boolean", "checkbox":
-            control.toggleStyle(.switch).controlSize(.small)
-        case "select":
-            control.labelsHidden().fixedSize()
-        default:
-            control.font(ConsoleTypography.footnote).frame(maxWidth: 300)
+        Group {
+            switch kind {
+            case "boolean", "checkbox":
+                control.toggleStyle(.switch)
+            case "select":
+                control.labelsHidden()
+            default:
+                control
+            }
         }
+        .frame(width: SettingsControlMetrics.formColumn, alignment: .trailing)
     }
 
     private func fieldIsVisible(_ field: JSONValue) -> Bool {
@@ -2029,29 +2074,35 @@ struct ParamPickerComponent: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label + (field["required"]?.boolValue == true ? " *" : ""))
                 .font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                .accessibilityHidden(kind != "checklist")
             fieldControl(field, name: name, label: label, kind: kind)
                 .fieldHelp(field["help"]?.stringValue)
         }
     }
 
+    static func accessibleLabel(_ label: String, required: Bool) -> String {
+        required ? "\(label), required" : label
+    }
+
     // One switch over every kind inside fieldBody exceeded the Xcode 26.3 Release type-checker limit
     @ViewBuilder
     private func fieldControl(_ field: JSONValue, name: String, label: String, kind: String) -> some View {
+        let spoken = Self.accessibleLabel(label, required: field["required"]?.boolValue == true)
         switch kind {
         case "boolean", "checkbox":
-            booleanField(field, name: name, label: label)
+            booleanField(field, name: name, label: spoken)
         case "select":
-            selectField(field, name: name, label: label)
+            selectField(field, name: name, label: label, spoken: spoken)
         case "checklist":
             checklistField(field, name: name)
         case "number":
-            numberField(field, name: name, label: label)
+            numberField(field, name: name, label: spoken)
         case "password":
-            passwordField(field, name: name, label: label)
+            passwordField(field, name: name, label: spoken)
         case "textarea":
-            textareaField(field, name: name, label: label)
+            textareaField(field, name: name, label: spoken)
         default:
-            plainTextField(field, name: name, label: label)
+            plainTextField(field, name: name, label: spoken)
         }
     }
 
@@ -2069,7 +2120,7 @@ struct ParamPickerComponent: View {
     }
 
     @ViewBuilder
-    private func selectField(_ field: JSONValue, name: String, label: String) -> some View {
+    private func selectField(_ field: JSONValue, name: String, label: String, spoken title: String) -> some View {
         let options: [ParameterOption] = form?.options(field) ?? []
         let selection: Binding<String> = Binding(
             get: { form?.stringValue(field, values: values) ?? "" },
@@ -2078,9 +2129,11 @@ struct ParamPickerComponent: View {
         Picker(label, selection: selection) {
             ForEach(options) { Text($0.label).tag($0.value) }
         }
-        .pickerStyle(.menu).tint(p.primary)
+        .pickerStyle(.menu).tint(p.readablePrimary)
+        .astralSelectOutline(compactSettings, palette: p)
+        .compactTooltip(compactSettings ? spoken : nil)
         .accessibilityIdentifier("param-field-\(name)")
-        .accessibilityLabel(label)
+        .accessibilityLabel(title)
         .accessibilityValue(spoken)
     }
 
@@ -2115,7 +2168,7 @@ struct ParamPickerComponent: View {
             },
             set: { values[name] = $0 })
         TextField(Self.placeholder(field), text: text)
-            .textFieldStyle(.roundedBorder)
+            .astralFieldStyle(compactSettings, palette: p)
             .focused($editingField, equals: name)
             #if os(iOS)
                 .keyboardType(.decimalPad)
@@ -2130,7 +2183,7 @@ struct ParamPickerComponent: View {
             get: { values[name] ?? "" },
             set: { values[name] = $0 })
         SecureField(Self.placeholder(field), text: text)
-            .textFieldStyle(.roundedBorder)
+            .astralFieldStyle(compactSettings, palette: p)
             .focused($editingField, equals: name)
             .onSubmit { editingField = nil }
             .accessibilityIdentifier("param-field-\(name)")
@@ -2150,9 +2203,12 @@ struct ParamPickerComponent: View {
             .frame(minHeight: compactSettings ? 64 : 80)
             .background(
                 compactSettings ? p.text.opacity(0.04) : Color.clear,
-                in: RoundedRectangle(cornerRadius: AstralRadius.sm))
+                in: RoundedRectangle(cornerRadius: AstralRadius.sm)
+            )
             .overlay(
-                RoundedRectangle(cornerRadius: AstralRadius.sm).strokeBorder(compactSettings ? p.border : Color.clear))
+                RoundedRectangle(cornerRadius: AstralRadius.sm).strokeBorder(
+                    compactSettings ? p.fieldBorder : Color.clear)
+            )
             .autocorrectionDisabled(true)
             #if os(iOS)
                 .textInputAutocapitalization(.never)
@@ -2167,7 +2223,7 @@ struct ParamPickerComponent: View {
             get: { values[name] ?? (field["default"]?.stringValue ?? "") },
             set: { values[name] = $0 })
         TextField(Self.placeholder(field), text: text)
-            .textFieldStyle(.roundedBorder)
+            .astralFieldStyle(compactSettings, palette: p)
             .focused($editingField, equals: name)
             .onSubmit { editingField = nil }
             .autocorrectionDisabled(true)
@@ -2186,8 +2242,10 @@ struct ParamPickerComponent: View {
         payload: [String: JSONValue],
         available: Bool
     ) -> some View {
-        Button(label) {
+        Button {
             submit(action: action, payload: payload)
+        } label: {
+            if compactSettings { CompactButtonLabel(text: label) } else { Text(label) }
         }
         .buttonStyle(AstralButtonStyle(palette: p, variant: variant))
         .disabled(
@@ -2199,10 +2257,7 @@ struct ParamPickerComponent: View {
             action == "chrome_llm_save" ? "llm-save-button" : "param-action-\(action ?? "message")"
         )
         .accessibilityLabel(label)
-        .accessibilityValue(
-            model.paramPickerPending(action: action ?? "")
-                ? "Submitting"
-                : "Ready")
+        .accessibilityValue(ComponentAccessibility.buttonValue(pending: model.paramPickerPending(action: action ?? "")))
     }
 
     private func submit(action: String?, payload: [String: JSONValue]) {
@@ -2281,7 +2336,7 @@ struct TabsComponent: View {
             button.buttonStyle(AstralButtonStyle(palette: p, variant: "secondary", chip: selection == index))
         } else {
             button.font(ConsoleTypography.callout.weight(.semibold))
-                .foregroundStyle(selection == index ? p.primary : p.muted)
+                .foregroundStyle(selection == index ? p.readablePrimary : p.muted)
         }
     }
 }
@@ -2344,7 +2399,8 @@ struct CollapsibleComponent: View {
         .background(welcome ? Color.clear : p.surface.opacity(0.4), in: RoundedRectangle(cornerRadius: AstralRadius.md))
         .overlay(
             RoundedRectangle(cornerRadius: AstralRadius.md).strokeBorder(
-                compactSettings && !welcome ? p.border : Color.clear))
+                compactSettings && !welcome ? p.border : Color.clear)
+        )
         .astralChartBackdrop(p, color: p.surface, opacity: welcome ? 0 : 0.4)
         .onAppear {
             if let retained = model.canvasCapture.state(for: captureNode)?.boolValue { expanded = retained }
@@ -2370,6 +2426,32 @@ extension View {
     @ViewBuilder
     fileprivate func compactFont(_ font: Font?) -> some View {
         if let font { self.font(font) } else { self }
+    }
+
+    @ViewBuilder
+    fileprivate func astralFieldStyle(_ compact: Bool, palette: AstralPalette) -> some View {
+        if compact {
+            let shape = RoundedRectangle(cornerRadius: AstralRadius.sm)
+            textFieldStyle(.plain)
+                .font(ConsoleTypography.footnote)
+                .padding(.horizontal, 8)
+                .frame(minHeight: SettingsControlMetrics.height)
+                .background(palette.text.opacity(0.04), in: shape)
+                .overlay(shape.strokeBorder(palette.fieldBorder))
+        } else {
+            textFieldStyle(.roundedBorder)
+        }
+    }
+
+    @ViewBuilder
+    fileprivate func astralSelectOutline(_ compact: Bool, palette: AstralPalette) -> some View {
+        if compact {
+            overlay(
+                RoundedRectangle(cornerRadius: AstralRadius.sm).strokeBorder(palette.fieldBorder)
+                    .allowsHitTesting(false))
+        } else {
+            self
+        }
     }
 
     @ViewBuilder

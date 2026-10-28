@@ -13,16 +13,23 @@ struct AstralPalette: Equatable {
     var secondary = Color(hex: 0x6E6E78)
     var accent = Color(hex: 0xA78BFA)
     var text = Color(hex: 0xECECEF)
-    var muted = Color(hex: 0x8C8C95)
+    var muted = Color(hex: 0x93939B)
     var success = Color(hex: 0x5EC28F)
     var warning = Color(hex: 0xD4A94A)
-    var error = Color(hex: 0xE06C6C)
+    var error = Color(hex: 0xE17272)
     var info = Color(hex: 0x9A8CF2)
+    var onError = Color(hex: 0x121214)
+    var fieldBorder = Color(hex: 0x6E6E75)
 
     static let graphite = AstralPalette()
     static let midnight: AstralPalette = {
         let store = ThemeStore()
         store.apply(preset: "midnight")
+        return store.palette
+    }()
+    static let daylight: AstralPalette = {
+        let store = ThemeStore()
+        store.apply(preset: "daylight")
         return store.palette
     }()
 
@@ -41,6 +48,31 @@ struct AstralPalette: Equatable {
         case "accent": return accent
         default: return primary
         }
+    }
+
+    static let textContrast = 4.5
+
+    static func contrast(_ foreground: Color, _ background: Color) -> Double {
+        func luminance(_ color: Color) -> Double {
+            let resolved = color.resolve(in: EnvironmentValues())
+            func linear(_ channel: Float) -> Double {
+                let unit = Double(channel)
+                return unit <= 0.03928 ? unit / 12.92 : pow((unit + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * linear(resolved.red) + 0.7152 * linear(resolved.green) + 0.0722 * linear(resolved.blue)
+        }
+        let first = luminance(foreground)
+        let second = luminance(background)
+        return (max(first, second) + 0.05) / (min(first, second) + 0.05)
+    }
+
+    var readablePrimary: Color {
+        [bg, surface, surface2].allSatisfy { Self.contrast(primary, $0) >= Self.textContrast } ? primary : accent
+    }
+
+    func textVariant(_ v: String?) -> Color {
+        let color = variant(v)
+        return color == primary ? readablePrimary : color
     }
 }
 
@@ -184,12 +216,17 @@ final class ThemeStore {
         }
         let applied = apply(colors: colors)
         guard preset == nil, !applied.isEmpty else { return }
-        deriveExtras(keepingSurface2: applied.contains(\.surface2))
+        deriveExtras(applied: applied)
     }
 
-    private func deriveExtras(keepingSurface2: Bool) {
+    private func deriveExtras(applied: [WritableKeyPath<AstralPalette, Color>]) {
         palette.border = palette.text.opacity(0.08)
-        guard !keepingSurface2 else { return }
+        let reference = colorScheme == .dark ? AstralPalette.graphite : AstralPalette.daylight
+        let statusRoles: [WritableKeyPath<AstralPalette, Color>] = [
+            \.success, \.warning, \.error, \.info, \.onError, \.fieldBorder,
+        ]
+        for role in statusRoles where !applied.contains(role) { palette[keyPath: role] = reference[keyPath: role] }
+        guard !applied.contains(\.surface2) else { return }
         let base = palette.surface.resolve(in: EnvironmentValues())
         let target: Float = colorScheme == .dark ? 1 : 0
         func shifted(_ channel: Float) -> Double { Double(channel + (target - channel) * 0.04) }
@@ -217,6 +254,12 @@ final class ThemeStore {
         case "accent": \.accent
         case "text": \.text
         case "muted": \.muted
+        case "success": \.success
+        case "warning": \.warning
+        case "error": \.error
+        case "info": \.info
+        case "on_error", "onError": \.onError
+        case "field_border", "fieldBorder": \.fieldBorder
         default: nil
         }
     }
@@ -229,35 +272,46 @@ final class ThemeStore {
                 surface2: Color(hex: 0x1E2338),
                 primary: Color(hex: 0x6366F1), secondary: Color(hex: 0x8B5CF6),
                 accent: Color(hex: 0x06B6D4), text: Color(hex: 0xF3F4F6),
-                muted: Color(hex: 0x9CA3AF))
+                muted: Color(hex: 0x9CA3AF),
+                error: Color(hex: 0xE27777), onError: Color(hex: 0x0F1221),
+                fieldBorder: Color(hex: 0x686F7E))
         case "daylight":
             palette = AstralPalette(
                 bg: Color(hex: 0xF8FAFC), surface: Color(hex: 0xFFFFFF),
                 surface2: Color(hex: 0xEEF0F5), border: Color.black.opacity(0.08),
                 primary: Color(hex: 0x4F46E5), secondary: Color(hex: 0x7C3AED),
-                accent: Color(hex: 0x0891B2), text: Color(hex: 0x1E293B),
-                muted: Color(hex: 0x64748B))
+                accent: Color(hex: 0x067590), text: Color(hex: 0x1E293B),
+                muted: Color(hex: 0x58667B),
+                success: Color(hex: 0x147739), warning: Color(hex: 0x955B06),
+                error: Color(hex: 0xB91C1C), info: Color(hex: 0x4338CA),
+                onError: Color(hex: 0xFFFFFF), fieldBorder: Color(hex: 0x7F8A9B))
         case "ocean":
             palette = AstralPalette(
                 bg: Color(hex: 0x0C1222), surface: Color(hex: 0x132038),
                 surface2: Color(hex: 0x1C2940),
                 primary: Color(hex: 0x0EA5E9), secondary: Color(hex: 0x06B6D4),
                 accent: Color(hex: 0x2DD4BF), text: Color(hex: 0xE2E8F0),
-                muted: Color(hex: 0x94A3B8))
+                muted: Color(hex: 0x94A3B8),
+                error: Color(hex: 0xE27777), onError: Color(hex: 0x0C1222),
+                fieldBorder: Color(hex: 0x66758A))
         case "sunset":
             palette = AstralPalette(
                 bg: Color(hex: 0x1C1017), surface: Color(hex: 0x2D1B24),
                 surface2: Color(hex: 0x35242D),
                 primary: Color(hex: 0xF97316), secondary: Color(hex: 0xEF4444),
                 accent: Color(hex: 0xFBBF24), text: Color(hex: 0xFEF2F2),
-                muted: Color(hex: 0xA8A29E))
+                muted: Color(hex: 0xA8A29E),
+                error: Color(hex: 0xE37B7B), onError: Color(hex: 0x1C1017),
+                fieldBorder: Color(hex: 0x7B7172))
         case "forest":
             palette = AstralPalette(
                 bg: Color(hex: 0x0F1A14), surface: Color(hex: 0x1A2E22),
                 surface2: Color(hex: 0x23362B),
                 primary: Color(hex: 0x22C55E), secondary: Color(hex: 0x10B981),
                 accent: Color(hex: 0xA3E635), text: Color(hex: 0xECFDF5),
-                muted: Color(hex: 0x86EFAC))
+                muted: Color(hex: 0x86EFAC),
+                error: Color(hex: 0xE78C8C), info: Color(hex: 0xA69AF4),
+                onError: Color(hex: 0x0F1A14), fieldBorder: Color(hex: 0x508965))
         default:
             palette = .graphite
         }

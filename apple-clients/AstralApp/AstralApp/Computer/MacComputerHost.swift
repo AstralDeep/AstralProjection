@@ -70,6 +70,10 @@
         }
     }
 
+    enum MacBypassOrigin: Equatable {
+        case controls, settings, palette
+    }
+
     @MainActor @Observable
     final class MacComputerHost {
         private struct PauseWaiter {
@@ -89,9 +93,14 @@
         private(set) var monitoringAllowed = false
         private(set) var lastError: String?
         private(set) var awaitingApproval = false
+        private(set) var working = false
+        private(set) var bypass = false
+        var bypassConfirmation: MacBypassOrigin?
         let files: MacComputerFiles
+        @ObservationIgnored var announcer: (String) -> Void = { AccessibilityNotification.Announcement($0).post() }
+        @ObservationIgnored private var bypassReleaseOwed = false
         @ObservationIgnored private let defaults: UserDefaults
-        @ObservationIgnored private let authority = ComputerHostAuthority()
+        @ObservationIgnored private let authority: ComputerHostAuthority
         @ObservationIgnored private let driver: any MacComputerDriving
         @ObservationIgnored private let monitor: any MacComputerMonitoring
         @ObservationIgnored private let permissionProvider: @MainActor () -> MacComputerPermissions
@@ -137,8 +146,10 @@
             system: any MacComputerSystemIO = MacComputerLiveSystem.shared,
             panelPresenter: (@MainActor (NSPanel) -> Void)? = nil,
             commands: MacComputerCommands? = nil,
-            appActivator: (@MainActor () -> Void)? = nil
+            appActivator: (@MainActor () -> Void)? = nil,
+            authority: ComputerHostAuthority = ComputerHostAuthority()
         ) {
+            self.authority = authority
             self.available = available ?? Self.executionDistribution()
             self.defaults = defaults
             self.files = files ?? MacComputerFiles(defaults: defaults)
@@ -293,8 +304,8 @@
                 verbs.subtract(Self.commandVerbs.union(["read_file", "list_dir", "write_file", "delete_path"]))
             }
             if browser?.isEnabled != true { verbs = verbs.filter { !Self.browserVerb($0) } }
-            let raw = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.8"
-            let version = raw.split(separator: ".").count == 2 ? raw + ".0" : raw
+            let raw = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+            let version = raw + String(repeating: ".0", count: max(0, 3 - raw.split(separator: ".").count))
             let roots = files.roots.compactMap { root -> ComputerHostWorkspaceRoot? in
                 let folder = String(
                     URL(fileURLWithPath: root).lastPathComponent.unicodeScalars.filter {
@@ -343,6 +354,11 @@
         }
         private func disconnect(epoch: UUID) {
             localInput?.invalidate()
+            bypassConfirmation = nil
+            if bypass {
+                bypassReleaseOwed = true
+                turnBypassOff()
+            }
             channelEpoch = epoch
             outboundTail?.cancel()
             outboundTail = nil
@@ -355,6 +371,7 @@
             let epoch = UUID()
             disconnect(epoch: epoch)
             guard channelEpoch == epoch else { return }
+            bypassReleaseOwed = false
             desktopAvailable = false
             authority.setDesktopAvailable(false, requiresLocalRearm: false)
             owner = nil
@@ -477,6 +494,7 @@
         }
         private func suspendAccess() {
             let epoch = channelEpoch
+            setBypass(false)
             localInput?.invalidate()
             enabled = false
             desktopAvailable = false
@@ -495,7 +513,69 @@
             suspendAccess()
             lastError = "Computer control stopped because this desktop became unavailable."
         }
+        func requestBypass(_ value: Bool, from origin: MacBypassOrigin) {
+            guard value else {
+                setBypass(false)
+                return
+            }
+            guard !bypass, bypassAllowed() else { return }
+            lastError = nil
+            bypassConfirmation = origin
+        }
+        func confirmBypass() {
+            guard bypassConfirmation != nil else { return }
+            bypassConfirmation = nil
+            guard bypassAllowed() else { return }
+            setBypass(true)
+        }
+        func cancelBypass() { bypassConfirmation = nil }
+        func releaseBypass() -> String? {
+            bypassConfirmation = nil
+            let owed = bypass || bypassReleaseOwed
+            bypassReleaseOwed = false
+            turnBypassOff()
+            return owed ? bypassFrame(false) : nil
+        }
+        private func bypassAllowed() -> Bool {
+            guard available, enabled, owner != nil, sender != nil else {
+                lastError = "Allow computer tasks on this Mac before bypassing approvals."
+                return false
+            }
+            guard desktopRearm(), desktopProbe() else {
+                lastError = "Turn on bypass yourself from Astral's active, unlocked local desktop."
+                return false
+            }
+            return true
+        }
+        private func setBypass(_ value: Bool) {
+            bypassConfirmation = nil
+            bypassReleaseOwed = false
+            guard bypass != value else { return }
+            bypass = value
+            send(bypassFrame(value))
+            announcer(value ? "Approvals bypassed on this Mac" : "Approval bypass is off")
+        }
+        private func turnBypassOff() {
+            guard bypass else { return }
+            bypass = false
+            announcer("Approval bypass is off")
+        }
+        private func bypassFrame(_ enabled: Bool) -> String {
+            ComputerHostOutbound.frame(
+                action: "chrome_computer_bypass_set",
+                payload: ["host_id": .string(hostId), "enabled": .bool(enabled)])
+        }
+        private func reconcileBypass(_ reported: Bool?) {
+            if bypassReleaseOwed, sender != nil {
+                bypassReleaseOwed = false
+                send(bypassFrame(false))
+            } else if reported == true && !bypass {
+                send(bypassFrame(false))
+            }
+            if reported == false { turnBypassOff() }
+        }
         func applicationWillTerminate() {
+            turnBypassOff()
             commands.terminateNow()
             localInput?.stop()
             stop()
@@ -509,7 +589,8 @@
             if awaitingApproval { showPanel() }
         }
         func bringAstralForward() { appActivator() }
-        private func pause(reason: String) {
+        private func pause(reason: String, retainingPermits: Bool = false) {
+            if !retainingPermits { browser?.discardPermits() }
             guard let current = session, current.state == "active" else { return }
             localInput?.invalidate()
             authority.pause()
@@ -536,7 +617,7 @@
         }
         func recordApprovalInteraction() -> String? {
             let id = session?.id
-            if session?.state == "active" { pause(reason: "local_input") }
+            if session?.state == "active" { pause(reason: "local_input", retainingPermits: true) }
             return id
         }
         func approvalStillCurrent(_ expected: String?) -> Bool {
@@ -600,7 +681,12 @@
             for task in auxiliary.values { task.cancel() }
             auxiliary = [:]
             browserTail = nil
+            refreshWorking()
             if resetDriver { Task { await driver.reset() } }
+        }
+        private func refreshWorking() {
+            let busy = worker != nil || !queue.isEmpty || !auxiliary.isEmpty
+            if working != busy { working = busy }
         }
         private func retire(commands state: String = "interrupted") {
             resolvePauseWaiters(accepted: false)
@@ -619,11 +705,17 @@
         }
         @discardableResult
         func consume(_ frame: InboundFrame) -> Bool {
-            if frame.name == "computer_host" { return true }
+            if frame.name == "computer_host" {
+                if frame.payload["host_id"]?.stringValue == hostId {
+                    reconcileBypass(frame.payload["bypass"]?.boolValue)
+                }
+                return true
+            }
             if frame.name == "computer_session" {
                 guard let incoming = try? ComputerHostSession(json: frame.payload), incoming.hostId == hostId else {
                     return true
                 }
+                reconcileBypass(incoming.bypass)
                 if incoming.state == "ended" {
                     if session?.id == incoming.id { retire() }
                     return true
@@ -699,6 +791,7 @@
         private static func browserVerb(_ verb: String) -> Bool { verb.hasPrefix("browser_") }
         private static func nonPhysical(_ verb: String) -> Bool { browserVerb(verb) || commandVerbs.contains(verb) }
         private func drain() {
+            defer { refreshWorking() }
             while let index = queue.firstIndex(where: { Self.nonPhysical($0.0.verb) }) {
                 let (request, ticket) = queue.remove(at: index)
                 runAuxiliary(request, ticket)
@@ -726,19 +819,7 @@
                         })
                 } catch { result = .failure(error) }
                 guard let self, self.workerId == id else { return }
-                do {
-                    try authority.verify(ticket)
-                    switch result {
-                    case .success(let value): self.respond(request.id, result: value)
-                    case .failure(let error):
-                        self.respond(request.id, error: error)
-                        self.lastError = error.localizedDescription
-                    }
-                } catch {
-                    self.lastError =
-                        "The operation was interrupted; inspect the current computer state before retrying."
-                }
-                authority.complete(ticket)
+                self.answer(request, ticket: ticket, with: result)
                 self.worker = nil
                 self.drain()
             }
@@ -769,19 +850,8 @@
                         try await host.performAuxiliary(request, ticket: ticket, roots: roots, authorize: authorize))
                 } catch { result = .failure(error) }
                 guard let self, self.auxiliary.removeValue(forKey: id) != nil else { return }
-                do {
-                    try authority.verify(ticket)
-                    switch result {
-                    case .success(let value): self.respond(request.id, result: value)
-                    case .failure(let error):
-                        self.respond(request.id, error: error)
-                        self.lastError = error.localizedDescription
-                    }
-                } catch {
-                    self.lastError =
-                        "The operation was interrupted; inspect the current computer state before retrying."
-                }
-                authority.complete(ticket)
+                self.refreshWorking()
+                self.answer(request, ticket: ticket, with: result)
             }
             auxiliary[id] = task
             if serial { browserTail = task }
@@ -801,6 +871,23 @@
                 throw ComputerHostError("unsupported", "The browser pane is turned off on this Mac.")
             }
             return try await browser.handle(request, ticket: ticket, authorize: authorize)
+        }
+        private func answer(
+            _ request: ComputerHostRequest, ticket: ComputerHostTicket, with result: Result<[String: JSONValue], Error>
+        ) {
+            do {
+                try authority.verify(ticket)
+                switch result {
+                case .success(let value): respond(request.id, result: value)
+                case .failure(let error):
+                    respond(request.id, error: error)
+                    lastError = error.localizedDescription
+                }
+            } catch {
+                respond(request.id, error: error)
+                lastError = "The operation was interrupted; inspect the current computer state before retrying."
+            }
+            authority.complete(ticket)
         }
         private func respond(_ id: String, result: [String: JSONValue]? = nil, error: Error? = nil) {
             var payload: [String: JSONValue] = ["request_id": .string(id), "ok": .bool(error == nil)]
@@ -882,6 +969,7 @@
                             .accessibilityIdentifier("mac-computer-approval-waiting")
                         Spacer()
                         Button("Open Astral", action: host.bringAstralForward)
+                            .keyboardShortcut(.defaultAction)
                             .accessibilityIdentifier("mac-computer-open-astral")
                     }.padding([.horizontal, .top], 12)
                 }

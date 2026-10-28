@@ -137,8 +137,8 @@ def test_apple_bundles_take_the_protected_monotonic_build_number() -> None:
     assert versioned == original | navigation | direct_download
     assert len(original) == 10 and len(navigation) == 4 and len(direct_download) == 7
     for key in versioned:
-        assert "CURRENT_PROJECT_VERSION = 70;" in configurations[key]
-        assert "MARKETING_VERSION = 1.9;" in configurations[key]
+        assert "CURRENT_PROJECT_VERSION = 71;" in configurations[key]
+        assert "MARKETING_VERSION = 2.0.0;" in configurations[key]
     for key in direct_download:
         assert "name = DirectDownload;" in configurations[key]
     for key in navigation:
@@ -152,6 +152,8 @@ def test_apple_bundles_take_the_protected_monotonic_build_number() -> None:
     assert "MARKETING_VERSION = 1.4;" not in project
     assert "CURRENT_PROJECT_VERSION = 69;" not in project
     assert "MARKETING_VERSION = 1.8;" not in project
+    assert "CURRENT_PROJECT_VERSION = 70;" not in project
+    assert "MARKETING_VERSION = 1.9;" not in project
     assert app["CFBundleVersion"] == "$(CURRENT_PROJECT_VERSION)"
     assert watch["CFBundleVersion"] == "$(CURRENT_PROJECT_VERSION)"
 

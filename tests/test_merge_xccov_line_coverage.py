@@ -875,3 +875,170 @@ def test_macos_native_union_retains_distinct_observation_lanes(tmp_path, profile
     assert result["format"] == policy.MACOS_REPORT_FORMAT
     assert set(result["domains"]) == set(lanes)
     assert result["coverage"] == {SOURCE: _observations(len(lanes), 2 * len(lanes))}
+
+
+def _sharded_inputs(repo, counts, *, binaries=None):
+    core = _core_source(repo)
+    (repo / SOURCE).write_text("enum Example {\n let value = 1\n}\n")
+    _commit(repo)
+    inputs = {}
+    for lane in ("core", "unit"):
+        coverage = {core if lane == "core" else SOURCE: _observations(1, 0)}
+        paths = [core] if lane == "core" else [core, SOURCE]
+        inputs[lane] = _report(repo, lane + ".json", _domain_report(repo, lane, coverage, paths))
+    shards = []
+    for index, (first, second) in enumerate(counts):
+        document = _domain_report(repo, "ui", {SOURCE: _observations(first, second)}, [core, SOURCE])
+        binary = document["domains"]["ui"]["binary"]
+        binary["sha256"] = (binaries or "abc")[index] * 64
+        binary["artifact_sha256"] = (binaries or "def")[index] * 64
+        shards.append(_report(repo, f"ui-{index}.json", document))
+    inputs["ui"] = shards
+    return inputs
+
+
+def test_ui_shards_union_line_hits_under_one_ui_domain(tmp_path):
+    repo = _repo(tmp_path)
+    inputs = _sharded_inputs(repo, [(1, 0), (0, 2), (4, 0)])
+    result = merge_xccov_reports(
+        repo=repo, platform="ios", inputs=inputs, output=repo / "build/sharded.json", ui_shards=3
+    )
+    assert result["coverage"][SOURCE] == _observations(6, 2)
+    assert set(result["domains"]) == {"core", "unit", "ui"}
+    assert result["domains"]["ui"]["binary"]["sha256"] == "a" * 64
+    assert json.loads((repo / "build/sharded.json").read_text()) == result
+
+
+@pytest.mark.parametrize("shards", [2, 4])
+def test_ui_shards_refuse_a_missing_or_extra_shard(tmp_path, shards):
+    repo = _repo(tmp_path)
+    inputs = _sharded_inputs(repo, [(1, 0), (0, 2), (4, 0)])
+    with pytest.raises(MergeError, match="shard count") as caught:
+        merge_xccov_reports(
+            repo=repo, platform="ios", inputs=inputs, output=repo / "build/refused.json", ui_shards=shards
+        )
+    assert caught.value.code == "shard_count_mismatch"
+    assert not (repo / "build/refused.json").exists()
+
+
+def test_ui_shards_refuse_duplicate_paths_and_duplicate_coverage(tmp_path):
+    repo = _repo(tmp_path)
+    inputs = _sharded_inputs(repo, [(1, 0), (0, 2), (1, 0)])
+    with pytest.raises(MergeError) as caught:
+        merge_xccov_reports(
+            repo=repo, platform="ios", inputs=inputs, output=repo / "build/copy.json", ui_shards=3
+        )
+    assert caught.value.code == "duplicate_shard"
+    inputs = _sharded_inputs(repo, [(1, 0), (0, 2), (4, 0)])
+    inputs["ui"][2] = inputs["ui"][0]
+    with pytest.raises(MergeError) as caught:
+        merge_xccov_reports(
+            repo=repo, platform="ios", inputs=inputs, output=repo / "build/same.json", ui_shards=3
+        )
+    assert caught.value.code == "duplicate_input"
+    legacy = {
+        lane: _report(repo, f"legacy-{lane}.json", {SOURCE: _observations(1, 0)})
+        for lane in ("unit", "one", "two")
+    }
+    with pytest.raises(MergeError) as caught:
+        merge_xccov_reports(
+            repo=repo,
+            platform="macos",
+            inputs={"unit": legacy["unit"], "ui": [legacy["one"], legacy["two"]]},
+            output=repo / "build/legacy.json",
+            ui_shards=2,
+        )
+    assert caught.value.code == "duplicate_shard"
+
+
+@pytest.mark.parametrize("mutation", ["geometry", "member", "lane", "legacy"])
+def test_ui_shards_refuse_divergent_or_mixed_evidence(tmp_path, mutation):
+    repo = _repo(tmp_path)
+    inputs = _sharded_inputs(repo, [(1, 0), (0, 2), (4, 0)])
+    document = json.loads(inputs["ui"][1].read_text())
+    domain = document["domains"]["ui"]
+    if mutation == "geometry":
+        domain["sources"][SOURCE]["geometry_sha256"] = "c" * 64
+    elif mutation == "member":
+        domain["binary"]["artifact_member"] = "coverage/raw/apple-ios-products.zip"
+    elif mutation == "lane":
+        document = json.loads(inputs["unit"].read_text())
+    else:
+        document = document["coverage"]
+    inputs["ui"][1].write_text(json.dumps(document))
+    with pytest.raises(MergeError) as caught:
+        merge_xccov_reports(
+            repo=repo, platform="ios", inputs=inputs, output=repo / "build/refused.json", ui_shards=3
+        )
+    assert caught.value.code == "native_domain_mismatch"
+    assert not (repo / "build/refused.json").exists()
+
+
+@pytest.mark.parametrize("shards", [0, 9, True, "3"])
+def test_ui_shard_count_is_bounded_and_only_the_ui_lane_shards(tmp_path, shards):
+    repo = _repo(tmp_path)
+    unit = _report(repo, "unit.json", {SOURCE: _observations(1, 0)})
+    ui = _report(repo, "ui.json", {SOURCE: _observations(0, 1)})
+    with pytest.raises(MergeError) as caught:
+        merge_xccov_reports(
+            repo=repo, platform="macos", inputs={"unit": unit, "ui": ui},
+            output=repo / "build/bounded.json", ui_shards=shards,
+        )
+    assert caught.value.code == "invalid_shard_count"
+    with pytest.raises(MergeError) as caught:
+        merge_xccov_reports(
+            repo=repo, platform="macos", inputs={"unit": [unit], "ui": ui},
+            output=repo / "build/unit-list.json",
+        )
+    assert caught.value.code == "invalid_producer_input"
+    with pytest.raises(MergeError) as caught:
+        merge_xccov_reports(
+            repo=repo, platform="macos", inputs={"unit": unit, "ui": [ui, "build/other.json"]},
+            output=repo / "build/text.json", ui_shards=2,
+        )
+    assert caught.value.code == "invalid_producer_input"
+
+
+def test_cli_accepts_declared_ui_shards_and_refuses_a_missing_one(tmp_path, capsys):
+    repo = _repo(tmp_path)
+    unit = _report(repo, "unit.json", {SOURCE: _observations(1, 0)})
+    shards = [_report(repo, f"ui-{index}.json", {SOURCE: _observations(0, index + 1)}) for index in range(3)]
+
+    def arguments(output, count, paths):
+        values = ["--repo", str(repo), "--platform", "macos", "--unit-input", str(unit)]
+        for path in paths:
+            values += ["--ui-input", str(path)]
+        return [*values, "--ui-shards", str(count), "--output", str(repo / "build" / output)]
+
+    assert merger.main(arguments("three.json", 3, shards)) == 0
+    assert json.loads((repo / "build/three.json").read_text())[SOURCE] == _observations(1, 6)
+    assert merger.main(arguments("missing.json", 3, shards[:2])) == 2
+    assert "[shard_count_mismatch]" in capsys.readouterr().err
+    assert not (repo / "build/missing.json").exists()
+
+
+def test_ui_shards_that_observe_different_sources_union_their_observed_inventory(tmp_path):
+    repo = _repo(tmp_path)
+    inputs = _sharded_inputs(repo, [(1, 0), (0, 2), (4, 0)])
+    core = "apple-clients/AstralCore/Sources/AstralCore/Core.swift"
+    wider = _domain_report(
+        repo, "ui", {SOURCE: _observations(0, 2), core: _observations(3, 0)}, [core, SOURCE]
+    )
+    wider["domains"]["ui"]["binary"]["sha256"] = "e" * 64
+    inputs["ui"][1].write_text(json.dumps(wider))
+    assert json.loads(inputs["ui"][0].read_text())["domains"]["ui"]["observed_sources"] == [SOURCE]
+    result = merge_xccov_reports(
+        repo=repo, platform="ios", inputs=inputs, output=repo / "build/observed.json", ui_shards=3
+    )
+    assert result["domains"]["ui"]["observed_sources"] == sorted([core, SOURCE])
+    assert result["domains"]["ui"]["binary"]["sha256"] == "a" * 64
+    assert result["coverage"][SOURCE] == _observations(6, 2)
+    assert result["coverage"][core] == _observations(4, 0)
+    inputs["ui"][1].write_text(json.dumps({**wider, "domains": {"ui": {
+        **wider["domains"]["ui"], "observed_sources": [core, SOURCE, "apple-clients/AstralApp/AstralApp/Other.swift"]
+    }}}))
+    with pytest.raises(MergeError) as caught:
+        merge_xccov_reports(
+            repo=repo, platform="ios", inputs=inputs, output=repo / "build/unknown.json", ui_shards=3
+        )
+    assert caught.value.code == "native_domain_mismatch"

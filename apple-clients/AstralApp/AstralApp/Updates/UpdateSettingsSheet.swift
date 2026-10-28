@@ -18,8 +18,8 @@
 
     struct UpdateSettingsSheet: View {
         @ObservedObject var coordinator: UpdateCoordinator
+        var onClose: (() -> Void)?
         @Environment(ThemeStore.self) private var themeStore: ThemeStore?
-        @Environment(\.dismiss) private var dismiss
 
         static func lastCheckText(_ date: Date?) -> String {
             date.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "Never"
@@ -28,38 +28,49 @@
         private var palette: AstralPalette { themeStore?.palette ?? .graphite }
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Updates").font(.headline)
-                Toggle(
-                    "Check automatically",
-                    isOn: Binding(get: { coordinator.automaticChecks }, set: { coordinator.setAutomaticChecks($0) }))
-                Toggle(
-                    "Install automatically",
-                    isOn: Binding(get: { coordinator.automaticInstall }, set: { coordinator.setAutomaticInstall($0) })
-                )
-                .disabled(!coordinator.automaticInstallAvailable)
-                Toggle(
-                    "Include preview releases",
-                    isOn: Binding(get: { coordinator.previewChannel }, set: { coordinator.setPreviewChannel($0) }))
-                Divider()
-                LabeledContent("Version", value: UpdateCoordinator.installedVersion())
-                LabeledContent("Last checked", value: Self.lastCheckText(coordinator.lastCheck))
+            SettingsSheetChrome(
+                "Updates", identifier: "update-settings", close: onClose ?? { coordinator.settingsPresented = false }
+            ) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle(
+                        "Check automatically",
+                        isOn: Binding(get: { coordinator.automaticChecks }, set: { coordinator.setAutomaticChecks($0) })
+                    )
+                    .accessibilityIdentifier("update-automatic-checks")
+                    Toggle(
+                        "Install automatically",
+                        isOn: Binding(
+                            get: { coordinator.automaticInstall }, set: { coordinator.setAutomaticInstall($0) })
+                    )
+                    .disabled(!coordinator.automaticInstallAvailable)
+                    .accessibilityIdentifier("update-automatic-install")
+                    Toggle(
+                        "Include preview releases",
+                        isOn: Binding(get: { coordinator.previewChannel }, set: { coordinator.setPreviewChannel($0) })
+                    )
+                    .accessibilityIdentifier("update-preview-channel")
+                }
+                Divider().overlay(palette.border)
+                VStack(alignment: .leading, spacing: 8) {
+                    LabeledContent("Version", value: UpdateCoordinator.installedVersion())
+                    LabeledContent("Last checked", value: Self.lastCheckText(coordinator.lastCheck))
+                }
+                .foregroundStyle(palette.text)
                 if let status = coordinator.status {
                     Label(UpdateStatusChip.title(for: status), systemImage: UpdateStatusChip.symbol(for: status))
                         .foregroundStyle(palette.warning)
+                        .accessibilityIdentifier("update-status")
                     if case .failed(let reason) = status {
-                        Text(reason).font(.caption).foregroundStyle(palette.muted)
+                        Text(reason).font(ConsoleTypography.caption).foregroundStyle(palette.muted)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                HStack {
-                    Button("Check now") { coordinator.checkForUpdates() }
-                        .disabled(!coordinator.isEnabled || !coordinator.canCheckForUpdates)
-                    Spacer()
-                    Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
-                }
+            } footer: {
+                Button("Check now") { coordinator.checkForUpdates() }
+                    .disabled(!coordinator.isEnabled || !coordinator.canCheckForUpdates)
+                    .accessibilityIdentifier("update-check-now")
             }
-            .padding(20)
-            .frame(width: 380)
+            .frame(minWidth: 380, idealWidth: 420)
         }
     }
 

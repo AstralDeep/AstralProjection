@@ -1,5 +1,6 @@
-// Tests the Mac host's task seams: advertised verbs and folders, browser and command routing, pauses and approvals.
-// Commands use a scripted spawner and the physical driver is a recorder, so nothing reaches the desktop.
+// Tests the Mac host's task seams: advertised verbs and folders, browser and command routing, refusals, pauses and
+// approvals. Commands use a scripted spawner, a settable ticket clock and a recording physical driver, so nothing
+// reaches the desktop.
 
 #if os(macOS)
     import AppKit
@@ -21,7 +22,9 @@
         }
         private func makeHost(
             roots: [URL] = [], driver: any MacComputerDriving = MacComputerTaskDriver(),
-            commands: MacComputerCommands? = nil, presented: (() -> Void)? = nil, activated: (() -> Void)? = nil
+            monitor: MacComputerTaskMonitor? = nil,
+            commands: MacComputerCommands? = nil, presented: (() -> Void)? = nil, activated: (() -> Void)? = nil,
+            authority: ComputerHostAuthority = ComputerHostAuthority()
         ) throws -> MacComputerHost {
             let suite = "host-task-" + UUID().uuidString
             let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -34,7 +37,8 @@
             files.bind("task-owner")
             if !roots.isEmpty { files.choose() }
             let host = MacComputerHost(
-                available: true, defaults: defaults, files: files, driver: driver, monitor: MacComputerTaskMonitor(),
+                available: true, defaults: defaults, files: files, driver: driver,
+                monitor: monitor ?? MacComputerTaskMonitor(),
                 permissionProvider: { MacComputerPermissions(accessibility: true, screen: true, monitoring: true) },
                 desktopProbe: { true }, desktopRearm: { true }, system: MacComputerTestSystem(),
                 panelPresenter: { _ in presented?() },
@@ -42,7 +46,7 @@
                     ?? MacComputerCommands(
                         spawner: MacComputerFakeSpawner(), clock: MacComputerFakeClock { $0 >= 20 }, inherited: [:],
                         loginPath: { "/usr/bin:/bin" }),
-                appActivator: { activated?() })
+                appActivator: { activated?() }, authority: authority)
             host.bind(owner: "task-owner") { [weak self] text in
                 if let frame = try? JSONValue.parse(Data(text.utf8)) { self?.sent.append(frame) }
                 return true
@@ -176,6 +180,75 @@
             XCTAssertFalse(sent.contains { $0["payload"]?["request_id"] == .string(command) })
         }
 
+        func testFoldersOutsideTheWorkspaceAreRefusedAtOnceAndNothingLaunches() async throws {
+            let root = try folder()
+            let spawner = MacComputerFakeSpawner()
+            let commands = MacComputerCommands(
+                spawner: spawner, clock: MacComputerFakeClock { $0 >= 20 }, inherited: [:],
+                loginPath: { "/usr/bin:/bin" })
+            let host = try makeHost(roots: [root], commands: commands)
+            let id = UUID().uuidString.lowercased()
+            host.consume(try session(host, id))
+            let granted = host.files.roots[0]
+            let cases: [(JSONValue?, String)] = [
+                (.string(NSHomeDirectory() + "/Desktop/outside-every-workspace"), "cwd_outside_workspace"),
+                (.string(granted + "-sibling"), "cwd_outside_workspace"),
+                (.string(granted + "/missing"), "cwd_outside_workspace"),
+                (nil, "out_of_range"),
+            ]
+            for (cwd, expected) in cases {
+                var args: [String: JSONValue] = ["argv": .array([.string("echo")])]
+                if let cwd { args["cwd"] = cwd }
+                let (call, refused) = try request(id, "run_command", args, deadline: 600000)
+                host.consume(refused)
+                let answer = await response(call, host: host)
+                XCTAssertEqual(answer?["ok"], .bool(false), "\(String(describing: cwd))")
+                XCTAssertEqual(answer?["error"]?["code"], .string(expected), "\(String(describing: cwd))")
+            }
+            XCTAssertTrue(spawner.plans.isEmpty)
+            XCTAssertFalse(host.working)
+        }
+
+        func testEveryCommandIsAnsweredWhenItsTicketLapsesDuringValidationOrRun() async throws {
+            let root = try folder()
+            let time = HostTicketClock()
+            let spawner = MacComputerFakeSpawner { _, output, process in
+                time.advance(120)
+                output.finish(.stdout)
+                output.finish(.stderr)
+                process.exit(.exited(0))
+            }
+            let commands = MacComputerCommands(
+                spawner: spawner, clock: MacComputerFakeClock { $0 >= 20 }, inherited: [:],
+                loginPath: {
+                    time.advance(120)
+                    return "/usr/bin:/bin"
+                })
+            let host = try makeHost(
+                roots: [root], commands: commands, authority: ComputerHostAuthority(now: { time.now }))
+            let id = UUID().uuidString.lowercased()
+            host.consume(try session(host, id))
+            let granted = host.files.roots[0]
+            let (missing, unknown) = try request(
+                id, "run_command", ["argv": .array([.string("no-such-tool-zz")]), "cwd": .string(granted)],
+                deadline: 60000)
+            host.consume(unknown)
+            let refused = await response(missing, host: host)
+            XCTAssertEqual(refused?["ok"], .bool(false))
+            XCTAssertEqual(refused?["error"]?["code"], .string("interrupted"))
+            XCTAssertTrue(spawner.plans.isEmpty)
+            let (lapsed, echo) = try request(
+                id, "run_command", ["argv": .array([.string("/bin/echo")]), "cwd": .string(granted)],
+                deadline: 60000)
+            host.consume(echo)
+            let interrupted = await response(lapsed, host: host)
+            XCTAssertEqual(spawner.plans.count, 1)
+            XCTAssertEqual(interrupted?["ok"], .bool(false))
+            XCTAssertEqual(interrupted?["error"]?["code"], .string("interrupted"))
+            XCTAssertNil(interrupted?["result"])
+            XCTAssertFalse(host.working)
+        }
+
         func testSocketLossLeavesRunningJobsUncertainForTheNextRead() async throws {
             let root = try folder()
             let commands = MacComputerCommands(
@@ -237,6 +310,84 @@
             XCTAssertEqual(host.session?.state, "paused")
         }
 
+        func testHumanPausesDiscardBrowserPermitsButApprovalDecisionsAndResumesKeepThem() throws {
+            let monitor = MacComputerTaskMonitor()
+            let host = try makeHost(monitor: monitor)
+            let browser = MacComputerTaskBrowser()
+            host.browser = browser
+            let id = UUID().uuidString.lowercased()
+            host.consume(try session(host, id))
+            host.pause()
+            XCTAssertEqual(browser.discarded, 1)
+            host.consume(try session(host, id, "paused", reason: "local_pause"))
+            host.resume()
+            host.consume(try session(host, id))
+            XCTAssertEqual(host.session?.state, "active")
+            XCTAssertEqual(browser.discarded, 1)
+            host.takeover()
+            XCTAssertEqual(browser.discarded, 2)
+            host.consume(try session(host, id, "paused", reason: "local_input"))
+            host.consume(try session(host, id))
+            XCTAssertEqual(host.session?.state, "active")
+            monitor.humanInput?()
+            XCTAssertEqual(host.session?.state, "paused")
+            XCTAssertEqual(browser.discarded, 3)
+            host.consume(try session(host, id, "paused", reason: "local_input"))
+            host.consume(try session(host, id))
+            XCTAssertEqual(host.recordApprovalInteraction(), id)
+            XCTAssertEqual(host.session?.state, "paused")
+            host.consume(try session(host, id, "paused", reason: "local_input"))
+            host.consume(try session(host, id))
+            XCTAssertEqual(host.session?.state, "active")
+            XCTAssertEqual(browser.discarded, 3)
+        }
+
+        func testApprovedBrowserActionsSurviveTheApprovalPauseButNotATakeover() async throws {
+            let harness = try MacBrowserHarness()
+            await harness.start()
+            addTeardownBlock { harness.close() }
+            let host = try makeHost()
+            host.browser = harness.driver
+            harness.driver.host = host
+            let id = UUID().uuidString.lowercased()
+            host.consume(try session(host, id))
+            _ = try await harness.open("/form")
+            let snap = try await harness.snapshot()
+            let pay = try harness.ref(snap.lines, containing: "button \"Pay now\"")
+            let holder = try harness.ref(snap.lines, containing: "textbox \"Card holder\"")
+            let click: [String: JSONValue] = ["ref": .string(pay), "snapshot_id": .string(snap.id)]
+            func permit(_ ref: String) -> JSONValue {
+                .object([
+                    "ref": .string(ref), "refs": .array([.string(ref)]), "origin": .string(harness.origin),
+                    "snapshot_id": .string(snap.id),
+                ])
+            }
+            await harness.expectCode("browser_click", click, "confirmation_required")
+            XCTAssertEqual(host.recordApprovalInteraction(), id)
+            host.consume(try session(host, id, "paused", reason: "local_input"))
+            host.resume()
+            _ = await host.flushCurrentSends()
+            XCTAssertEqual(events.last?["event"], .string("resumed"))
+            host.consume(try session(host, id))
+            XCTAssertEqual(host.session?.state, "active")
+            await harness.expectCode("browser_click", click.merging(["permit": permit(pay)]) { $1 }, nil)
+            try await harness.expectPage("document.title", "paid")
+            let fill: [String: JSONValue] = [
+                "snapshot_id": .string(snap.id),
+                "fields": .array([.object(["ref": .string(holder), "value": .string("A Lovelace")])]),
+            ]
+            await harness.expectCode("browser_fill", fill, "confirmation_required")
+            host.takeover()
+            host.consume(try session(host, id, "paused", reason: "local_input"))
+            host.consume(try session(host, id))
+            XCTAssertEqual(host.session?.state, "active")
+            let permitted = fill.merging(["permit": permit(holder)]) { $1 }
+            await harness.expectCode("browser_fill", permitted, "confirmation_required")
+            try await harness.expectPage("document.getElementById('holder').value", "")
+            await harness.expectCode("browser_fill", permitted, nil)
+            try await harness.expectPage("document.getElementById('holder').value", "A Lovelace")
+        }
+
         func testApprovalWaitingFollowsTheSessionAndBringsAstralForward() throws {
             var presentations = 0
             var activations = 0
@@ -254,8 +405,21 @@
             let rendered = NSHostingController(rootView: MacComputerSessionPanel(host: host))
             rendered.view.layoutSubtreeIfNeeded()
             XCTAssertGreaterThan(rendered.view.fittingSize.height, 0)
-            host.bringAstralForward()
+            let window = NSWindow(
+                contentRect: NSRect(x: -10_000, y: -10_000, width: 380, height: 160), styleMask: .borderless,
+                backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentViewController = rendered
+            defer { window.close() }
+            rendered.view.layoutSubtreeIfNeeded()
+            let returnKey = try XCTUnwrap(
+                NSEvent.keyEvent(
+                    with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                    context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+            XCTAssertTrue(window.performKeyEquivalent(with: returnKey), "Open Astral is the panel's default action")
             XCTAssertEqual(activations, 1)
+            host.bringAstralForward()
+            XCTAssertEqual(activations, 2)
             host.approvalWaiting(false)
             XCTAssertFalse(host.awaitingApproval)
             host.approvalWaiting(true)
@@ -265,11 +429,20 @@
         }
     }
 
+    nonisolated final class HostTicketClock: @unchecked Sendable {
+        private let lock = NSLock()
+        private var current = 1000.0
+        var now: Double { lock.withLock { current } }
+        func advance(_ seconds: Double) { lock.withLock { current += seconds } }
+    }
+
     @MainActor
     final class MacComputerTaskMonitor: MacComputerMonitoring {
         var running = false
+        var humanInput: (@MainActor () -> Void)?
         func start(_ humanInput: @escaping @MainActor () -> Void) -> Bool {
             running = true
+            self.humanInput = humanInput
             return true
         }
         func stop() { running = false }
@@ -292,6 +465,7 @@
     final class MacComputerTaskBrowser: MacBrowserVerbHandling {
         var isEnabled = true
         var handled: [(verb: String, ticket: String)] = []
+        private(set) var discarded = 0
         func handle(
             _ request: ComputerHostRequest, ticket: ComputerHostTicket,
             authorize: @escaping @Sendable () throws -> Void
@@ -300,5 +474,6 @@
             handled.append((request.verb, ticket.requestId))
             return ["snapshot_id": .string("s1")]
         }
+        func discardPermits() { discarded += 1 }
     }
 #endif

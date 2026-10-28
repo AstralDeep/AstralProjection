@@ -185,7 +185,8 @@
                 let events = MacComputerInputTestEvents()
                 let input = MacComputerInput(marker: 30, system: MacComputerInputTestSystem(), events: events)
                 try await input.press(ComputerHostChord(text), args: [:], authorize: {})
-                XCTAssertEqual(events.posted.map { $0.getIntegerValueField(.keyboardEventKeycode) }, [code, code], text)
+                XCTAssertEqual(
+                    events.posted.map { $0.getIntegerValueField(.keyboardEventKeycode) }, [code, code], text)
             }
         }
 

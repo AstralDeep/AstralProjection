@@ -346,10 +346,11 @@ final class SettingsControlTests: XCTestCase {
             [[18, 18, 20], [27, 27, 31], [35, 35, 40], [124, 58, 237], [110, 110, 120]])
         XCTAssertEqual(
             [graphite.accent, graphite.text, graphite.muted].map(rgb),
-            [[167, 139, 250], [236, 236, 239], [140, 140, 149]])
+            [[167, 139, 250], [236, 236, 239], [147, 147, 155]])
         XCTAssertEqual(
             [graphite.success, graphite.warning, graphite.error, graphite.info].map(rgb),
-            [[94, 194, 143], [212, 169, 74], [224, 108, 108], [154, 140, 242]])
+            [[94, 194, 143], [212, 169, 74], [225, 114, 114], [154, 140, 242]])
+        XCTAssertEqual([graphite.onError, graphite.fieldBorder].map(rgb), [[18, 18, 20], [110, 110, 117]])
         XCTAssertEqual(graphite.border, Color.white.opacity(0.08))
         theme.apply(preset: "midnight")
         XCTAssertEqual(theme.palette, .midnight)
@@ -364,10 +365,123 @@ final class SettingsControlTests: XCTestCase {
             theme.apply(preset: preset)
             XCTAssertFalse(surfaces.contains(rgb(theme.palette.surface2)), preset)
             surfaces.append(rgb(theme.palette.surface2))
-            XCTAssertEqual(theme.palette.error, graphite.error, preset)
+            XCTAssertEqual(
+                rgb(theme.palette.onError), preset == "daylight" ? [255, 255, 255] : rgb(theme.palette.bg), preset)
         }
         theme.apply(preset: "retired")
         XCTAssertEqual(theme.palette, .graphite)
+    }
+
+    func testDaylightOwnsDarkStatusTextAndALightDangerLabel() {
+        let theme = ThemeStore()
+        theme.apply(preset: "daylight")
+        let palette = theme.palette
+        XCTAssertEqual(
+            [palette.success, palette.warning, palette.error, palette.info].map(rgb),
+            [[20, 119, 57], [149, 91, 6], [185, 28, 28], [67, 56, 202]])
+        XCTAssertEqual([palette.onError, palette.fieldBorder].map(rgb), [[255, 255, 255], [127, 138, 155]])
+        XCTAssertEqual([palette.muted, palette.accent].map(rgb), [[88, 102, 123], [6, 117, 144]])
+        XCTAssertEqual(AstralPalette.daylight, palette)
+    }
+
+    private func linear(_ byte: Int) -> Double {
+        let unit = Double(byte) / 255
+        return unit <= 0.03928 ? unit / 12.92 : pow((unit + 0.055) / 1.055, 2.4)
+    }
+
+    private func contrast(_ a: [Double], _ b: [Double]) -> Double {
+        func luminance(_ c: [Double]) -> Double {
+            0.2126 * linear(Int(c[0].rounded())) + 0.7152 * linear(Int(c[1].rounded()))
+                + 0.0722 * linear(Int(c[2].rounded()))
+        }
+        let pair = [luminance(a), luminance(b)]
+        return (pair.max()! + 0.05) / (pair.min()! + 0.05)
+    }
+
+    private func channels(_ color: Color) -> [Double] { rgb(color).map(Double.init) }
+
+    private func tinted(_ color: Color, over base: Color) -> [Double] {
+        zip(channels(color), channels(base)).map { $0 * 0.14 + $1 * 0.86 }
+    }
+
+    func testEveryPresetKeepsTextAtFourAndAHalfAndBoundariesAtThreeToOne() {
+        let theme = ThemeStore()
+        for preset in ["graphite", "midnight", "daylight", "ocean", "sunset", "forest"] {
+            theme.apply(preset: preset)
+            let p = theme.palette
+            let surfaces = [p.bg, p.surface, p.surface2]
+            for (role, color) in [
+                ("text", p.text), ("muted", p.muted), ("accent", p.accent), ("success", p.success),
+                ("warning", p.warning), ("error", p.error), ("info", p.info),
+            ] {
+                for surface in surfaces {
+                    XCTAssertGreaterThanOrEqual(contrast(channels(color), channels(surface)), 4.5, "\(preset) \(role)")
+                }
+            }
+            for base in [p.bg, p.surface] {
+                XCTAssertGreaterThanOrEqual(
+                    contrast(channels(p.muted), tinted(p.muted, over: base)), 4.5, "\(preset) neutral badge")
+            }
+            for (role, color) in [("success", p.success), ("warning", p.warning), ("error", p.error), ("info", p.info)]
+            {
+                XCTAssertGreaterThanOrEqual(
+                    contrast(channels(color), tinted(color, over: p.surface)), 4.5, "\(preset) \(role) badge")
+            }
+            XCTAssertGreaterThanOrEqual(contrast(channels(p.onError), channels(p.error)), 4.5, "\(preset) danger label")
+            for surface in surfaces {
+                XCTAssertGreaterThanOrEqual(
+                    contrast(channels(p.fieldBorder), channels(surface)), 3, "\(preset) field border")
+            }
+        }
+    }
+
+    private func tinted(_ color: Color, over base: Color, opacity: Double) -> [Double] {
+        zip(channels(color), channels(base)).map { $0 * opacity + $1 * (1 - opacity) }
+    }
+
+    func testRendererContrastPairsHoldInEveryPreset() {
+        let theme = ThemeStore()
+        for preset in ["graphite", "midnight", "daylight", "ocean", "sunset", "forest"] {
+            theme.apply(preset: preset)
+            let p = theme.palette
+            let surfaces = [p.bg, p.surface, p.surface2]
+            XCTAssertGreaterThanOrEqual(contrast(channels(p.onError), channels(p.error)), 4.5, "\(preset) danger fill")
+            for base in [p.bg, p.surface] {
+                XCTAssertGreaterThanOrEqual(
+                    contrast(channels(p.error), tinted(p.error, over: base, opacity: 0.12)), 4.5,
+                    "\(preset) compact danger label")
+                XCTAssertGreaterThanOrEqual(
+                    contrast(channels(p.error), tinted(p.text, over: base, opacity: 0.06)), 4.5,
+                    "\(preset) destructive settings label")
+            }
+            for surface in surfaces {
+                XCTAssertGreaterThanOrEqual(
+                    contrast(channels(p.fieldBorder), channels(surface)), 3, "\(preset) field border")
+                XCTAssertGreaterThanOrEqual(
+                    contrast(channels(p.readablePrimary), channels(surface)), 4.5, "\(preset) primary text")
+                XCTAssertEqual(
+                    AstralPalette.contrast(p.readablePrimary, surface),
+                    contrast(channels(p.readablePrimary), channels(surface)), accuracy: 0.01, preset)
+            }
+            XCTAssertEqual(p.textVariant(nil), p.readablePrimary, preset)
+            XCTAssertEqual(p.textVariant("primary"), p.readablePrimary, preset)
+            XCTAssertEqual(p.variant(nil), p.primary, "fills keep the primary role")
+            for variant in ["error", "danger", "warning", "success", "info", "accent"] {
+                XCTAssertEqual(p.textVariant(variant), p.variant(variant), "\(preset) \(variant)")
+            }
+        }
+    }
+
+    func testPrimaryTextSwitchesToAccentOnlyInPresetsWherePrimaryFails() {
+        let theme = ThemeStore()
+        for (preset, usesAccent) in [
+            ("graphite", true), ("midnight", true), ("daylight", false), ("ocean", false), ("sunset", false),
+            ("forest", false),
+        ] {
+            theme.apply(preset: preset)
+            let p = theme.palette
+            XCTAssertEqual(p.readablePrimary, usesAccent ? p.accent : p.primary, preset)
+        }
     }
 
     func testColorsOnlyThemeDerivesAppleExtrasWhileNamedPresetsKeepTheirOwn() {
@@ -389,16 +503,35 @@ final class SettingsControlTests: XCTestCase {
         XCTAssertEqual(dark.palette.border, Color(hex: 0xF0F0F0).opacity(0.08))
         XCTAssertEqual(dark.palette.success, AstralPalette.graphite.success)
         XCTAssertEqual(dark.palette.info, AstralPalette.graphite.info)
+        XCTAssertEqual(dark.palette.error, AstralPalette.graphite.error)
+        XCTAssertEqual(dark.palette.onError, AstralPalette.graphite.onError)
+        XCTAssertEqual(dark.palette.fieldBorder, AstralPalette.graphite.fieldBorder)
         let light = ThemeStore()
         light.apply(
             spec: .object(["bg": .string("#F0F0F0"), "surface": .string("#FFFFFF"), "text": .string("#202020")]))
         XCTAssertEqual(light.colorScheme, .light)
+        XCTAssertEqual(light.palette.success, AstralPalette.daylight.success)
+        XCTAssertEqual(light.palette.error, AstralPalette.daylight.error)
+        XCTAssertEqual(light.palette.onError, AstralPalette.daylight.onError)
+        XCTAssertEqual(light.palette.fieldBorder, AstralPalette.daylight.fieldBorder)
         XCTAssertEqual(rgb(light.palette.surface2), [245, 245, 245])
         XCTAssertEqual(light.palette.border, Color(hex: 0x202020).opacity(0.08))
         let explicit = ThemeStore()
         explicit.apply(
             spec: .object(["colors": .object(["surface": .string("#202020"), "surface2": .string("#303030")])]))
         XCTAssertEqual(rgb(explicit.palette.surface2), [48, 48, 48])
+        let supplied = ThemeStore()
+        supplied.apply(
+            spec: .object([
+                "colors": .object([
+                    "bg": .string("#F0F0F0"), "error": .string("#AA0000"), "on_error": .string("#FFFFFF"),
+                    "field_border": .string("#808080"),
+                ])
+            ]))
+        XCTAssertEqual(rgb(supplied.palette.error), [170, 0, 0])
+        XCTAssertEqual(rgb(supplied.palette.onError), [255, 255, 255])
+        XCTAssertEqual(rgb(supplied.palette.fieldBorder), [128, 128, 128])
+        XCTAssertEqual(supplied.palette.success, AstralPalette.daylight.success)
         let delivered = ThemeStore()
         delivered.apply(preset: "midnight")
         delivered.applyPreferences(

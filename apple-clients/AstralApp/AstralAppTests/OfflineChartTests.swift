@@ -32,12 +32,12 @@ final class OfflineChartTests: XCTestCase {
 
     func testAppearanceInjectsThePaletteSeriesBesideTheDocumentColors() throws {
         let appearance = OfflineChartDocument.Appearance(
-            background: 0x121214, text: 0xECECEF, muted: 0x8C8C95, primary: 0x7C3AED, secondary: 0x6E6E78,
+            background: 0x121214, text: 0xECECEF, muted: 0x93939B, primary: 0x7C3AED, secondary: 0x6E6E78,
             accent: 0xA78BFA)
         XCTAssertTrue(
             appearance.style.contains(
                 ":root{--astral-chart-primary:#7C3AED;--astral-chart-secondary:#6E6E78;--astral-chart-accent:#A78BFA}"))
-        XCTAssertTrue(appearance.style.contains("html,body{background:#121214;color:#ECECEF}#status{color:#8C8C95}"))
+        XCTAssertTrue(appearance.style.contains("html,body{background:#121214;color:#ECECEF}#status{color:#93939B}"))
         let chart = try component(#"{"type":"bar_chart","labels":["A"],"datasets":[{"data":[1]}]}"#)
         let html = try OfflineChartDocument.html(component: chart, viewportWidth: 800, appearance: appearance)
         XCTAssertTrue(html.contains("--astral-chart-accent:#A78BFA}html,body"))
@@ -385,9 +385,9 @@ final class OfflineChartTests: XCTestCase {
                 ),
                 (
                     OfflineChartDocument.Appearance(
-                        background: 0xFDFDFE, text: 0x1E293B, muted: 0x64748B, primary: 0x4F46E5,
-                        secondary: 0x7C3AED, accent: 0x0891B2),
-                    [253, 253, 254], "rgb(100, 116, 139)", "rgb(30, 41, 59)"
+                        background: 0xFDFDFE, text: 0x1E293B, muted: 0x58667B, primary: 0x4F46E5,
+                        secondary: 0x7C3AED, accent: 0x067590),
+                    [253, 253, 254], "rgb(88, 102, 123)", "rgb(30, 41, 59)"
                 ),
             ] {
                 let coordinator = OfflineChartCoordinator()
