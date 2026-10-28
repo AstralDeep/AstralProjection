@@ -304,6 +304,9 @@ class AppViewModel(
 
     @Volatile private var workspaceEpoch: Long = 0
 
+    internal fun ownsPushOwner(access: String?): Boolean =
+        account != null && account == ConversationResumeStore.accountFromAccessToken(access.orEmpty())
+
     internal fun workspaceContext(): WorkspaceContext? = workspaceContext(_state.value, account, workspaceEpoch)
 
     internal fun componentContext(component: Component): ComponentActionContext? =

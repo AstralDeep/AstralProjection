@@ -3,6 +3,7 @@
 
 import Foundation
 import XCTest
+
 @testable import AstralCore
 
 final class ServerSessionTests: XCTestCase {
@@ -89,6 +90,13 @@ final class ServerSessionTests: XCTestCase {
         }
         let refreshed = try await transport.refresh(session)
         XCTAssertEqual(refreshed, session)
+        XCTAssertEqual(refreshed.pushIncarnation, session.pushIncarnation)
+        let fresh = try ServerSession(
+            scope: scope, owner: "owner", accessToken: access,
+            cookie: "astral_session=fresh-interactive", cookieExpiresAt: session.cookieExpiresAt)
+        XCTAssertNotEqual(fresh.pushIncarnation, session.pushIncarnation)
+        let restored = try JSONDecoder().decode(ServerSession.self, from: JSONEncoder().encode(session))
+        XCTAssertEqual(restored.pushIncarnation, session.pushIncarnation)
         let loggedOut = try await transport.logout(session)
         XCTAssertTrue(loggedOut)
     }

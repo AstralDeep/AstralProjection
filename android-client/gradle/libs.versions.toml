@@ -3,6 +3,8 @@
 
 [versions]
 agp = "9.2.1"
+firebaseMessaging = "26.0.0"
+playServicesBasement = "18.9.0"
 kotlin = "2.2.10"
 coroutines = "1.9.0"
 serialization = "1.7.3"
@@ -30,6 +32,8 @@ targetSdk = "36"
 compileSdk = "36"
 
 [libraries]
+play-services-basement = { module = "com.google.android.gms:play-services-basement", version.ref = "playServicesBasement" }
+firebase-messaging = { module = "com.google.firebase:firebase-messaging", version.ref = "firebaseMessaging" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }

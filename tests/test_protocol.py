@@ -629,13 +629,13 @@ def test_runtime_manifests_bind_exact_owning_dependency_inventory() -> None:
             "5e2d075903b5cd264613e7538c7c51b1484fe2ed489d4ead3e6b4ba0cf3911c4"
         ),
         "android-client/app/gradle.lockfile": (
-            "dc9eaa61e7e5dec01334bf04642b03304e41d5ef321203ffdb8e999f32b45c35"
+            "dcef358e06fed8b01fe03fcf9446cabfd57d12be9367973e597dcc6874c68ef5"
         ),
         "android-client/core/gradle.lockfile": (
             "aee1fb50d70d15c9c7be9def38101135e607b42ba440477c6a8e3043333cfc49"
         ),
         "android-client/gradle/libs.versions.toml": (
-            "a93ad97e4fb1ab31546fbe0d2b3db0a69eb0578d01e7e134cbad2f9652e41d5c"
+            "791fc52e6127684e57906c31d1ad53058c175643037edc8f4c0792d7a185ae0f"
         ),
         "apple-clients/AstralApp/AstralApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved": (
             "5cf70218d493aa617c2a4f33831214104e76b93eb70d23ef924a3039afbfcc73"

@@ -245,6 +245,16 @@ internal fun collectFields(
                 val name = fieldStr(f, "name") ?: return@forEach
                 when (fieldKind(f)) {
                     "boolean" -> put(name, bools[name] ?: false)
+                    "number" -> {
+                        val raw = texts[name].orEmpty().trim()
+                        val integer = raw.toLongOrNull()
+                        val decimal = raw.toDoubleOrNull()?.takeIf { it.isFinite() }
+                        when {
+                            integer != null -> put(name, integer)
+                            decimal != null -> put(name, decimal)
+                            else -> put(name, kotlinx.serialization.json.JsonNull)
+                        }
+                    }
                     "checklist" -> {
                         val on = checks[name] ?: emptySet()
                         putJsonArray(name) { fieldOptions(f).filter { it in on }.forEach { add(it) } }

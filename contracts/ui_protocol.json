@@ -3429,7 +3429,7 @@
       "watch": "Host renders only content-free state metadata and a phone or desktop handoff. Session id, target, directory, offsets and output are not sent to the watch."
     },
     "push_navigation": {
-      "version": 1,
+      "version": 2,
       "purpose": "Owner-bound OS push on the phone clients: the destination runtime enrolls the device push token with Deep, presents only what the server selected for the delivery pipeline, suppresses duplicates in the foreground, and resolves taps into authorized sources after Keycloak authentication. A tap never approves an action, executes a tool, or opens a server-unresolved target.",
       "clients": {
         "android": "POST_NOTIFICATIONS-gated OS presentation with the astral_push default and astral_push_alerts channels; the provider bridge reports backend availability and supplies token rotations",
@@ -3446,10 +3446,13 @@
             "device_id": "1-128 characters, first character alphanumeric, then alphanumerics, dot, underscore or hyphen",
             "platform": "android|ios",
             "token": "1-4096 characters from the platform provider, no control characters",
-            "label": "optional, at most 64 characters"
+            "label": "optional, at most 64 characters",
+            "expected_destination_revision": "Strict integer >=0; 0 only after authenticated GET404, otherwise exact current public updated_at, including revoked records. Conditional successful POST advances updated_at even for the same token. Maximum 2^53-1."
           },
           "rotation": "a changed provider token re-enrolls the same device_id and Deep rotates the destination with an incremented token_generation; a repeated token is idempotent",
-          "reactivation": "re-enrollment after revocation reactivates the destination when capacity allows"
+          "reactivation": "re-enrollment after revocation reactivates the destination when capacity allows",
+          "response": "Raw public active destination with positive integer token_generation and opaque destination revision updated_at strictly greater than the expected conditional revision. Both are distinct from local token callback generation. G/R must be <=2^53-1.",
+          "authentication": "Actual current protected server custody cookie behind verified bearer; Cookie/Origin remain normal headers and no session field enters JSON. Legacy auth retains in-app only. Reattachment requires the actual same protected cookie incarnation; fresh same-subject interactive login claims a new revision."
         },
         "ack": {
           "endpoint": "/api/push/ack",
@@ -3466,7 +3469,8 @@
             "account change",
             "permission revocation",
             "provider token becoming permanently unavailable"
-          ]
+          ],
+          "precondition": "Every lifecycle callback supplies BOTH expected_token_generation and expected_destination_revision as positive query integers captured from the authoritative destination. A 409 conflict never falls back to unconditional deletion."
         },
         "denials": {
           "401": "the Keycloak session is gone; authenticate again before any retry",
@@ -3476,10 +3480,25 @@
           "410": "the destination was revoked server-side; clear local registration and wait for an explicit re-enrollment trigger",
           "429": "temporary capacity or rate pressure; retry later from the retryable state",
           "503": "the provider backend is not configured or the store is unavailable; keep the runtime unsupported until availability returns"
+        },
+        "presence": {
+          "endpoint": "/api/notifications/presence",
+          "fields": [
+            "device_id",
+            "connection_generation",
+            "sequence",
+            "foreground"
+          ],
+          "sequence": "Strict positive integer <= 2^53-1, monotonic for the accepted register_ui connection incarnation",
+          "foreground": "Strict bool; foreground heartbeat each 15 seconds, foreground lease <=45 seconds; background/logout sends false and disconnect invalidates eligibility",
+          "response": [
+            "accepted_sequence",
+            "expires_in_seconds"
+          ]
         }
       },
       "payload": {
-        "note": "The delivery pipeline's minimal payload bounds: the provider message carries the identity and text only; the owner's authenticated ws notification frame carries the same text plus the bounded source ids. Clients validate both against these bounds and treat every other key as inert.",
+        "note": "FCM data messages contain only opaque notification_id and no provider notification block. APNs contains constant generic alert text and opaque notification_id. No source URL or user content in provider payload; source fields below belong only to authenticated server records/frames.",
         "notification_id": "^[A-Za-z0-9._:-]{8,128}$",
         "title": "at most 128 characters, no control characters",
         "body": "at most 256 characters, no control characters",
@@ -3492,18 +3511,77 @@
         }
       },
       "presentation": {
-        "server_selected": "Deep's delivery pipeline selects the text and identity; the client maps the server level to presentation importance: error to the high-importance alert channel, warning and info to the default channel, and never invents importance from client state",
-        "foreground": "while the owner's socket is connected the ws notification frame owns presentation as the single in-app banner slot; an OS-delivered duplicate of the same text cannot stack a second banner",
-        "background": "the system presents the provider message; the client records the identity when it next sees it and acknowledges after the user reads or taps it",
-        "terminated": "identical to background; the tap launches the ordinary authentication flow first",
-        "deduplication": "a bounded receipt ledger keyed by notification_id suppresses duplicate OS presentation and duplicate acknowledgments across surfaces and process restarts; dismissal removes the entry so a genuine redelivery after dismissal presents again"
+        "server_selected": "The server selects eligible routing and opaque inbox identity. Android local OS notices and APNs alerts use constant generic application text; provider acceptance does not establish device delivery or user visibility.",
+        "foreground": "The authenticated notification frame and admitted provider delivery use the single in-app banner slot. Foreground suppression requires current registered UI presence refreshed every 15 seconds with a server lease at most 45 seconds.",
+        "background": "FCM is data-only: before generic local presentation require current owner/session/device binding, active destination server generation, matching immutable push.delivery.queued audit generation AND destination_revision and owned current inbox entry. APNs generic alerts are OS controlled after provider acceptance and cannot be retracted by logout; expiry/collapse are bounded best effort, never exactly-once proof.",
+        "terminated": "Normal protected session custody must authenticate the current owner before local FCM presentation or source opening. Cold-start taps retain only opaque identity and current binding scope, never credential or content snapshots. Protected owner/device/G/R/provider-token hash custody permits reattachment only after actual OS token hash and fresh authenticated current destination match, including canonical server, issuer, subject and audience scope. Missing/legacy/malformed custody cannot reattach.",
+        "deduplication": "A bounded notification_id receipt ledger suppresses duplicate locally admitted presentation and acknowledgment within the current owner/device generation. Restart seeds only currently delivered notices after owner/generation admission. Dismissal permits genuine redelivery. APNs OS presentation is outside this ledger and is never an exactly-once guarantee."
       },
       "navigation": {
         "tap": "a tap first completes the ordinary Keycloak authentication; only then does the client act on the delivery identity",
-        "resolution": "the provider message carries the identity and text only; the client acknowledges the identity and the app lands on the owner's authenticated surfaces through the ordinary resume flow, and the client never navigates from a URL inside the provider message",
+        "resolution": "After Keycloak authentication, GET the current owned inbox entry and immutable queued delivery proof for the captured device/server generation. Recheck owner/session/binding after every asynchronous result, then open its source through ordinary load_chat/server-owned notifications actions. The client never navigates from a URL inside the provider message.",
         "foreground_sources": "the owner's authenticated ws notification frame carries the bounded source ids; a frame naming a conversation other than the active one points at the authorized conversation surfaces and never opens or executes anything on its own",
         "unresolved": "an identity the client cannot resolve to an authorized source leaves the owner on the authenticated surfaces; the client must not fabricate a target",
         "forbidden": "taps never approve actions, execute tools, replay queued commands, or carry component verbs"
+      }
+    },
+    "notifications_routing": {
+      "version": 1,
+      "surface": "notifications",
+      "availability": "Host notification_routing feature flag AND service availability; shared build_menu_model notifications_enabled controls one Account menu entry for every client. No client-owned menu catalog.",
+      "builder": "astralprojection.chrome.notifications.build_notifications_view(state,error=None)",
+      "routing_fields": [
+        "in_app_completion",
+        "in_app_failure",
+        "in_app_required_action",
+        "inbox_completion",
+        "inbox_failure",
+        "inbox_required_action",
+        "push_completion",
+        "push_failure",
+        "push_required_action"
+      ],
+      "actions": {
+        "chrome_notification_preferences": [
+          "expected_revision",
+          "in_app_completion",
+          "in_app_failure",
+          "in_app_required_action",
+          "inbox_completion",
+          "inbox_failure",
+          "inbox_required_action",
+          "push_completion",
+          "push_failure",
+          "push_required_action"
+        ],
+        "chrome_notification_quiet_hours": [
+          "expected_revision",
+          "enabled",
+          "start_minute",
+          "end_minute",
+          "tz_offset_minutes"
+        ],
+        "chrome_notification_acknowledge": [
+          "entry_id",
+          "expected_revision"
+        ],
+        "chrome_notification_delete": [
+          "entry_id",
+          "expected_revision"
+        ],
+        "chrome_notification_open": [
+          "entry_id"
+        ]
+      },
+      "types": "Strict actual bool and integer values; no unknown keys. Revisions and entry revisions may be zero. Forms submit editable fields plus captured root expected_revision; host normalizes this exact wrapper before CAS validation.",
+      "source": "Only host-authorized state.source.chat_id emits load_chat. Entry content source IDs never grant current ownership or tool/approval authority. Refresh uses existing chrome_open surface notifications.",
+      "clients": {
+        "web": "Same shared settings, inbox and authorized source controls using approved primitives.",
+        "windows": "Same shared settings, inbox and authorized source controls using approved primitives.",
+        "android": "Same shared settings, inbox and authorized source controls using approved primitives.",
+        "ios": "Same shared settings, inbox and authorized source controls using approved primitives.",
+        "macos": "Same shared settings, inbox and authorized source controls using approved primitives.",
+        "watch": "Existing ordinary_settings_forms watch phone/desktop handoff; server-built readable inbox remains capability adapted."
       }
     }
   },
@@ -4492,6 +4570,11 @@
     "chrome_note_save",
     "chrome_note_search",
     "chrome_note_toggle",
+    "chrome_notification_acknowledge",
+    "chrome_notification_delete",
+    "chrome_notification_open",
+    "chrome_notification_preferences",
+    "chrome_notification_quiet_hours",
     "chrome_open",
     "chrome_perms_save",
     "chrome_profile_save",

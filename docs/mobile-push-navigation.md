@@ -1,71 +1,19 @@
-# Owner-bound mobile push navigation
+# Mobile push and notification settings
 
-Both phone clients run the same destination runtime against Deep's push REST boundary
-(`/api/push/destinations`, `/api/push/ack`, `/api/push/destinations/{device_id}`), bound by the
-`push_navigation` presentation contract in `contracts/ui_protocol.json`. This page records how the
-runtime is wired, what is verified where, and what remains a coordinated release-lane step.
+The shared `astralprojection.chrome.notifications.build_notifications_view(state, error=None)` builds routing, quiet hours and the inbox with existing primitives. Deep supplies current owner-authorized state and controls the single Account menu entry through `notifications_enabled`. All nine routing switches and the quiet-hours policy use captured revisions. Entry reads/deletes use the entry revision, including a new entry at revision zero. The host validates strict boolean/integer fields and CAS revisions; source opening uses only the host-authorized `state.source.chat_id` through ordinary `load_chat`. No notification control grants approval, retry, replay or tool authority.
 
-## Shared behavior
+Android uses the Firebase Messaging SDK, declared in the owning catalog, lockfiles and checksum metadata. Configure all four public deployment identifiers together with Gradle properties `astralFirebaseAppId`, `astralFirebaseProjectId`, `astralFirebaseSenderId`, and `astralFirebaseApiKey`. Leave them absent when Firebase is unavailable; the runtime reports unsupported and never fabricates a provider token. Automatic Firebase initialization and analytics collection are disabled. The registered application/IAM identity is unchanged. Physical delivery still requires the matching registered Firebase project and normal user Keycloak authentication. [Firebase setup](https://firebase.google.com/docs/cloud-messaging/android/get-started) describes the provider configuration.
 
-- Enrollment: the runtime enrolls the device push token with `platform` `android` or `ios`, rotates
-  the destination when the provider token changes, treats a repeated token as idempotent, and
-  classifies enrollment denials into the contract's transient and permanent vocabulary
-  (400/403/409 permanent, 429/503 and transport failures transient, 401 unauthenticated).
-- Acknowledgment: presented or tapped notification identities are acknowledged once through the
-  bounded receipt ledger; the ledger also suppresses duplicate OS presentation and re-acknowledgment
-  across surfaces and process restarts, and dismissal removes the entry so a genuine redelivery
-  presents again.
-- Revocation: sign-out, account change, permission revocation, and a permanently unavailable
-  provider token clear the destination and reset the runtime.
-- Presentation: the server's `level` selects importance (`error` to the high-importance channel on
-  Android, system alerts on iOS); while the owner's socket is connected, the ws `notification` frame
-  owns the single in-app banner slot and OS duplicates of the same text cannot stack a second banner.
-- Navigation: a tap first completes the ordinary Keycloak authentication, then the client
-  acknowledges the identity and lands on the owner's authenticated surfaces through the ordinary
-  resume flow. Taps never approve actions, execute tools, replay queued commands, or carry component
-  verbs, and the client never navigates from a URL inside the provider message. A ws
-  `notification` frame naming a conversation other than the active one points at the authorized
-  conversation surfaces ("open it from History") without opening or executing anything on its own.
+FCM messages must be data-only and contain exactly the opaque `notification_id`. The service rejects an automatic notification block or extra data fields. Before local generic presentation it restores the current owner through existing protected server-session custody, checks current owner/device/local callback generation, and reads three authenticated server resources: the active destination's authoritative `token_generation` and opaque `updated_at` destination revision, immutable `push.delivery.queued` proof for that device, generation and destination revision, and the current owned inbox entry. Missing legacy proof, stale generations, unavailable storage, logout, source denial or an expired session fail closed. Both phone OS paths require actual protected server-session custody; legacy authentication retains in-app frames and cannot register an OS destination. The REST read is cancellable and bounded; a lost or delayed provider message is not reported as delivered.
 
-## Android wiring
+Android persists only the permission-request decision and a protected owner-scope hash/device/server-generation/destination-revision/provider-token-hash/session-incarnation binding. OS notifications carry generic text and distinct immutable content/delete PendingIntents for each identity and binding. A cold-start tap waits for normal authentication and the current accepted UI connection, repeats delivery/source authorization, then opens the source through the normal server action path. Two simultaneous notices retain separate tap targets. An acknowledgment is sent after actual local presentation or source opening; no command is queued for reconnect replay.
 
-The pure decision machine lives in `:core`
-(`core/src/main/kotlin/com/personalailabs/astraldeep/core/push/`) and the OS binding in `:app`
-(`app/src/main/kotlin/com/personalailabs/astraldeep/app/push/`). `PushRuntime` owns the adapter
-instance, performs the enrollment, acknowledgment and revocation calls through `PushDestinationRest`,
-resolves authentication-gated taps from `MainActivity` intents (both the adapter's content intent and
-the system-tray tap extra), and rebuilds the machine on sign-out or account change. The
-`POST_NOTIFICATIONS` permission is requested once per process after sign-in; runtime revocation
-cancels presented notifications and clears the ledger.
+On iOS, the application delegate supplies actual APNs token callbacks and `UNUserNotificationCenter` supplies permission, foreground and tap callbacks. Debug uses the development APNs entitlement and Release the production entitlement through `ASTRAL_APS_ENVIRONMENT`. The provider and signing capability must match the existing registered application. The permission state comes from the OS. A protected Keychain record retains only owner/device/server-generation/destination-revision/provider-token-hash/session-incarnation for restart cleanup. The runtime validates the same destination, queued-generation and owned-inbox proof before foreground presentation or tap navigation and seeds its bounded ledger only from current admitted delivered notices.
 
-The `PushProvider` seam is the single integration point for a provider bridge (FCM). No provider
-bridge ships yet: the supply chain for the FCM SDK dependency is locked and cannot be extended
-offline, so the runtime starts with `AbsentPushProviderBackend`, the machine's designed fail-closed
-unsupported-provider state. Every other behavior — permission, enrollment denials, ledger,
-presentation decisions, tap acknowledgment, revocation — is live and exercised; the bridge lands
-with its locked dependency and provider credentials in the release lane.
+APNs generic alerts accepted by the provider can be presented by the OS after logout; the client cannot retract an alert already in transit. The server bounds expiry/collapse to at most 300 seconds. Provider acceptance, acknowledgments and deduplication are separate observations; none provides an exactly-once or user-visibility guarantee. Android data delivery is also subject to OS process, battery and network limits.
 
-## Apple wiring
+Every lifecycle revoke captures the authoritative enrollment response generation and calls `DELETE /api/push/destinations/{device_id}?expected_token_generation=N&expected_destination_revision=R`. Local token callback counters are separate. A conflict never falls back to an unconditional delete. Owner changes and logout synchronously retire local callbacks, presentation and navigation, then perform conditional cleanup with the captured old owner's credential. Account/server changes also retire the captured old normal server session through the existing logout primitive; a held startup restore is included and explicit sign-out sends only one retirement. Network failure remains unconfirmed and a late old response cannot attach to the new session. Firebase SDK unregister is serialized with later token reads; late token callbacks only signal a bound re-read of current SDK state. APNs unregister uses the existing OS API. Device mutations are serialized; late retired enrollments cannot delete a current same-owner binding with the same generation and revision. Before a conditional enrollment claim, the client reads the current destination revision; only an authenticated 404 permits expected revision zero. Every successful conditional POST advances the server revision, including a same-token claim, so a timed-out stale POST cannot overwrite a newer claim. Cold restart reattaches without a POST only when fresh current G/R, actual OS token hash and protected canonical server/issuer/subject/audience scope match; missing or malformed custody never reattaches. The cookie digest is local metadata; the actual existing signed Cookie/Origin headers accompany conditional enrollment so the server can bind the destination privately to its authenticated custody session. Token refresh retains that incarnation, while a fresh same-subject interactive session must claim a new revision. G/R values use strict positive safe JSON integers through 2^53−1.
 
-The machine and REST boundary live in AstralCore (`Sources/AstralCore/Push/PushMachine.swift`,
-`Sources/AstralCore/API/PushRest.swift`); `PushNotificationService` binds them to
-UserNotifications in the iOS app target: authorization state, APNs registration
-(`AstralApp-iOS.entitlements`), foreground suppression in favor of the in-app slot, delivered-
-notification seeding, tap acknowledgment, and sign-out/account-change revocation from `AppModel`.
-macOS and watchOS keep the in-app banner only, per the manifest disposition. Enabling the APNs
-capability for the registered App id in the developer portal is a portal-side step that precedes
-device builds.
+Phone clients publish `POST /api/notifications/presence` with the current accepted `register_ui` device and connection generation, a strict positive monotonic sequence and a boolean foreground flag. Foreground heartbeats run every 15 seconds; the server lease is at most 45 seconds. Background/logout sends false and disconnect retires eligibility. Presence never grants client authority or creates a new WebSocket frame.
 
-## Verification
-
-- Contract and drift guards: `tests/test_push_navigation_contract.py` (Python lane) reads the
-  manifest and both clients' sources, pins the payload bounds, the denial vocabulary, the
-  server-selected level mapping, foreground deduplication, tap semantics, and the in-app-only
-  fallback for web, Windows, macOS and watchOS.
-- Android JVM: `:core` push tests join the Kover gate; `PushDestinationRestTest` covers the REST
-  classification on the JVM with MockWebServer in `:app:testDebugUnitTest`.
-- Android device: `NotificationPushAdapterInstrumentedTest` runs in the required emulator lane.
-- Apple: `PushMachineTests` and `PushRestTests` run in the AstralCore macOS and iOS lanes.
-- Staging: registration, background and terminated delivery, tapping and cleanup against a real
-  provider backend on physical devices remain coordinated release-lane verification; provider
-  credentials and the FCM bridge dependency are outside this repository's offline reach.
+Deterministic tests cover malformed/foreign/stale/denied responses, late callbacks, permission decisions, real Android notification/PendingIntent behavior and the production iOS service through injected OS/HTTP seams. These tests do not replace physical FCM/APNs delivery, real Keycloak source authorization, staging/UI acceptance on web, Windows, Android, iOS, macOS and watchOS, or the exact required Apple toolchain gates. Retain those qualification requirements with the candidate's actual evidence.

@@ -46,6 +46,7 @@ data class PushBinding(
     val deviceId: String,
     val tokenGeneration: Int,
     val serverTokenGeneration: Long? = null,
+    val serverDestinationRevision: Long? = null,
 )
 
 data class OsNotificationSpec(
@@ -145,13 +146,14 @@ class NotificationPushAdapter(
     private var currentGeneration: Int = 0
     private var active = true
     private var currentServerGeneration: Long? = null
+    private var currentServerRevision: Long? = null
 
     val tokenGeneration: Int get() = currentGeneration
 
     val binding: PushBinding?
         get() =
             if (active && registration is RegistrationState.Registered) {
-                PushBinding(ownerSessionId, identity.deviceId, currentGeneration, currentServerGeneration)
+                PushBinding(ownerSessionId, identity.deviceId, currentGeneration, currentServerGeneration, currentServerRevision)
             } else {
                 null
             }
@@ -256,6 +258,7 @@ class NotificationPushAdapter(
     fun onEnrollmentAccepted(
         tokenGeneration: Int,
         serverTokenGeneration: Long,
+        serverDestinationRevision: Long? = null,
     ): List<PushEffect> {
         require(serverTokenGeneration > 0) { "server_token_generation" }
         val fingerprint = currentFingerprint
@@ -266,6 +269,7 @@ class NotificationPushAdapter(
         }
         registration = RegistrationState.Registered(fingerprint, currentGeneration)
         currentServerGeneration = serverTokenGeneration
+        currentServerRevision = serverDestinationRevision
         retryableAttempts = 0
         return emptyList()
     }
@@ -355,7 +359,7 @@ class NotificationPushAdapter(
     private fun retireRegistration(): List<PushEffect> {
         val previous =
             if (currentServerGeneration != null) {
-                PushBinding(ownerSessionId, identity.deviceId, currentGeneration, currentServerGeneration)
+                PushBinding(ownerSessionId, identity.deviceId, currentGeneration, currentServerGeneration, currentServerRevision)
             } else {
                 null
             }
@@ -364,6 +368,7 @@ class NotificationPushAdapter(
         currentToken = null
         currentFingerprint = null
         currentServerGeneration = null
+        currentServerRevision = null
         registration = RegistrationState.Idle
         return if (previous != null) {
             listOf(PushEffect.CancelPresented(cancelled), PushEffect.RevokeDestination(previous))

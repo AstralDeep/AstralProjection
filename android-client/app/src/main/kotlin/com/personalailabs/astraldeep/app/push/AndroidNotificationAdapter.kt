@@ -127,6 +127,7 @@ class AndroidNotificationAdapter(
     fun onEnrollmentAccepted(
         effect: PushEffect.EnrollDestination,
         serverTokenGeneration: Long,
+        serverDestinationRevision: Long? = null,
     ) {
         if (effect.ownerSessionId != machine.ownerSessionId || effect.deviceId != identity.deviceId) return
         require(serverTokenGeneration > 0) { "server_token_generation" }
@@ -134,11 +135,25 @@ class AndroidNotificationAdapter(
             machine.permission != com.personalailabs.astraldeep.core.push.PushPermissionState.Granted ||
             machine.registration != RegistrationState.Enrolling
         ) {
-            if (machine.binding == effect.binding.copy(serverTokenGeneration = serverTokenGeneration)) return
-            revokeListener?.invoke(PushEffect.RevokeDestination(effect.binding.copy(serverTokenGeneration = serverTokenGeneration)))
+            if (machine.binding ==
+                effect.binding.copy(
+                    serverTokenGeneration = serverTokenGeneration,
+                    serverDestinationRevision = serverDestinationRevision,
+                )
+            ) {
+                return
+            }
+            revokeListener?.invoke(
+                PushEffect.RevokeDestination(
+                    effect.binding.copy(
+                        serverTokenGeneration = serverTokenGeneration,
+                        serverDestinationRevision = serverDestinationRevision,
+                    ),
+                ),
+            )
             return
         }
-        execute(machine.onEnrollmentAccepted(effect.tokenGeneration, serverTokenGeneration))
+        execute(machine.onEnrollmentAccepted(effect.tokenGeneration, serverTokenGeneration, serverDestinationRevision))
         val binding = machine.binding ?: return
         try {
             provider.setMessageListener { data -> onMessage(data, binding) }
@@ -181,6 +196,7 @@ class AndroidNotificationAdapter(
         val id = intent?.getStringExtra(EXTRA_NOTIFICATION_ID) ?: return null
         if (intent.action != ACTION_OPEN || !PushPayload.NOTIFICATION_ID_REGEX.matches(id) || intent.data != tapUri(id)) return null
         if (intent.getLongExtra(EXTRA_GENERATION, -1) != binding.serverTokenGeneration) return null
+        if (intent.getLongExtra(EXTRA_REVISION, -1L) != (binding.serverDestinationRevision ?: -1L)) return null
         return id
     }
 
@@ -264,6 +280,7 @@ class AndroidNotificationAdapter(
                 .setData(tapUri(spec.notificationId))
                 .putExtra(EXTRA_NOTIFICATION_ID, spec.notificationId)
                 .putExtra(EXTRA_GENERATION, checkNotNull(machine.binding?.serverTokenGeneration))
+                .putExtra(EXTRA_REVISION, machine.binding?.serverDestinationRevision ?: -1L)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
@@ -335,6 +352,7 @@ class AndroidNotificationAdapter(
 
     companion object {
         const val ACTION_OPEN = "com.personalailabs.astraldeep.push.OPEN"
+        const val EXTRA_REVISION = "push_destination_revision"
         const val EXTRA_GENERATION = "push_token_generation"
         const val ACTION_DISMISSED = "com.personalailabs.astraldeep.push.DISMISSED"
         const val EXTRA_NOTIFICATION_ID = "notification_id"

@@ -9,6 +9,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import java.security.MessageDigest
 import java.time.Instant
 
 internal interface ServerSessionPersistence {
@@ -96,6 +97,32 @@ class ServerSessionCoordinator internal constructor(
             }
         }
     }
+
+    fun pushSessionIncarnation(token: String): String? =
+        synchronized(gate) {
+            val current = session ?: return@synchronized null
+            if (current.accessToken != token || !current.cookieExpiresAt.isAfter(clock())) return@synchronized null
+            MessageDigest.getInstance("SHA-256").digest(
+                (
+                    current.scope.origin.toString() + "\u0000" + current.scope.issuer + "\u0000" +
+                        current.scope.clientId + "\u0000" + current.scope.redirectUri + "\u0000" + current.cookie
+                ).encodeToByteArray(),
+            ).joinToString("") { "%02x".format(it) }
+        }
+
+    fun pushCurrentAccess(incarnation: String): String? =
+        synchronized(gate) {
+            val current = session ?: return@synchronized null
+            if (pushSessionIncarnation(current.accessToken) != incarnation) return@synchronized null
+            current.accessToken
+        }
+
+    fun pushRequestHeaders(token: String): Map<String, String> =
+        synchronized(gate) {
+            val current = session ?: return@synchronized emptyMap()
+            if (current.accessToken != token || !current.cookieExpiresAt.isAfter(clock())) return@synchronized emptyMap()
+            mapOf("Cookie" to current.cookie, "Origin" to current.scope.origin.toString().removeSuffix("/"))
+        }
 
     fun retire(): ServerSession? =
         synchronized(gate) {

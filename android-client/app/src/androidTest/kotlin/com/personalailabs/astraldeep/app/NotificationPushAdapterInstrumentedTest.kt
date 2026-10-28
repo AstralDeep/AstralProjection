@@ -216,7 +216,7 @@ class NotificationPushAdapterInstrumentedTest {
         oldListener(payloadJson("notification-late-01"))
         adapter.onProviderToken("rotation-after-close")
         adapter.start()
-        assertTrue(postedTags().isEmpty())
+        awaitCondition { postedTags().isEmpty() }
         assertEquals(1, revocations.size)
         assertEquals(RegistrationState.Idle, adapter.machine.registration)
     }

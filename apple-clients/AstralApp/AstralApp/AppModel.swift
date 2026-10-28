@@ -180,6 +180,7 @@ final class AppModel: NSObject {
     #endif
     #if os(iOS)
         var pushNotifications: PushNotificationService?
+        @ObservationIgnored private var pushSceneActive = false
     #endif
 
     var serverBaseText: String {
@@ -188,6 +189,9 @@ final class AppModel: NSObject {
                 #if os(macOS)
                     macComputerHost.signedOut()
                     macBrowser.bind(owner: nil)
+                #endif
+                #if os(iOS)
+                    configurePushNotifications()
                 #endif
                 clearActivity()
                 retireMeshCustody()
@@ -206,6 +210,9 @@ final class AppModel: NSObject {
                     releaseComputerBypass()
                     macComputerHost.signedOut()
                     macBrowser.bind(owner: nil)
+                #endif
+                #if os(iOS)
+                    configurePushNotifications()
                 #endif
                 clearActivity()
                 retireMeshCustody()
@@ -435,6 +442,7 @@ final class AppModel: NSObject {
     @ObservationIgnored private let credentialClock: @Sendable () -> Date
     @ObservationIgnored private var tokens: TokenSet?
     @ObservationIgnored private var serverSession: ServerSession?
+    @ObservationIgnored private var restoringServerSession: ServerSession?
     @ObservationIgnored private var serverCustodyRequired = false
     @ObservationIgnored var serverSessionStorage: any MeshKeyStorage = KeychainMeshKeyStorage(
         service: "com.personalailabs.astraldeep.server-session")
@@ -599,31 +607,7 @@ final class AppModel: NSObject {
             return self?.refreshActiveChat()
         }
         #if os(iOS)
-            let pushDeviceKey = "astraldeep.push.device-id.v1"
-            let storedPushDeviceId = defaults.string(forKey: pushDeviceKey)
-            let pushDeviceId: String
-            if let storedPushDeviceId,
-                storedPushDeviceId.count >= 8, storedPushDeviceId.count <= 128,
-                storedPushDeviceId.first.map({ $0.isLetter || $0.isNumber }) == true,
-                storedPushDeviceId.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "." || $0 == "_" || $0 == "-" })
-            {
-                pushDeviceId = storedPushDeviceId
-            } else {
-                let fresh = UUID().uuidString.lowercased()
-                defaults.set(fresh, forKey: pushDeviceKey)
-                pushDeviceId = fresh
-            }
-            let pushIdentity = PushIdentity(deviceId: pushDeviceId, label: "Astral phone")
-            let service = PushNotificationService(
-                identity: pushIdentity,
-                machine: PushDestinationMachine(identity: pushIdentity),
-                rest: PushRest(serverBase: serverBase),
-                tokenProvider: { [weak self] in await self?.freshAccessToken() })
-            service.setInAppPresent { [weak self] payload in
-                self?.presentPushInApp(payload)
-            }
-            service.start()
-            pushNotifications = service
+            configurePushNotifications()
             WatchOverrideSync.shared.activate()
             if !storedBase.isEmpty { WatchOverrideSync.shared.push(serverBaseText) }
         #else
@@ -650,6 +634,61 @@ final class AppModel: NSObject {
         connectionActivity.update(level)
     }
 
+    #if os(iOS)
+        private func configurePushNotifications() {
+            pushNotifications?.ownerSessionEnded(access: tokens?.accessToken)
+            let service = PushNotificationService(
+                identity: PushIdentity(deviceId: voiceDeviceId, label: "Astral phone"),
+                rest: PushRest(
+                    serverBase: serverBase,
+                    sessionHeaders: { [weak self] token in await self?.pushSessionHeaders(token) ?? [:] }),
+                tokenProvider: { [weak self] in await self?.freshAccessToken() },
+                incarnationProvider: { [weak self] token in self?.pushSessionIncarnation(token) }
+            )
+            service.setInAppPresent { [weak self] payload in self?.presentPushInApp(payload) }
+            service.setSourceOpen { [weak self] source in
+                guard let self, self.signedIn, self.connected, !self.mandatorySurface, !self.timelineReadOnly else {
+                    return false
+                }
+                if let chat = source.chatId {
+                    self.openChat(chat)
+                } else {
+                    self.openSurface("notifications", params: .object(["entry_id": .string(source.notificationId)]))
+                }
+                return true
+            }
+            service.start()
+            pushNotifications = service
+            trackPushConnection()
+        }
+
+        private func pushSessionIncarnation(_ access: String) -> String? {
+            guard let session = serverSession, session.scope.server == serverBase,
+                pushOwnerScope(serverBase: serverBase, accessToken: session.accessToken)
+                    == pushOwnerScope(serverBase: serverBase, accessToken: access),
+                session.cookieExpiresAt > credentialClock()
+            else { return nil }
+            return session.pushIncarnation
+        }
+
+        private func pushSessionHeaders(_ access: String) -> [String: String] {
+            guard pushSessionIncarnation(access) != nil, let session = serverSession, session.accessToken == access
+            else { return [:] }
+            return ["Cookie": session.cookie, "Origin": session.scope.server.absoluteString]
+        }
+
+        private func trackPushConnection() {
+            let ready = withObservationTracking {
+                (signedIn, connected, mandatorySurface, timelineReadOnly)
+            } onChange: { [weak self] in
+                Task { @MainActor [weak self] in self?.trackPushConnection() }
+            }
+            pushNotifications?.sceneChanged(
+                active: pushSceneActive,
+                connectionGeneration: ready.0 && ready.1 ? continuity.connectionGeneration : nil)
+        }
+    #endif
+
     func verifyConnection() {
         guard signedIn, let socket = ws else { return }
         Task { _ = await socket.confirmLive() }
@@ -669,6 +708,11 @@ final class AppModel: NSObject {
                 }
             #endif
             if conversationAccount != nil {
+                if let session = serverSession,
+                    session.owner != account.subject || session.scope.issuer != account.issuer
+                {
+                    retireServerSession()
+                }
                 retireMeshCustody()
             } else if serverSession?.owner == account.subject, serverSession?.scope.issuer == account.issuer {
                 do {
@@ -1150,7 +1194,11 @@ final class AppModel: NSObject {
         clearPendingOperationSubmissions()
         transientTurns = []
         transientCanvas = nil
-        return continuity.beginConnection(generation)
+        let accepted = continuity.beginConnection(generation)
+        #if os(iOS)
+            pushNotifications?.sceneChanged(active: pushSceneActive, connectionGeneration: connected ? generation : nil)
+        #endif
+        return accepted
     }
 
     @discardableResult
@@ -1192,8 +1240,10 @@ final class AppModel: NSObject {
                     guard restored.scope == scope, restored.cookieExpiresAt > credentialClock() else {
                         throw ServerSessionError.retired
                     }
+                    restoringServerSession = restored
                     let refreshed = try await ServerSessionTransport(scope: scope, transport: serverSessionTransport)
                         .refresh(restored)
+                    if restoringServerSession == restored { restoringServerSession = nil }
                     guard !Task.isCancelled, generation == sessionGeneration, owner == downloadOwner,
                         authentication === authSession, self.oidc?.authority == oidc.authority,
                         (try? ServerSessionScope(server: serverBase, oidc: oidc)) == scope
@@ -1292,14 +1342,37 @@ final class AppModel: NSObject {
         }
     }
 
-    private func retireServerSession() {
+    private func retireServerSession(revokeRemote: Bool = true) {
+        let retired = serverSession ?? restoringServerSession
+        let retiredTransport = serverSessionTransport
+        #if os(iOS)
+            pushNotifications?.ownerSessionEnded(access: tokens?.accessToken)
+        #endif
         sessionGeneration += 1
         refreshTask?.cancel()
         refreshTask = nil
         refreshContext = nil
         serverSession = nil
+        restoringServerSession = nil
         do { try serverSessionStorage.retainOnly(nil) } catch {
             signInError = "The protected server session could not be cleared. Retry sign-out."
+        }
+        if revokeRemote, let retired {
+            let captured = sessionGeneration
+            Task { [weak self] in
+                let outcome = try? await ServerSessionTransport(scope: retired.scope, transport: retiredTransport)
+                    .logoutOutcome(retired)
+                if outcome != .revoked {
+                    NSLog("AstralDeep previous server session retirement unconfirmed or queued")
+                    guard let self, self.sessionGeneration == captured, self.serverSession == nil,
+                        !self.signedIn, self.signInError == nil
+                    else { return }
+                    self.signInError =
+                        outcome == .queued
+                        ? "Previous server session revocation is queued."
+                        : "The server could not confirm previous session revocation."
+                }
+            }
         }
     }
 
@@ -1520,7 +1593,7 @@ final class AppModel: NSObject {
         }
         signedIn = true
         #if os(iOS)
-            pushNotifications?.ownerAuthenticated()
+            if let access = tokens?.accessToken { pushNotifications?.ownerAuthenticated(access: access) }
             if pushNotifications?.shouldOfferPermissionRequest() == true {
                 pushNotifications?.requestAuthorizationIfNeeded()
             }
@@ -1552,8 +1625,8 @@ final class AppModel: NSObject {
         // Local wipe must precede the async revoke call, before any suspension
         let access = tokens?.accessToken
         let refresh = tokens?.refreshToken
-        let custody = serverSession
-        retireServerSession()
+        let custody = serverSession ?? restoringServerSession
+        retireServerSession(revokeRemote: false)
         serverCustodyRequired = false
         let logoutClient = RestClient(serverBase: serverBase) { access }
         let socket = ws
@@ -4901,11 +4974,23 @@ final class AppModel: NSObject {
     }
 
     func voiceSceneBecameActive() {
+        #if os(iOS)
+            pushSceneActive = true
+            pushNotifications?.sceneChanged(
+                active: true, connectionGeneration: connected ? continuity.connectionGeneration : nil)
+        #endif
         voice.sceneBecameActive()
         reportDeviceCapabilities()
     }
 
-    func voiceSceneBecameInactive() { voice.sceneBecameInactive() }
+    func voiceSceneBecameInactive() {
+        #if os(iOS)
+            pushSceneActive = false
+            pushNotifications?.sceneChanged(
+                active: false, connectionGeneration: connected ? continuity.connectionGeneration : nil)
+        #endif
+        voice.sceneBecameInactive()
+    }
 
     func voiceAudioSessionInterrupted() { voice.audioSessionInterrupted() }
 

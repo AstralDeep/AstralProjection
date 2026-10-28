@@ -1,7 +1,4 @@
-// Pure decision machine for the Apple notification destination: permission and availability
-// gates, APNs token enrollment with rotation generation and fingerprints, bounded duplicate
-// suppression, and lifecycle-dependent presentation decisions. PushNotificationService binds
-// these decisions to UserNotifications; PushRest performs the destination boundary calls.
+// Decides owner-session-bound Apple push enrollment, permission, receipt and retirement effects for the iOS OS service.
 
 import CryptoKit
 import Foundation
@@ -30,7 +27,8 @@ public struct PushIdentity: Equatable, Sendable {
     public let label: String?
 
     public init(deviceId: String, label: String? = nil) {
-        let valid = deviceId.count >= 8 && deviceId.count <= 128
+        let valid =
+            deviceId.count >= 8 && deviceId.count <= 128
             && deviceId.first.map { $0.isLetter || $0.isNumber } == true
             && deviceId.allSatisfy { $0.isLetter || $0.isNumber || $0 == "." || $0 == "_" || $0 == "-" }
         precondition(valid, PushIdentity.reasonDeviceId)
@@ -66,9 +64,29 @@ public enum PushPayloadResult: Equatable, Sendable {
     case malformed(String)
 }
 
+public struct PushBinding: Equatable, Sendable {
+    public let ownerSessionId: String
+    public let deviceId: String
+    public let tokenGeneration: Int
+    public let serverTokenGeneration: Int64?
+    public let serverDestinationRevision: Int64?
+    public init(
+        ownerSessionId: String, deviceId: String, tokenGeneration: Int, serverTokenGeneration: Int64? = nil,
+        serverDestinationRevision: Int64? = nil
+    ) {
+        self.ownerSessionId = ownerSessionId
+        self.deviceId = deviceId
+        self.tokenGeneration = tokenGeneration
+        self.serverTokenGeneration = serverTokenGeneration
+        self.serverDestinationRevision = serverDestinationRevision
+    }
+}
+
 public enum PushEffect: Equatable, Sendable {
     case requestToken(reason: String)
-    case enrollDestination(deviceId: String, platform: String, token: String, label: String?, tokenGeneration: Int)
+    case enrollDestination(
+        deviceId: String, platform: String, token: String, label: String?, tokenGeneration: Int, ownerSessionId: String)
+    case revokeDestination(PushBinding)
     case acknowledge(deviceId: String, notificationId: String)
     case cancelPresented([String])
 }
@@ -99,9 +117,6 @@ public func decodePushPayload(_ data: [String: String]) -> PushPayloadResult {
     }
     let title = trimmed(data["title"])
     let body = trimmed(data["body"])
-    if (title ?? "").isEmpty && (body ?? "").isEmpty {
-        return .malformed("notification_text")
-    }
     if let title, title.count > PushPayload.maxTitleChars || containsControlCharacter(title) {
         return .malformed("title")
     }
@@ -112,7 +127,8 @@ public func decodePushPayload(_ data: [String: String]) -> PushPayloadResult {
     guard PushPayload.levels.contains(level) else {
         return .malformed("level")
     }
-    if let chatId = trimmed(data["chat_id"]),
+    let chatId = trimmed(data["chat_id"])
+    if let chatId,
         chatId.count > PushPayload.maxChatIdChars || containsControlCharacter(chatId)
     {
         return .malformed("chat_id")
@@ -148,10 +164,23 @@ public final class PushDestinationMachine {
     private var currentToken: String?
     private var currentFingerprint: String?
     private var currentGeneration = 0
+    private var active = true
+    private var serverRevision: Int64?
+    private var serverGeneration: Int64?
+    public let ownerSessionId: String
+    public var tokenGeneration: Int { currentGeneration }
+    public var binding: PushBinding? {
+        guard active, case .registered = registration, let serverGeneration else { return nil }
+        return PushBinding(
+            ownerSessionId: ownerSessionId, deviceId: identity.deviceId, tokenGeneration: currentGeneration,
+            serverTokenGeneration: serverGeneration, serverDestinationRevision: serverRevision)
+    }
     private var retryableAttempts = 0
 
-    public init(identity: PushIdentity, acceptedCapacity: Int = 64) {
+    public init(identity: PushIdentity, ownerSessionId: String, acceptedCapacity: Int = 64) {
         precondition(acceptedCapacity > 0, "accepted_capacity")
+        precondition(!ownerSessionId.isEmpty && ownerSessionId.utf8.count <= 256, "owner_session")
+        self.ownerSessionId = ownerSessionId
         self.identity = identity
         self.acceptedCapacity = acceptedCapacity
     }
@@ -170,7 +199,10 @@ public final class PushDestinationMachine {
         lifecycle = phase
     }
 
-    public func onPermissionReport(granted: Bool, notificationsAuthorized: Bool) -> [PushEffect] {
+    public func onPermissionReport(granted: Bool, notificationsAuthorized: Bool, requestCompleted: Bool = true)
+        -> [PushEffect]
+    {
+        guard active else { return [] }
         let previous = permission
         if granted && notificationsAuthorized {
             permission = .granted
@@ -178,13 +210,13 @@ public final class PushDestinationMachine {
             permission = .revoked
         } else if previous == .granted || previous == .revoked {
             permission = .revoked
+        } else if previous == .notDetermined && !requestCompleted {
+            permission = .notDetermined
         } else {
             permission = .denied
         }
         if previous == .granted && permission == .revoked {
-            let cancelled = accepted
-            accepted = []
-            return [.cancelPresented(cancelled)]
+            return retireRegistration()
         }
         if permission == .granted {
             return bootstrapEffects()
@@ -193,43 +225,34 @@ public final class PushDestinationMachine {
     }
 
     public func onAvailability(supported: Bool, reason: String? = nil) -> [PushEffect] {
+        guard active else { return [] }
         availability = supported ? .supported : .unsupported
         if !supported {
-            registration = .idle
+            let effects = retireRegistration()
             unsupportedReason = reason ?? Self.reasonProviderUnavailable
-            currentToken = nil
-            currentFingerprint = nil
-            currentGeneration = 0
-            return []
+            return effects
         }
         unsupportedReason = nil
         return bootstrapEffects()
     }
 
     public func onDeviceToken(_ token: String?) -> [PushEffect] {
-        if deviceUnsupported || permission != .granted { return [] }
+        if !active || deviceUnsupported || permission != .granted { return [] }
         guard let token else {
-            switch registration {
-            case .requestingToken, .enrolling, .registered:
-                retryableAttempts += 1
-                registration = .failedRetryable(code: Self.codeTokenUnavailable, attempts: retryableAttempts)
-                currentToken = nil
-                currentFingerprint = nil
-                currentGeneration = 0
-            default:
-                break
-            }
-            return []
+            if registration == .idle { return [] }
+            let effects = retireRegistration()
+            retryableAttempts += 1
+            registration = .failedRetryable(code: Self.codeTokenUnavailable, attempts: retryableAttempts)
+            return effects
         }
         let normalized = token.trimmingCharacters(in: .whitespacesAndNewlines)
         if normalized.isEmpty || normalized.count > Self.maxTokenChars || containsControlCharacter(normalized) {
+            let effects = retireRegistration()
             registration = .failedPermanent(code: Self.codeTokenInvalid)
-            return []
+            return effects
         }
         let fingerprint = pushTokenFingerprint(normalized)
         if fingerprint == currentFingerprint {
-            registration = .registered(tokenFingerprint: fingerprint, tokenGeneration: currentGeneration)
-            retryableAttempts = 0
             return []
         }
         currentToken = normalized
@@ -250,15 +273,21 @@ public final class PushDestinationMachine {
         return []
     }
 
-    public func onEnrollmentAccepted() -> [PushEffect] {
-        guard registration == .enrolling, let fingerprint = currentFingerprint else { return [] }
+    public func onEnrollmentAccepted(
+        tokenGeneration: Int, serverTokenGeneration: Int64, serverDestinationRevision: Int64? = nil
+    ) -> [PushEffect] {
+        guard active, tokenGeneration == currentGeneration, serverTokenGeneration > 0, registration == .enrolling,
+            let fingerprint = currentFingerprint
+        else { return [] }
         registration = .registered(tokenFingerprint: fingerprint, tokenGeneration: currentGeneration)
+        serverGeneration = serverTokenGeneration
+        serverRevision = serverDestinationRevision
         retryableAttempts = 0
         return []
     }
 
-    public func onEnrollmentRejected(transient: Bool, code: String) -> [PushEffect] {
-        guard registration == .enrolling else { return [] }
+    public func onEnrollmentRejected(transient: Bool, code: String, tokenGeneration: Int) -> [PushEffect] {
+        guard active, tokenGeneration == currentGeneration, registration == .enrolling else { return [] }
         if transient {
             retryableAttempts += 1
             registration = .failedRetryable(code: code, attempts: retryableAttempts)
@@ -269,7 +298,7 @@ public final class PushDestinationMachine {
     }
 
     public func retryRegistration() -> [PushEffect] {
-        if deviceUnsupported || permission != .granted { return [] }
+        if !active || deviceUnsupported || permission != .granted { return [] }
         switch registration {
         case .failedRetryable:
             if let token = currentToken {
@@ -285,12 +314,12 @@ public final class PushDestinationMachine {
         }
     }
 
-    public func onForegroundDelivery(_ data: [String: String]) -> PushMessageReceipt {
-        return receipt(for: data, systemPresents: false)
+    public func onForegroundDelivery(_ data: [String: String], binding: PushBinding) -> PushMessageReceipt {
+        return receipt(for: data, binding: binding, systemPresents: false)
     }
 
-    public func onSystemDelivery(_ data: [String: String]) -> PushMessageReceipt {
-        return receipt(for: data, systemPresents: true)
+    public func onSystemDelivery(_ data: [String: String], binding: PushBinding) -> PushMessageReceipt {
+        return receipt(for: data, binding: binding, systemPresents: true)
     }
 
     public func onDismissed(_ notificationId: String) -> Bool {
@@ -299,8 +328,12 @@ public final class PushDestinationMachine {
         return true
     }
 
-    private func receipt(for data: [String: String], systemPresents: Bool) -> PushMessageReceipt {
+    private func receipt(for data: [String: String], binding deliveryBinding: PushBinding, systemPresents: Bool)
+        -> PushMessageReceipt
+    {
+        guard active else { return .notPermitted }
         if deviceUnsupported { return .unsupported }
+        guard binding == deliveryBinding else { return .notPermitted }
         let decoded = decodePushPayload(data)
         guard case .decoded(let payload) = decoded else {
             if case .malformed(let reason) = decoded { return .malformed(reason) }
@@ -326,13 +359,37 @@ public final class PushDestinationMachine {
         return .notPermitted
     }
 
+    public func endSession() -> [PushEffect] {
+        guard active else { return [] }
+        active = false
+        return retireRegistration()
+    }
+
+    private func retireRegistration() -> [PushEffect] {
+        let previous = serverGeneration.map {
+            PushBinding(
+                ownerSessionId: ownerSessionId, deviceId: identity.deviceId, tokenGeneration: currentGeneration,
+                serverTokenGeneration: $0, serverDestinationRevision: serverRevision)
+        }
+        let cancelled = accepted
+        accepted = []
+        currentToken = nil
+        currentFingerprint = nil
+        serverGeneration = nil
+        serverRevision = nil
+        registration = .idle
+        var effects: [PushEffect] = cancelled.isEmpty ? [] : [.cancelPresented(cancelled)]
+        if let previous { effects.append(.revokeDestination(previous)) }
+        return effects
+    }
+
     private func enrollEffect(_ token: String) -> PushEffect {
         return .enrollDestination(
             deviceId: identity.deviceId,
             platform: platform,
             token: token,
             label: identity.label,
-            tokenGeneration: currentGeneration)
+            tokenGeneration: currentGeneration, ownerSessionId: ownerSessionId)
     }
 
     private func bootstrapEffects() -> [PushEffect] {
@@ -356,4 +413,36 @@ public final class PushDestinationMachine {
     static let reasonBootstrap = "bootstrap"
     static let reasonRetry = "retry"
     static let reasonProviderUnavailable = "provider_unavailable"
+}
+
+public func pushOwnerScope(serverBase: URL, accessToken: String) -> String? {
+    guard let account = TokenSet(accessToken: accessToken, refreshToken: nil, expiresIn: 0).conversationAccount else {
+        return nil
+    }
+    let parts = accessToken.split(separator: ".")
+    guard parts.count >= 2 else { return nil }
+    var encoded = String(parts[1]).replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+    encoded += String(repeating: "=", count: (4 - encoded.count % 4) % 4)
+    guard let bytes = Data(base64Encoded: encoded),
+        let claims = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any],
+        var base = URLComponents(url: serverBase, resolvingAgainstBaseURL: false), let host = base.host
+    else { return nil }
+    let audience: [String]
+    if let value = claims["aud"] as? String {
+        audience = [value]
+    } else if let values = claims["aud"] as? [String] {
+        audience = values.sorted()
+    } else if claims["aud"] == nil {
+        audience = []
+    } else {
+        return nil
+    }
+    base.host = host.lowercased()
+    if base.port == 443 && base.scheme == "https" { base.port = nil }
+    base.query = nil
+    base.fragment = nil
+    let authority = (base.url?.absoluteString ?? serverBase.absoluteString).trimmingCharacters(
+        in: CharacterSet(charactersIn: "/"))
+    let data = Data(([authority, account.issuer, account.subject] + audience).joined(separator: "\u{0}").utf8)
+    return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
 }
