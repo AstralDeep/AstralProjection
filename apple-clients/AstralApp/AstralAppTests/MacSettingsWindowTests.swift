@@ -185,12 +185,11 @@
         }
 
         func testPanesExposeNamesAndDisabledStateToAccessibility() async throws {
-            try SurfaceAccessibility.requireTrust()
             let model = try model(menu: try handoffMenu())
             let mount = SurfaceMount(MacSettingsAccount(), model: model, size: CGSize(width: 460, height: 620))
             defer { mount.close() }
             try await mount.settle()
-            let tree = mount.accessibility
+            let tree = try mount.accessibility
             XCTAssertEqual(tree.first { $0.identifier == "settings-account-llm" }?.label, "LLM settings")
             let audit = try XCTUnwrap(tree.first { $0.identifier == "settings-account-audit" })
             XCTAssertFalse(audit.enabled)
