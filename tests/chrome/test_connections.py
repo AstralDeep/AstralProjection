@@ -126,7 +126,7 @@ def test_caller_state_is_never_mutated_and_empty_is_distinguished_from_broken():
     build_connections_view(rows, form_state())
     assert rows == before
     empty = render_html(build_connections_view([], form_state()))
-    assert "not issued any keys yet" in empty and "unavailable" not in empty.lower()
+    assert "not issued any keys yet" not in empty and "unavailable" not in empty.lower()
 
 
 @pytest.mark.parametrize(

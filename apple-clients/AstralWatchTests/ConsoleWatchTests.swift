@@ -163,8 +163,9 @@ final class ConsoleWatchTests: XCTestCase {
                 ])))
         XCTAssertNotEqual(model.theme.palette, oldPalette)
         model.handleFrame(
-            InboundFrame(name: "theme_apply", payload: .object(["theme": .object(["preset": .string("midnight")])])))
+            InboundFrame(name: "theme_apply", payload: .object(["theme": .object(["preset": .string("graphite")])])))
         XCTAssertEqual(model.theme.palette, oldPalette)
+        XCTAssertEqual(oldPalette, .graphite)
         model.bindConversationAccount(ConversationAccount(issuer: "https://iam.example.test", subject: "other")!)
         XCTAssertNil(model.console)
         XCTAssertFalse(model.useScenario(scenario, run: true))

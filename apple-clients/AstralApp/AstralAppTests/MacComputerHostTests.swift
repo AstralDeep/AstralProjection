@@ -98,6 +98,49 @@
             }
         }
 
+        func testRepeatedMissingPermissionOpensItsPaneWithAddGuidanceInsteadOfPrompting() {
+            var requested: [MacComputerPermission] = []
+            var opened: [URL] = []
+            var opens = true
+            let host = MacComputerHost(
+                available: true, defaults: UserDefaults(suiteName: UUID().uuidString)!,
+                driver: ComputerTestDriver(), monitor: ComputerTestMonitor(),
+                permissionProvider: { MacComputerPermissions(accessibility: false, screen: false, monitoring: false) },
+                permissionRequester: {
+                    requested.append($0)
+                    return false
+                },
+                settingsOpener: {
+                    opened.append($0)
+                    return opens
+                }, desktopProbe: { true }, desktopRearm: { false }, system: MacComputerTestSystem(),
+                panelPresenter: { _ in })
+            let panes: [(MacComputerPermission, () -> Void, String, String)] = [
+                (.accessibility, host.requestAccessibility, "Device Control and Data Access", "Privacy_Accessibility"),
+                (.screen, host.requestScreen, "Screen & System Audio Recording", "Privacy_ScreenCapture"),
+                (.monitoring, host.requestMonitoring, "Input Monitoring", "Privacy_ListenEvent"),
+            ]
+            for (permission, request, pane, anchor) in panes {
+                request()
+                XCTAssertEqual(requested.last, permission)
+                XCTAssertTrue(host.lastError?.contains("returned not granted") == true)
+                let prompts = requested.count
+                request()
+                XCTAssertEqual(requested.count, prompts)
+                XCTAssertEqual(
+                    host.lastError, "macOS no longer prompts for this app; open \(pane) and add AstralDeep with +")
+                XCTAssertEqual(
+                    opened.last?.absoluteString, "x-apple.systempreferences:com.apple.preference.security?" + anchor)
+            }
+            XCTAssertEqual(
+                MacComputerPermission.accessibility.noPromptGuidance,
+                "macOS no longer prompts for this app; open Device Control and Data Access and add AstralDeep with +")
+            opens = false
+            host.requestAccessibility()
+            XCTAssertTrue(host.lastError?.hasSuffix("AstralDeep could not open that pane.") == true)
+            XCTAssertFalse(host.enabled)
+        }
+
         func testActivationRefreshesRawPermissionFactsWithoutRearming() async {
             let refreshed = expectation(description: "activation refreshed OS permissions")
             var returned = false
@@ -359,6 +402,15 @@
             XCTAssertFalse(host.enabled)
             XCTAssertNil(host.descriptor)
             host.applicationWillTerminate()
+        }
+
+        func testDescriptorReportsTheBundleShortVersionToTheServer() throws {
+            let host = makeHost(driver: ComputerTestDriver())
+            defer { host.stop() }
+            let bundled = try XCTUnwrap(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String)
+            let descriptor = try XCTUnwrap(host.descriptor)
+            XCTAssertEqual(descriptor.clientVersion, bundled)
+            XCTAssertEqual(descriptor.json.objectValue?["client_version"]?.stringValue, bundled)
         }
 
         func testUnavailableDesktopOrPermissionKeepsChoiceWithoutAdvertisingAccess() throws {

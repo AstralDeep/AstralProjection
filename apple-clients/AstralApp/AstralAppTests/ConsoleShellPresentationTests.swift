@@ -342,6 +342,126 @@ final class ConsoleShellPresentationTests: XCTestCase {
         }
     #endif
 
+    #if os(macOS)
+        func testLandingAndComposerDrawControlsWithoutTaglinesPlaceholderOrLockSentence() async throws {
+            let model = try model()
+            model.composerDraft = ""
+            let (presentation, size) = try presentation(width: 1440)
+            let host = try ConsoleTestMount(model: model, presentation: presentation, size: size)
+            defer { host.close() }
+            try await host.settle()
+            _ = try attach(host, name: "console-landing-quiet-copy")
+            let landing = try host.recognizedText().map(\.text)
+            XCTAssertTrue(landing.contains { $0.contains("AstralDeep Console") })
+            XCTAssertTrue(landing.contains { $0.contains("Roll dice") })
+            XCTAssertTrue(landing.contains { $0 == "Run" })
+            for cut in ["Workspace", "Start here", "Utilities", "Example", "Six rolls", "Ask anything"] {
+                XCTAssertFalse(landing.contains { $0.contains(cut) }, "Unexpected landing copy: \(cut)")
+            }
+            var sent: [JSONValue] = []
+            model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+            model.activeChatId = "console-reference-chat"
+            model.timelineReadOnly = true
+            try await host.settle()
+            _ = try attach(host, name: "console-history-lock-chip")
+            let locked = try host.recognizedText()
+            XCTAssertTrue(locked.contains { $0.text.contains("Viewing history") })
+            XCTAssertFalse(locked.contains { $0.text.contains("messaging is paused") })
+            let back = try XCTUnwrap(locked.first { $0.text.contains("Back to live") })
+            host.click(CGPoint(x: back.bounds.midX * size.width, y: back.bounds.midY * size.height))
+            try await host.settle()
+            XCTAssertTrue(
+                sent.contains {
+                    $0["action"]?.stringValue == "chrome_workspace_timeline_live"
+                        && $0["payload"]?["chat_id"]?.stringValue == "console-reference-chat"
+                })
+            model.timelineReadOnly = false
+            try await host.settle()
+            XCTAssertFalse(try host.recognizedText().contains { $0.text.contains("Viewing history") })
+        }
+
+        func testSettingsOverlayDrawsTitleCloseAndStandaloneLabelsWithoutCaptions() async throws {
+            let model = try model()
+            let form = try JSONValue.parse(
+                Data(
+                    #"[{"type":"param_picker","title":"Provider","description":"Your provider, your keys and what leaves this machine","fields":[{"name":"base_url","label":"Endpoint","kind":"text","help":"Auto-set for hosted providers"},{"name":"model","label":"Model","kind":"text","example":"gpt-4o-mini"},{"name":"files","label":"Read files","kind":"boolean","help":"Lets the agent read your files"}],"submit_action":"chrome_llm_save","submit_label":"Save"}]"#
+                        .utf8))
+            model.screen = .surface
+            model.pendingSurfaceKey = "llm"
+            model.pendingSurface = .init(
+                surfaceKey: "llm", title: "LLM settings", components: AstralComponent.list(from: form))
+            let (presentation, size) = try presentation(width: 1440)
+            let host = try ConsoleTestMount(model: model, presentation: presentation, size: size)
+            defer { host.close() }
+            try await host.settle()
+            _ = try attach(host, name: "console-settings-quiet-form")
+            let text = try host.recognizedText().map(\.text)
+            for kept in ["LLM settings", "Provider", "Endpoint", "Model", "Read files"] {
+                XCTAssertTrue(text.contains { $0.contains(kept) }, "Missing settings copy: \(kept)")
+            }
+            for cut in ["Your provider", "Auto-set", "Lets the agent"] {
+                XCTAssertFalse(text.contains { $0.contains(cut) }, "Unexpected settings copy: \(cut)")
+            }
+            XCTAssertTrue(text.contains { $0.contains("gpt-4o-mini") || $0.contains("gpt-40-mini") }, "\(text)")
+            let fields = try XCTUnwrap(form.arrayValue?.first?["fields"]?.arrayValue)
+            XCTAssertEqual(fields.map(ParamPickerComponent.placeholder), ["", "gpt-4o-mini", ""])
+        }
+
+        func testComponentActionRowDrawsGlyphsWithoutRowWords() async throws {
+            let model = try model()
+            model.activeChatId = "11111111-1111-4111-8111-111111111111"
+            model.workspaceStarted = true
+            let actions = ComponentActionKind.allCases.map { kind in
+                JSONValue.object([
+                    "kind": .string(kind.rawValue), "label": .string(kind.rawValue), "icon": .string("↗"),
+                    "title": .string("Component action"),
+                    "context": .string(kind.requiresLiveCanvas ? "live_canvas" : "owned_chat"),
+                ])
+            }
+            let component = AstralComponent(
+                type: "text",
+                raw: .object([
+                    "type": .string("text"), "component_id": .string("saved"), "content": .string("Synthetic result"),
+                    "component_chrome": .object(["version": .number(1), "actions": .array(actions)]),
+                ]))
+            model.canvas = [component]
+            let size = CGSize(width: 560, height: 200)
+            let window = NSWindow(
+                contentRect: CGRect(origin: .zero, size: size), styleMask: .borderless, backing: .buffered,
+                defer: false)
+            window.isReleasedWhenClosed = false
+            let view = NSHostingView(
+                rootView: ComponentChrome(component: component, onAction: { _ in })
+                    .environment(model).environment(model.themeStore).frame(width: size.width, height: size.height)
+                    .background(model.themeStore.palette.bg))
+            window.contentView = view
+            window.setFrameOrigin(CGPoint(x: -10_000, y: -10_000))
+            window.orderBack(nil)
+            defer {
+                window.contentView = nil
+                window.close()
+            }
+            for _ in 0..<4 {
+                view.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.usesLanguageCorrection = false
+            try VNImageRequestHandler(cgImage: XCTUnwrap(bitmap.cgImage)).perform([request])
+            let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+            XCTAssertTrue(text.contains { $0.contains("Synthetic result") })
+            for word in ["refine", "history", "csv", "share"] {
+                XCTAssertFalse(text.contains { $0.localizedCaseInsensitiveContains(word) }, word)
+            }
+            XCTAssertEqual(
+                ComponentActionKind.allCases.compactMap { model.componentActionContext(for: $0, component: component) }
+                    .count, 4)
+        }
+    #endif
+
     @discardableResult
     private func openIntro(_ model: AppModel) throws -> JSONValue {
         let intro = try fixture("agent-intro")
@@ -362,13 +482,16 @@ final class ConsoleShellPresentationTests: XCTestCase {
             defer { host.close() }
             try await host.settle()
             _ = try attach(host, name: "console-agent-intro-\(width)")
-            XCTAssertEqual(model.pendingSurface?.subtitle, "What it does, and what to ask it")
+            XCTAssertNil(model.pendingSurface?.subtitle)
             #if os(macOS)
                 let rows = try host.recognizedText()
-                XCTAssertTrue(rows.contains { $0.text.contains("What it does") })
+                XCTAssertFalse(rows.contains { $0.text.contains("Roll exactly six") })
+                XCTAssertFalse(rows.contains { $0.text.contains("Roll 100") })
                 XCTAssertTrue(rows.contains { $0.text.contains("Permissions for this agent") })
                 let title = try XCTUnwrap(rows.first { $0.text == "Six dice" })
-                let run = try XCTUnwrap(rows.filter { $0.text == "Run" }.max { $0.bounds.midY < $1.bounds.midY })
+                let run = try XCTUnwrap(
+                    rows.filter { $0.text == "Run" && $0.bounds.minX >= title.bounds.minX - 0.02 }
+                        .min { abs($0.bounds.midY - title.bounds.midY) < abs($1.bounds.midY - title.bounds.midY) })
                 if presentation.settingsPresentation == .sheet {
                     XCTAssertLessThan(run.bounds.midY, title.bounds.midY)
                 } else {

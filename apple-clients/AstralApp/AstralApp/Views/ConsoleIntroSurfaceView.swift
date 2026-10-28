@@ -82,13 +82,8 @@ struct ConsoleIntroSurfaceView: View {
     }
 
     private func scenario(_ component: AstralComponent) -> some View {
-        let copy = VStack(alignment: .leading, spacing: 4) {
-            Text(component.title ?? "").font(ConsoleTypography.subheadline.weight(.semibold)).foregroundStyle(p.text)
-            ForEach(Array(component.children.filter { $0.type == "text" }.enumerated()), id: \.offset) { _, text in
-                Text(text.textContent ?? "").font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
+        let copy = Text(component.title ?? "").font(ConsoleTypography.subheadline.weight(.semibold))
+            .foregroundStyle(p.text)
         let actions = HStack(spacing: 6) {
             ForEach(Array(component.children.flatMap(\.children).enumerated()), id: \.offset) { _, action in
                 offeredButton(action, scenario: component.title)

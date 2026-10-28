@@ -65,7 +65,7 @@ def test_contract_is_read_only_closed_and_uses_the_existing_vocabulary():
     assert not {name for name in MANIFEST["push_types"] if name["name"].startswith("terminal")}
     assert not {name for name in MANIFEST["client_local_actions"] if "terminal" in name}
     assert len(MANIFEST["push_types"]) == 72
-    assert len(MANIFEST["accept_actions"]) == 151
+    assert len(MANIFEST["accept_actions"]) == 158
     assert len(MANIFEST["client_local_actions"]) == 5
     used = {node["type"] for frame in FIXTURE["frames"].values() for node in _walk(frame["components"])}
     assert used <= set(MANIFEST["component_types"])
@@ -121,7 +121,7 @@ def test_monitor_shows_target_directory_state_output_and_only_read_controls():
     assert all(button["local"] is False and button["disabled"] is False
                for button in _buttons(frame["components"]))
     assert _buttons(frame["components"])[-1]["payload"] == {"surface": "terminal"}
-    assert "Select the text to copy it" in _texts(frame["components"])[0]
+    assert _texts(frame["components"]) == []
 
 
 def test_list_and_empty_states_offer_existing_sessions_without_output():
@@ -138,7 +138,7 @@ def test_list_and_empty_states_offer_existing_sessions_without_output():
     ]
     assert not _codes(listed)
     empty = FIXTURE["frames"]["empty"]["components"]
-    assert "No terminal sessions are open for this account." in _texts(empty)
+    assert _texts(empty) == []
     assert [button["action"] for button in _buttons(empty)] == ["chrome_open", "chrome_close"]
 
 

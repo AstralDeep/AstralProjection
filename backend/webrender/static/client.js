@@ -5978,13 +5978,14 @@
     return (n >> 16 & 255) + " " + (n >> 8 & 255) + " " + (n & 255);
   }
   var PRESETS = {
-    midnight: { bg: "#0F1221", surface: "#1A1E2E", primary: "#6366F1", secondary: "#8B5CF6", text: "#F3F4F6", muted: "#9CA3AF", accent: "#06B6D4" },
-    daylight: { bg: "#F8FAFC", surface: "#FFFFFF", primary: "#4F46E5", secondary: "#7C3AED", text: "#1E293B", muted: "#64748B", accent: "#0891B2" },
-    ocean: { bg: "#0C1222", surface: "#132038", primary: "#0EA5E9", secondary: "#06B6D4", text: "#E2E8F0", muted: "#94A3B8", accent: "#2DD4BF" },
-    sunset: { bg: "#1C1017", surface: "#2D1B24", primary: "#F97316", secondary: "#EF4444", text: "#FEF2F2", muted: "#A8A29E", accent: "#FBBF24" },
-    forest: { bg: "#0F1A14", surface: "#1A2E22", primary: "#22C55E", secondary: "#10B981", text: "#ECFDF5", muted: "#86EFAC", accent: "#A3E635" },
+    graphite: { bg: "#121214", surface: "#1B1B1F", primary: "#7C3AED", secondary: "#6E6E78", text: "#ECECEF", muted: "#93939B", accent: "#A78BFA", success: "#5EC28F", warning: "#D4A94A", error: "#E17272", info: "#9A8CF2", on_error: "#121214", field_border: "#6E6E75" },
+    midnight: { bg: "#0F1221", surface: "#1A1E2E", primary: "#6366F1", secondary: "#8B5CF6", text: "#F3F4F6", muted: "#9CA3AF", accent: "#06B6D4", success: "#5EC28F", warning: "#D4A94A", error: "#E27777", info: "#9A8CF2", on_error: "#0F1221", field_border: "#686F7E" },
+    daylight: { bg: "#F8FAFC", surface: "#FFFFFF", primary: "#4F46E5", secondary: "#7C3AED", text: "#1E293B", muted: "#58667B", accent: "#067590", success: "#147739", warning: "#955B06", error: "#B91C1C", info: "#4338CA", on_error: "#FFFFFF", field_border: "#7F8A9B" },
+    ocean: { bg: "#0C1222", surface: "#132038", primary: "#0EA5E9", secondary: "#06B6D4", text: "#E2E8F0", muted: "#94A3B8", accent: "#2DD4BF", success: "#5EC28F", warning: "#D4A94A", error: "#E27777", info: "#9A8CF2", on_error: "#0C1222", field_border: "#66758A" },
+    sunset: { bg: "#1C1017", surface: "#2D1B24", primary: "#F97316", secondary: "#EF4444", text: "#FEF2F2", muted: "#A8A29E", accent: "#FBBF24", success: "#5EC28F", warning: "#D4A94A", error: "#E37B7B", info: "#9A8CF2", on_error: "#1C1017", field_border: "#7B7172" },
+    forest: { bg: "#0F1A14", surface: "#1A2E22", primary: "#22C55E", secondary: "#10B981", text: "#ECFDF5", muted: "#86EFAC", accent: "#A3E635", success: "#5EC28F", warning: "#D4A94A", error: "#E78C8C", info: "#A69AF4", on_error: "#0F1A14", field_border: "#508965" },
   };
-  function setColor(key, hex) { var ch = hexToChannels(hex); if (ch) document.documentElement.style.setProperty("--astral-" + key, ch); }
+  function setColor(key, hex) { var ch = hexToChannels(hex); if (ch) document.documentElement.style.setProperty("--astral-" + key.replace(/_/g, "-"), ch); }
   function applyTheme(spec) {
     if (spec.preset && PRESETS[spec.preset]) { var p = PRESETS[spec.preset]; for (var k in p) setColor(k, p[k]); }
     else if (spec.colors) { for (var k2 in spec.colors) setColor(k2, spec.colors[k2]); }

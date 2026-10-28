@@ -6,12 +6,6 @@
   "admin_only": false,
   "components": [
     {
-      "type": "text",
-      "content": "What it does, and what to ask it",
-      "variant": "caption",
-      "console_role": "surface_subtitle"
-    },
-    {
       "type": "badge",
       "label": "Available",
       "variant": "success"

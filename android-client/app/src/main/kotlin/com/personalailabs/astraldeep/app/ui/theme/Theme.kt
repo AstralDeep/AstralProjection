@@ -1,14 +1,17 @@
-// Kotlin twin of the web/Windows theme system: a seven-channel ThemePalette folds live theme specs into a
+// Kotlin twin of the web/Windows theme system: a thirteen-channel ThemePalette folds live theme specs into a
 // Material ColorScheme; presets and channel math mirror backend theme.py and client.js.
 
 package com.personalailabs.astraldeep.app.ui.theme
 
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -23,22 +26,26 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
 object AstralColors {
-    val Indigo = Color(0xFF6366F1)
-    val Purple = Color(0xFF8B5CF6)
+    val Primary = Color(0xFF7C3AED)
+    val Secondary = Color(0xFF6E6E78)
+    val Accent = Color(0xFFA78BFA)
     val Cyan = Color(0xFF06B6D4)
-    val Bg = Color(0xFF0F1221)
-    val BgElevated = Color(0xFF12162A)
-    val Surface = Color(0xFF1A1E2E)
-    val SurfaceVariant = Color(0xFF1E2338)
-    val Border = Color(0xFF2A2F49)
-    val Text = Color(0xFFF3F4F6)
-    val Muted = Color(0xFF9CA3AF)
+    val Bg = Color(0xFF121214)
+    val BgElevated = Color(0xFF18181C)
+    val Surface = Color(0xFF1B1B1F)
+    val SurfaceVariant = Color(0xFF232328)
+    val Border = Color(0xFF2D2D31)
+    val Text = Color(0xFFECECEF)
+    val Muted = Color(0xFF93939B)
+    val Error = Color(0xFFE17272)
+    val OnError = Color(0xFF121214)
+    val FieldBorder = Color(0xFF6E6E75)
 
     val AccentBrush =
-        Brush.linearGradient(listOf(Indigo, Purple), start = Offset.Zero, end = Offset.Infinite)
+        Brush.linearGradient(listOf(Primary, Secondary), start = Offset.Zero, end = Offset.Infinite)
 
     val BackdropBrush =
-        Brush.verticalGradient(listOf(Color(0xFF0F1221), Color(0xFF141A33), Color(0xFF0F1221)))
+        Brush.verticalGradient(listOf(Bg, BgElevated, Bg))
 }
 
 @OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
@@ -71,16 +78,18 @@ private val astralTypography =
 
 private val AstralDarkColors =
     darkColorScheme(
-        primary = AstralColors.Indigo,
+        primary = AstralColors.Primary,
         onPrimary = Color.White,
-        secondary = AstralColors.Purple,
-        tertiary = AstralColors.Cyan,
+        secondary = AstralColors.Secondary,
+        tertiary = AstralColors.Accent,
         background = AstralColors.Bg,
         onBackground = AstralColors.Text,
         surface = AstralColors.Surface,
         onSurface = AstralColors.Text,
         surfaceVariant = AstralColors.SurfaceVariant,
         onSurfaceVariant = AstralColors.Muted,
+        error = AstralColors.Error,
+        onError = AstralColors.OnError,
         outline = AstralColors.Border,
         outlineVariant = AstralColors.Border,
     )
@@ -94,6 +103,12 @@ data class ThemePalette(
     val text: String,
     val muted: String,
     val accent: String,
+    val success: String,
+    val warning: String,
+    val error: String,
+    val info: String,
+    val onError: String,
+    val fieldBorder: String,
 ) {
     fun withChannel(
         key: String,
@@ -107,6 +122,12 @@ data class ThemePalette(
             "text" -> copy(text = hex)
             "muted" -> copy(muted = hex)
             "accent" -> copy(accent = hex)
+            "success" -> copy(success = hex)
+            "warning" -> copy(warning = hex)
+            "error" -> copy(error = hex)
+            "info" -> copy(info = hex)
+            "on_error" -> copy(onError = hex)
+            "field_border" -> copy(fieldBorder = hex)
             else -> this
         }
 
@@ -119,20 +140,117 @@ data class ThemePalette(
             "text" -> text
             "muted" -> muted
             "accent" -> accent
+            "success" -> success
+            "warning" -> warning
+            "error" -> error
+            "info" -> info
+            "on_error" -> onError
+            "field_border" -> fieldBorder
             else -> null
         }
 }
 
 val THEME_PRESETS: Map<String, ThemePalette> =
     mapOf(
-        "midnight" to ThemePalette("#0F1221", "#1A1E2E", "#6366F1", "#8B5CF6", "#F3F4F6", "#9CA3AF", "#06B6D4"),
-        "daylight" to ThemePalette("#F8FAFC", "#FFFFFF", "#4F46E5", "#7C3AED", "#1E293B", "#64748B", "#0891B2"),
-        "ocean" to ThemePalette("#0C1222", "#132038", "#0EA5E9", "#06B6D4", "#E2E8F0", "#94A3B8", "#2DD4BF"),
-        "sunset" to ThemePalette("#1C1017", "#2D1B24", "#F97316", "#EF4444", "#FEF2F2", "#A8A29E", "#FBBF24"),
-        "forest" to ThemePalette("#0F1A14", "#1A2E22", "#22C55E", "#10B981", "#ECFDF5", "#86EFAC", "#A3E635"),
+        "graphite" to
+            ThemePalette(
+                "#121214",
+                "#1B1B1F",
+                "#7C3AED",
+                "#6E6E78",
+                "#ECECEF",
+                "#93939B",
+                "#A78BFA",
+                "#5EC28F",
+                "#D4A94A",
+                "#E17272",
+                "#9A8CF2",
+                "#121214",
+                "#6E6E75",
+            ),
+        "midnight" to
+            ThemePalette(
+                "#0F1221",
+                "#1A1E2E",
+                "#6366F1",
+                "#8B5CF6",
+                "#F3F4F6",
+                "#9CA3AF",
+                "#06B6D4",
+                "#5EC28F",
+                "#D4A94A",
+                "#E27777",
+                "#9A8CF2",
+                "#0F1221",
+                "#686F7E",
+            ),
+        "daylight" to
+            ThemePalette(
+                "#F8FAFC",
+                "#FFFFFF",
+                "#4F46E5",
+                "#7C3AED",
+                "#1E293B",
+                "#58667B",
+                "#067590",
+                "#147739",
+                "#955B06",
+                "#B91C1C",
+                "#4338CA",
+                "#FFFFFF",
+                "#7F8A9B",
+            ),
+        "ocean" to
+            ThemePalette(
+                "#0C1222",
+                "#132038",
+                "#0EA5E9",
+                "#06B6D4",
+                "#E2E8F0",
+                "#94A3B8",
+                "#2DD4BF",
+                "#5EC28F",
+                "#D4A94A",
+                "#E27777",
+                "#9A8CF2",
+                "#0C1222",
+                "#66758A",
+            ),
+        "sunset" to
+            ThemePalette(
+                "#1C1017",
+                "#2D1B24",
+                "#F97316",
+                "#EF4444",
+                "#FEF2F2",
+                "#A8A29E",
+                "#FBBF24",
+                "#5EC28F",
+                "#D4A94A",
+                "#E37B7B",
+                "#9A8CF2",
+                "#1C1017",
+                "#7B7172",
+            ),
+        "forest" to
+            ThemePalette(
+                "#0F1A14",
+                "#1A2E22",
+                "#22C55E",
+                "#10B981",
+                "#ECFDF5",
+                "#86EFAC",
+                "#A3E635",
+                "#5EC28F",
+                "#D4A94A",
+                "#E78C8C",
+                "#A69AF4",
+                "#0F1A14",
+                "#508965",
+            ),
     )
 
-private val DEFAULT_PALETTE = THEME_PRESETS.getValue("midnight")
+private val DEFAULT_PALETTE = THEME_PRESETS.getValue("graphite")
 
 fun channelSwatchOptions(
     key: String,
@@ -190,6 +308,8 @@ fun paletteToColorScheme(palette: ThemePalette): ColorScheme {
         onSurface = text,
         surfaceVariant = surface,
         onSurfaceVariant = hexToColor(palette.muted) ?: base.onSurfaceVariant,
+        error = hexToColor(palette.error) ?: base.error,
+        onError = hexToColor(palette.onError) ?: base.onError,
         outline = base.outline,
         outlineVariant = base.outlineVariant,
         // M3 components read these container roles, not background/surface
@@ -214,13 +334,21 @@ private fun tint(
         blue = fg.blue * alpha + bg.blue * (1 - alpha),
     )
 
+val LocalAstralFieldBorder = staticCompositionLocalOf { AstralColors.FieldBorder }
+
+@Composable
+internal fun astralOutlinedFieldColors() = OutlinedTextFieldDefaults.colors(unfocusedBorderColor = LocalAstralFieldBorder.current)
+
 @Composable
 fun AstralTheme(
     palette: ThemePalette? = null,
     content: @Composable () -> Unit,
 ) {
     val scheme = palette?.let { paletteToColorScheme(it) } ?: AstralDarkColors
-    MaterialTheme(colorScheme = scheme, typography = astralTypography, content = content)
+    val fieldBorder = palette?.let { hexToColor(it.fieldBorder) } ?: AstralColors.FieldBorder
+    CompositionLocalProvider(LocalAstralFieldBorder provides fieldBorder) {
+        MaterialTheme(colorScheme = scheme, typography = astralTypography, content = content)
+    }
 }
 
 internal fun exportPalette(scheme: ColorScheme): Map<String, String> {

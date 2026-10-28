@@ -89,7 +89,63 @@ def test_the_check_would_catch_a_reintroduced_literal() -> None:
 
 @pytest.mark.parametrize("token", [
     "--astral-bg", "--astral-surface", "--astral-primary", "--astral-secondary",
-    "--astral-text", "--astral-muted", "--astral-accent",
+    "--astral-text", "--astral-muted", "--astral-accent", "--astral-success",
+    "--astral-warning", "--astral-error", "--astral-info", "--astral-on-error",
+    "--astral-field-border",
 ])
 def test_every_theme_channel_is_still_defined(token: str) -> None:
     assert f"{token}:" in _stylesheet()
+
+
+GRAPHITE_CHANNELS = {
+    "--astral-bg": "18 18 20",
+    "--astral-surface": "27 27 31",
+    "--astral-primary": "124 58 237",
+    "--astral-secondary": "110 110 120",
+    "--astral-text": "236 236 239",
+    "--astral-muted": "147 147 155",
+    "--astral-accent": "167 139 250",
+    "--astral-success": "94 194 143",
+    "--astral-warning": "212 169 74",
+    "--astral-error": "225 114 114",
+    "--astral-info": "154 140 242",
+    "--astral-on-error": "18 18 20",
+    "--astral-field-border": "110 110 117",
+}
+
+
+def _root_channels(css: str) -> dict[str, str]:
+    root = re.search(r"^:root \{(?P<body>.*?)^\}", css, re.MULTILINE | re.DOTALL)
+    assert root, ":root palette block is missing"
+    roles = "bg|surface|primary|secondary|text|muted|accent|success|warning|error|info|on-error|field-border"
+    return dict(re.findall(rf"^\s*(--astral-(?:{roles})):\s*([0-9 ]+);", root["body"], re.MULTILINE))
+
+
+def test_the_root_palette_is_graphite() -> None:
+    assert _root_channels(_stylesheet()) == GRAPHITE_CHANNELS
+
+
+def test_graphite_channels_match_the_canonical_preset() -> None:
+    from astralprojection.chrome.personalization import THEME_PRESETS
+
+    channels = {
+        f"--astral-{role.replace('_', '-')}": " ".join(str(int(value[index:index + 2], 16)) for index in (1, 3, 5))
+        for role, value in THEME_PRESETS["graphite"].items()
+    }
+
+    assert channels == GRAPHITE_CHANNELS
+
+
+def test_no_stale_primary_fallback_remains_in_the_stylesheet() -> None:
+    css = _stylesheet()
+
+    assert "99 102 241" not in css
+    assert "139 92 246" not in css
+    assert css.count("var(--astral-primary, 124 58 237)") == 2
+
+
+def test_status_tokens_alias_the_theme_channels() -> None:
+    css = _stylesheet()
+
+    for status in ("success", "warning", "error", "info"):
+        assert re.search(rf"--color-{status}:\s*var\(--astral-{status}\);", css), status

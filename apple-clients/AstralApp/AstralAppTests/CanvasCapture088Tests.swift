@@ -27,7 +27,7 @@ final class CanvasCapture088Tests: XCTestCase {
             server: URL(string: "https://fixture.test")!, chat: "synthetic")
         registry.currentScope = { scope }
         registry.setWindow(CGSize(width: 320, height: 900))
-        registry.setCanvas(CGSize(width: 296, height: 600), palette: .midnight)
+        registry.setCanvas(CGSize(width: 296, height: 600), palette: .graphite)
         return registry
     }
 
@@ -370,7 +370,7 @@ final class CanvasCapture088Tests: XCTestCase {
         )
         model.canvas = [source]
         model.canvasCapture.setWindow(CGSize(width: 320, height: 900))
-        model.canvasCapture.setCanvas(CGSize(width: 296, height: 600), palette: .midnight)
+        model.canvasCapture.setCanvas(CGSize(width: 296, height: 600), palette: .graphite)
         let content = ComponentView(component: source)
             .environment(model).environment(ThemeStore())
             .environment(\.canvasCapturePath, "/components/0")

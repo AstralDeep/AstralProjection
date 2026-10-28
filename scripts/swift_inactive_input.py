@@ -22,9 +22,10 @@ from typing import Any
 
 
 MAX_FILE = 256 * 1024 * 1024
+MAX_TOOLCHAIN_FILE = 1024 * 1024 * 1024
 MAX_SOURCE = 16 * 1024 * 1024
 MAX_TOOL = 4 * 1024 * 1024
-TIME_BUDGET = 120
+TIME_BUDGET = 600
 HELPER = Path(__file__).resolve().with_name("WholeOSInputProof.swift")
 PLATFORMS = {
     7: ("iOS", "iphonesimulator", "iPhoneSimulator", "ios", "-simulator"),
@@ -47,20 +48,21 @@ def digest(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def read(path: Path, maximum: int = MAX_FILE) -> bytes:
+def read(path: Path, maximum: int | None = None) -> bytes:
+    limit = MAX_FILE if maximum is None else maximum
     require(path.is_absolute() and path == path.resolve() and not path.is_symlink())
     before = path.lstat()
-    require(stat.S_ISREG(before.st_mode) and before.st_size <= maximum)
+    require(stat.S_ISREG(before.st_mode) and before.st_size <= limit)
     fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns", "st_mode")
     with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as stream:
         opened = os.fstat(stream.fileno())
-        require(stat.S_ISREG(opened.st_mode) and opened.st_size <= maximum)
+        require(stat.S_ISREG(opened.st_mode) and opened.st_size <= limit)
         require(all(getattr(before, key) == getattr(opened, key) for key in fields))
-        raw = stream.read(maximum + 1)
+        raw = stream.read(limit + 1)
         after = os.fstat(stream.fileno())
     final = path.lstat()
     require(
-        len(raw) == opened.st_size <= maximum
+        len(raw) == opened.st_size <= limit
         and all(
             getattr(before, key)
             == getattr(opened, key)
@@ -364,8 +366,6 @@ class PrivateOutput:
 
     def read(self, name: str, *, adopt=False):
         self.check(new_binary=adopt)
-        if adopt:
-            os.chmod(name, 0o700, dir_fd=self.fd, follow_symlinks=False)
         before = os.stat(name, dir_fd=self.fd, follow_symlinks=False)
         descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=self.fd)
         with os.fdopen(descriptor, "rb") as stream:
@@ -525,7 +525,12 @@ def _collect_source(
     for path in tools:
         resolved = path.resolve()
         require(resolved.is_relative_to(developer) or path in {HELPER, implementation})
-        tool_bytes[path] = (resolved, digest(read(resolved)), path.lstat(), resolved.lstat())
+        tool_bytes[path] = (
+            resolved,
+            digest(read(resolved, MAX_TOOLCHAIN_FILE)),
+            path.lstat(),
+            resolved.lstat(),
+        )
     outputs, commands = {}, []
 
     def command(name, arguments, *, diagnostics=False, produces_binary=False):
@@ -703,7 +708,7 @@ def _collect_source(
     )
     fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns", "st_mode")
     for path, (resolved, value, before, target_before) in tool_bytes.items():
-        require(path.resolve() == resolved and digest(read(resolved)) == value)
+        require(path.resolve() == resolved and digest(read(resolved, MAX_TOOLCHAIN_FILE)) == value)
         after = path.lstat()
         target_after = resolved.lstat()
         require(

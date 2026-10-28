@@ -77,7 +77,7 @@
             }
             XCTAssertThrowsError(try MacComputerObservation.topology(system: io))
         }
-        func testDesktopAdmissionUsesRawSessionSecureInputAndProcessFacts() {
+        func testDesktopAdmissionUsesOnlyRawConsoleLoginAndLockFacts() {
             let io = MacComputerTestSystem()
             XCTAssertTrue(MacComputerDesktopProbe.usable(system: io))
             for session: [String: Any]? in [
@@ -95,14 +95,16 @@
                 $0.session = [kCGSessionOnConsoleKey as String: true, kCGSessionLoginDoneKey as String: true]
                 $0.secure = true
             }
-            XCTAssertFalse(MacComputerDesktopProbe.usable(system: io))
+            XCTAssertTrue(MacComputerDesktopProbe.usable(system: io))
             io.configure {
                 $0.secure = false
                 $0.bundles[200] = "com.apple.loginwindow"
             }
-            XCTAssertFalse(MacComputerDesktopProbe.usable(system: io))
+            XCTAssertTrue(MacComputerDesktopProbe.usable(system: io))
             io.configure { $0.bundles[200] = nil }
-            XCTAssertFalse(MacComputerDesktopProbe.usable(system: io))
+            XCTAssertTrue(MacComputerDesktopProbe.usable(system: io))
+            io.set(nil, attribute: kAXFocusedApplicationAttribute, of: io.system)
+            XCTAssertTrue(MacComputerDesktopProbe.usable(system: io))
         }
         @MainActor func testLocalDesktopRearmRequiresActualOwnForegroundAndActiveApp() {
             let io = MacComputerTestSystem()
@@ -110,6 +112,8 @@
             io.configure { $0.nodes[1].pid = 100 }
             XCTAssertFalse(MacComputerDesktopProbe.localRearm(system: io, appActive: false))
             XCTAssertTrue(MacComputerDesktopProbe.localRearm(system: io, appActive: true))
+            io.set(nil, attribute: kAXFocusedApplicationAttribute, of: io.system)
+            XCTAssertFalse(MacComputerDesktopProbe.localRearm(system: io, appActive: true))
         }
     }
 #endif

@@ -91,6 +91,8 @@ async function receive(page, frame) {
 }
 
 const FIXTURE = JSON.parse(await readFile(resolve(ROOT, "contracts/fixtures/guidance_088/notes_surface.json"), "utf8"));
+const EXPIRY_DATE = FIXTURE.frames.new.components.find(component => component.type === "param_picker")
+  .fields.find(field => field.name === "expiry_date").label;
 function view(request, mode) {
   return { ...FIXTURE.web_frames[mode], request_generation: request.request_generation };
 }
@@ -132,10 +134,11 @@ test("a notes form submits exact typed fields and original revision", async ({ p
 test("expiry visibility follows the shared field choice", async ({ page }) => {
   await setup(page);
   await receive(page, view(await open(page), "new"));
-  await expect(page.getByLabel("Expiry date (UTC)", { exact: true })).toBeHidden();
+  const expiryDate = page.getByRole("textbox", { name: EXPIRY_DATE, exact: true });
+  await expect(expiryDate).toBeHidden();
   await page.getByLabel("Expiry", { exact: true }).selectOption({ label: "Set a date" });
-  await expect(page.getByLabel("Expiry date (UTC)", { exact: true })).toBeVisible();
-  await page.getByLabel("Expiry date (UTC)", { exact: true }).fill("2027-01-02T03:04:05.123Z");
+  await expect(expiryDate).toBeVisible();
+  await expiryDate.fill("2027-01-02T03:04:05.123Z");
   await page.getByLabel("Note", { exact: true }).fill("Remember the original exact expiry.");
   await page.getByRole("button", { name: "Save note", exact: true }).click();
   expect((await lastAction(page, "chrome_note_save")).payload.fields.expiry_date).toBe("2027-01-02T03:04:05.123Z");
