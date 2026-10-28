@@ -1,7 +1,4 @@
-// Android OS binding for the notification adapter: creates the notification channels, maps runtime
-// permission and presentation facts into the pure decision machine, and executes presentation,
-// dismissal, cancellation, token and enrollment effects. PushProvider is the seam a provider
-// bridge (for example FCM) implements during coordinated app integration.
+// Binds the owner-session notification machine to Android permission, provider callbacks, OS notices and opaque tap intents.
 
 package com.personalailabs.astraldeep.app.push
 
@@ -15,19 +12,25 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.personalailabs.astraldeep.app.MainActivity
 import com.personalailabs.astraldeep.app.R
+import com.personalailabs.astraldeep.core.push.MessageReceipt
 import com.personalailabs.astraldeep.core.push.NotificationPushAdapter
 import com.personalailabs.astraldeep.core.push.OsNotificationSpec
+import com.personalailabs.astraldeep.core.push.PushBinding
 import com.personalailabs.astraldeep.core.push.PushChannels
 import com.personalailabs.astraldeep.core.push.PushEffect
 import com.personalailabs.astraldeep.core.push.PushIdentity
 import com.personalailabs.astraldeep.core.push.PushPayload
+import com.personalailabs.astraldeep.core.push.RegistrationState
 import com.personalailabs.astraldeep.core.push.displayIdFor
 import kotlinx.serialization.json.JsonObject
+import java.security.MessageDigest
 
 interface PushProvider {
     fun isSupported(): Boolean
@@ -41,47 +44,149 @@ class AndroidNotificationAdapter(
     context: Context,
     private val provider: PushProvider,
     private val identity: PushIdentity,
-    val machine: NotificationPushAdapter = NotificationPushAdapter(identity),
+    ownerSessionId: String,
+    val machine: NotificationPushAdapter = NotificationPushAdapter(identity, ownerSessionId),
     private val inAppListener: ((PushPayload) -> Unit)? = null,
-    private val acknowledgeListener: ((PushIdentity, String) -> Unit)? = null,
+    private val acknowledgeListener: ((PushBinding, String) -> Unit)? = null,
     private val enrollListener: ((PushEffect.EnrollDestination) -> Unit)? = null,
+    private val revokeListener: ((PushEffect.RevokeDestination) -> Unit)? = null,
 ) {
     private val appContext: Context = context.applicationContext
     private val notifications = NotificationManagerCompat.from(appContext)
     private var started = false
+    private var closed = false
+    private var tokenRequest = 0L
+    private var dismissReceiver: BroadcastReceiver? = null
+    private val scopeTag =
+        MessageDigest.getInstance("SHA-256")
+            .digest("${machine.ownerSessionId}:${identity.deviceId}".toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) } + ":"
 
+    init {
+        require(machine.ownerSessionId == ownerSessionId) { "owner_session" }
+    }
+
+    @Synchronized
     fun start() {
-        if (started) return
+        if (closed || started) return
         started = true
         createChannels()
         registerDismissReceiver()
         refreshPermission()
         machine.seedAccepted(activeNotificationIds())
-        provider.setMessageListener { data -> onMessage(data) }
-        execute(machine.onAvailability(provider.isSupported()))
+        val supported =
+            try {
+                provider.isSupported()
+            } catch (_: RuntimeException) {
+                false
+            }
+        execute(machine.onAvailability(supported))
     }
 
-    fun refreshPermission() {
+    @Synchronized
+    fun refreshPermission(requestCompleted: Boolean = false) {
         if (!started) return
         val granted =
-            ContextCompat.checkSelfPermission(appContext, Manifest.permission.POST_NOTIFICATIONS) ==
+            Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(appContext, Manifest.permission.POST_NOTIFICATIONS) ==
                 PackageManager.PERMISSION_GRANTED
-        execute(machine.onPermissionReport(granted, notifications.areNotificationsEnabled()))
+        execute(machine.onPermissionReport(granted, notifications.areNotificationsEnabled(), requestCompleted))
+    }
+
+    @Synchronized
+    fun onPermissionResult(granted: Boolean) {
+        if (!started || closed) return
+        execute(machine.onPermissionReport(granted, notifications.areNotificationsEnabled(), requestCompleted = true))
     }
 
     fun shouldRequestPermission(): Boolean =
-        ContextCompat.checkSelfPermission(appContext, Manifest.permission.POST_NOTIFICATIONS) !=
+        !closed && Build.VERSION.SDK_INT >= 33 &&
+            machine.permission == com.personalailabs.astraldeep.core.push.PushPermissionState.NotDetermined &&
+            ContextCompat.checkSelfPermission(appContext, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
 
-    fun onMessage(data: JsonObject) {
-        execute(machine.onMessage(data))
+    @Synchronized
+    fun onMessage(
+        data: JsonObject,
+        binding: PushBinding,
+    ): MessageReceipt {
+        if (!started || closed) return MessageReceipt.NotPermitted
+        refreshPermission()
+        val receipt = machine.onMessage(data, binding)
+        if (receipt is MessageReceipt.Accepted) execute(receipt.effects)
+        return receipt
     }
 
+    @Synchronized
     fun onProviderToken(token: String?) {
+        if (!started || closed) return
+        tokenRequest += 1
         execute(machine.onToken(token))
     }
 
+    @Synchronized
+    fun onEnrollmentAccepted(
+        effect: PushEffect.EnrollDestination,
+        serverTokenGeneration: Long,
+    ) {
+        if (effect.ownerSessionId != machine.ownerSessionId || effect.deviceId != identity.deviceId) return
+        require(serverTokenGeneration > 0) { "server_token_generation" }
+        if (!started || closed || effect.tokenGeneration != machine.tokenGeneration ||
+            machine.permission != com.personalailabs.astraldeep.core.push.PushPermissionState.Granted ||
+            machine.registration != RegistrationState.Enrolling
+        ) {
+            if (machine.binding == effect.binding.copy(serverTokenGeneration = serverTokenGeneration)) return
+            revokeListener?.invoke(PushEffect.RevokeDestination(effect.binding.copy(serverTokenGeneration = serverTokenGeneration)))
+            return
+        }
+        execute(machine.onEnrollmentAccepted(effect.tokenGeneration, serverTokenGeneration))
+        val binding = machine.binding ?: return
+        try {
+            provider.setMessageListener { data -> onMessage(data, binding) }
+        } catch (_: RuntimeException) {
+            execute(machine.onAvailability(false, "provider_listener_failed"))
+        }
+    }
+
+    @Synchronized
+    fun onEnrollmentRejected(
+        effect: PushEffect.EnrollDestination,
+        transient: Boolean,
+        code: String,
+    ) {
+        if (!started || closed || effect.ownerSessionId != machine.ownerSessionId || effect.deviceId != identity.deviceId) return
+        execute(machine.onEnrollmentRejected(transient, code, effect.tokenGeneration))
+    }
+
+    @Synchronized
+    fun close() {
+        if (closed) return
+        closed = true
+        started = false
+        tokenRequest += 1
+        val effects = machine.endSession()
+        activeNotificationIds().forEach { cancel(it) }
+        try {
+            execute(effects)
+            provider.setMessageListener { _ -> }
+        } finally {
+            dismissReceiver?.let { appContext.unregisterReceiver(it) }
+            dismissReceiver = null
+        }
+    }
+
+    @Synchronized
+    fun notificationIdFromTap(intent: Intent?): String? {
+        if (!started || closed) return null
+        val binding = machine.binding ?: return null
+        val id = intent?.getStringExtra(EXTRA_NOTIFICATION_ID) ?: return null
+        if (intent.action != ACTION_OPEN || !PushPayload.NOTIFICATION_ID_REGEX.matches(id) || intent.data != tapUri(id)) return null
+        if (intent.getLongExtra(EXTRA_GENERATION, -1) != binding.serverTokenGeneration) return null
+        return id
+    }
+
+    @Synchronized
     fun retryRegistration() {
+        if (!started || closed) return
         execute(machine.retryRegistration())
     }
 
@@ -95,45 +200,71 @@ class AndroidNotificationAdapter(
             when (effect) {
                 is PushEffect.RequestToken -> requestToken()
                 is PushEffect.EnrollDestination -> enrollListener?.invoke(effect)
-                is PushEffect.PresentOs -> present(effect.spec)
+                is PushEffect.PresentOs -> if (!present(effect.spec)) return
                 is PushEffect.ShowInApp -> inAppListener?.invoke(effect.payload)
-                is PushEffect.Acknowledge -> acknowledgeListener?.invoke(identity, effect.notificationId)
+                is PushEffect.Acknowledge -> machine.binding?.let { acknowledgeListener?.invoke(it, effect.notificationId) }
                 is PushEffect.CancelPresented -> effect.notificationIds.forEach { cancel(it) }
+                is PushEffect.RevokeDestination -> {
+                    tokenRequest += 1
+                    revokeListener?.invoke(effect)
+                }
             }
         }
     }
 
     private fun requestToken() {
-        provider.requestToken { token -> onProviderToken(token) }
+        val request = ++tokenRequest
+        var callbackStarted = false
+        try {
+            provider.requestToken { token ->
+                synchronized(this) {
+                    if (started && !closed && request == tokenRequest) {
+                        callbackStarted = true
+                        onProviderToken(token)
+                    }
+                }
+            }
+        } catch (failure: RuntimeException) {
+            if (callbackStarted) throw failure
+            execute(machine.onTokenRequestFailed(true, "provider_request_failed"))
+        }
     }
 
     @SuppressLint("MissingPermission")
-    private fun present(spec: OsNotificationSpec) {
-        // The decision machine emits PresentOs only with POST_NOTIFICATIONS granted; lint cannot see that guard.
+    private fun present(spec: OsNotificationSpec): Boolean {
         val notification =
             NotificationCompat.Builder(appContext, spec.channelId)
                 .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle(spec.title ?: appContext.getString(R.string.app_name))
-                .setContentText(spec.body)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(spec.body))
+                .setContentTitle(appContext.getString(R.string.app_name))
+                .setContentText(appContext.getString(R.string.push_notification_body))
                 .setAutoCancel(spec.autoCancel)
-                .setContentIntent(contentIntent(spec.notificationId))
+                .setContentIntent(contentIntent(spec))
                 .setDeleteIntent(deleteIntent(spec.displayId, spec.notificationId))
                 .build()
-        notifications.notify(spec.notificationId, spec.displayId, notification)
+        return try {
+            notifications.notify(scopeTag + spec.notificationId, spec.displayId, notification)
+            true
+        } catch (_: SecurityException) {
+            machine.onDismissed(spec.notificationId)
+            refreshPermission()
+            false
+        }
     }
 
     private fun cancel(notificationId: String) {
-        notifications.cancel(notificationId, displayIdFor(notificationId))
+        notifications.cancel(scopeTag + notificationId, displayIdFor(notificationId))
     }
 
-    private fun contentIntent(notificationId: String): PendingIntent =
+    private fun contentIntent(spec: OsNotificationSpec): PendingIntent =
         PendingIntent.getActivity(
             appContext,
-            0,
+            spec.displayId,
             Intent(appContext, MainActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                .putExtra(TAP_NOTIFICATION_EXTRA, notificationId),
+                .setAction(ACTION_OPEN)
+                .setData(tapUri(spec.notificationId))
+                .putExtra(EXTRA_NOTIFICATION_ID, spec.notificationId)
+                .putExtra(EXTRA_GENERATION, checkNotNull(machine.binding?.serverTokenGeneration))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
@@ -144,7 +275,9 @@ class AndroidNotificationAdapter(
         PendingIntent.getBroadcast(
             appContext,
             requestCode,
-            Intent(ACTION_DISMISSED).setPackage(appContext.packageName).putExtra(EXTRA_NOTIFICATION_ID, notificationId),
+            Intent(ACTION_DISMISSED).setPackage(appContext.packageName)
+                .setData(tapUri(notificationId))
+                .putExtra(EXTRA_NOTIFICATION_ID, notificationId),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
@@ -169,27 +302,41 @@ class AndroidNotificationAdapter(
     private fun registerDismissReceiver() {
         val receiver =
             object : BroadcastReceiver() {
-                override fun onReceive(receiverContext: Context, intent: Intent) {
+                override fun onReceive(
+                    receiverContext: Context,
+                    intent: Intent,
+                ) {
                     val notificationId = intent.getStringExtra(EXTRA_NOTIFICATION_ID) ?: return
-                    machine.onDismissed(notificationId)
+                    synchronized(this@AndroidNotificationAdapter) {
+                        if (started && !closed && intent.data == tapUri(notificationId)) machine.onDismissed(notificationId)
+                    }
                 }
             }
+        dismissReceiver = receiver
         ContextCompat.registerReceiver(
             appContext,
             receiver,
-            IntentFilter(ACTION_DISMISSED),
+            IntentFilter(ACTION_DISMISSED).apply {
+                addDataScheme("astral-push")
+                addDataAuthority(appContext.packageName, null)
+            },
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
     }
 
     private fun activeNotificationIds(): List<String> {
         val manager = appContext.getSystemService(NotificationManager::class.java) ?: return emptyList()
-        return manager.activeNotifications.mapNotNull { it.tag }
+        return manager.activeNotifications.mapNotNull { it.tag?.takeIf { tag -> tag.startsWith(scopeTag) }?.removePrefix(scopeTag) }
     }
 
-    private companion object {
+    private fun tapUri(notificationId: String): Uri =
+        Uri.Builder().scheme("astral-push").authority(appContext.packageName)
+            .appendPath(scopeTag).appendPath(notificationId).build()
+
+    companion object {
+        const val ACTION_OPEN = "com.personalailabs.astraldeep.push.OPEN"
+        const val EXTRA_GENERATION = "push_token_generation"
         const val ACTION_DISMISSED = "com.personalailabs.astraldeep.push.DISMISSED"
         const val EXTRA_NOTIFICATION_ID = "notification_id"
-        const val TAP_NOTIFICATION_EXTRA = "push_tap_notification_id"
     }
 }

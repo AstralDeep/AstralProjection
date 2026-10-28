@@ -9,6 +9,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -62,9 +63,9 @@ class PushPayloadTest {
     }
 
     @Test
-    fun rejects_payload_without_presentable_text() {
-        assertMalformed(payloadJson(title = null, body = null))
-        assertMalformed(payloadJson(title = "   ", body = "  "))
+    fun accepts_opaque_notification_without_private_text() {
+        assertIs<PushPayloadResult.Decoded>(decodePushPayload(payloadJson(title = null, body = null)))
+        assertIs<PushPayloadResult.Decoded>(decodePushPayload(payloadJson(title = "   ", body = "  ")))
     }
 
     @Test

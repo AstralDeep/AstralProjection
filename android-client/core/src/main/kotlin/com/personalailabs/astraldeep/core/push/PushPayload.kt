@@ -58,9 +58,6 @@ fun decodePushPayload(data: JsonObject): PushPayloadResult {
     }
     val title = data.stringField("title")
     val body = data.stringField("body")
-    if ((title == null || title.isBlank()) && (body == null || body.isBlank())) {
-        return PushPayloadResult.Malformed(PushPayload.REASON_TEXT)
-    }
     if (title != null && (title.length > PushPayload.MAX_TITLE_CHARS || title.hasControlChars())) {
         return PushPayloadResult.Malformed(PushPayload.REASON_TITLE)
     }

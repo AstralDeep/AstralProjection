@@ -41,16 +41,29 @@ do not grant server authority.
 android-client/
 ├── core/   # PURE Kotlin (no Android) — JVM-unit-tested:
 │           #   protocol/ (WS message models + JSON), sdui/ (Component + canvas),
-│           #   streaming/ (push consumer), rest/ (audit REST shaping)
+│           #   streaming/ (push consumer), push/ (notification adapter decisions),
+│           #   rest/ (audit REST shaping)
 └── app/    # Android/Compose:
             #   transport/ (OkHttp WS), auth/ (AppAuth OIDC PKCE), render/
-            #   (type→@Composable registry), stream/, ui/ (adaptive scaffold +
-            #   chat/agents/history/audit screens)
+            #   (type→@Composable registry), push/ (OS notification adapter),
+            #   stream/, ui/ (adaptive scaffold + chat/agents/history/audit screens)
 ```
 
 The pure logic lives in `:core` so it is testable on the JVM without an emulator
 (the bulk of the verification surface). `:core` ports the *verified* logic of the
 Windows client (`windows-client/astral_client/streaming.py`, `rest.py`).
+
+## Notifications
+
+The Android notification adapter has a pure decision machine and an OS binding,
+with tests for permission state, owner-session retirement, token rotation,
+provider callback races, minimal payloads, notification presentation and opaque
+tap identity. It is not wired into the shipping app runtime. Provider selection,
+locked provider dependencies, authenticated enrollment and source navigation,
+foreground presence, physical-device delivery and live backend acceptance remain
+part of coordinated integration. See
+[`docs/push-notification-adapter.md`](docs/push-notification-adapter.md) for the
+integration interfaces and qualification limits.
 
 ## Prerequisites
 
