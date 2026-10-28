@@ -15,6 +15,47 @@
 
     @MainActor
     final class MacWorkbenchViewTests: XCTestCase {
+        func testSurfaceAccessibilityRejectsMissingOwnedWindow() {
+            XCTAssertThrowsError(
+                try SurfaceAccessibility.elements(windowTitle: "Absent surface \(UUID().uuidString)")
+            ) { error in
+                XCTAssertEqual(error as? SurfaceAccessibility.Failure, .missingWindow)
+            }
+        }
+
+        func testSurfaceAccessibilityRejectsAmbiguousOwnedWindows() async throws {
+            let (model, suite) = try SurfaceFixtures.model()
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            let first = SurfaceMount(Text("First sentinel"), model: model, size: CGSize(width: 240, height: 120))
+            let second = SurfaceMount(Text("Second sentinel"), model: model, size: CGSize(width: 240, height: 120))
+            defer {
+                first.close()
+                second.close()
+            }
+            second.window.title = first.window.title
+            try await first.settle()
+            try await second.settle()
+            let application = AXUIElementCreateApplication(getpid())
+            var rawWindows: CFTypeRef?
+            XCTAssertEqual(
+                AXUIElementCopyAttributeValue(application, kAXWindowsAttribute as CFString, &rawWindows), .success)
+            let windows = try XCTUnwrap(rawWindows as? [AXUIElement])
+            let duplicates = windows.filter { window in
+                var title: CFTypeRef?
+                return AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &title) == .success
+                    && title as? String == first.window.title
+            }
+            XCTAssertEqual(duplicates.count, 2)
+            for window in duplicates {
+                var pid: pid_t = 0
+                XCTAssertEqual(AXUIElementGetPid(window, &pid), .success)
+                XCTAssertEqual(pid, getpid())
+            }
+            XCTAssertThrowsError(try SurfaceAccessibility.elements(windowTitle: first.window.title)) { error in
+                XCTAssertEqual(error as? SurfaceAccessibility.Failure, .ambiguousWindow)
+            }
+        }
+
         func testSlashInAnEmptyComposerOpensThePaletteAndRunsTheChosenAction() async throws {
             let (model, suite) = try panelModel()
             defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
@@ -176,7 +217,6 @@
         }
 
         func testAgentDirectoryRowsExposeNamesStatusDescriptionAndOrder() async throws {
-            try SurfaceAccessibility.requireTrust()
             let (model, suite) = try SurfaceFixtures.model(menu: Self.twoAgentMenu())
             defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
             let mount = SurfaceMount(
@@ -184,7 +224,7 @@
                 size: CGSize(width: 360, height: 360))
             defer { mount.close() }
             try await mount.settle()
-            let tree = mount.accessibility
+            let tree = try mount.accessibility
             let dice = try XCTUnwrap(tree.first { $0.identifier == "workbench-agent-dice" })
             XCTAssertEqual(dice.label, "Dice Roller")
             XCTAssertEqual(dice.value, "Available")
