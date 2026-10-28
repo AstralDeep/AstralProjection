@@ -471,7 +471,7 @@
         }
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
                     Image("AstralIcon").resizable().frame(width: 26, height: 26).clipShape(
                         RoundedRectangle(cornerRadius: 7)
@@ -493,11 +493,11 @@
                     model.consoleDrawerOpen = false
                 } label: {
                     Label(model.consoleLabel("new_chat"), systemImage: "square.and.pencil")
-                        .font(ConsoleTypography.subheadline).frame(
-                            maxWidth: .infinity, minHeight: 40, alignment: .leading
+                        .font(ConsoleTypography.footnote).frame(
+                            maxWidth: .infinity, minHeight: 32, alignment: .leading
                         )
-                        .padding(.horizontal, 12)
-                        .background(p.primary.opacity(0.13), in: RoundedRectangle(cornerRadius: 9))
+                        .padding(.horizontal, 10)
+                        .background(p.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
                 }
                 .buttonStyle(.plain).disabled(model.mandatorySurface)
                 .accessibilityIdentifier("new-chat-button")

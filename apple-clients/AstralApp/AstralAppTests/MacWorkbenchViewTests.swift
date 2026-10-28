@@ -77,6 +77,86 @@
             XCTAssertFalse(model.projects.enabled)
         }
 
+        func testProjectTreeKeepsRowsCompactAndSearchDoesNotNavigate() async throws {
+            XCTAssertNotNil(ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"])
+            let (model, suite) = try panelModel()
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            let first = "12345678-1234-4234-9234-123456789abc"
+            let second = "87654321-4321-4321-8321-cba987654321"
+            let projects: JSONValue = .object([
+                "projects": .array(
+                    [first, second].enumerated().map { index, id in
+                        .object([
+                            "project_id": .string(id), "name": .string(index == 0 ? "Project Alpha" : "Project Beta"),
+                            "position": .number(Double(index)), "revision": .number(1), "created_at": .number(1),
+                            "updated_at": .number(1),
+                        ])
+                    }), "next_cursor": .null,
+            ])
+            let titles = [
+                "**Step 1: Confirm working", "A long conversation title that must stay on one compact row",
+                "Read back saved poem",
+            ]
+            model.projects.bind(
+                scope: "owner",
+                client: RestClient(
+                    serverBase: URL(string: "https://example.test")!, tokenProvider: { nil },
+                    transport: { request in
+                        if request.url!.path == "/api/projects" { return (200, try projects.encoded()) }
+                        let id = request.url!.path.contains(first) ? first : second
+                        let values = id == first ? titles : ["Needle conversation"]
+                        return (
+                            200,
+                            try JSONValue.object([
+                                "project_id": .string(id),
+                                "chats": .array(
+                                    values.enumerated().map { index, title in
+                                        .object([
+                                            "id": .string(id + "-\(index)"), "project_id": .string(id),
+                                            "title": .string(title),
+                                        ])
+                                    }), "next_cursor": .null,
+                            ]).encoded()
+                        )
+                    }))
+            model.projects.negotiate(true)
+            await model.projects.refresh()
+            XCTAssertNil(model.projects.errorMessage)
+            model.projects.select(first)
+            model.activeChatId = first + "-0"
+            model.composerDraft = "Keep this draft"
+            var sent: [String] = []
+            model.outboundTap = { sent.append($0) }
+            let (view, window) = panel(
+                MacProjectSidebar(query: "").background(model.themeStore.palette.bg), model: model, width: 300)
+            defer { window.close() }
+            try await settle()
+            XCTAssertLessThan(view.fittingSize.height, 215)
+            let normal = try recognizedText(view)
+            XCTAssertTrue(normal.contains("Project Alpha") && normal.contains("Project Beta"), normal)
+            XCTAssertTrue(normal.contains("Read back saved poem"))
+            XCTAssertFalse(normal.contains("Needle conversation"))
+            XCTAssertEqual(model.projects.chats[first]?.first?.displayTitle, titles[0])
+            try attach(view, name: "Compact project tree")
+            view.rootView = AnyView(
+                MacProjectSidebar(query: "needle").background(model.themeStore.palette.bg)
+                    .environment(model).environment(model.themeStore))
+            try await settle()
+            let filtered = try recognizedText(view)
+            XCTAssertTrue(filtered.contains("Needle conversation"))
+            XCTAssertFalse(filtered.contains("Read back saved poem"))
+            try attach(view, name: "Temporary project search expansion")
+            view.rootView = AnyView(
+                MacProjectSidebar(query: "").background(model.themeStore.palette.bg)
+                    .environment(model).environment(model.themeStore))
+            try await settle()
+            XCTAssertFalse(try recognizedText(view).contains("Needle conversation"))
+            XCTAssertEqual(model.projects.selectedId, first)
+            XCTAssertEqual(model.activeChatId, first + "-0")
+            XCTAssertEqual(model.composerDraft, "Keep this draft")
+            XCTAssertTrue(sent.isEmpty)
+        }
+
         func testSlashInAnEmptyComposerOpensThePaletteAndRunsTheChosenAction() async throws {
             let (model, suite) = try panelModel()
             defer { UserDefaults.standard.removePersistentDomain(forName: suite) }

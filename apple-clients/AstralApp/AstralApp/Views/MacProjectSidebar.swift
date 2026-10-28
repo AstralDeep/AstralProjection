@@ -1,5 +1,5 @@
-// Presents synchronized project sections and device-local folder controls in the Mac sidebar.
-// Every chat action uses AppModel's selected-project creation path and keeps grants on this Mac.
+// Presents synchronized projects as a compact tree with local folder controls and nested chats.
+// Disclosure stays in presentation state; selection, chat actions and folder grants retain AppModel's fences.
 
 #if os(macOS)
     import AstralCore
@@ -9,28 +9,46 @@
         @Environment(AppModel.self) private var model
         @Environment(ThemeStore.self) private var theme
         let query: String
+        @State private var disclosure = ProjectSidebarDisclosure()
         @State private var renaming: ProjectRecord?
         @State private var name = ""
         private var p: AstralPalette { theme.palette }
+        private var search: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
+        private var activeProject: String? { model.activeChatId.flatMap { model.projects.project(for: $0) } }
+        private var visibleProjects: [ProjectRecord] {
+            model.projects.projects.filter {
+                search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) || !chats(in: $0).isEmpty
+            }
+        }
+
+        private func chats(in project: ProjectRecord) -> [ChatSummary] {
+            (model.projects.chats[project.id] ?? []).filter {
+                search.isEmpty || project.name.localizedCaseInsensitiveContains(search)
+                    || ($0.displayTitle + " " + $0.displayPreview).localizedCaseInsensitiveContains(search)
+            }
+        }
+
         var body: some View {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Projects").font(ConsoleTypography.subheadline.weight(.semibold))
-                    Spacer()
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 0) {
+                    Text("Projects").font(ConsoleTypography.caption.weight(.semibold)).foregroundStyle(p.muted)
+                        .padding(.leading, 8)
+                    Spacer(minLength: 0)
                     Button {
                         model.presentProjectCreation()
                     } label: {
-                        Image(systemName: "plus")
+                        Image(systemName: "plus").frame(width: 24, height: 24)
                     }
                     .buttonStyle(.plain).accessibilityLabel("Create project").accessibilityIdentifier("project-create")
                     Button {
                         Task { await model.projects.refresh() }
                     } label: {
-                        Image(systemName: "arrow.clockwise")
+                        Image(systemName: "arrow.clockwise").frame(width: 24, height: 24)
                     }
                     .buttonStyle(.plain).accessibilityLabel("Refresh projects").accessibilityIdentifier(
                         "project-refresh")
                 }
+                .font(ConsoleTypography.footnote).foregroundStyle(p.muted).padding(.horizontal, 4)
                 if model.projects.loading || model.projects.negotiating { ProgressView().controlSize(.small) }
                 if let error = model.projects.errorMessage {
                     Text(error).font(ConsoleTypography.caption).foregroundStyle(p.error)
@@ -44,109 +62,50 @@
                     Text(error).font(ConsoleTypography.caption).foregroundStyle(p.error)
                         .accessibilityIdentifier("project-grant-refusal")
                 }
-                ForEach(model.projects.projects) { project in
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 8) {
-                            Button {
-                                model.selectProject(project.id)
-                            } label: {
-                                Label(
-                                    project.name,
-                                    systemImage: model.projects.selectedId == project.id ? "folder.fill" : "folder"
-                                )
-                                .font(ConsoleTypography.subheadline.weight(.medium)).frame(
-                                    maxWidth: .infinity, alignment: .leading)
-                            }
-                            .buttonStyle(.plain).accessibilityIdentifier("project-select-\(project.id)")
-                            .accessibilityValue(model.projects.selectedId == project.id ? "Selected" : "")
-                            Button {
-                                model.selectProject(project.id)
-                                model.newChat()
-                            } label: {
-                                Image(systemName: "square.and.pencil")
-                            }
-                            .buttonStyle(.plain).disabled(model.projects.creatingChat || model.mandatorySurface)
-                            .accessibilityLabel("New chat in \(project.name)").accessibilityIdentifier(
-                                "project-new-chat-\(project.id)")
-                            Menu {
-                                Button("Rename project") {
-                                    name = project.name
-                                    renaming = project
-                                }
-                                Button("Choose folders on this Mac…") {
-                                    model.macComputerHost.updateProjectFolders {
-                                        try model.macComputerHost.projectGrants.choose(project: project.id)
+                if !search.isEmpty, visibleProjects.isEmpty {
+                    Text("No matching chats").font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                        .padding(.horizontal, 12)
+                }
+                ForEach(visibleProjects) { project in
+                    let expanded = disclosure.isExpanded(
+                        project.id, selected: model.projects.selectedId, active: activeProject,
+                        searching: !search.isEmpty)
+                    VStack(alignment: .leading, spacing: 2) {
+                        projectHeader(project, expanded: expanded)
+                        if expanded {
+                            VStack(alignment: .leading, spacing: 0) {
+                                if search.isEmpty {
+                                    let roots = model.macComputerHost.projectGrants.roots(project: project.id)
+                                    VStack(spacing: 0) {
+                                        ForEach(Array(roots.enumerated()), id: \.element) { index, path in
+                                            folderRow(project: project.id, path: path, index: index)
+                                        }
                                     }
+                                    .padding(.bottom, roots.isEmpty || chats(in: project).isEmpty ? 0 : 4)
                                 }
-                                Button("Delete empty project", role: .destructive) {
-                                    Task { await model.projects.delete(project) }
-                                }
-                            } label: {
-                                Image(systemName: "ellipsis")
-                            }
-                            .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 20)
-                            .accessibilityLabel("Project controls for \(project.name)").accessibilityIdentifier(
-                                "project-controls-\(project.id)")
-                        }
-                        .padding(8).background(
-                            model.projects.selectedId == project.id ? p.primary.opacity(0.13) : .clear,
-                            in: RoundedRectangle(cornerRadius: 8))
-                        if model.projects.selectedId == project.id {
-                            let roots = model.macComputerHost.projectGrants.roots(project: project.id)
-                            ForEach(Array(roots.enumerated()), id: \.element) { index, path in
-                                HStack {
-                                    Text(URL(fileURLWithPath: path).lastPathComponent).lineLimit(1)
-                                    if index == 0 { Text("Primary").foregroundStyle(p.muted) }
-                                    Spacer()
-                                    Menu {
-                                        if index != 0 {
-                                            Button("Make primary") {
-                                                model.macComputerHost.updateProjectFolders {
-                                                    try model.macComputerHost.projectGrants.primary(
-                                                        project: project.id, path: path)
-                                                }
-                                            }
-                                        }
-                                        Button("Remove folder", role: .destructive) {
-                                            model.macComputerHost.updateProjectFolders {
-                                                try model.macComputerHost.projectGrants.remove(
-                                                    project: project.id, path: path)
-                                            }
-                                        }
+                                ForEach(chats(in: project)) { chat in
+                                    Button {
+                                        model.openChat(chat.id)
                                     } label: {
-                                        Image(systemName: "ellipsis")
+                                        MacProjectChatRow(chat: chat, active: model.activeChatId == chat.id)
                                     }
-                                    .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 20)
-                                    .accessibilityLabel("Folder controls for \(path)").accessibilityIdentifier(
-                                        "project-folder-\(project.id)-\(index)")
+                                    .buttonStyle(.plain).disabled(model.mandatorySurface)
+                                    .accessibilityIdentifier("project-chat-\(chat.id)")
+                                    .accessibilityValue(model.activeChatId == chat.id ? "Active conversation" : "")
+                                    .help(chat.displayTitle)
+                                    .contextMenu {
+                                        Button("Delete conversation", role: .destructive) { model.deleteChat(chat.id) }
+                                    }
                                 }
-                                .font(ConsoleTypography.caption).padding(.horizontal, 12)
                             }
-                        }
-                        ForEach(
-                            (model.projects.chats[project.id] ?? []).filter {
-                                query.isEmpty
-                                    || ($0.displayTitle + " " + $0.displayPreview).localizedCaseInsensitiveContains(
-                                        query)
-                            }
-                        ) { chat in
-                            Button {
-                                model.openChat(chat.id)
-                            } label: {
-                                HistoryRow(chat: chat, showsDetails: false)
-                                    .background(
-                                        model.activeChatId == chat.id ? p.primary.opacity(0.13) : .clear,
-                                        in: RoundedRectangle(cornerRadius: 8))
-                            }
-                            .buttonStyle(.plain).disabled(model.mandatorySurface)
-                            .accessibilityIdentifier("project-chat-\(chat.id)")
-                            .contextMenu {
-                                Button("Delete conversation", role: .destructive) { model.deleteChat(chat.id) }
-                            }
+                            .padding(.leading, 28).padding(.trailing, 4)
                         }
                     }
                     .accessibilityElement(children: .contain).accessibilityLabel(project.name)
                 }
+            }
+            .onChange(of: model.projects.projects.map(\.id), initial: true) { _, ids in
+                disclosure.retain(Set(ids))
             }
             .alert("Rename project", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } }))
             {
@@ -160,6 +119,125 @@
                 }
                 Button("Cancel", role: .cancel) { renaming = nil }
             }
+        }
+
+        private func projectHeader(_ project: ProjectRecord, expanded: Bool) -> some View {
+            HStack(spacing: 0) {
+                Button {
+                    disclosure.toggle(
+                        project.id, selected: model.projects.selectedId, active: activeProject,
+                        searching: !search.isEmpty)
+                } label: {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(ConsoleTypography.caption2).foregroundStyle(p.muted).frame(width: 24, height: 28)
+                }
+                .buttonStyle(.plain).disabled(!search.isEmpty)
+                .accessibilityLabel("\(expanded ? "Collapse" : "Expand") \(project.name)")
+                .accessibilityValue(expanded ? "Expanded" : "Collapsed")
+                .accessibilityIdentifier("project-expansion-\(project.id)")
+                .help(
+                    search.isEmpty
+                        ? "\(expanded ? "Collapse" : "Expand") project" : "Clear search to collapse this project")
+                Button {
+                    model.selectProject(project.id)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: model.projects.selectedId == project.id ? "folder.fill" : "folder")
+                            .foregroundStyle(p.muted).frame(width: 16).accessibilityHidden(true)
+                        Text(verbatim: project.name).lineLimit(1).truncationMode(.tail)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .font(ConsoleTypography.footnote.weight(.medium)).foregroundStyle(p.text).frame(height: 32)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).accessibilityIdentifier("project-select-\(project.id)")
+                .accessibilityValue(model.projects.selectedId == project.id ? "Selected" : "").help(project.name)
+                Button {
+                    disclosure.reveal(project.id)
+                    model.selectProject(project.id)
+                    model.newChat()
+                } label: {
+                    Image(systemName: "square.and.pencil").frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain).disabled(model.projects.creatingChat || model.mandatorySurface)
+                .accessibilityLabel("New chat in \(project.name)").accessibilityIdentifier(
+                    "project-new-chat-\(project.id)")
+                Menu {
+                    Button("Rename project") {
+                        name = project.name
+                        renaming = project
+                    }
+                    Button("Choose folders on this Mac…") {
+                        model.macComputerHost.updateProjectFolders {
+                            try model.macComputerHost.projectGrants.choose(project: project.id)
+                        }
+                    }
+                    Button("Delete empty project", role: .destructive) {
+                        Task { await model.projects.delete(project) }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis").frame(width: 24, height: 24)
+                }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 24, height: 24)
+                .accessibilityLabel("Project controls for \(project.name)").accessibilityIdentifier(
+                    "project-controls-\(project.id)")
+            }
+            .font(ConsoleTypography.footnote).foregroundStyle(p.muted).padding(.horizontal, 4)
+            .background(
+                model.projects.selectedId == project.id ? p.text.opacity(0.04) : .clear,
+                in: RoundedRectangle(cornerRadius: 6))
+        }
+
+        private func folderRow(project: String, path: String, index: Int) -> some View {
+            HStack(spacing: 8) {
+                Image(systemName: "folder").frame(width: 16).accessibilityHidden(true)
+                Text(verbatim: URL(fileURLWithPath: path).lastPathComponent).lineLimit(1).truncationMode(.middle)
+                if index == 0 {
+                    Text("Primary").font(ConsoleTypography.sans(10, relativeTo: .caption2))
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+                Spacer(minLength: 0)
+                Menu {
+                    if index != 0 {
+                        Button("Make primary") {
+                            model.macComputerHost.updateProjectFolders {
+                                try model.macComputerHost.projectGrants.primary(project: project, path: path)
+                            }
+                        }
+                    }
+                    Button("Remove folder", role: .destructive) {
+                        model.macComputerHost.updateProjectFolders {
+                            try model.macComputerHost.projectGrants.remove(project: project, path: path)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis").frame(width: 24, height: 24)
+                }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 24, height: 24)
+                .accessibilityLabel("Folder controls for \(path)").accessibilityIdentifier(
+                    "project-folder-\(project)-\(index)")
+            }
+            .font(ConsoleTypography.caption).foregroundStyle(p.muted).frame(height: 26)
+            .help(path)
+        }
+    }
+
+    private struct MacProjectChatRow: View {
+        @Environment(ThemeStore.self) private var theme
+        let chat: ChatSummary
+        let active: Bool
+        @State private var hovered = false
+
+        var body: some View {
+            Text(verbatim: chat.displayTitle).font(ConsoleTypography.footnote.weight(.regular))
+                .foregroundStyle(theme.palette.text).lineLimit(1).truncationMode(.tail)
+                .padding(.leading, 24).padding(.trailing, 8)
+                .frame(maxWidth: .infinity, minHeight: 28, maxHeight: 28, alignment: .leading)
+                .background(
+                    active ? theme.palette.primary.opacity(0.13) : hovered ? theme.palette.text.opacity(0.04) : .clear,
+                    in: RoundedRectangle(cornerRadius: 5)
+                )
+                .contentShape(Rectangle()).onHover { hovered = $0 }
         }
     }
     struct MacProjectChoiceSheet: View {
