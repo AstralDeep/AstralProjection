@@ -1013,3 +1013,45 @@ def test_measurements_are_a_detail_disclosure_only():
     for mode in ("list", "result"):
         html = render_html(build_work_view(state(mode, measurements=measurements())))
         assert "Runs recorded (claims)" not in html
+
+
+def continuity(**values):
+    return {"version": 1, "operation_id": ID, "expected_revision": 3,
+            "submission_id": ACTION, **values}
+
+
+def test_current_waiting_detail_offers_only_the_host_bound_continuity_command():
+    value = state("detail", operation=operation(disposition="awaiting_event"), continuity=continuity())
+    before = deepcopy(value)
+    view = build_work_view(value)
+    offered = [item for item in buttons(view) if item["action"] == "chrome_work_continuity"]
+    assert len(offered) == 1 and offered[0]["payload"] == continuity()
+    assert offered[0]["label"] == "Recheck completion"
+    assert value == before and "Waiting for an event" in render_html(view)
+    assert "Retry" not in render_html(view) and "Completed" not in render_html(view)
+
+
+@pytest.mark.parametrize("mode", ["compact", "standard", "wide", "watch"])
+def test_continuity_is_the_same_explicit_control_on_every_form_factor(mode):
+    value = state("detail", operation=operation(disposition="awaiting_event"), continuity=continuity())
+    view = build_work_view(value, layout=LayoutView(mode=mode))
+    assert any(item["action"] == "chrome_work_continuity" for item in buttons(view))
+    assert view.to_dict()["components"] == build_work_view(value).to_dict()["components"]
+
+
+@pytest.mark.parametrize("change", [
+    {"version": True}, {"version": 2}, {"operation_id": OTHER}, {"expected_revision": 2},
+    {"expected_revision": True}, {"expected_revision": "3"}, {"expected_revision": 2**53},
+    {"submission_id": "not-an-identity"}, {"command": "retry"}, {"token": "PRIVATE_TOKEN"},
+])
+def test_malformed_continuity_binding_never_becomes_a_control(change):
+    view = unavailable(state("detail", operation=operation(disposition="awaiting_event"),
+                             continuity=continuity(**change)))
+    assert all(item["action"] == "chrome_open" for item in buttons(view))
+    assert "PRIVATE_TOKEN" not in encoded(view)
+
+
+@pytest.mark.parametrize("disposition", ["reconciliation_required", "awaiting_authority", "completed", "paused"])
+def test_continuity_binding_cannot_override_the_authoritative_work_disposition(disposition):
+    view = unavailable(state("detail", operation=operation(disposition=disposition), continuity=continuity()))
+    assert all(item["action"] == "chrome_open" for item in buttons(view))

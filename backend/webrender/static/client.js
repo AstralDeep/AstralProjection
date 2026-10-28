@@ -5737,7 +5737,36 @@
     } finally { meshPending = false; }
   }
 
+  function workContinuityPayload(payload) {
+    return payload && typeof payload === "object" && !Array.isArray(payload)
+      && Object.keys(payload).length === 4
+      && ["version", "operation_id", "expected_revision", "submission_id"].every(function (key) {
+        return Object.prototype.hasOwnProperty.call(payload, key);
+      }) && payload.version === 1 && Number.isSafeInteger(payload.expected_revision)
+      && payload.expected_revision > 0 && isCanonicalUuid4(payload.operation_id)
+      && isCanonicalUuid4(payload.submission_id);
+  }
+
+  function currentWorkContinuity(payload) {
+    var current = ownerSurfaceRequest;
+    if (!workContinuityPayload(payload) || !current || current.surface !== "work" || !current.received
+        || current.socket !== ws || current.connection !== connectionGeneration
+        || current.privacyEpoch !== accountPrivacyEpoch || accountSignedOut || !isSocketReady()
+        || timelineMode || modalIsMandatory() || !modalRoot) return false;
+    return Array.prototype.some.call(modalRoot.querySelectorAll('[data-ui-action="chrome_work_continuity"], [data-action="chrome_work_continuity"]'), function (control) {
+      if (control.disabled || control.getAttribute("aria-disabled") === "true") return false;
+      var offered;
+      try { offered = JSON.parse(control.getAttribute("data-ui-payload") || control.getAttribute("data-payload") || "{}"); }
+      catch (_error) { return false; }
+      return workContinuityPayload(offered) && Object.keys(payload).every(function (key) {
+        return payload[key] === offered[key];
+      });
+    });
+  }
+
   function action(name, payload, exposeStatus, meshPrepared) {
+    var continuityAction = name === "chrome_work_continuity";
+    if (continuityAction && !currentWorkContinuity(payload)) return;
     if (name === "chrome_mesh_identity" || name === "chrome_mesh_redeem" || name === "chrome_mesh_create" && !meshPrepared) {
       meshLocalAction(name, payload || {});
       return;
@@ -5751,10 +5780,13 @@
     var selectionAction = name === "chrome_turn_selection_set";
     var safetyAction = ["chrome_safety_stop", "chrome_safety_resume", "chrome_safety_verify"].indexOf(name) !== -1;
     var terminalAction = ["chrome_terminal_input", "chrome_terminal_resize", "chrome_terminal_interrupt", "chrome_terminal_close"].indexOf(name) !== -1;
-    var ownerSurface = terminalAction ? "terminal" : meshAction ? "mesh" : safetyAction ? "safety" : noteAction || selectionAction ? "guidance"
+    var ownerSurface = continuityAction ? "work" : terminalAction ? "terminal" : meshAction ? "mesh" : safetyAction ? "safety" : noteAction || selectionAction ? "guidance"
       : name === "chrome_open" && payload && ["work", "guidance", "evidence", "safety", "mesh", "terminal"].indexOf(payload.surface) !== -1
         ? payload.surface : null;
-    if (name === "chrome_open" || name === "chrome_close" || noteAction || selectionAction || safetyAction || meshAction || terminalAction) retireOwnerSurface();
+    if (name === "chrome_open" || name === "chrome_close" || noteAction || selectionAction || safetyAction || meshAction || terminalAction || continuityAction) retireOwnerSurface();
+    if (continuityAction) {
+      showModalSkeleton("chrome_open", { surface: "work", params: { mode: "detail", operation_id: payload.operation_id } });
+    }
     if (noteAction) {
       showModalSkeleton("chrome_open", { surface: "guidance", params: { mode: "list" } });
     }
@@ -5775,6 +5807,7 @@
       : requestState && (name === "chat_message" || name === "load_chat")
         ? requestState.generation : null;
     var submission = beginOperationSubmission(name, payload, suppliedGeneration, exposeStatus);
+    if (continuityAction) delete submission.payload.request_generation;
     if (safetyAction || terminalAction || ownerSurface === "mesh") {
       delete submission.payload.submission_id;
       delete submission.payload.request_generation;
@@ -5783,7 +5816,7 @@
       type: "ui_event",
       action: name,
       payload: submission.payload,
-      session_id: ownerSurface ? undefined : activeChatId || undefined,
+      session_id: continuityAction ? null : ownerSurface ? undefined : activeChatId || undefined,
       submission_id: submission.submissionId,
       request_generation: submission.requestGeneration,
     };
@@ -5860,7 +5893,7 @@
     send({
       type: "register_ui",
       token: token,
-      capabilities: ["render", "stream", "voice", "guidance_notes_v1", "guidance_selection_v1"],
+      capabilities: ["render", "stream", "voice", "guidance_notes_v1", "guidance_selection_v1", "work_read_v1", "work_continuity_v1"],
       session_id: "ui-" + Date.now(),
       device_id: voiceDeviceId,
       device: device,
@@ -7706,6 +7739,10 @@
     if (btn) {
       var act = btn.getAttribute("data-action"); var payload = {};
       try { payload = JSON.parse(btn.getAttribute("data-payload") || "{}"); } catch (_) {}
+      if (act === "chrome_work_continuity") {
+        if (modalRoot && modalRoot.contains(btn)) action(act, payload);
+        return;
+      }
       var compHost = btn.closest && btn.closest("[data-component-id]");
       if (compHost && payload.surface !== "safety" && payload.surface !== "terminal" && !payload.component_id) payload.component_id = compHost.getAttribute("data-component-id");
       if (payload.surface !== "safety" && payload.surface !== "terminal" && !payload.chat_id && activeChatId && !(act === "chrome_open" && (payload.surface === "work" || payload.surface === "evidence" || payload.surface === "terminal"))) {
@@ -8600,6 +8637,11 @@
     }
     var payload = {};
     try { payload = JSON.parse(el.getAttribute("data-ui-payload") || "{}"); } catch (err) {}
+    if (act === "chrome_work_continuity") {
+      e.preventDefault();
+      if (modalRoot && modalRoot.contains(el)) action(act, payload);
+      return;
+    }
     if (el.getAttribute("data-ui-collect") === "true") {
       payload.fields = collectChromeFields(el.closest("[data-ui-form]") || modalRoot);
     }

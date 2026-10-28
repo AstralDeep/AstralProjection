@@ -4387,6 +4387,10 @@ final class AppModel: NSObject {
             beginWorkRead(payload)
             return
         }
+        if action == WorkContinuityRequest.action {
+            beginWorkContinuity(payload)
+            return
+        }
         if action == "chrome_open" || action == "chrome_close" { invalidateWorkRead() }
         if action == "chrome_open", let surface = payload["surface"]?.stringValue {
             let current = screen == .surface && pendingSurfaceKey == surface ? pendingSurface : nil
@@ -5225,6 +5229,50 @@ final class AppModel: NSObject {
                     guard let self else { return false }
                     return self.downloadOwner == owner && self.ws === socket && self.connected
                         && self.workReadEpoch == generation && self.screen == .surface
+                        && self.continuity.connectionGeneration == connection
+                }
+            }
+            guard !Task.isCancelled, self.workReadEpoch == generation,
+                self.downloadOwner == owner, self.ws === socket
+            else { return }
+            if !sent { self.failWorkRead(generation: generation) }
+        }
+    }
+
+    private func beginWorkContinuity(_ payload: JSONValue) {
+        guard signedIn, connected, !mandatorySurface, !mutationsLocked, screen == .surface,
+            pendingSurfaceKey == "work", conversationAccount != nil,
+            let command = WorkContinuityRequest(payload: payload), workReadUpdate?.permits(command) == true,
+            let socket = ws, let connection = continuity.connectionGeneration
+        else { return }
+        retireOrdinarySurfaceRequests()
+        invalidateWorkRead()
+        let generation = workReadEpoch
+        guard workReadState.beginContinuity(command, generation: generation), let request = workReadState.request else {
+            return
+        }
+        pendingSurfaceParams = request.params
+        pendingSurface = nil
+        let owner = downloadOwner
+        let text = command.frameText(requestGeneration: generation, connectionGeneration: connection)
+        guard workReadState.bindSubmission(frameText: text) else {
+            failWorkRead(generation: generation)
+            return
+        }
+        outboundTap?(text)
+        workReadTask = Task { [weak self] in
+            guard let self, await self.authenticatedSocketIsCurrent(socket, owner: owner, connection: connection) else {
+                if let self, self.workReadEpoch == generation, self.downloadOwner == owner {
+                    self.failWorkRead(generation: generation)
+                }
+                return
+            }
+            let sent = await socket.sendCurrentWorkEvent(text) { [weak self] in
+                await MainActor.run {
+                    guard let self else { return false }
+                    return self.downloadOwner == owner && self.ws === socket && self.connected
+                        && self.workReadEpoch == generation && self.screen == .surface
+                        && self.pendingSurfaceKey == "work" && !self.mandatorySurface && !self.mutationsLocked
                         && self.continuity.connectionGeneration == connection
                 }
             }

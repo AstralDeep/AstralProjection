@@ -1,12 +1,13 @@
-"""Closed, bounded validators for the Work read surface: only the exact two-step Save
-command, with server-issued bindings Deep re-verifies, is admitted as a
-non-navigation action; used by projection_surfaces/work.py and rote.adapter.
+"""Validates bounded Work components and closed navigation, result-save and continuity commands.
+Deep reauthorizes their server-issued bindings before any mutation; rote.adapter consumes these validators.
 """
 
 from copy import deepcopy
 import json
 import re
 from uuid import UUID
+
+from astralprojection.work_continuity import CONTINUITY_ACTION, validate_continuity_payload
 
 SAVE_ACTION = "chrome_work_result_save"
 _DIGEST = re.compile(r"[0-9a-f]{64}")
@@ -133,6 +134,8 @@ def validate_work_components(components, supported_types=None):
                 _require(value["local"] is False and type(value["disabled"]) is bool)
                 if value["action"] == SAVE_ACTION:
                     validate_work_save_command(value["payload"])
+                elif value["action"] == CONTINUITY_ACTION:
+                    validate_continuity_payload(value["payload"])
                 else:
                     _require(value["action"] == "chrome_open")
                     validate_work_navigation(value["payload"])

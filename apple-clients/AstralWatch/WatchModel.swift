@@ -1598,6 +1598,10 @@ final class WatchModel {
     }
 
     func sendWorkComponent(_ component: AstralComponent) {
+        if let command = WorkContinuityRequest(component: component), workUpdate?.permits(command) == true {
+            beginWorkContinuity(command)
+            return
+        }
         guard let request = WorkReadRequest(component: component), workUpdate?.permits(request) == true else { return }
         beginWorkRead(request.payload)
     }
@@ -1653,6 +1657,39 @@ final class WatchModel {
         let session = sessionGeneration
         let connection = continuity.connectionGeneration
         let text = request.frameText(requestGeneration: generation)
+        guard workReadState.bindSubmission(frameText: text) else {
+            failWorkRead(generation: generation)
+            return
+        }
+        outboundTap?(text)
+        workReadTask = Task { [weak self] in
+            let sent = await socket.sendCurrentWorkEvent(text) { [weak self] in
+                await MainActor.run {
+                    guard let self else { return false }
+                    return self.workReadEpoch == generation && self.workVisible && self.connected
+                        && self.ws === socket && self.conversationAccount == account
+                        && self.sessionGeneration == session && self.continuity.connectionGeneration == connection
+                }
+            }
+            guard let self, !Task.isCancelled, self.workReadEpoch == generation,
+                self.conversationAccount == account, self.sessionGeneration == session,
+                self.ws === socket
+            else { return }
+            if !sent { self.failWorkRead(generation: generation) }
+        }
+    }
+
+    private func beginWorkContinuity(_ command: WorkContinuityRequest) {
+        guard workVisible, connected, workUpdate?.permits(command) == true,
+            let account = conversationAccount, let socket = ws, let connection = continuity.connectionGeneration
+        else { return }
+        invalidateConsoleSurface()
+        invalidateWorkRead()
+        let generation = workReadEpoch
+        guard workReadState.beginContinuity(command, generation: generation) else { return }
+        workReadSelection = workReadState.request
+        let session = sessionGeneration
+        let text = command.frameText(requestGeneration: generation, connectionGeneration: connection)
         guard workReadState.bindSubmission(frameText: text) else {
             failWorkRead(generation: generation)
             return

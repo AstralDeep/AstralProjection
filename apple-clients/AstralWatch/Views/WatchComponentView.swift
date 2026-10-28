@@ -165,7 +165,9 @@ struct WatchComponentView: View {
                 .buttonStyle(.bordered)
                 .disabled(component.raw["disabled"]?.boolValue != false || !model.connected)
                 .accessibilityLabel(component.label ?? "")
-            } else if workRead, let payload = component.raw["payload"], WorkReadRequest(payload: payload) != nil {
+            } else if workRead, let payload = component.raw["payload"],
+                WorkReadRequest(payload: payload) != nil || WorkContinuityRequest(component: component) != nil
+            {
                 Button(component.label ?? "") { model.sendWorkComponent(component) }
                     .buttonStyle(.bordered)
                     .disabled(component.raw["disabled"]?.boolValue != false || !model.connected)

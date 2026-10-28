@@ -95,6 +95,62 @@ for (const scope of ["work", "evidence", "safety", "terminal_panel", "terminal_m
       await page.evaluate(value => window.__sockets.at(-1).receive(value), frame);
     }
 
+    if (surface === "work") {
+      const continuity = {version: 1, operation_id: "90f3eb92-26b2-4cde-8adf-a9bd39253021",
+        expected_revision: 7, submission_id: "805ed918-320f-41ad-b9ec-e479c0cb4ae5"};
+      async function offerContinuity(page, changes = {}) {
+        const pending = await open(page);
+        const frame = reply(pending);
+        const payload = {...continuity, ...changes};
+        frame.html = `<div class="astral-modal-card" role="dialog"><button data-ui-action="chrome_work_continuity" data-ui-payload='${JSON.stringify(payload)}'>Recheck completion</button></div>`;
+        await receive(page, frame);
+        return pending;
+      }
+      test("explicit continuity preserves captured command and current correlation", async ({page}) => {
+        await setup(page);
+        const pending = await offerContinuity(page);
+        await page.getByRole("button", {name: "Recheck completion", exact: true}).click();
+        const sent = await page.evaluate(() => window.__frames.filter(frame => frame.action === "chrome_work_continuity").at(-1));
+        expect(sent.payload).toEqual(continuity);
+        expect(sent.submission_id).toBe(continuity.submission_id);
+        expect(sent.request_generation).not.toBe(pending.request_generation);
+        expect(sent.connection_generation).toBe(pending.connection_generation);
+        expect(sent.session_id).toBeNull();
+        await receive(page, reply(sent, "Rechecked current state"));
+        await expect(page.getByText("Rechecked current state")).toBeVisible();
+        await receive(page, reply(sent, "Stale duplicate command result"));
+        await expect(page.getByText("Stale duplicate command result")).toHaveCount(0);
+      });
+      for (const change of ["disconnected", "outside", "mandatory", "extra", "revision", "string_revision", "old_socket"]) {
+        test(`continuity rejects ${change} without reconnect replay`, async ({page}) => {
+          await setup(page);
+          await offerContinuity(page, change === "extra" ? {token: "forbidden"}
+            : change === "revision" ? {expected_revision: 1.5}
+            : change === "string_revision" ? {expected_revision: "7"} : {});
+          if (change === "disconnected") await page.evaluate(() => { window.__sockets.at(-1).readyState = 3; });
+          if (change === "outside") await page.getByRole("button", {name: "Recheck completion", exact: true}).evaluate(button => document.body.append(button));
+          if (change === "mandatory") await page.locator(".astral-modal-card").evaluate(card => card.setAttribute("data-mandatory", "true"));
+          if (change === "old_socket") await page.evaluate(() => { window.__sockets.at(-1).onopen?.(); });
+          const button = page.getByRole("button", {name: "Recheck completion", exact: true});
+          if (await button.count()) await button.click();
+          await page.evaluate(() => { window.__sockets.at(-1).readyState = 1; window.__sockets.at(-1).onopen?.(); });
+          expect(await page.evaluate(() => window.__frames.filter(frame => frame.action === "chrome_work_continuity").length)).toBe(0);
+        });
+      }
+      test("uncertain continuity retries a fresh read without replaying mutation", async ({page}) => {
+        await setup(page);
+        await page.clock.install();
+        await offerContinuity(page);
+        await page.getByRole("button", {name: "Recheck completion", exact: true}).click();
+        await page.clock.fastForward(6100);
+        await page.getByRole("button", {name: "Retry", exact: true}).click();
+        expect(await page.evaluate(() => window.__frames.filter(frame => frame.action === "chrome_work_continuity").length)).toBe(1);
+        const last = await page.evaluate(() => window.__frames.at(-1));
+        expect(last.action).toBe("chrome_open");
+        expect(last.payload.params).toEqual({mode: "detail", operation_id: continuity.operation_id});
+      });
+    }
+
     if (scope === "terminal_panel") {
       const terminalLabels = {
         chrome_terminal_input: "Send to terminal", chrome_terminal_resize: "Apply resize",

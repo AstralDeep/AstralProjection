@@ -17,6 +17,7 @@ import com.personalailabs.astraldeep.core.protocol.SafetySurfaceRequest
 import com.personalailabs.astraldeep.core.protocol.VoicePlayoutEvent
 import com.personalailabs.astraldeep.core.protocol.VoiceTranscript
 import com.personalailabs.astraldeep.core.protocol.Wire
+import com.personalailabs.astraldeep.core.protocol.WorkContinuity
 import com.personalailabs.astraldeep.core.protocol.isGuidanceNoteAction
 import com.personalailabs.astraldeep.core.protocol.isPrivateChromeSurface
 import kotlinx.coroutines.channels.BufferOverflow
@@ -602,6 +603,7 @@ class OrchestratorClient(
             if (!isPrivateChromeSurface(surface) ||
                 !(
                     action == "chrome_open" && (payload["surface"] as? JsonPrimitive)?.contentOrNull == surface ||
+                        surface == "work" && action == WorkContinuity.ACTION && WorkContinuity.validPayload(payload) ||
                         surface == "guidance" &&
                         (
                             isGuidanceNoteAction(action) ||
@@ -611,8 +613,24 @@ class OrchestratorClient(
             ) {
                 return@synchronized false
             }
-            val submission = newSubmission(action, null)
-            val frame = Wire.encodeUiEvent(action, null, payload, submission.requestGeneration, submission.submissionId)
+            val continuity = action == WorkContinuity.ACTION
+            val submission =
+                newSubmission(action, null).let {
+                    if (continuity) {
+                        it.copy(submissionId = (payload.getValue("submission_id") as JsonPrimitive).content)
+                    } else {
+                        it
+                    }
+                }
+            val encoded = Wire.encodeUiEvent(action, null, payload, submission.requestGeneration, submission.submissionId)
+            val frame =
+                if (continuity) {
+                    JsonObject(
+                        Json.parseToJsonElement(encoded).jsonObject + ("connection_generation" to JsonPrimitive(generation)),
+                    ).toString()
+                } else {
+                    encoded
+                }
             onSubmission(submission, generation)
             if (!open || socket !== currentSocket || generation != connectionGeneration || epoch != ownerEpoch ||
                 !isCurrent() || !currentSocket.send(frame)
@@ -685,6 +703,7 @@ class OrchestratorClient(
         val submission = newSubmission(action, payloadChat ?: sessionId)
         onSubmission(submission)
         if (action == "update_device" && payload["snapshot_purpose"] != null ||
+            action == WorkContinuity.ACTION ||
             isGuidanceNoteAction(action) || action == "chrome_turn_selection_set" ||
             SafetySurfaceRequest.isEvent(action, payload) || MeshSurfaceRequest.isEvent(action, payload) ||
             (payload["surface"] as? JsonPrimitive)?.contentOrNull == "evidence" ||

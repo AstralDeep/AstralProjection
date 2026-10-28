@@ -758,7 +758,7 @@
       },
       "payload": {
         "version": 1,
-        "agent": "null or {agent_id, revision_id} \u2014 one active declarative agent revision",
+        "agent": "null or {agent_id, revision_id} — one active declarative agent revision",
         "skills": "list of {skill_id, revision}, at most 20, unique",
         "notes": "list of {note_id, revision}, at most 8, unique",
         "shape": "Exactly the version-1 selection work_submit accepts; every button carries the complete resulting selection, never a delta. The all-empty shape clears the chat's selection and is never forwarded as a Work selection.",
@@ -819,7 +819,7 @@
           "button",
           "param_picker"
         ],
-        "text": "Notes appear only as category, revision and enabled state \u2014 never their value. Skills appear only as name, /command, revision and enabled state \u2014 never their instructions."
+        "text": "Notes appear only as category, revision and enabled state — never their value. Skills appear only as name, /command, revision and enabled state — never their instructions."
       },
       "legacy": "Hosts expose the picker only to clients advertising guidance_selection_v1; other clients submit Work without a selection exactly as before."
     },
@@ -1583,7 +1583,9 @@
           "registration_source": "backend/webrender/static/client.js",
           "advertised_088_capabilities": [
             "guidance_notes_v1",
-            "guidance_selection_v1"
+            "guidance_selection_v1",
+            "work_continuity_v1",
+            "work_read_v1"
           ],
           "negotiation": "web_render_channel"
         },
@@ -1591,9 +1593,10 @@
           "device_type": "windows",
           "registration_source": "windows-client/astral_client/protocol.py",
           "advertised_088_capabilities": [
-            "work_read_v1",
             "guidance_notes_v1",
-            "guidance_selection_v1"
+            "guidance_selection_v1",
+            "work_continuity_v1",
+            "work_read_v1"
           ],
           "redesign": "qualified_notes_selection_and_workspace_actions_only"
         },
@@ -1603,6 +1606,7 @@
           "advertised_088_capabilities": [
             "guidance_notes_v1",
             "guidance_selection_v1",
+            "work_continuity_v1",
             "work_read_v1"
           ]
         },
@@ -1611,8 +1615,9 @@
           "registration_source": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Frames.swift",
           "advertised_088_capabilities": [
             "guidance_notes_v1",
-            "work_read_v1",
-            "guidance_selection_v1"
+            "guidance_selection_v1",
+            "work_continuity_v1",
+            "work_read_v1"
           ]
         },
         "macos": {
@@ -1620,8 +1625,9 @@
           "registration_source": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Frames.swift",
           "advertised_088_capabilities": [
             "guidance_notes_v1",
-            "work_read_v1",
-            "guidance_selection_v1"
+            "guidance_selection_v1",
+            "work_continuity_v1",
+            "work_read_v1"
           ]
         },
         "watch": {
@@ -1629,8 +1635,9 @@
           "registration_source": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Frames.swift",
           "advertised_088_capabilities": [
             "guidance_notes_v1",
-            "work_read_v1",
-            "guidance_selection_v1"
+            "guidance_selection_v1",
+            "work_continuity_v1",
+            "work_read_v1"
           ],
           "menu_projection": "webrender.chrome.menu_model.project_watch_menu_model"
         },
@@ -1649,6 +1656,7 @@
         "guidance_skills_v1",
         "recurring_work_v1",
         "saved_results_v1",
+        "work_continuity_v1",
         "work_read_v1",
         "work_save_v1"
       ],
@@ -1786,6 +1794,48 @@
             "mode": "result"
           },
           "fixture_state": "result"
+        },
+        {
+          "destination": "work_continuity",
+          "contract": "work_continuity",
+          "effect_review": false,
+          "action": "chrome_work_continuity",
+          "params": {
+            "surface": "work",
+            "mode": "detail"
+          },
+          "fixture_state": "waiting",
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "android": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "ios": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "macos": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "watch": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "voice": {
+              "disposition": "read_only_handoff",
+              "basis": "rote_voice_profile",
+              "handoff": "Spoken current Work status only. Use the same current Work item on a supported display to explicitly recheck completion."
+            }
+          }
         },
         {
           "destination": "work_result_save",
@@ -3427,6 +3477,80 @@
       "interactive_scope": "Keyboard input, resize, interrupt and session close are advertised only on interactive_panel dispositions. Read-only monitors receive the complete list and output reads with platform-selection copy and never a partial command form; phone, tablet and tv render the read-only monitor through their declared ROTE fallbacks.",
       "unavailable_host": "When the host reports the terminal capability unavailable or refused, the panel renders the declared unavailable or denied state with recovery guidance and advertises no terminal controls; the omission stays server-declared and is never hidden independently in a client.",
       "watch": "Host renders only content-free state metadata and a phone or desktop handoff. Session id, target, directory, offsets and output are not sent to the watch."
+    },
+    "work_continuity": {
+      "version": 1,
+      "fixture": "contracts/fixtures/work_088/continuity.json",
+      "surface_key": "work",
+      "client_capability": "work_continuity_v1",
+      "capability_location": "register_ui.capabilities",
+      "actions": {
+        "chrome_work_continuity": [
+          "version",
+          "operation_id",
+          "expected_revision",
+          "submission_id"
+        ]
+      },
+      "payload": {
+        "version": 1,
+        "operation_id": "canonical lowercase UUID4",
+        "expected_revision": "strict integer 1..9007199254740991",
+        "submission_id": "captured canonical lowercase UUID4 from current server control",
+        "unknown_fields": "refuse"
+      },
+      "request": {
+        "exact_fields": [
+          "type",
+          "action",
+          "session_id",
+          "submission_id",
+          "request_generation",
+          "connection_generation",
+          "payload"
+        ],
+        "session_id": null,
+        "submission_id": "matches captured payload submission_id",
+        "request_generation": "fresh canonical UUID4 per explicit action",
+        "connection_generation": "current registered connection only"
+      },
+      "native_response": {
+        "type": "chrome_surface",
+        "exact_fields": [
+          "type",
+          "surface_key",
+          "region",
+          "title",
+          "admin_only",
+          "components",
+          "mode",
+          "request_generation"
+        ],
+        "region": "modal",
+        "mode": "replace",
+        "admin_only": false
+      },
+      "web_response": {
+        "type": "chrome_render",
+        "region": "modal",
+        "mode": "replace",
+        "surface_key": "work",
+        "request_generation": "the requesting read generation",
+        "html": "shared Projection escaped and sanitized rendering"
+      },
+      "clients": {
+        "web": "strict current owner, offered payload and connection; no queue or replay; consume one correlated shared Work response",
+        "windows": "strict current owner, offered payload and connection; no queue or replay; consume one correlated shared Work response",
+        "android": "strict current owner, offered payload and connection; no queue or replay; consume one correlated shared Work response",
+        "macos": "strict current owner, offered payload and connection; no queue or replay; consume one correlated shared Work response",
+        "ios": "strict current owner, offered payload and connection; no queue or replay; consume one correlated shared Work response",
+        "watchos": "strict current owner, offered payload and connection; no queue or replay; consume one correlated shared Work response"
+      },
+      "authority": "Presentation capability grants no authority. The host checks the original registered JWT, current issued session custody, owner, composed durable runtime, captured revision and actual wait/claim fences before mutation and delivery.",
+      "effect": "Only recheck an active awaiting_event completion wait through its existing durable wake fence; no execution admission, renewed authority, effect replay, endpoint selection or election.",
+      "reconnect": "fresh_owner_read_only",
+      "uncertainty": "A lost response never proves a failed or completed mutation. Timeout/reconnect can request fresh owner-authorized status; never replay this command or copy tokens.",
+      "recovery_scope": "T1 same composed durable PostgreSQL authority and paired roots, in place. Joint restore is an explicit operator operation through existing Plane conditions; no automatic alternate authority."
     }
   },
   "frame_contracts": {
@@ -4436,6 +4560,7 @@
     "chrome_user_skill_save",
     "chrome_user_skill_toggle",
     "chrome_visibility_set",
+    "chrome_work_continuity",
     "chrome_work_result_save",
     "chrome_workspace_timeline_live",
     "chrome_workspace_timeline_view",

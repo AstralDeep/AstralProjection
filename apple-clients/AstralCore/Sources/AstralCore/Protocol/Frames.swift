@@ -802,7 +802,7 @@ public enum Outbound {
             device.hasMicrophone && device.hasAudioOutput
             && device.deviceId.flatMap(continuityUUID4) != nil
         var capabilities = ["render", "stream"]
-        if workReadSupported { capabilities.append("work_read_v1") }
+        if workReadSupported { capabilities += ["work_read_v1", "work_continuity_v1"] }
         if guidanceNotesSupported { capabilities.append("guidance_notes_v1") }
         if device.consoleContract == ConsoleModel.contract { capabilities.append("guidance_selection_v1") }
         if voiceCapable { capabilities.append("voice") }
