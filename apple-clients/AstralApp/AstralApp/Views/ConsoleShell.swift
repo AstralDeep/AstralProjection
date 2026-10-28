@@ -541,7 +541,7 @@ struct ConsoleSurfaceOverlay: View {
                             components: surface.components, presentation: presentation,
                             maximumHeight: max(0, min(size.height, presentation.settingsMaxHeight) - 80))
                     } else {
-                        SurfaceView(embedded: true)
+                        settingsContent
                             .environment(\.astralCompactSettings, compactSettings)
                     }
                 }
@@ -557,6 +557,20 @@ struct ConsoleSurfaceOverlay: View {
         .onAppear { titleFocused = true }
         #if os(macOS)
             .onExitCommand { model.closeSurface() }
+        #endif
+    }
+
+    @ViewBuilder private var settingsContent: some View {
+        #if os(macOS)
+            if let surface = model.pendingSurface, surface.surfaceKey == "guide",
+                let document = MacGuideDocument(components: surface.components)
+            {
+                MacGuideSurfaceView(document: document)
+            } else {
+                SurfaceView(embedded: true)
+            }
+        #else
+            SurfaceView(embedded: true)
         #endif
     }
 

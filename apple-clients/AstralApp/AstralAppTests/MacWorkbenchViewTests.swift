@@ -15,6 +15,48 @@
 
     @MainActor
     final class MacWorkbenchViewTests: XCTestCase {
+        func testGuideNavigationStaysVisibleWhenTheLongArticleScrolls() async throws {
+            let (model, suite) = try panelModel()
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            let components = MacGuideSurfaceTests.components(longArticle: true)
+            model.screen = .surface
+            model.pendingSurfaceKey = "guide"
+            model.pendingSurface = .init(surfaceKey: "guide", title: "User guide", components: components)
+            let (view, window) = panel(
+                GuideTestHost().frame(width: 520, height: 320), model: model, width: 520)
+            defer { window.close() }
+            try await settle()
+            let first = try recognizedText(view)
+            XCTAssertTrue(first.contains("Quick reference"), first)
+            XCTAssertFalse(first.contains("End of guide article"), first)
+            func scrollViews(_ node: NSView) -> [NSScrollView] {
+                (node as? NSScrollView).map { [$0] } ?? node.subviews.flatMap(scrollViews)
+            }
+            let scroll = try XCTUnwrap(scrollViews(view).first)
+            let article = try XCTUnwrap(scroll.documentView)
+            scroll.contentView.scroll(
+                to: NSPoint(x: 0, y: max(0, article.bounds.height - scroll.contentView.bounds.height)))
+            scroll.reflectScrolledClipView(scroll.contentView)
+            try await settle()
+            let last = try recognizedText(view)
+            XCTAssertTrue(last.contains("End of guide article"), last)
+            XCTAssertTrue(last.contains("Quick reference"), last)
+            model.surfaceFailureMessage = "The guide request failed. Please retry."
+            try await settle()
+            let failed = try recognizedText(view)
+            XCTAssertTrue(failed.contains("guide request failed"), failed)
+            XCTAssertTrue(failed.contains("Quick reference"), failed)
+            model.surfaceFailureMessage = nil
+            model.pendingSurface = .init(
+                surfaceKey: "guide", title: "User guide",
+                components: MacGuideSurfaceTests.components(selected: "second", longArticle: true))
+            try await settle()
+            let changed = try recognizedText(view)
+            XCTAssertTrue(changed.contains("Guide article"), changed)
+            XCTAssertTrue(changed.contains("Everyday actions"), changed)
+            XCTAssertFalse(changed.contains("End of guide article"), changed)
+        }
+
         func testEmptyProjectSidebarExplainsHowToStartWithoutGlobalChatButton() async throws {
             let (model, suite) = try panelModel()
             defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
@@ -1368,6 +1410,17 @@
                 try await Task.sleep(for: .milliseconds(50))
             }
             throw NSError(domain: "MacWorkbenchViewTests", code: 1)
+        }
+    }
+
+    private struct GuideTestHost: View {
+        @Environment(AppModel.self) var model
+        var body: some View {
+            if let components = model.pendingSurface?.components,
+                let document = MacGuideDocument(components: components)
+            {
+                MacGuideSurfaceView(document: document)
+            }
         }
     }
 
