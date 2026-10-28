@@ -214,13 +214,18 @@ class AndroidNotificationAdapter(
 
     private fun requestToken() {
         val request = ++tokenRequest
+        var callbackStarted = false
         try {
             provider.requestToken { token ->
                 synchronized(this) {
-                    if (started && !closed && request == tokenRequest) onProviderToken(token)
+                    if (started && !closed && request == tokenRequest) {
+                        callbackStarted = true
+                        onProviderToken(token)
+                    }
                 }
             }
-        } catch (_: RuntimeException) {
+        } catch (failure: RuntimeException) {
+            if (callbackStarted) throw failure
             execute(machine.onTokenRequestFailed(true, "provider_request_failed"))
         }
     }

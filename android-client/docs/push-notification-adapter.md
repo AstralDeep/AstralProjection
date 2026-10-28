@@ -16,10 +16,14 @@ scope only after authenticating its owner. Call `close()` synchronously before
 logout, account/server changes or retiring that scope. Closed instances cannot
 restart. Close clears local registration and notices, detaches the provider
 listener, unregisters the dismissal receiver and emits a revoke effect without
-waiting for REST. A failing integration callback remains a visible failure;
+waiting for REST. A failing integration callback, including a synchronous token completion, remains a visible failure;
 receiver cleanup still runs.
 
 The provider supplies support, token request completion and message listeners.
+The shipping bridge must accept data-only opaque IDs, with no provider auto-display
+block. Before forwarding a message to this OS adapter, the coordinated runtime
+must fetch its authorized inbox record and recheck the captured current owner and
+binding. Raw provider receipt alone cannot establish source ownership.
 Request callbacks capture their request incarnation; callbacks arriving after a
 new token, retry or close are ignored. Enrollment callbacks must call
 `adapter.onEnrollmentAccepted(effect, serverTokenGeneration)` or

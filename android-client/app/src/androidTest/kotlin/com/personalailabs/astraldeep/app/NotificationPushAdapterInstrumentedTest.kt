@@ -26,6 +26,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -308,6 +309,31 @@ class NotificationPushAdapterInstrumentedTest {
         awaitCondition { postedTags() == listOf(NOTIFICATION_ID) }
         first.close()
         assertEquals(listOf(NOTIFICATION_ID), postedTags())
+    }
+
+    @Test
+    fun synchronousEnrollmentFailureCannotMasqueradeAsAProviderRetry() {
+        val provider =
+            object : PushProvider {
+                override fun isSupported(): Boolean = true
+
+                override fun requestToken(onResult: (String?) -> Unit) {
+                    onResult("provider-token-01")
+                }
+
+                override fun setMessageListener(onMessage: (JsonObject) -> Unit) = Unit
+            }
+        val adapter =
+            AndroidNotificationAdapter(
+                context,
+                provider,
+                IDENTITY,
+                OWNER,
+                enrollListener = { throw IllegalStateException("enrollment_failure") },
+            )
+        adapters.add(adapter)
+        val error = assertThrows(IllegalStateException::class.java) { adapter.start() }
+        assertEquals("enrollment_failure", error.message)
     }
 
     private fun startAdapter(
