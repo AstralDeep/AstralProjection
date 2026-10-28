@@ -462,6 +462,7 @@
         @Environment(ThemeStore.self) private var theme
         let console: ConsoleModel
         @State private var query = ""
+        @State private var newChatHovered = false
         @FocusState private var searchFocused: Bool
         private var p: AstralPalette { theme.palette }
         private var chats: [ChatSummary] {
@@ -471,7 +472,7 @@
         }
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 10) {
                     Image("AstralIcon").resizable().frame(width: 26, height: 26).clipShape(
                         RoundedRectangle(cornerRadius: 7)
@@ -482,7 +483,7 @@
                         Button {
                             model.consoleDrawerOpen = false
                         } label: {
-                            Image(systemName: "xmark").frame(width: 32, height: 36)
+                            Image(systemName: "xmark").font(.system(size: 16)).frame(width: 24, height: 24)
                         }
                         .buttonStyle(.plain).accessibilityLabel("Hide chats")
                     }
@@ -492,15 +493,18 @@
                     model.newChat()
                     model.consoleDrawerOpen = false
                 } label: {
-                    Label(model.consoleLabel("new_chat"), systemImage: "square.and.pencil")
-                        .font(ConsoleTypography.footnote).frame(
-                            maxWidth: .infinity, minHeight: 32, alignment: .leading
-                        )
-                        .padding(.horizontal, 10)
-                        .background(p.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                    HStack(spacing: 8) {
+                        Image(systemName: "square.and.pencil").font(.system(size: 16)).frame(width: 24)
+                        Text(model.consoleLabel("new_chat")).font(ConsoleTypography.subheadline)
+                        Spacer(minLength: 0)
+                    }
+                    .foregroundStyle(p.text).padding(.horizontal, 8).frame(height: 30)
+                    .background(newChatHovered ? p.text.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 10))
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).disabled(model.mandatorySurface)
                 .accessibilityIdentifier("new-chat-button")
+                .onHover { newChatHovered = $0 }
                 MacSearchField(
                     prompt: "Search chats", text: $query, focused: $searchFocused, identifier: "workbench-chat-search")
                 ScrollView {
@@ -519,8 +523,8 @@
                                 } label: {
                                     HistoryRow(chat: chat, showsDetails: false)
                                         .background(
-                                            model.activeChatId == chat.id ? p.primary.opacity(0.13) : .clear,
-                                            in: RoundedRectangle(cornerRadius: 8))
+                                            model.activeChatId == chat.id ? p.text.opacity(0.08) : .clear,
+                                            in: RoundedRectangle(cornerRadius: 10))
                                 }
                                 .buttonStyle(.plain).disabled(model.mandatorySurface)
                                 .accessibilityIdentifier("workbench-chat-\(chat.id)")
@@ -553,7 +557,7 @@
                     HStack(spacing: 10) {
                         Text(console.identity.initials).font(ConsoleTypography.caption.weight(.semibold))
                             .frame(width: 32, height: 32).background(p.primary.opacity(0.18), in: Circle())
-                        Text(console.identity.name).font(ConsoleTypography.caption.weight(.semibold))
+                        Text(console.identity.name).font(ConsoleTypography.subheadline)
                         Spacer(minLength: 0)
                         Image(systemName: "chevron.up.chevron.down").font(ConsoleTypography.caption2).foregroundStyle(
                             p.muted)
@@ -565,7 +569,7 @@
                 .accessibilityValue("\(console.identity.name), \(console.identity.role)")
                 .accessibilityIdentifier("console-settings-menu")
             }
-            .padding(16).frame(maxHeight: .infinity)
+            .padding(.horizontal, 8).padding(.vertical, 12).frame(maxHeight: .infinity)
             .background(p.surface.opacity(0.6))
             .overlay(alignment: .trailing) { p.border.frame(width: 1) }
         }

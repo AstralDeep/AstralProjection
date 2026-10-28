@@ -184,8 +184,19 @@
 
         func testProjectTreeKeepsRowsCompactAndSearchDoesNotNavigate() async throws {
             XCTAssertNotNil(ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"])
-            let (model, suite) = try panelModel()
-            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            let io = MacComputerTestWorkspaceGrants()
+            var stored: [String: Data] = [:]
+            let grants = MacProjectGrants(
+                grants: io.port, persistence: .init(read: { stored[$0] }, write: { stored[$0] = $1 }))
+            let hostSuite = "ProjectTreeHost." + UUID().uuidString
+            let hostDefaults = try XCTUnwrap(UserDefaults(suiteName: hostSuite))
+            let computer = MacComputerHost(available: false, defaults: hostDefaults, projectGrants: grants)
+            let (model, suite) = try panelModel(host: computer)
+            defer {
+                computer.signedOut()
+                UserDefaults.standard.removePersistentDomain(forName: suite)
+                hostDefaults.removePersistentDomain(forName: hostSuite)
+            }
             let first = "12345678-1234-4234-9234-123456789abc"
             let second = "87654321-4321-4321-8321-cba987654321"
             let projects: JSONValue = .object([
@@ -260,6 +271,75 @@
             XCTAssertEqual(model.activeChatId, first + "-0")
             XCTAssertEqual(model.composerDraft, "Keep this draft")
             XCTAssertTrue(sent.isEmpty)
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                .resolvingSymlinksInPath()
+            let folders = [root.appendingPathComponent("primary-root"), root.appendingPathComponent("secondary-root")]
+            for folder in folders {
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            }
+            defer { try? FileManager.default.removeItem(at: root) }
+            computer.beginWorkspaceNegotiation(server: URL(string: "https://example.test")!, account: "owner")
+            computer.workspaceNegotiated(projects: true)
+            await model.projects.refresh()
+            XCTAssertNil(model.projects.errorMessage)
+            io.selection = folders
+            computer.updateProjectFolders { try grants.choose(project: first) }
+            XCTAssertEqual(grants.roots(project: first), folders.map(\.path))
+            let graphite: [String: JSONValue] = [
+                "bg": .string("#121214"), "surface": .string("#1b1b1f"), "surface2": .string("#232328"),
+                "border": .string("#303033"), "primary": .string("#7c3aed"), "secondary": .string("#6e6e78"),
+                "accent": .string("#a78bfa"), "text": .string("#ececef"), "muted": .string("#93939b"),
+                "success": .string("#5ec28f"), "warning": .string("#d4a94a"), "error": .string("#e17272"),
+                "info": .string("#9a8cf2"), "onError": .string("#121214"), "fieldBorder": .string("#6e6e75"),
+            ]
+            for preset in ["graphite", "daylight", "custom"] {
+                if preset == "daylight" {
+                    model.themeStore.apply(preset: preset)
+                } else {
+                    let colors =
+                        preset == "graphite"
+                        ? graphite
+                        : graphite.merging([
+                            "bg": .string("#181818"), "surface": .string("#232323"), "surface2": .string("#2d2d2d"),
+                            "primary": .string("#7849d1"), "accent": .string("#a67df2"), "text": .string("#ffffff"),
+                            "muted": .string("#9f9f9f"),
+                        ]) { _, value in value }
+                    model.themeStore.apply(spec: .object(["colors": .object(colors)]))
+                }
+                for width in [260, 360] {
+                    view.rootView = AnyView(
+                        MacProjectSidebar(query: "")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .background(model.themeStore.palette.bg).environment(model).environment(model.themeStore)
+                            .preferredColorScheme(model.themeStore.colorScheme))
+                    window.setContentSize(NSSize(width: width, height: 340))
+                    try await settle()
+                    let text = try recognizedText(view)
+                    XCTAssertTrue(text.contains("Project Alpha") && text.contains("Project Beta"), text)
+                    XCTAssertTrue(text.contains("Primary") && text.contains("primary-root"), text)
+                    XCTAssertTrue(text.contains("secondary-root"), text)
+                    XCTAssertTrue(text.contains("Read back saved poem"), text)
+                    XCTAssertFalse(text.contains("Needle conversation"), text)
+                    try attach(view, name: "Project tree \(preset) \(width)")
+                }
+            }
+            model.themeStore.apply(spec: .object(["colors": .object(graphite)]))
+            for width in [1024, 1440] {
+                let (workbench, workbenchWindow) = try mountWorkbench(model, width: width, activity: false)
+                model.projects.negotiate(true)
+                model.consoleDrawerOpen = true
+                try await settle()
+                XCTAssertTrue(model.projects.enabled)
+                XCTAssertEqual(model.projects.chats[first]?.first?.displayTitle, titles[0])
+                try attach(workbench, name: "Project workbench graphite \(width)")
+                workbenchWindow.close()
+            }
+            XCTAssertEqual(model.projects.selectedId, first)
+            XCTAssertEqual(model.activeChatId, first + "-0")
+            XCTAssertEqual(model.composerDraft, "Keep this draft")
+            let actions = sent.compactMap { (try? JSONValue.parse(Data($0.utf8)))?["action"]?.stringValue }
+            XCTAssertEqual(actions.count, sent.count)
+            XCTAssertTrue(actions.allSatisfy { ["get_history", "update_device"].contains($0) }, "\(actions)")
         }
 
         func testSlashInAnEmptyComposerOpensThePaletteAndRunsTheChosenAction() async throws {

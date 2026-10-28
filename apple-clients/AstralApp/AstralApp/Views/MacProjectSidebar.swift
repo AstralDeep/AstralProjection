@@ -10,6 +10,7 @@
         @Environment(ThemeStore.self) private var theme
         let query: String
         @State private var disclosure = ProjectSidebarDisclosure()
+        @State private var hoveredProject: String?
         @State private var renaming: ProjectRecord?
         @State private var name = ""
         private var p: AstralPalette { theme.palette }
@@ -30,9 +31,8 @@
 
         var body: some View {
             VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 0) {
-                    Text("Projects").font(ConsoleTypography.caption.weight(.semibold)).foregroundStyle(p.muted)
-                        .padding(.leading, 8)
+                HStack(spacing: 8) {
+                    Text("Projects").font(ConsoleTypography.subheadline.weight(.medium)).foregroundStyle(p.muted)
                     Spacer(minLength: 0)
                     Button {
                         model.presentProjectCreation()
@@ -48,7 +48,7 @@
                     .buttonStyle(.plain).accessibilityLabel("Refresh projects").accessibilityIdentifier(
                         "project-refresh")
                 }
-                .font(ConsoleTypography.footnote).foregroundStyle(p.muted).padding(.horizontal, 4)
+                .font(.system(size: 16)).foregroundStyle(p.muted).padding(.horizontal, 8)
                 if model.projects.loading || model.projects.negotiating { ProgressView().controlSize(.small) }
                 if let error = model.projects.errorMessage {
                     Text(error).font(ConsoleTypography.caption).foregroundStyle(p.error)
@@ -90,15 +90,6 @@
                         }
                         if expanded {
                             VStack(alignment: .leading, spacing: 0) {
-                                if search.isEmpty {
-                                    let roots = model.macComputerHost.projectGrants.roots(project: project.id)
-                                    VStack(spacing: 0) {
-                                        ForEach(Array(roots.enumerated()), id: \.element) { index, path in
-                                            folderRow(project: project.id, path: path, index: index)
-                                        }
-                                    }
-                                    .padding(.bottom, roots.isEmpty || chats(in: project).isEmpty ? 0 : 4)
-                                }
                                 ForEach(chats(in: project)) { chat in
                                     Button {
                                         model.openChat(chat.id)
@@ -113,8 +104,16 @@
                                         Button("Delete conversation", role: .destructive) { model.deleteChat(chat.id) }
                                     }
                                 }
+                                if search.isEmpty {
+                                    let roots = model.macComputerHost.projectGrants.roots(project: project.id)
+                                    VStack(spacing: 0) {
+                                        ForEach(Array(roots.enumerated()), id: \.element) { index, path in
+                                            folderRow(project: project.id, path: path, index: index)
+                                        }
+                                    }
+                                    .padding(.top, roots.isEmpty || chats(in: project).isEmpty ? 0 : 4)
+                                }
                             }
-                            .padding(.leading, 28).padding(.trailing, 4)
                         }
                     }
                     .accessibilityElement(children: .contain).accessibilityLabel(project.name)
@@ -138,14 +137,17 @@
         }
 
         private func projectHeader(_ project: ProjectRecord, expanded: Bool) -> some View {
-            HStack(spacing: 0) {
+            HStack(spacing: 8) {
                 Button {
                     disclosure.toggle(
                         project.id, selected: model.projects.selectedId, active: activeProject,
                         searching: !search.isEmpty)
                 } label: {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                        .font(ConsoleTypography.caption2).foregroundStyle(p.muted).frame(width: 24, height: 28)
+                    Image(
+                        systemName: hoveredProject == project.id
+                            ? (expanded ? "chevron.down" : "chevron.right") : (expanded ? "folder.fill" : "folder")
+                    )
+                    .font(.system(size: 16)).foregroundStyle(p.muted).frame(width: 24, height: 24)
                 }
                 .buttonStyle(.plain).disabled(!search.isEmpty)
                 .accessibilityLabel("\(expanded ? "Collapse" : "Expand") \(project.name)")
@@ -157,14 +159,10 @@
                 Button {
                     model.selectProject(project.id)
                 } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: model.projects.selectedId == project.id ? "folder.fill" : "folder")
-                            .foregroundStyle(p.muted).frame(width: 16).accessibilityHidden(true)
-                        Text(verbatim: project.name).lineLimit(1).truncationMode(.tail)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .font(ConsoleTypography.footnote.weight(.medium)).foregroundStyle(p.text).frame(height: 32)
-                    .contentShape(Rectangle())
+                    Text(verbatim: project.name).lineLimit(1).truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .font(ConsoleTypography.subheadline).foregroundStyle(p.text).frame(height: 30)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).accessibilityIdentifier("project-select-\(project.id)")
                 .accessibilityValue(model.projects.selectedId == project.id ? "Selected" : "").help(project.name)
@@ -201,14 +199,17 @@
                 } label: {
                     Image(systemName: "ellipsis").frame(width: 24, height: 24)
                 }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 24, height: 24)
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).tint(p.muted).frame(width: 24, height: 24)
                 .accessibilityLabel("Project controls for \(project.name)").accessibilityIdentifier(
                     "project-controls-\(project.id)")
             }
-            .font(ConsoleTypography.footnote).foregroundStyle(p.muted).padding(.horizontal, 4)
+            .font(.system(size: 16)).foregroundStyle(p.muted).padding(.horizontal, 8)
             .background(
-                model.projects.selectedId == project.id ? p.text.opacity(0.04) : .clear,
-                in: RoundedRectangle(cornerRadius: 6))
+                p.text.opacity(
+                    hoveredProject == project.id ? 0.08 : model.projects.selectedId == project.id ? 0.04 : 0),
+                in: RoundedRectangle(cornerRadius: 10)
+            )
+            .onHover { hoveredProject = $0 ? project.id : nil }
         }
 
         private func folderRecovery(_ project: ProjectRecord, paths: [String]) -> some View {
@@ -227,13 +228,13 @@
                 .accessibilityLabel("Choose folders for \(project.name)")
                 .accessibilityIdentifier("project-recover-folders-\(project.id)")
             }
-            .font(ConsoleTypography.caption).padding(.leading, 52).padding(.trailing, 8).padding(.vertical, 4)
+            .font(ConsoleTypography.caption).padding(.leading, 40).padding(.trailing, 8).padding(.vertical, 4)
             .accessibilityElement(children: .contain).accessibilityIdentifier("project-folder-warning-\(project.id)")
         }
 
         private func folderRow(project: String, path: String, index: Int) -> some View {
             HStack(spacing: 8) {
-                Image(systemName: "folder").frame(width: 16).accessibilityHidden(true)
+                Image(systemName: "folder").font(.system(size: 16)).frame(width: 24).accessibilityHidden(true)
                 Text(verbatim: URL(fileURLWithPath: path).lastPathComponent).lineLimit(1).truncationMode(.middle)
                 if index == 0 {
                     Text("Primary").font(ConsoleTypography.sans(10, relativeTo: .caption2))
@@ -256,11 +257,12 @@
                 } label: {
                     Image(systemName: "ellipsis").frame(width: 24, height: 24)
                 }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 24, height: 24)
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).tint(p.muted).frame(width: 24, height: 24)
                 .accessibilityLabel("Folder controls for \(path)").accessibilityIdentifier(
                     "project-folder-\(project)-\(index)")
             }
             .font(ConsoleTypography.caption).foregroundStyle(p.muted).frame(height: 26)
+            .padding(.leading, 40).padding(.trailing, 8)
             .help(path)
         }
     }
@@ -272,13 +274,13 @@
         @State private var hovered = false
 
         var body: some View {
-            Text(verbatim: chat.displayTitle).font(ConsoleTypography.footnote.weight(.regular))
+            Text(verbatim: chat.displayTitle).font(ConsoleTypography.subheadline)
                 .foregroundStyle(theme.palette.text).lineLimit(1).truncationMode(.tail)
-                .padding(.leading, 24).padding(.trailing, 8)
-                .frame(maxWidth: .infinity, minHeight: 28, maxHeight: 28, alignment: .leading)
+                .padding(.leading, 40).padding(.trailing, 8)
+                .frame(maxWidth: .infinity, minHeight: 30, maxHeight: 30, alignment: .leading)
                 .background(
-                    active ? theme.palette.primary.opacity(0.13) : hovered ? theme.palette.text.opacity(0.04) : .clear,
-                    in: RoundedRectangle(cornerRadius: 5)
+                    active || hovered ? theme.palette.text.opacity(0.08) : .clear,
+                    in: RoundedRectangle(cornerRadius: 10)
                 )
                 .contentShape(Rectangle()).onHover { hovered = $0 }
         }
