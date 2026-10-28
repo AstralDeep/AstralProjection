@@ -318,10 +318,38 @@ test("sign-out erases the selection immediately", async ({ page }) => {
   await choose(page, "Add note");
   await page.keyboard.press("Escape");
   await expect(chip(page)).toBeVisible();
-  await page.locator("#logout").evaluate(link => link.addEventListener("click", event => event.preventDefault()));
-  await page.locator("#logout").click();
-  await expect(chip(page)).toBeHidden();
-  expect(await storedSelections(page)).toEqual([]);
+  expect(await storedSelections(page)).toHaveLength(1);
+  const selectionAtSignOut = Promise.withResolvers();
+  await page.exposeFunction("__reportSignOutSelection", selectionAtSignOut.resolve);
+  await page.locator("#logout").evaluate((link, prefix) => {
+    link.addEventListener("click", () => {
+      const selectedChip = document.getElementById("astral-selection");
+      window.__reportSignOutSelection({
+        attached: Boolean(selectedChip?.isConnected),
+        visible: selectedChip?.checkVisibility(),
+        selections: Object.keys(localStorage).filter(key => key.startsWith(prefix)),
+      });
+    });
+  }, STORAGE_PREFIX);
+  const logoutUrl = `${ORIGIN}/auth/logout`;
+  const logoutReleased = Promise.withResolvers();
+  await page.route(logoutUrl, async route => {
+    await logoutReleased.promise;
+    await route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Signed out</title>" });
+  });
+  const logoutRequested = page.waitForRequest(logoutUrl);
+  const signingOut = page.locator("#logout").click();
+  try {
+    await logoutRequested;
+    expect(await selectionAtSignOut.promise).toEqual({ attached: true, visible: false, selections: [] });
+  } finally {
+    logoutReleased.resolve();
+    await signingOut;
+  }
+  await expect(page).toHaveURL(logoutUrl);
+  const storage = await page.context().storageState();
+  expect(storage.origins.flatMap(origin => origin.origin === ORIGIN
+    ? origin.localStorage.filter(entry => entry.name.startsWith(STORAGE_PREFIX)) : [])).toEqual([]);
 });
 
 test("New chat erases the selection because it applies to this chat only", async ({ page }) => {
