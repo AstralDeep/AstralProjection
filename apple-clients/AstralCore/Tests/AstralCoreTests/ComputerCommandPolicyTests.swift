@@ -131,11 +131,38 @@
             try FileManager.default.createDirectory(at: inside, withIntermediateDirectories: true)
             let alias = outside.appendingPathComponent("alias")
             try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: inside)
-            XCTAssertEqual(try ComputerCommandPolicy.workingDirectory(alias.path, roots: [root.path]), inside.path)
+            XCTAssertEqual(
+                code { try ComputerCommandPolicy.workingDirectory(alias.path, roots: [root.path]) },
+                "cwd_outside_workspace")
             let rootAlias = outside.appendingPathComponent("root-alias")
             try FileManager.default.createSymbolicLink(at: rootAlias, withDestinationURL: root)
             XCTAssertEqual(
                 try ComputerCommandPolicy.workingDirectory(inside.path, roots: [rootAlias.path]), inside.path)
+        }
+
+        func testFoldersOutsideEveryRootAreRefusedWithoutBeingResolved() throws {
+            let root = try folder()
+            let inside = root.appendingPathComponent("inside")
+            try FileManager.default.createDirectory(at: inside, withIntermediateDirectories: true)
+            var resolved: [String] = []
+            func check(_ cwd: String) throws -> String {
+                try ComputerCommandPolicy.workingDirectory(cwd, roots: [root.path]) { path in
+                    resolved.append(path)
+                    guard let pointer = realpath(path, nil) else { return nil }
+                    defer { free(pointer) }
+                    return String(cString: pointer)
+                }
+            }
+            for cwd in [
+                NSHomeDirectory() + "/Desktop", "/Volumes/Unmounted/share", root.path + "/../elsewhere",
+                root.path + "-sibling", "",
+            ] {
+                XCTAssertEqual(code { try check(cwd) }, "cwd_outside_workspace", cwd)
+            }
+            XCTAssertEqual(resolved, Array(repeating: root.path, count: 4))
+            resolved = []
+            XCTAssertEqual(try check(root.path + "/./inside/../inside"), inside.path)
+            XCTAssertEqual(resolved, [root.path, root.path + "/./inside/../inside"])
         }
 
         func testTimeoutAndStdinBounds() throws {

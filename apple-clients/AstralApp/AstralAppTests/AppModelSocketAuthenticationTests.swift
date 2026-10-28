@@ -21,7 +21,7 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
     }
 
     private func withModel(
-        jwtLifetime: TimeInterval = 3600,
+        jwtLifetime: TimeInterval = 3600, liveness: LivenessPolicy? = nil,
         _ body: (AppModel, SocketAuthenticationPeer, InMemoryTokenStore, CredentialTestClock) async throws -> Void
     ) async throws {
         let clock = CredentialTestClock()
@@ -42,6 +42,7 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
         let model = AppModel(
             conversationResumeStore: ConversationResumeStore(defaults: defaults),
             tokenStore: store, defaults: defaults, credentialClock: { clock.now })
+        if let liveness { model.socketLiveness = liveness }
         let registered = peer.expectRegistration()
         await model.bootstrap()
         await fulfillment(of: [registered], timeout: 10)
@@ -519,18 +520,57 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
         }
     }
 
-    func testUnsentQueryRestoresComposerAndIsNeverReplayed() async throws {
+    func testQueryAfterExpiryRenewsTheSocketAndIsSentOnceOnTheRenewedConnection() async throws {
         try await withModel { model, peer, _, clock in
             clock.advance(7200)
             let registered = peer.expectRegistration()
-            model.sendChat("Review this unsent message")
+            model.sendChat("Sent after the idle renewal")
             model.composerDraft = ""
             await fulfillment(of: [registered], timeout: 10)
-            try await waitUntil { model.connected && model.errorBanner != nil }
-            XCTAssertEqual(model.composerDraft, "Review this unsent message")
-            XCTAssertTrue(peer.events.isEmpty)
-            XCTAssertFalse(model.turnActive)
+            try await waitUntil { peer.events.contains { $0.frame.payload["action"] == .string("chat_message") } }
+            let renewed = try XCTUnwrap(peer.registrations.last)
+            let sent = peer.events.filter { $0.frame.payload["action"] == .string("chat_message") }
+            XCTAssertEqual(sent.count, 1)
+            XCTAssertEqual(sent.first?.socket, renewed.socket)
+            XCTAssertEqual(sent.first?.frame.payload["payload"]?["message"], .string("Sent after the idle renewal"))
             XCTAssertEqual(peer.registrations.count, 2)
+            XCTAssertEqual(model.composerDraft, "")
+            XCTAssertNil(model.errorBanner)
+            XCTAssertTrue(model.turnActive)
+        }
+    }
+
+    func testStaleSocketIsReplacedBeforeSendingAndTheQueryArrivesOnce() async throws {
+        try await withModel(liveness: LivenessPolicy(interval: 3600, timeout: 0.5, freshness: 0)) {
+            model, peer, _, _ in
+            let original = try XCTUnwrap(peer.registrations.last).socket
+            peer.silence(socket: original)
+            let registered = peer.expectRegistration()
+            model.sendChat("Sent after the socket went quiet")
+            await fulfillment(of: [registered], timeout: 10)
+            try await waitUntil { peer.events.contains { $0.frame.payload["action"] == .string("chat_message") } }
+            let sent = peer.events.filter { $0.frame.payload["action"] == .string("chat_message") }
+            XCTAssertEqual(sent.count, 1)
+            XCTAssertNotEqual(sent.first?.socket, original)
+            XCTAssertEqual(sent.first?.socket, peer.registrations.last?.socket)
+            XCTAssertNil(model.errorBanner)
+            XCTAssertEqual(model.composerDraft, "")
+            try await waitUntil { model.connected }
+        }
+    }
+
+    func testIdleKeepaliveShowsTheTrueStateAndReconnectsWithoutASend() async throws {
+        try await withModel(liveness: LivenessPolicy(interval: 0.2, timeout: 0.3, freshness: 0.1)) {
+            model, peer, _, _ in
+            let original = try XCTUnwrap(peer.registrations.last).socket
+            let registered = peer.expectRegistration()
+            peer.silence(socket: original)
+            try await waitUntil { !model.connected }
+            await fulfillment(of: [registered], timeout: 10)
+            try await waitUntil { model.connected }
+            XCTAssertNotEqual(peer.registrations.last?.socket, original)
+            XCTAssertFalse(peer.events.contains { $0.socket == original })
+            XCTAssertNil(model.errorBanner)
         }
     }
 
@@ -951,6 +991,7 @@ private final class SocketAuthenticationPeer: @unchecked Sendable {
     private var refreshStatus = 200
     private var refreshedSubject = "owner"
     private var refreshLifetime: TimeInterval = 86400
+    private var silenced: Set<Int> = []
 
     init(clock: CredentialTestClock, jwtLifetime: TimeInterval = 3600) throws {
         self.clock = clock
@@ -1111,9 +1152,14 @@ private final class SocketAuthenticationPeer: @unchecked Sendable {
             var body = Array(bytes[offset..<(offset + length)])
             if masked { for index in body.indices { body[index] ^= bytes[maskOffset + index % 4] } }
             connection.buffer.removeFirst(offset + length)
+            if silenced.contains(connection.socket) { continue }
             if opcode == 8 {
                 connection.network.cancel()
                 return
+            }
+            if opcode == 9 {
+                write(Data(body), opcode: 10, to: connection)
+                continue
             }
             guard opcode == 1, let text = String(bytes: body, encoding: .utf8), let frame = InboundFrame.parse(text)
             else { continue }
@@ -1132,8 +1178,11 @@ private final class SocketAuthenticationPeer: @unchecked Sendable {
     }
 
     private func send(_ text: String, to connection: Connection) {
-        let content = Data(text.utf8)
-        var header = Data([129])
+        write(Data(text.utf8), opcode: 1, to: connection)
+    }
+
+    private func write(_ content: Data, opcode: UInt8, to connection: Connection) {
+        var header = Data([128 | opcode])
         if content.count < 126 {
             header.append(UInt8(content.count))
         } else {
@@ -1149,6 +1198,10 @@ private final class SocketAuthenticationPeer: @unchecked Sendable {
                 self.send(text, to: connection)
             }
         }
+    }
+
+    func silence(socket: Int) {
+        queue.sync { _ = silenced.insert(socket) }
     }
 
     func disconnect(socket: Int) {

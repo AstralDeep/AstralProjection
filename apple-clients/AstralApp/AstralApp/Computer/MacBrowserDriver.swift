@@ -1,5 +1,6 @@
 // Executes the ten browser verbs in the Mac browser pane for MacComputerHost, acting only on approved origins,
-// refusing stale references and secret fields, and holding consequential controls until a matching server permit.
+// refusing stale references and secret fields, and holding consequential controls until a matching server permit
+// or, while this Mac bypasses approvals, a request the server marked bypass-approved.
 // The host routes browser_* requests here through MacBrowserVerbHandling; MacBrowserPaneView presents the pane.
 
 #if os(macOS)
@@ -40,6 +41,8 @@
         @ObservationIgnored weak var host: MacComputerHost?
         @ObservationIgnored var takeover: () -> Void
         @ObservationIgnored var agentActive: () -> Bool
+        @ObservationIgnored var bypassActive: () -> Bool
+        @ObservationIgnored private var bypassedRequest = false
         @ObservationIgnored private let defaults: UserDefaults
         @ObservationIgnored private var owner: String?
         @ObservationIgnored private var sessionId: String?
@@ -63,6 +66,7 @@
             self.host = host
             takeover = { [weak host] in host?.takeover() }
             agentActive = { [weak host] in host?.session?.state == "active" }
+            bypassActive = { [weak host] in host?.bypass == true }
             self.pane.navigationRule = { [weak self] url, user in self?.allows(url, userInitiated: user) ?? false }
             self.pane.humanInput = { [weak self] in self?.humanInput() }
             host?.browser = self
@@ -105,14 +109,17 @@
             }
             return try await execute(
                 request.verb, args: request.args, session: request.sessionId,
-                remaining: ticket.expiresAt - ProcessInfo.processInfo.systemUptime, authorize: authorize)
+                remaining: ticket.expiresAt - ProcessInfo.processInfo.systemUptime,
+                approvalSource: request.approvalSource, authorize: authorize)
         }
 
         func execute(
             _ verb: String, args: [String: JSONValue], session: String, remaining: Double,
-            authorize: @escaping @Sendable () throws -> Void
+            approvalSource: String? = nil, authorize: @escaping @Sendable () throws -> Void
         ) async throws -> [String: JSONValue] {
             try authorize()
+            bypassedRequest = approvalSource == "bypass" && bypassActive()
+            defer { bypassedRequest = false }
             if session != sessionId { resetSession(session) }
             let ceiling = ["browser_navigate", "browser_wait"].contains(verb) ? 15.0 : 5.0
             let budget = min(ceiling, remaining - 0.35)
@@ -299,7 +306,7 @@
 
         private func permits(_ args: [String: JSONValue], ref: String, snapshot: String, origin: String) -> Bool {
             let key = snapshot + "|" + ref
-            if granted.contains(key) { return true }
+            if granted.contains(key) || bypassedRequest { return true }
             guard let permit = args["permit"]?.objectValue, permit["origin"]?.stringValue == origin,
                 permit["snapshot_id"]?.stringValue == snapshot, issued.contains(key), !consumed.contains(key)
             else { return false }

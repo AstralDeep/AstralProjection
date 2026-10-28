@@ -1,5 +1,6 @@
 // Closed v1 computer-host models validate native execution requests before they reach platform drivers.
-// Frames and current-channel transport use these values without granting local agent-host capability.
+// Frames and current-channel transport use these values without granting local agent-host capability; the
+// approval source and session bypass flag are decoded tolerantly for the host's bypass mode.
 
 import CryptoKit
 import Foundation
@@ -101,6 +102,7 @@ public struct ComputerHostSession: Sendable, Equatable {
     public let hostId: String
     public let state: String
     public let controller: String
+    public let bypass: Bool?
     public init(json: JSONValue) throws {
         guard let id = json["session_id"]?.stringValue, computerUUID(id),
             let host = json["host_id"]?.stringValue, computerUUID(host),
@@ -110,6 +112,7 @@ public struct ComputerHostSession: Sendable, Equatable {
         hostId = host
         self.state = state
         controller = String((json["controller_label"]?.stringValue ?? "your device").prefix(100))
+        bypass = json["bypass"]?.boolValue
     }
 }
 
@@ -134,18 +137,24 @@ public struct ComputerHostRequest: Sendable, Equatable {
     public let args: [String: JSONValue]
     public let deadline: Double
     public let digest: String
+    public let approvalSource: String?
 
     public init(json: JSONValue) throws {
-        guard let object = json.objectValue,
-            Set(object.keys) == ["type", "request_id", "session_id", "verb", "args", "deadline_ms"],
+        let envelope: Set<String> = ["type", "request_id", "session_id", "verb", "args", "deadline_ms"]
+        guard let object = json.objectValue, Set(object.keys).subtracting(["approval_source"]) == envelope,
             object["type"] == .string("computer_request"), let id = object["request_id"]?.stringValue,
             id.range(of: "^creq_[0-9a-f]{32}$", options: .regularExpression) != nil,
             let session = object["session_id"]?.stringValue, computerUUID(session),
             let verb = object["verb"]?.stringValue, Self.verbs.contains(verb),
-            let args = object["args"]?.objectValue,
+            var args = object["args"]?.objectValue,
             let milliseconds = object["deadline_ms"]?.numberValue, milliseconds.isFinite,
             milliseconds.rounded() == milliseconds, (1...Self.maximumDeadlineMs(for: verb)).contains(milliseconds)
         else { throw ComputerHostError("out_of_range", "The computer request envelope is invalid.") }
+        let sources = [object["approval_source"], args.removeValue(forKey: "approval_source")].compactMap { $0 }
+        guard sources.allSatisfy({ $0.stringValue.map { computerFullMatch($0, "^[a-z_]{1,32}$") } == true }),
+            Set(sources.compactMap(\.stringValue)).count <= 1
+        else { throw ComputerHostError("out_of_range", "The computer request envelope is invalid.") }
+        approvalSource = sources.first?.stringValue
         self.id = id
         sessionId = session
         self.verb = verb
@@ -444,7 +453,8 @@ public enum ComputerHostOutbound {
         guard let frame = try? JSONValue.parse(Data(frameText.utf8)), frame["type"] == .string("ui_event") else {
             return false
         }
-        return ["computer_event", "computer_response"].contains(frame["action"]?.stringValue ?? "")
+        return ["computer_event", "computer_response", "chrome_computer_bypass_set"].contains(
+            frame["action"]?.stringValue ?? "")
     }
     public static func bindToConnection(
         _ text: String, connectionGeneration: String,
@@ -509,6 +519,10 @@ public enum ComputerHostOutbound {
                 ? Set(payload.keys) == ["request_id", "ok", "result"] && payload["result"]?.objectValue != nil
                 : Set(payload.keys) == ["request_id", "ok", "error"] && payload["error"]?["code"]?.stringValue != nil
                     && payload["error"]?["message"]?.stringValue != nil
+        }
+        if json["action"] == .string("chrome_computer_bypass_set") {
+            return Set(payload.keys) == ["host_id", "enabled"] && payload["enabled"]?.boolValue != nil
+                && payload["host_id"]?.stringValue.map(computerUUID) == true
         }
         guard json["action"] == .string("computer_event"), let host = payload["host_id"]?.stringValue,
             computerUUID(host), let event = payload["event"]?.stringValue

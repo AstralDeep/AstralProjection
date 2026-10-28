@@ -61,6 +61,7 @@
                     Text(host.statusLabel).foregroundStyle(theme.palette.muted).multilineTextAlignment(.trailing)
                         .accessibilityIdentifier("settings-computer-status")
                 }
+                MacBypassToggle(host: host, origin: .settings).accessibilityIdentifier("settings-computer-bypass")
                 HStack {
                     Spacer()
                     Button("Computer Controls…") {
@@ -75,6 +76,7 @@
             .font(ConsoleTypography.subheadline)
             .background(theme.palette.surface)
             .fixedSize(horizontal: false, vertical: true)
+            .bypassConfirmation(host: host, origin: .settings)
         }
     }
 

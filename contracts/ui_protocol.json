@@ -4367,6 +4367,7 @@
     "chrome_author_start",
     "chrome_author_tasks",
     "chrome_close",
+    "chrome_computer_bypass_set",
     "chrome_computer_forget",
     "chrome_computer_grant_revoke",
     "chrome_computer_session_pause",
@@ -4820,6 +4821,26 @@
       "scope": "The owner's live task grants for this session, refreshed when a grant is created, used, expires or is revoked; always empty on a paused or ended session. A client lists them and revokes one with ui_event chrome_computer_grant_revoke {session_id, host_id, chat_id, grant_id} taken from the same frame. A client never caches, extends or widens a grant.",
       "introduced_by": "macOS client production readiness, Deep server contracts",
       "contract": "accept_actions.chrome_computer_grant_revoke"
+    },
+    {
+      "field": "grant_scope",
+      "shape": "app | window | command | origin: the scope kind of the task-grant offer this button carries",
+      "carried_on": [
+        "ui_event.authorize_action.payload"
+      ],
+      "scope": "Present on each \"Allow for this task\" button of a review card ({hitl_request_id, decision: grant_task, grant_scope}); a Mac input card can offer both window and app. A client sends the button payload unchanged. The server binds only an offer the card made, refuses grant_scope on any other decision, and treats a grant_task without it as the narrowest offer.",
+      "introduced_by": "macOS live findings, Deep server contracts",
+      "contract": "accept_actions.authorize_action"
+    },
+    {
+      "field": "bypass",
+      "shape": "boolean",
+      "carried_on": [
+        "computer_session"
+      ],
+      "scope": "True while bypass permissions is on for this session's host. Only that host's own signed-in client connection switches it, with ui_event chrome_computer_bypass_set {host_id, enabled}; the server refuses it from any other socket, user, MCP or machine channel. While on, computer-use review cards on that host are approved by the server with approval_source bypass in the audit row and the tool result's _data, except privilege escalation commands, keyboard input into secure-input or terminal windows or without a known target window, terminal-app input, confirm_action, resume_session and actions aimed at the Astral app, which still ask. It clears when the owner turns it off, the host disconnects, re-registers or withdraws computer access, and on server restart. My computers shows the same state as a bypass on badge and the toggle on This computer.",
+      "introduced_by": "macOS live findings, Deep server contracts",
+      "contract": "accept_actions.chrome_computer_bypass_set"
     },
     {
       "field": "pinned, archived",
