@@ -410,7 +410,10 @@
 
         func testSurfaceAccessibilityRejectsMissingOwnedWindow() {
             XCTAssertThrowsError(
-                try SurfaceAccessibility.elements(windowTitle: "Absent surface \(UUID().uuidString)"))
+                try SurfaceAccessibility.elements(windowTitle: "Absent surface \(UUID().uuidString)")
+            ) { error in
+                XCTAssertEqual(error as? SurfaceAccessibility.Failure, .missingWindow)
+            }
         }
 
         func testSurfaceAccessibilityRejectsAmbiguousOwnedWindows() async throws {
@@ -425,7 +428,25 @@
             second.window.title = first.window.title
             try await first.settle()
             try await second.settle()
-            XCTAssertThrowsError(try SurfaceAccessibility.elements(windowTitle: first.window.title))
+            let application = AXUIElementCreateApplication(getpid())
+            var rawWindows: CFTypeRef?
+            XCTAssertEqual(
+                AXUIElementCopyAttributeValue(application, kAXWindowsAttribute as CFString, &rawWindows), .success)
+            let windows = try XCTUnwrap(rawWindows as? [AXUIElement])
+            let duplicates = windows.filter { window in
+                var title: CFTypeRef?
+                return AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &title) == .success
+                    && title as? String == first.window.title
+            }
+            XCTAssertEqual(duplicates.count, 2)
+            for window in duplicates {
+                var pid: pid_t = 0
+                XCTAssertEqual(AXUIElementGetPid(window, &pid), .success)
+                XCTAssertEqual(pid, getpid())
+            }
+            XCTAssertThrowsError(try SurfaceAccessibility.elements(windowTitle: first.window.title)) { error in
+                XCTAssertEqual(error as? SurfaceAccessibility.Failure, .ambiguousWindow)
+            }
         }
 
         func testSlashInAnEmptyComposerOpensThePaletteAndRunsTheChosenAction() async throws {
