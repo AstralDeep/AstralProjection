@@ -153,6 +153,7 @@
                 for (id, entry) in candidate.projects
                 where projectIds.contains(id) && !entry.quarantined && resources[id] == nil {
                     var restored: [Resource] = []
+                    var persisting = false
                     do {
                         for bookmark in entry.bookmarks {
                             let (url, stale) = try grants.resolveBookmark(bookmark.data)
@@ -162,6 +163,7 @@
                             restored.append(try retain(url, bookmark: bookmark))
                         }
                         try current(operation, key: key)
+                        persisting = true
                         candidate.projects[id]?.revision = try increment(entry.revision)
                         candidate.projects[id]?.bookmarks = restored.map(\.bookmark)
                         candidate.generation = try increment(candidate.generation)
@@ -182,7 +184,7 @@
                         try persistence.write(key, JSONEncoder().encode(candidate))
                         try current(operation, key: key)
                         document = candidate
-                        errorMessage = error.localizedDescription
+                        if persisting { errorMessage = error.localizedDescription }
                     }
                 }
                 try publish()

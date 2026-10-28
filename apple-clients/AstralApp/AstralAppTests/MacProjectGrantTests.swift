@@ -246,6 +246,86 @@
             }
         }
 
+        func testBookmarkResolutionFailureUsesDurableRecoveryNoticeWithoutMisleadingGlobalError() throws {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                .resolvingSymlinksInPath()
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let io = MacComputerTestWorkspaceGrants()
+            io.selection = [root]
+            var bytes: [String: Data] = [:]
+            let persistence = MacProjectGrantPersistence(read: { bytes[$0] }, write: { bytes[$0] = $1 })
+            let server = URL(string: "https://example.com")!
+            let original = MacProjectGrants(grants: io.port, persistence: persistence)
+            original.bind(server: server, account: "owner", device: "mac")
+            try original.reconcile(projectIds: [project])
+            try original.choose(project: project)
+            original.bind(server: nil, account: nil, device: "mac")
+            io.resolveFailure = true
+            for _ in 0..<3 {
+                let reopened = MacProjectGrants(grants: io.port, persistence: persistence)
+                reopened.bind(server: server, account: "owner", device: "mac")
+                try reopened.reconcile(projectIds: [project])
+                XCTAssertEqual(reopened.unavailableProjects[project], [root.path])
+                XCTAssertTrue(reopened.roots(project: project).isEmpty)
+                XCTAssertNil(reopened.errorMessage)
+                reopened.bind(server: nil, account: nil, device: "mac")
+            }
+            io.resolveFailure = false
+            let repaired = MacProjectGrants(grants: io.port, persistence: persistence)
+            repaired.bind(server: server, account: "owner", device: "mac")
+            try repaired.reconcile(projectIds: [project])
+            try repaired.choose(project: project)
+            XCTAssertTrue(repaired.unavailableProjects.isEmpty)
+            XCTAssertNil(repaired.errorMessage)
+            XCTAssertEqual(repaired.roots(project: project), [root.path])
+            repaired.bind(server: nil, account: nil, device: "mac")
+            XCTAssertEqual(io.started.count, io.stopped.count)
+            let corrupt = MacProjectGrants(
+                grants: io.port,
+                persistence: .init(
+                    read: { _ in Data("invalid stored document".utf8) }, write: { _, _ in }))
+            corrupt.bind(server: server, account: "owner", device: "mac")
+            XCTAssertNotNil(corrupt.errorMessage)
+            XCTAssertTrue(corrupt.unavailableProjects.isEmpty)
+        }
+
+        func testRestorationWriteFailureRemainsVisibleAfterQuarantinePersists() throws {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                .resolvingSymlinksInPath()
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let io = MacComputerTestWorkspaceGrants()
+            io.selection = [root]
+            var bytes: [String: Data] = [:]
+            var writes = 0
+            var failingWrite: Int?
+            let persistence = MacProjectGrantPersistence(
+                read: { bytes[$0] },
+                write: {
+                    writes += 1
+                    if writes == failingWrite { throw CocoaError(.fileWriteNoPermission) }
+                    bytes[$0] = $1
+                })
+            let server = URL(string: "https://example.com")!
+            let original = MacProjectGrants(grants: io.port, persistence: persistence)
+            original.bind(server: server, account: "owner", device: "mac")
+            try original.reconcile(projectIds: [project])
+            try original.choose(project: project)
+            original.bind(server: nil, account: nil, device: "mac")
+            writes = 0
+            failingWrite = 2
+            let reopened = MacProjectGrants(grants: io.port, persistence: persistence)
+            reopened.bind(server: server, account: "owner", device: "mac")
+            try reopened.reconcile(projectIds: [project])
+            XCTAssertEqual(writes, 3)
+            XCTAssertEqual(reopened.unavailableProjects[project], [root.path])
+            XCTAssertTrue(reopened.roots(project: project).isEmpty)
+            XCTAssertEqual(reopened.errorMessage, CocoaError(.fileWriteNoPermission).localizedDescription)
+            reopened.bind(server: nil, account: nil, device: "mac")
+            XCTAssertEqual(io.started.count, io.stopped.count)
+        }
+
         func testFolderRowsObserveSelectionPrimaryChangesAndRemoval() async throws {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
                 .resolvingSymlinksInPath()
