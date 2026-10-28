@@ -6,6 +6,7 @@
     import AppKit
     import AstralCore
     import SwiftUI
+    import Vision
     import XCTest
 
     @testable import AstralDeep
@@ -580,8 +581,16 @@
                     MacBypassConfirmation(host: host), model: model, size: CGSize(width: 440, height: 240),
                     preset: preset)
                 try await sheet.settle()
+                let titleRequest = VNRecognizeTextRequest()
+                titleRequest.recognitionLevel = .accurate
+                titleRequest.usesLanguageCorrection = false
+                titleRequest.regionOfInterest = CGRect(x: 0, y: 0.75, width: 1, height: 0.25)
+                try VNImageRequestHandler(cgImage: XCTUnwrap(sheet.bitmap().cgImage)).perform([titleRequest])
+                let title = (titleRequest.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(
+                    separator: "\n")
+                XCTAssertEqual(title, "Bypass approvals on this Mac?", preset)
                 let text = try sheet.text()
-                for kept in ["Bypass approvals on this Mac?", "Cancel", "Bypass approvals", "without asking"] {
+                for kept in ["Cancel", "Bypass approvals", "without asking"] {
                     XCTAssertTrue(text.contains(kept), "\(preset) missing \(kept): \(text)")
                 }
                 XCTAssertFalse(text.contains("Done"), preset)
