@@ -24,6 +24,7 @@
         @ObservationIgnored private var mutationEpoch = UUID()
         @ObservationIgnored private var selectionEpoch = UUID()
         @ObservationIgnored private var pendingChats: [String: String] = [:]
+        @ObservationIgnored private var refreshDuringCreation = false
         @ObservationIgnored private var pendingProject: (String, String)?
 
         func bind(scope: String?, client: RestClient?) {
@@ -34,6 +35,7 @@
             negotiating = scope != nil && client != nil
             loading = false
             creatingChat = false
+            refreshDuringCreation = false
             self.client = client
             if self.scope != scope {
                 projects = []
@@ -65,6 +67,7 @@
         }
         func refresh() async {
             guard enabled, let client else { return }
+            if creatingChat { refreshDuringCreation = true }
             let connection = epoch
             let operation = UUID()
             refreshEpoch = operation
@@ -197,21 +200,35 @@
                 if let chat = ChatSummary(
                     json: .object(["id": .string(id), "project_id": .string(project), "title": .string("")]))
                 {
-                    chats[project, default: []].insert(chat, at: 0)
+                    let current = chats[project]?.first { $0.id == id } ?? chat
+                    chats[project, default: []].removeAll { $0.id == id }
+                    chats[project, default: []].insert(current, at: 0)
                 }
-                creatingChat = false
+                finishChatCreation(connection: connection)
                 errorMessage = nil
                 return id
             } catch {
                 if epoch == connection, mutationEpoch == operation {
-                    creatingChat = false
+                    finishChatCreation(connection: connection)
                     if !(error is CancellationError) { errorMessage = error.localizedDescription }
                 }
                 throw error
             }
         }
+        private func finishChatCreation(connection: UUID) {
+            creatingChat = false
+            refreshEpoch = UUID()
+            loading = false
+            guard refreshDuringCreation else { return }
+            refreshDuringCreation = false
+            Task { [weak self] in
+                guard let self, self.epoch == connection else { return }
+                await self.refresh()
+            }
+        }
         private func beginMutation() -> UUID {
             creatingChat = false
+            refreshDuringCreation = false
             mutationEpoch = UUID()
             refreshEpoch = UUID()
             loading = false

@@ -601,6 +601,8 @@
             suspendAccess()
             lastError = "Computer control stopped because this desktop became unavailable."
         }
+        func isLocalReviewHost(_ id: String) -> Bool { id == hostId }
+
         func requestBypass(_ value: Bool, from origin: MacBypassOrigin) {
             guard value else {
                 setBypass(false)

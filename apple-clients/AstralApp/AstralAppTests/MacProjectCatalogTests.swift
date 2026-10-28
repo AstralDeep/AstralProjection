@@ -427,6 +427,59 @@
             }
         }
 
+        func testCreationConvergesWithRefreshBeforeAndAfterPostReply() async throws {
+            for stale in [false, true] {
+                let server = ProjectCatalogServer(project: project)
+                await server.succeedCreations()
+                await server.raceCreation(staleSnapshot: stale)
+                let model = AppModel(
+                    tokenStore: InMemoryTokenStore(), defaults: UserDefaults(suiteName: UUID().uuidString)!)
+                model.projects.bind(
+                    scope: "owner",
+                    client: RestClient(
+                        serverBase: URL(string: "https://example.test")!, tokenProvider: { nil },
+                        transport: { try await server.respond($0) }))
+                model.projects.negotiate(true)
+                await model.projects.refresh()
+                model.projects.select(project)
+                let creation = Task { try await model.projects.createChat() }
+                for _ in 0..<2000 where await server.created.isEmpty { await Task.yield() }
+                let count = await server.creationCount()
+                XCTAssertEqual(count, 1)
+                let refresh = Task { await model.projects.refresh() }
+                if stale {
+                    for _ in 0..<2000 where await !server.snapshotHeld() { await Task.yield() }
+                    let held = await server.snapshotHeld()
+                    XCTAssertTrue(held)
+                } else {
+                    await refresh.value
+                }
+                await server.releaseCreation()
+                let id = try await creation.value
+                model.activeChatId = id
+                if stale {
+                    await server.releaseSnapshot()
+                    await refresh.value
+                }
+                for _ in 0..<2000 where await server.chatReads < 3 { await Task.yield() }
+                for _ in 0..<2000 where model.projects.loading { await Task.yield() }
+                XCTAssertEqual(model.projects.chats[project]?.map(\.id), [id], "stale=\(stale)")
+                XCTAssertEqual(model.projects.chats[project]?.first?.title, "Server title")
+                XCTAssertEqual(model.projects.project(for: id), project)
+                XCTAssertEqual(model.projects.selectedId, project)
+                XCTAssertEqual(model.activeChatId, id)
+                var sent = 0
+                model.outboundTap = { _ in sent += 1 }
+                model.sendChat("next turn")
+                for _ in 0..<100 { await Task.yield() }
+                let finalCount = await server.creationCount()
+                XCTAssertEqual(finalCount, 1)
+                XCTAssertEqual(model.activeChatId, id)
+                XCTAssertGreaterThan(sent, 0)
+                XCTAssertNil(model.projects.errorMessage)
+            }
+        }
+
         func testPartialCatalogFailureCannotQuarantineOrPublishPartialRows() async throws {
             let server = ProjectCatalogServer(project: project)
             let catalog = MacProjectCatalog()
@@ -455,6 +508,21 @@
         var pagedFailure = false
         var loseFirst = true
         func succeedCreations() { loseFirst = false }
+        var racing = false
+        var staleSnapshot = false
+        var heldSnapshot: CheckedContinuation<Void, Never>?
+        var chatReads = 0
+        func raceCreation(staleSnapshot: Bool) {
+            racing = true
+            self.staleSnapshot = staleSnapshot
+            hold = true
+        }
+        func snapshotHeld() -> Bool { heldSnapshot != nil }
+        func creationCount() -> Int { created.count }
+        func releaseSnapshot() {
+            heldSnapshot?.resume()
+            heldSnapshot = nil
+        }
         var heldCreation: CheckedContinuation<Void, Never>?
         var hold = false
         func holdCreations() { hold = true }
@@ -504,9 +572,17 @@
                 )
             }
             if request.url!.path.hasSuffix("/chats") && request.httpMethod == "GET" {
+                chatReads += 1
+                let ids = racing && !(staleSnapshot && hold) ? Array(Set(created)) : []
+                if racing && staleSnapshot && hold && !created.isEmpty {
+                    await withCheckedContinuation { heldSnapshot = $0 }
+                }
+                let rows: [JSONValue] = ids.map {
+                    .object(["id": .string($0), "project_id": .string(project), "title": .string("Server title")])
+                }
                 return (
                     200,
-                    try JSONValue.object(["project_id": .string(project), "chats": .array([]), "next_cursor": .null])
+                    try JSONValue.object(["project_id": .string(project), "chats": .array(rows), "next_cursor": .null])
                         .encoded()
                 )
             }

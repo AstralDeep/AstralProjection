@@ -361,6 +361,14 @@ final class AppModel: NSObject {
     @ObservationIgnored private var approvalOrigins: [String: SubmittedApproval] = [:]
     @ObservationIgnored private var approvalHosts: [String: String] = [:]
     @ObservationIgnored private var withdrawingApprovals: Set<String> = []
+    #if os(macOS)
+        private struct RetiredComputerReviewKey: Hashable {
+            let chat: String?
+            let request: String
+        }
+        @ObservationIgnored private var retiredComputerReviews: [RetiredComputerReviewKey: SubmittedApproval] = [:]
+        @ObservationIgnored private var reviewRetirementOverflow: SubmittedApproval?
+    #endif
     @ObservationIgnored private var redispatchable: Set<String> = []
     @ObservationIgnored private var activityObservationPaused = false
     static let maximumActivityRows = 200
@@ -1181,7 +1189,13 @@ final class AppModel: NSObject {
             retireOrdinarySurfaceRequests()
             surfaceFailureMessage = "Reload Safety to check current stop status before trying again."
         }
-        if continuity.connectionGeneration != generation { retireSubmittedApprovals() }
+        if continuity.connectionGeneration != generation {
+            retireSubmittedApprovals()
+            #if os(macOS)
+                retiredComputerReviews.removeAll()
+                reviewRetirementOverflow = nil
+            #endif
+        }
         resetViewportRefresh(clearSubmissionHistory: true)
         invalidateWorkRead()
         clearPendingOperationSubmissions()
@@ -2103,7 +2117,12 @@ final class AppModel: NSObject {
         }
     }
 
-    func handleFrame(_ frame: InboundFrame) {
+    func handleFrame(_ incoming: InboundFrame) {
+        #if os(macOS)
+            let frame = sanitizedComputerReviews(incoming)
+        #else
+            let frame = incoming
+        #endif
         if frame.name == "chat_status", frame.payload["approval_decision"] != nil {
             consumeApprovalReceipt(frame)
             return
@@ -3851,6 +3870,62 @@ final class AppModel: NSObject {
         #endif
     }
 
+    #if os(macOS)
+        private func currentReviewScope(_ origin: SubmittedApproval) -> Bool {
+            origin.owner == downloadOwner && origin.connection == continuity.connectionGeneration
+        }
+
+        private func retireComputerReview(_ id: String, chat: String?) {
+            retiredComputerReviews = retiredComputerReviews.filter { currentReviewScope($0.value) }
+            if let overflow = reviewRetirementOverflow, !currentReviewScope(overflow) { reviewRetirementOverflow = nil }
+            let key = RetiredComputerReviewKey(chat: chat, request: id)
+            guard retiredComputerReviews[key] == nil else { return }
+            let origin = SubmittedApproval(
+                owner: downloadOwner, connection: continuity.connectionGeneration, chat: chat, row: nil,
+                decision: "withdraw", expectsReceipt: true)
+            guard retiredComputerReviews.count < 512 else {
+                reviewRetirementOverflow = origin
+                return
+            }
+            retiredComputerReviews[key] = origin
+        }
+
+        private func suppressComputerReview(_ card: AstralComponent, chat: String?) -> Bool {
+            guard let approval = Self.computerApproval(card) else { return false }
+            let id = approval.requestId
+            if macComputerHost.bypass,
+                let host = card.raw["computer_host_id"]?.stringValue, macComputerHost.isLocalReviewHost(host)
+            {
+                retireComputerReview(id, chat: chat)
+                return true
+            }
+            if let overflow = reviewRetirementOverflow, currentReviewScope(overflow) { return true }
+            return retiredComputerReviews[RetiredComputerReviewKey(chat: chat, request: id)].map(currentReviewScope)
+                == true
+        }
+
+        private func sanitizedComputerReviews(_ frame: InboundFrame) -> InboundFrame {
+            guard
+                ["ui_render", "ui_update", "ui_append", "ui_upsert", "ui_stream_data", "conversation_snapshot"]
+                    .contains(frame.name),
+                frame.payload["connection_generation"]?.stringValue == continuity.connectionGeneration
+            else { return frame }
+            let chat = frame.chatId ?? activeChatId
+            func stripped(_ value: JSONValue) -> JSONValue? {
+                if let values = value.arrayValue { return .array(values.compactMap(stripped)) }
+                guard var object = value.objectValue else { return value }
+                if object["type"] == .string("card"),
+                    suppressComputerReview(AstralComponent(type: "card", raw: value), chat: chat)
+                {
+                    return nil
+                }
+                for (key, child) in object { object[key] = stripped(child) }
+                return .object(object)
+            }
+            return InboundFrame(name: frame.name, payload: stripped(frame.payload) ?? .object([:]))
+        }
+    #endif
+
     private func withdrawLocalComputerReviews(_ host: String) {
         let ids = Set(
             approvalHosts.compactMap { id, value -> String? in
@@ -3932,6 +4007,16 @@ final class AppModel: NSObject {
     private func consumeApprovalReceipt(_ frame: InboundFrame) {
         #if os(macOS)
             guard projects.enabled else { return }
+            if let value = frame.payload["approval_decision"], value["decision"] == .string("withdraw"),
+                value["state"] == .string("cancelled"), value["revision"] == .number(1),
+                let id = value["request_id"]?.stringValue, !id.isEmpty, id.count <= 200,
+                let connection = continuity.connectionGeneration,
+                frame.payload["connection_generation"] == .string(connection),
+                let chat = frame.chatId, !chat.isEmpty, chat.count <= 512,
+                let message = value["message"]?.stringValue, message.unicodeScalars.count <= 1000
+            {
+                retireComputerReview(id, chat: chat)
+            }
         #else
             return
         #endif
@@ -3991,12 +4076,16 @@ final class AppModel: NSObject {
         guard !activityObservationPaused else { return }
         let live = transientCanvas ?? canvas
         let observed = Self.approvalCards(in: visibleTurns.suffix(8).flatMap(\.components) + live)
-        let retired = Set(observed.map(\.approval.requestId)).intersection(decidedApprovals.union(withdrawingApprovals))
+        var retired = Set(observed.map(\.approval.requestId)).intersection(decidedApprovals.union(withdrawingApprovals))
+        #if os(macOS)
+            retired.formUnion(
+                observed.filter { suppressComputerReview($0.card, chat: activeChatId) }.map(\.approval.requestId))
+        #endif
         if !retired.isEmpty { removeApprovalCards(retired) }
         let cards =
             observed
             .filter {
-                !decidedApprovals.contains($0.approval.requestId)
+                !retired.contains($0.approval.requestId)
                     && !withdrawingApprovals.contains($0.approval.requestId)
                     && submittedApprovals[$0.approval.requestId] == nil
             }

@@ -153,6 +153,157 @@
             }
         }
 
+        func testLateApprovalFramesCannotPublishWhileBypassingOrAfterEarlyWithdrawal() async throws {
+            for route in ["canvas", "append", "upsert", "chat"] {
+                for mode in [
+                    "bypass", "withdraw", "wrong-connection", "wrong-chat", "replacement", "other-host", "overflow",
+                    "overflow-replacement", "disconnect",
+                ] {
+                    let host = try makeHost()
+                    let suite = "LateReview.\(UUID().uuidString)"
+                    suites.append(suite)
+                    let model = AppModel(
+                        tokenStore: InMemoryTokenStore(), defaults: try XCTUnwrap(UserDefaults(suiteName: suite)),
+                        computerHost: host)
+                    model.announcer = { [weak self] in self?.announced.append($0) }
+                    let connection = UUID().uuidString.lowercased()
+                    let chat = UUID().uuidString.lowercased()
+                    let generation = UUID().uuidString.lowercased()
+                    XCTAssertTrue(model.beginConversationConnection(connection))
+                    XCTAssertTrue(
+                        model.openConversationRequest(chatId: chat, requestGeneration: generation, purpose: .commit))
+                    model.projects.bind(
+                        scope: "owner",
+                        client: RestClient(serverBase: URL(string: "https://example.test")!, tokenProvider: { nil }))
+                    model.projects.negotiate(true)
+                    var id = String(repeating: "ab", count: 16)
+                    if mode != "bypass" && mode != "other-host" {
+                        model.handleFrame(
+                            InboundFrame(
+                                name: "chat_status",
+                                payload: .object([
+                                    "chat_id": .string(mode == "wrong-chat" ? UUID().uuidString.lowercased() : chat),
+                                    "connection_generation": .string(
+                                        mode == "wrong-connection" ? UUID().uuidString.lowercased() : connection),
+                                    "approval_decision": .object([
+                                        "request_id": .string(id), "decision": .string("withdraw"),
+                                        "state": .string("cancelled"),
+                                        "revision": .number(1), "message": .string("Computer approval mode changed."),
+                                    ]),
+                                ])))
+                    }
+                    var currentConnection = connection
+                    if mode == "disconnect" {
+                        await model.handle(.disconnected(reason: "network lost"))
+                        bind(host)
+                        host.setEnabled(true)
+                    }
+                    if mode.hasPrefix("overflow") {
+                        for index in 0..<512 {
+                            model.handleFrame(
+                                InboundFrame(
+                                    name: "chat_status",
+                                    payload: .object([
+                                        "chat_id": .string(chat), "connection_generation": .string(connection),
+                                        "approval_decision": .object([
+                                            "request_id": .string("retired-\(index)"), "decision": .string("withdraw"),
+                                            "state": .string("cancelled"), "revision": .number(1),
+                                            "message": .string("Closed"),
+                                        ]),
+                                    ])))
+                        }
+                    }
+                    if mode == "replacement" || mode == "overflow-replacement" {
+                        currentConnection = UUID().uuidString.lowercased()
+                        XCTAssertTrue(model.beginConversationConnection(currentConnection))
+                        XCTAssertTrue(
+                            model.openConversationRequest(chatId: chat, requestGeneration: generation, purpose: .commit)
+                        )
+                    }
+                    if mode.hasPrefix("overflow") { id = String(repeating: "ef", count: 16) }
+                    host.consume(try session(host, UUID().uuidString.lowercased(), bypass: false))
+                    XCTAssertNotNil(host.session)
+                    if mode == "bypass" || mode == "other-host" { await enable(host) }
+                    let before = announced.count
+                    let card: JSONValue = .object([
+                        "type": .string("card"), "id": .string("au_approval_" + id),
+                        "computer_host_id": .string(
+                            mode == "other-host" ? "other-mac" : try XCTUnwrap(host.descriptor).hostId),
+                        "title": .string("Confirm an action on Mac"),
+                        "content": .array(
+                            [.object(["type": .string("text"), "content": .string("Late computer review")])]
+                                + ["approve", "decline"].map {
+                                    .object([
+                                        "type": .string("button"), "label": .string($0),
+                                        "action": .string("remote_op_decision"),
+                                        "payload": .object(["proposal_id": .string(id), "decision": .string($0)]),
+                                    ])
+                                }),
+                    ])
+                    let ordinary: JSONValue = .object([
+                        "type": .string("card"), "id": .string("ordinary"), "title": .string("Review document"),
+                        "content": .array([
+                            .object([
+                                "type": .string("button"), "label": .string("Open"), "action": .string("open_document"),
+                            ])
+                        ]),
+                    ])
+                    var payload: [String: JSONValue] = [
+                        "chat_id": .string(chat), "connection_generation": .string(currentConnection),
+                        "request_generation": .string(generation), "base_render_revision": .number(0),
+                        "frame_sequence": .number(1),
+                        "target": .string(route == "chat" ? "chat" : "canvas"),
+                    ]
+                    if route == "upsert" {
+                        payload["ops"] = .array([
+                            .object([
+                                "op": .string("upsert"), "component_id": .string("au_approval_" + id),
+                                "component": card,
+                            ]),
+                            .object([
+                                "op": .string("upsert"), "component_id": .string("ordinary"), "component": ordinary,
+                            ]),
+                        ])
+                    } else {
+                        payload["components"] = .array([card, ordinary])
+                    }
+                    model.handleFrame(
+                        InboundFrame(
+                            name: route == "upsert" ? "ui_upsert" : route == "append" ? "ui_append" : "ui_render",
+                            payload: .object(payload)))
+                    let suppressed =
+                        mode == "bypass" || mode == "withdraw" || mode == "overflow" || mode == "disconnect"
+                    let raw = model.canvas + (model.transientCanvas ?? []) + model.visibleTurns.flatMap(\.components)
+                    if route == "chat" {
+                        XCTAssertEqual(
+                            model.visibleTurns.contains { $0.text.contains("Late computer review") }, !suppressed)
+                    } else {
+                        XCTAssertTrue(raw.contains { $0.componentId == "ordinary" })
+                    }
+                    let noCard = suppressed || route == "chat"
+                    XCTAssertEqual(AppModel.pendingComputerApprovals(in: raw).isEmpty, noCard, "\(route)/\(mode)")
+                    XCTAssertEqual(model.approvalPrompts.isEmpty, noCard, "\(route)/\(mode)")
+                    XCTAssertEqual(model.waitingApprovals, noCard ? 0 : 1)
+                    XCTAssertEqual(host.awaitingApproval, !noCard, "\(route)/\(mode)")
+                    XCTAssertEqual(announced.dropFirst(before).contains { $0.hasPrefix("Approval waiting") }, !noCard)
+                    if mode == "bypass" {
+                        host.requestBypass(false, from: .controls)
+                        payload["frame_sequence"] = .number(2)
+                        model.handleFrame(
+                            InboundFrame(
+                                name: route == "upsert" ? "ui_upsert" : route == "append" ? "ui_append" : "ui_render",
+                                payload: .object(payload)))
+                        XCTAssertTrue(model.approvalPrompts.isEmpty)
+                        XCTAssertTrue(
+                            AppModel.pendingComputerApprovals(
+                                in: model.canvas + (model.transientCanvas ?? [])
+                                    + model.visibleTurns.flatMap(\.components)
+                            ).isEmpty)
+                    }
+                }
+            }
+        }
+
         func testEnablingFromTheBackgroundOrWithoutComputerAccessIsRefused() async throws {
             let gate = Gate()
             let host = try makeHost(gate: gate)
