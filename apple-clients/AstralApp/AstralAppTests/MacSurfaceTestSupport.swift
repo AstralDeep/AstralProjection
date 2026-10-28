@@ -13,7 +13,7 @@
 
     @MainActor
     enum SurfaceAccessibility {
-        enum Failure: Error {
+        enum Failure: Error, Equatable {
             case missingWindow, ambiguousWindow, foreignWindow
         }
 
