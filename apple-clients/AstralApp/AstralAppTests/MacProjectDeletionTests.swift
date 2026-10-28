@@ -33,7 +33,9 @@
                 }
                 for _ in 0..<2000 where model.activeChatId != nil { await Task.yield() }
                 let requests = await server.deletes
+                let confirmed = await server.confirmedDeletionFlags
                 XCTAssertEqual(requests, [project.id])
+                XCTAssertEqual(confirmed, [true])
                 XCTAssertNil(model.projects.errorMessage)
                 XCTAssertNil(model.projectPendingDeletion)
                 XCTAssertNil(model.projects.selectedId)
@@ -245,6 +247,7 @@
         nonisolated let other = "87654321-4321-4321-8321-cba987654321"
         let status: Int
         var deletes: [String] = []
+        var confirmedDeletionFlags: [Bool] = []
         var deleted = false
         var extraChat = false
         func removeProject() { deleted = true }
@@ -279,6 +282,9 @@
             }
             if request.httpMethod == "DELETE" {
                 deletes.append(request.url!.lastPathComponent)
+                confirmedDeletionFlags.append(
+                    URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.contains(
+                        URLQueryItem(name: "delete_chats", value: "true")) == true)
                 if holding { await withCheckedContinuation { continuation = $0 } }
                 if status == 200 || status == 404 { deleted = true }
                 return (

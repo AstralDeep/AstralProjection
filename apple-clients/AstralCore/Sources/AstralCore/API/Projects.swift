@@ -128,13 +128,13 @@ extension RestClient {
                     "name": .string(name), "revision": .number(Double(revision)),
                 ])))
     }
-    public func deleteProject(id: String, revision: UInt64) async throws {
+    public func deleteProject(id: String, revision: UInt64, deleteChats: Bool = false) async throws {
         try requireProject(id, revision)
+        var query = [URLQueryItem(name: "revision", value: String(revision))]
+        if deleteChats { query.append(URLQueryItem(name: "delete_chats", value: "true")) }
         _ = try await projectRequest(
             "DELETE", "api/projects/\(id)",
-            queryItems: [
-                URLQueryItem(name: "revision", value: String(revision))
-            ])
+            queryItems: query)
     }
     public func projectChats(id: String, limit: Int = 50, cursor: String? = nil) async throws -> ProjectChatPage {
         try requireProject(id)

@@ -166,7 +166,7 @@
             let connection = epoch
             do {
                 do {
-                    try await client.deleteProject(id: project.id, revision: project.revision)
+                    try await client.deleteProject(id: project.id, revision: project.revision, deleteChats: true)
                 } catch let error as ProjectAPIError {
                     guard case .refused(404, _, _) = error else { throw error }
                 }

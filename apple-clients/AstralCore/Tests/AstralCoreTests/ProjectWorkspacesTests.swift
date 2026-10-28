@@ -147,6 +147,19 @@ final class ProjectWorkspacesTests: XCTestCase {
         }
     }
 
+    func testConfirmedProjectDeletionExplicitlyRequestsChatDeletion() async throws {
+        let client = RestClient(
+            serverBase: URL(string: "https://example.test")!, tokenProvider: { "token" },
+            transport: { request in
+                XCTAssertEqual(request.httpMethod, "DELETE")
+                XCTAssertEqual(
+                    URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems,
+                    [URLQueryItem(name: "revision", value: "1"), URLQueryItem(name: "delete_chats", value: "true")])
+                return (200, Data(#"{"success":true}"#.utf8))
+            })
+        try await client.deleteProject(id: project, revision: 1, deleteChats: true)
+    }
+
     func testMalformedPageIsNeverReturnedAsPartialCatalogAndConflictRemainsTyped() async throws {
         XCTAssertThrowsError(
             try ProjectPage(
