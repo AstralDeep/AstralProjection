@@ -374,7 +374,6 @@
         }
 
         func testBannerExposesItsNameSiteAndButtonsInReadingOrder() async throws {
-            try SurfaceAccessibility.requireTrust()
             let (model, _) = try model()
             model.canvas = [originCard()]
             let prompt = try XCTUnwrap(model.approvalPrompts.first)
@@ -382,7 +381,7 @@
                 MacApprovalBanner(prompt: prompt), model: model, size: CGSize(width: 820, height: 76))
             defer { mount.close() }
             try await mount.settle()
-            let tree = mount.accessibility
+            let tree = try mount.accessibility
             let banner = try XCTUnwrap(tree.first { $0.identifier == "approval-banner" })
             XCTAssertEqual(banner.label, "Approval waiting")
             let buttons = tree.filter { $0.role == kAXButtonRole }

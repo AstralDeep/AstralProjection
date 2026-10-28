@@ -531,7 +531,6 @@
         }
 
         func testConfirmationExposesItsTitleMessageAndButtonsInReadingOrder() async throws {
-            try SurfaceAccessibility.requireTrust()
             let host = try makeHost()
             let (model, suite) = try SurfaceFixtures.model()
             suites.append(suite)
@@ -540,7 +539,7 @@
                 MacBypassConfirmation(host: host), model: model, size: CGSize(width: 440, height: 240))
             defer { sheet.close() }
             try await sheet.settle()
-            let tree = sheet.accessibility
+            let tree = try sheet.accessibility
             XCTAssertNotNil(tree.first { $0.identifier == "mac-bypass-title" })
             XCTAssertNotNil(tree.first { $0.identifier == "mac-bypass-message" })
             let buttons = tree.filter { $0.role == kAXButtonRole }.compactMap(\.identifier)
