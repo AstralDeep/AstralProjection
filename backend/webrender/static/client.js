@@ -5747,18 +5747,40 @@
       && isCanonicalUuid4(payload.submission_id);
   }
 
-  function currentWorkContinuity(payload) {
+  function workSavePayload(payload) {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload) || payload.version !== 1
+        || !isCanonicalUuid4(payload.operation_id) || !isCanonicalUuid4(payload.submission_id)
+        || !Number.isSafeInteger(payload.expected_revision) || payload.expected_revision < 1) return false;
+    var fields = payload.command === "propose"
+      ? ["version", "command", "operation_id", "submission_id", "publication_id", "expected_revision", "conversation_id", "expected_workspace_revision", "expected_workspace_publication_id"]
+      : payload.command === "save" ? ["version", "command", "operation_id", "action_id", "submission_id", "expected_revision", "proposal_digest"] : [];
+    if (!fields.length || Object.keys(payload).length !== fields.length || !fields.every(function (key) {
+      return Object.prototype.hasOwnProperty.call(payload, key);
+    })) return false;
+    if (payload.command === "save") return isCanonicalUuid4(payload.action_id) && payload.action_id !== payload.submission_id
+      && typeof payload.proposal_digest === "string" && /^[0-9a-f]{64}$/.test(payload.proposal_digest);
+    return isCanonicalUuid4(payload.publication_id) && payload.publication_id !== payload.submission_id
+      && typeof payload.conversation_id === "string" && payload.conversation_id.length > 0
+      && payload.conversation_id.length <= 512 && payload.conversation_id.trim() === payload.conversation_id
+      && Array.from(payload.conversation_id).every(function (value) { return value === " " || !/[\p{C}\p{Z}]/u.test(value); })
+      && Number.isSafeInteger(payload.expected_workspace_revision) && payload.expected_workspace_revision >= 0
+      && (payload.expected_workspace_revision === 0 ? payload.expected_workspace_publication_id === null
+        : isCanonicalUuid4(payload.expected_workspace_publication_id));
+  }
+
+  function currentWorkCommand(actionName, payload, validate) {
     var current = ownerSurfaceRequest;
-    if (!workContinuityPayload(payload) || !current || current.surface !== "work" || !current.received
+    if (!validate(payload) || !current || current.surface !== "work" || !current.received
         || current.socket !== ws || current.connection !== connectionGeneration
         || current.privacyEpoch !== accountPrivacyEpoch || accountSignedOut || !isSocketReady()
         || timelineMode || modalIsMandatory() || !modalRoot) return false;
-    return Array.prototype.some.call(modalRoot.querySelectorAll('[data-ui-action="chrome_work_continuity"], [data-action="chrome_work_continuity"]'), function (control) {
-      if (control.disabled || control.getAttribute("aria-disabled") === "true") return false;
+    return Array.prototype.some.call(modalRoot.querySelectorAll('[data-ui-action], [data-action]'), function (control) {
+      if ((control.getAttribute("data-ui-action") || control.getAttribute("data-action")) !== actionName
+          || control.disabled || control.getAttribute("aria-disabled") === "true") return false;
       var offered;
       try { offered = JSON.parse(control.getAttribute("data-ui-payload") || control.getAttribute("data-payload") || "{}"); }
       catch (_error) { return false; }
-      return workContinuityPayload(offered) && Object.keys(payload).every(function (key) {
+      return validate(offered) && Object.keys(payload).every(function (key) {
         return payload[key] === offered[key];
       });
     });
@@ -5766,7 +5788,9 @@
 
   function action(name, payload, exposeStatus, meshPrepared) {
     var continuityAction = name === "chrome_work_continuity";
-    if (continuityAction && !currentWorkContinuity(payload)) return;
+    var workSaveAction = name === "chrome_work_result_save";
+    if (continuityAction && !currentWorkCommand(name, payload, workContinuityPayload)
+        || workSaveAction && !currentWorkCommand(name, payload, workSavePayload)) return;
     if (name === "chrome_mesh_identity" || name === "chrome_mesh_redeem" || name === "chrome_mesh_create" && !meshPrepared) {
       meshLocalAction(name, payload || {});
       return;
@@ -5780,12 +5804,12 @@
     var selectionAction = name === "chrome_turn_selection_set";
     var safetyAction = ["chrome_safety_stop", "chrome_safety_resume", "chrome_safety_verify"].indexOf(name) !== -1;
     var terminalAction = ["chrome_terminal_input", "chrome_terminal_resize", "chrome_terminal_interrupt", "chrome_terminal_close"].indexOf(name) !== -1;
-    var ownerSurface = continuityAction ? "work" : terminalAction ? "terminal" : meshAction ? "mesh" : safetyAction ? "safety" : noteAction || selectionAction ? "guidance"
+    var ownerSurface = continuityAction || workSaveAction ? "work" : terminalAction ? "terminal" : meshAction ? "mesh" : safetyAction ? "safety" : noteAction || selectionAction ? "guidance"
       : name === "chrome_open" && payload && ["work", "guidance", "evidence", "safety", "mesh", "terminal"].indexOf(payload.surface) !== -1
         ? payload.surface : null;
-    if (name === "chrome_open" || name === "chrome_close" || noteAction || selectionAction || safetyAction || meshAction || terminalAction || continuityAction) retireOwnerSurface();
-    if (continuityAction) {
-      showModalSkeleton("chrome_open", { surface: "work", params: { mode: "detail", operation_id: payload.operation_id } });
+    if (name === "chrome_open" || name === "chrome_close" || noteAction || selectionAction || safetyAction || meshAction || terminalAction || continuityAction || workSaveAction) retireOwnerSurface();
+    if (continuityAction || workSaveAction) {
+      showModalSkeleton("chrome_open", { surface: "work", params: { mode: workSaveAction ? "result" : "detail", operation_id: payload.operation_id } });
     }
     if (noteAction) {
       showModalSkeleton("chrome_open", { surface: "guidance", params: { mode: "list" } });
@@ -5807,7 +5831,7 @@
       : requestState && (name === "chat_message" || name === "load_chat")
         ? requestState.generation : null;
     var submission = beginOperationSubmission(name, payload, suppliedGeneration, exposeStatus);
-    if (continuityAction) delete submission.payload.request_generation;
+    if (continuityAction || workSaveAction) delete submission.payload.request_generation;
     if (safetyAction || terminalAction || ownerSurface === "mesh") {
       delete submission.payload.submission_id;
       delete submission.payload.request_generation;
@@ -5816,7 +5840,7 @@
       type: "ui_event",
       action: name,
       payload: submission.payload,
-      session_id: continuityAction ? null : ownerSurface ? undefined : activeChatId || undefined,
+      session_id: continuityAction || workSaveAction ? null : ownerSurface ? undefined : activeChatId || undefined,
       submission_id: submission.submissionId,
       request_generation: submission.requestGeneration,
     };
@@ -7739,7 +7763,7 @@
     if (btn) {
       var act = btn.getAttribute("data-action"); var payload = {};
       try { payload = JSON.parse(btn.getAttribute("data-payload") || "{}"); } catch (_) {}
-      if (act === "chrome_work_continuity") {
+      if (act === "chrome_work_continuity" || act === "chrome_work_result_save") {
         if (modalRoot && modalRoot.contains(btn)) action(act, payload);
         return;
       }
@@ -8637,7 +8661,7 @@
     }
     var payload = {};
     try { payload = JSON.parse(el.getAttribute("data-ui-payload") || "{}"); } catch (err) {}
-    if (act === "chrome_work_continuity") {
+    if (act === "chrome_work_continuity" || act === "chrome_work_result_save") {
       e.preventDefault();
       if (modalRoot && modalRoot.contains(el)) action(act, payload);
       return;
