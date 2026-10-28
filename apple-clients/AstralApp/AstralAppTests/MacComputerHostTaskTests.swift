@@ -152,6 +152,38 @@
             host.requestBypass(true, from: .controls)
             host.confirmBypass()
             XCTAssertTrue(host.bypass)
+            for (verb, args, deadline) in [
+                ("list_windows", [String: JSONValue](), 30000),
+                ("browser_snapshot", ["mode": JSONValue.string("all")], 5000),
+                (
+                    "write_file",
+                    [
+                        "path": JSONValue.string(root.path + "/never-created"),
+                        "content": .string("no"), "if_exists": .string("refuse"),
+                    ], 30000
+                ),
+                ("run_command", ["argv": JSONValue.array([.string("echo")]), "cwd": .string(root.path)], 30000),
+            ] {
+                let browser = MacComputerTaskBrowser()
+                host.browser = browser
+                let requestId = "creq_" + String(format: "%032x", 100 + counter)
+                counter += 1
+                host.consume(
+                    try frame(
+                        .object([
+                            "type": .string("computer_request"), "request_id": .string(requestId),
+                            "session_id": .string(sessionId), "project_context": origin.json, "verb": .string(verb),
+                            "args": .object(args), "deadline_ms": .number(Double(deadline)),
+                        ])))
+                let result = await response(requestId, host: host)
+                XCTAssertEqual(
+                    result?["ok"], .bool(["list_windows", "browser_snapshot"].contains(verb)),
+                    "\(verb): \(String(describing: result))")
+                if ["write_file", "run_command"].contains(verb) {
+                    XCTAssertEqual(result?["error"]?["code"], .string("project_grant_required"))
+                }
+            }
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.path + "/never-created"))
             _ = await host.flushCurrentSends()
             let announcements = events.filter { $0["event"] == .string("announce") }.count
             host.updateProjectFolders { try grants.choose(project: project) }
@@ -163,8 +195,9 @@
         }
 
         func testProjectRemovalStopsRunningAndQueuedCommandsBeforeReleasingFolders() async throws {
-            for control in ["remove", "paused", "ended"] {
+            for control in ["remove", "paused", "ended", "missing", "snapshot", "effect"] {
                 for queued in [false, true] {
+                    if control == "effect" && !queued { continue }
                     let project = "12345678-1234-1234-9234-123456789abc"
                     let root = try folder().resolvingSymlinksInPath()
                     let spawner = MacComputerFakeSpawner()
@@ -223,8 +256,28 @@
                     }
                     let expected = queued ? 0 : 2
                     XCTAssertEqual(spawner.plans.count, expected)
+                    io.onStop = { _ in XCTAssertTrue(spawner.processes.allSatisfy { !$0.signals.isEmpty }) }
                     if control == "remove" {
                         host.updateProjectFolders { try grants.remove(project: project, path: root.path) }
+                    } else if ["missing", "snapshot", "effect"].contains(control) {
+                        try FileManager.default.removeItem(at: root)
+                        if control == "effect" {
+                            await barrier.release()
+                            for _ in 0..<2000 {
+                                if grants.unavailableProjects[project] != nil { break }
+                                await Task.yield()
+                            }
+                        } else if control == "missing" {
+                            NotificationCenter.default.post(
+                                name: NSApplication.didBecomeActiveNotification, object: nil)
+                            for _ in 0..<20 { await Task.yield() }
+                        } else {
+                            XCTAssertThrowsError(try grants.snapshot(context: context))
+                        }
+                        _ = await host.flushCurrentSends()
+                        XCTAssertNotNil(grants.unavailableProjects[project])
+                        let changed = events.last { $0["event"] == .string("project_workspaces_changed") }
+                        XCTAssertEqual(changed?["project_manifest"]?["projects"], .array([]))
                     } else {
                         host.consume(
                             try frame(
@@ -238,7 +291,9 @@
                     XCTAssertTrue(spawner.processes.allSatisfy { !$0.signals.isEmpty })
                     for _ in 0..<20 { await Task.yield() }
                     XCTAssertEqual(spawner.plans.count, expected)
-                    XCTAssertEqual(grants.roots(project: project).isEmpty, control == "remove")
+                    XCTAssertEqual(
+                        grants.roots(project: project).isEmpty,
+                        ["remove", "missing", "snapshot", "effect"].contains(control))
                     host.consume(
                         try frame(
                             .object([
@@ -256,6 +311,65 @@
                     XCTAssertEqual(io.started.count, io.stopped.count)
                 }
             }
+        }
+
+        func testFolderIdentityLossAfterAFileEffectReportsUncertaintyAndRetiresTheGrant() async throws {
+            let container = try folder().resolvingSymlinksInPath()
+            let root = container.appendingPathComponent("selected")
+            let moved = container.appendingPathComponent("moved")
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            let project = "12345678-1234-1234-9234-123456789abc"
+            let io = MacComputerTestWorkspaceGrants()
+            io.selection = [root]
+            var stored: [String: Data] = [:]
+            let grants = MacProjectGrants(
+                grants: io.port, persistence: .init(read: { stored[$0] }, write: { stored[$0] = $1 }))
+            let host = try makeHost(projectGrants: grants, driver: MacProjectMovedAfterEffectDriver(destination: moved))
+            let hostId = try XCTUnwrap(host.descriptor?.hostId)
+            host.beginWorkspaceNegotiation(server: URL(string: "https://example.test")!, account: "owner")
+            host.workspaceNegotiated(projects: true)
+            try host.reconcileProjects([project])
+            host.updateProjectFolders { try grants.choose(project: project) }
+            let manifest = try XCTUnwrap(grants.manifest)
+            host.consume(
+                try frame(
+                    .object([
+                        "type": .string("computer_host"), "host_id": .string(hostId),
+                        "project_manifest_ack": .object([
+                            "generation": .number(Double(manifest.generation)),
+                            "digest": .string(manifest.digest), "accepted": .bool(true),
+                        ]),
+                    ])))
+            let context = try ComputerProjectContext(
+                chatId: "chat", projectId: project,
+                grantRevision: manifest.projects[0].grantRevision, manifestGeneration: manifest.generation)
+            let sessionId = UUID().uuidString.lowercased()
+            host.consume(
+                try frame(
+                    .object([
+                        "type": .string("computer_session"), "host_id": .string(hostId),
+                        "session_id": .string(sessionId), "state": .string("active"), "project_context": context.json,
+                    ])))
+            let requestId = "creq_" + String(repeating: "d", count: 32)
+            host.consume(
+                try frame(
+                    .object([
+                        "type": .string("computer_request"), "request_id": .string(requestId),
+                        "session_id": .string(sessionId), "project_context": context.json,
+                        "verb": .string("write_file"),
+                        "args": .object([
+                            "path": .string(root.path + "/proof.txt"), "content": .string("effect completed"),
+                            "if_exists": .string("refuse"),
+                        ]), "deadline_ms": .number(30000),
+                    ])))
+            let result = await response(requestId, host: host)
+            XCTAssertEqual(try String(contentsOf: moved.appendingPathComponent("proof.txt")), "effect completed")
+            XCTAssertEqual(result?["ok"], .bool(false))
+            XCTAssertNotEqual(result?["error"]?["effect_state"], .string("not_started"))
+            XCTAssertNotNil(grants.unavailableProjects[project])
+            XCTAssertThrowsError(try grants.snapshot(context: context))
+            host.signedOut()
+            XCTAssertEqual(io.started.count, io.stopped.count)
         }
 
         func testLateEndedFrameCannotRetireNewerSession() throws {
@@ -629,6 +743,22 @@
             try authorize()
             executed.append(request.verb)
             return ["attempted": .bool(true)]
+        }
+        func reset() {}
+    }
+
+    actor MacProjectMovedAfterEffectDriver: MacComputerDriving {
+        let destination: URL
+        init(destination: URL) { self.destination = destination }
+        func execute(
+            _ request: ComputerHostRequest, workspaces: [ComputerWorkspace],
+            authorize: @escaping @Sendable () throws -> Void
+        ) async throws -> [String: JSONValue] {
+            let workspace = try XCTUnwrap(workspaces.first)
+            try workspace.write(
+                workspace.root + "/proof.txt", content: "effect completed", overwrite: false, authorize: authorize)
+            try FileManager.default.moveItem(at: URL(fileURLWithPath: workspace.root), to: destination)
+            return ["written": .bool(true)]
         }
         func reset() {}
     }

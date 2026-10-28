@@ -10,6 +10,242 @@
     @MainActor final class MacProjectGrantTests: XCTestCase {
         let project = "00000000-0000-1000-8000-000000000001"
         let other = "00000000-0000-1000-8000-000000000002"
+        func testMissingRetainedRootRevokesTheWholeProjectBeforeSnapshotAndOnReconciliation() throws {
+            for reconcile in [false, true] {
+                let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                    .resolvingSymlinksInPath()
+                let first = root.appendingPathComponent("first")
+                let second = root.appendingPathComponent("second")
+                let safe = root.appendingPathComponent("safe")
+                for url in [first, second, safe] {
+                    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+                }
+                defer { try? FileManager.default.removeItem(at: root) }
+                let io = MacComputerTestWorkspaceGrants()
+                var bytes: [String: Data] = [:]
+                let store = MacProjectGrants(
+                    grants: io.port, persistence: .init(read: { bytes[$0] }, write: { bytes[$0] = $1 }))
+                store.bind(server: URL(string: "https://example.com")!, account: "owner", device: "mac")
+                try store.reconcile(projectIds: [project, other])
+                io.selection = [first, second]
+                try store.choose(project: project)
+                io.selection = [safe]
+                try store.choose(project: other)
+                let saved = try XCTUnwrap(store.manifest)
+                let grant = try XCTUnwrap(saved.projects.first { $0.projectId == project })
+                let context = try ComputerProjectContext(
+                    chatId: "chat", projectId: project, grantRevision: grant.grantRevision,
+                    manifestGeneration: saved.generation)
+                var revoked: [String] = []
+                store.onRevoke = { revoked.append($0) }
+                try FileManager.default.removeItem(at: second)
+                if reconcile { try store.reconcile(projectIds: [project, other]) }
+                XCTAssertThrowsError(try store.snapshot(context: context))
+                XCTAssertEqual(revoked, [project])
+                XCTAssertTrue(store.roots(project: project).isEmpty)
+                XCTAssertEqual(store.roots(project: other), [safe.path])
+                XCTAssertFalse(FileManager.default.fileExists(atPath: second.path))
+                store.bind(server: nil, account: nil, device: "mac")
+                XCTAssertEqual(io.started.count, io.stopped.count)
+            }
+        }
+        func testUnavailableWarningSurvivesRepeatedLaunchCancelAndUnrelatedChangesUntilExplicitRepair() throws {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                .resolvingSymlinksInPath()
+            let missing = root.appendingPathComponent("missing")
+            let safe = root.appendingPathComponent("safe")
+            for url in [missing, safe] {
+                try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            }
+            defer { try? FileManager.default.removeItem(at: root) }
+            let io = MacComputerTestWorkspaceGrants()
+            var bytes: [String: Data] = [:]
+            let persistence = MacProjectGrantPersistence(read: { bytes[$0] }, write: { bytes[$0] = $1 })
+            func make() throws -> MacProjectGrants {
+                let store = MacProjectGrants(grants: io.port, persistence: persistence)
+                store.bind(server: URL(string: "https://example.com")!, account: "owner", device: "mac")
+                try store.reconcile(projectIds: [project, other])
+                return store
+            }
+            let first = try make()
+            io.selection = [missing]
+            try first.choose(project: project)
+            first.bind(server: nil, account: nil, device: "mac")
+            try FileManager.default.removeItem(at: missing)
+            for _ in 0..<3 {
+                let store = try make()
+                XCTAssertEqual(store.unavailableProjects[project], [missing.path])
+                XCTAssertTrue(store.roots(project: project).isEmpty)
+                io.selection = nil
+                try store.choose(project: project)
+                XCTAssertEqual(store.unavailableProjects[project], [missing.path])
+                io.selection = [safe]
+                try store.choose(project: other)
+                XCTAssertEqual(store.unavailableProjects[project], [missing.path])
+                XCTAssertNil(store.unavailableProjects[other])
+                store.bind(server: nil, account: nil, device: "mac")
+                XCTAssertTrue(store.unavailableProjects.isEmpty)
+            }
+            XCTAssertFalse(FileManager.default.fileExists(atPath: missing.path))
+            let repaired = try make()
+            io.selection = [safe]
+            try repaired.choose(project: project)
+            XCTAssertTrue(repaired.unavailableProjects.isEmpty)
+            XCTAssertEqual(repaired.roots(project: project), [safe.path])
+            repaired.bind(server: nil, account: nil, device: "mac")
+            XCTAssertEqual(io.started.count, io.stopped.count)
+        }
+
+        func testReplacedFolderNeverInheritsGrantAndPersistenceFailureCannotRestoreLiveAuthority() throws {
+            for replacement in ["file", "directory"] {
+                let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                    .resolvingSymlinksInPath()
+                let selected = root.appendingPathComponent("selected")
+                try FileManager.default.createDirectory(at: selected, withIntermediateDirectories: true)
+                defer { try? FileManager.default.removeItem(at: root) }
+                let io = MacComputerTestWorkspaceGrants()
+                io.selection = [selected]
+                var bytes: [String: Data] = [:]
+                var fail = false
+                let store = MacProjectGrants(
+                    grants: io.port,
+                    persistence: .init(
+                        read: { bytes[$0] },
+                        write: {
+                            if fail { throw CocoaError(.fileWriteNoPermission) }
+                            bytes[$0] = $1
+                        }))
+                store.bind(server: URL(string: "https://example.com")!, account: "owner", device: "mac")
+                try store.reconcile(projectIds: [project])
+                try store.choose(project: project)
+                let manifest = try XCTUnwrap(store.manifest)
+                let context = try ComputerProjectContext(
+                    chatId: "chat", projectId: project,
+                    grantRevision: manifest.projects[0].grantRevision, manifestGeneration: manifest.generation)
+                try FileManager.default.moveItem(at: selected, to: root.appendingPathComponent("original"))
+                if replacement == "file" {
+                    try Data("replacement".utf8).write(to: selected)
+                } else {
+                    try FileManager.default.createDirectory(at: selected, withIntermediateDirectories: true)
+                }
+                fail = replacement == "directory"
+                XCTAssertThrowsError(try store.snapshot(context: context))
+                XCTAssertTrue(store.roots(project: project).isEmpty)
+                XCTAssertEqual(store.unavailableProjects[project], [selected.path])
+                if fail { XCTAssertNil(store.manifest) }
+                store.bind(server: nil, account: nil, device: "mac")
+                XCTAssertEqual(io.started.count, io.stopped.count)
+            }
+        }
+        func testOldQuarantineDocumentsShowGenericRecoveryAndNoticesRemainScopeIsolated() throws {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                .resolvingSymlinksInPath()
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let io = MacComputerTestWorkspaceGrants()
+            io.selection = [root]
+            var bytes: [String: Data] = [:]
+            let store = MacProjectGrants(
+                grants: io.port, persistence: .init(read: { bytes[$0] }, write: { bytes[$0] = $1 }))
+            let server = URL(string: "https://example.com")!
+            let key = MacProjectGrants.scope(server: server, account: "owner", device: "mac")
+            store.bind(server: server, account: "owner", device: "mac")
+            try store.reconcile(projectIds: [project])
+            try store.choose(project: project)
+            store.bind(server: nil, account: nil, device: "mac")
+            var document = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(bytes[key])) as? [String: Any])
+            var projects = try XCTUnwrap(document["projects"] as? [String: [String: Any]])
+            var entry = try XCTUnwrap(projects[project])
+            entry["quarantined"] = true
+            entry.removeValue(forKey: "unavailable")
+            var bookmarks = try XCTUnwrap(entry["bookmarks"] as? [[String: Any]])
+            for index in bookmarks.indices { bookmarks[index].removeValue(forKey: "path") }
+            entry["bookmarks"] = bookmarks
+            projects[project] = entry
+            document["projects"] = projects
+            bytes[key] = try JSONSerialization.data(withJSONObject: document)
+            for scope in [
+                (server, "owner", "mac"), (server, "different", "mac"),
+                (server, "owner", "different"), (URL(string: "https://other.example.com")!, "owner", "mac"),
+            ] {
+                store.bind(server: scope.0, account: scope.1, device: scope.2)
+                try store.reconcile(projectIds: [project])
+                if scope.0 == server && scope.1 == "owner" && scope.2 == "mac" {
+                    XCTAssertEqual(store.unavailableProjects[project], [])
+                } else {
+                    XCTAssertTrue(store.unavailableProjects.isEmpty)
+                }
+                XCTAssertTrue(store.roots(project: project).isEmpty)
+            }
+            store.bind(server: server, account: "owner", device: "mac")
+            try store.reconcile(projectIds: [project])
+            XCTAssertEqual(store.unavailableProjects[project], [])
+            try store.clear(project: project)
+            store.bind(server: nil, account: nil, device: "mac")
+            store.bind(server: server, account: "owner", device: "mac")
+            try store.reconcile(projectIds: [project])
+            XCTAssertTrue(store.unavailableProjects.isEmpty)
+            XCTAssertTrue(store.roots(project: project).isEmpty)
+            store.bind(server: nil, account: nil, device: "mac")
+            XCTAssertEqual(io.started.count, io.stopped.count)
+        }
+
+        func testBookmarksCannotSilentlyFollowRenamedFoldersOrLegacyFoldersMovedToTrash() throws {
+            for legacy in [false, true] {
+                let container = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                    .resolvingSymlinksInPath()
+                let original = container.appendingPathComponent("selected")
+                let parent = container.appendingPathComponent(legacy ? ".Trash" : "renamed")
+                let relocated = parent.appendingPathComponent("selected")
+                try FileManager.default.createDirectory(at: original, withIntermediateDirectories: true)
+                try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+                defer { try? FileManager.default.removeItem(at: container) }
+                let io = MacComputerTestWorkspaceGrants()
+                io.selection = [original]
+                let base = io.port
+                var destination: URL?
+                let port = MacComputerWorkspaceGrantIO(
+                    chooseDirectories: base.chooseDirectories,
+                    resolveBookmark: { data in
+                        (destination ?? URL(fileURLWithPath: String(decoding: data, as: UTF8.self)), false)
+                    },
+                    makeBookmark: base.makeBookmark, startAccess: base.startAccess, stopAccess: base.stopAccess)
+                var bytes: [String: Data] = [:]
+                let persistence = MacProjectGrantPersistence(read: { bytes[$0] }, write: { bytes[$0] = $1 })
+                let server = URL(string: "https://example.com")!
+                let first = MacProjectGrants(grants: port, persistence: persistence)
+                first.bind(server: server, account: "owner", device: "mac")
+                try first.reconcile(projectIds: [project])
+                try first.choose(project: project)
+                first.bind(server: nil, account: nil, device: "mac")
+                if legacy {
+                    let key = MacProjectGrants.scope(server: server, account: "owner", device: "mac")
+                    var document = try XCTUnwrap(
+                        JSONSerialization.jsonObject(with: XCTUnwrap(bytes[key])) as? [String: Any])
+                    var entries = try XCTUnwrap(document["projects"] as? [String: [String: Any]])
+                    var entry = try XCTUnwrap(entries[project])
+                    var bookmarks = try XCTUnwrap(entry["bookmarks"] as? [[String: Any]])
+                    for index in bookmarks.indices { bookmarks[index].removeValue(forKey: "path") }
+                    entry["bookmarks"] = bookmarks
+                    entries[project] = entry
+                    document["projects"] = entries
+                    bytes[key] = try JSONSerialization.data(withJSONObject: document)
+                }
+                let identity = try ComputerWorkspace(root: original.path).rootIdentity
+                try FileManager.default.moveItem(at: original, to: relocated)
+                XCTAssertEqual(try ComputerWorkspace(root: relocated.path).rootIdentity, identity)
+                destination = relocated
+                let restored = MacProjectGrants(grants: port, persistence: persistence)
+                restored.bind(server: server, account: "owner", device: "mac")
+                try restored.reconcile(projectIds: [project])
+                XCTAssertTrue(restored.roots(project: project).isEmpty)
+                XCTAssertNotNil(restored.unavailableProjects[project])
+                XCTAssertTrue(restored.manifest?.projects.isEmpty == true)
+                restored.bind(server: nil, account: nil, device: "mac")
+                XCTAssertEqual(io.started.count, io.stopped.count)
+            }
+        }
+
         func testFolderRowsObserveSelectionPrimaryChangesAndRemoval() async throws {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
                 .resolvingSymlinksInPath()

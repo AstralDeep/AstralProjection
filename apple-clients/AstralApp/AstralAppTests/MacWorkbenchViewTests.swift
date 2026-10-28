@@ -77,6 +77,111 @@
             XCTAssertFalse(model.projects.enabled)
         }
 
+        func testUnavailableFoldersRemainVisibleOnCollapsedProjectAndRecoveryPreservesChats() async throws {
+            XCTAssertNotNil(ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"])
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                .resolvingSymlinksInPath()
+            let removed = root.appendingPathComponent("missing-workspace")
+            let replacement = root.appendingPathComponent("replacement-workspace")
+            for url in [removed, replacement] {
+                try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            }
+            defer { try? FileManager.default.removeItem(at: root) }
+            let io = MacComputerTestWorkspaceGrants()
+            var bytes: [String: Data] = [:]
+            let grants = MacProjectGrants(
+                grants: io.port, persistence: .init(read: { bytes[$0] }, write: { bytes[$0] = $1 }))
+            let hostSuite = "FolderRecoveryHost." + UUID().uuidString
+            let hostDefaults = try XCTUnwrap(UserDefaults(suiteName: hostSuite))
+            defer { hostDefaults.removePersistentDomain(forName: hostSuite) }
+            let host = MacComputerHost(available: false, defaults: hostDefaults, projectGrants: grants)
+            let (model, suite) = try panelModel(host: host)
+            defer {
+                host.signedOut()
+                UserDefaults.standard.removePersistentDomain(forName: suite)
+            }
+            let affected = "12345678-1234-4234-9234-123456789abc"
+            let selected = "87654321-4321-4321-8321-cba987654321"
+            host.beginWorkspaceNegotiation(server: URL(string: "https://example.test")!, account: "owner")
+            host.workspaceNegotiated(projects: true)
+            model.projects.bind(
+                scope: "owner",
+                client: RestClient(
+                    serverBase: URL(string: "https://example.test")!, tokenProvider: { nil },
+                    transport: { request in
+                        if request.url!.path == "/api/projects" {
+                            return (
+                                200,
+                                try JSONValue.object([
+                                    "projects": .array(
+                                        [affected, selected].enumerated().map { index, id in
+                                            .object([
+                                                "project_id": .string(id),
+                                                "name": .string(index == 0 ? "Saved project" : "Current project"),
+                                                "position": .number(Double(index)), "revision": .number(1),
+                                                "created_at": .number(1), "updated_at": .number(1),
+                                            ])
+                                        }), "next_cursor": .null,
+                                ]).encoded()
+                            )
+                        }
+                        let id = request.url!.path.contains(affected) ? affected : selected
+                        return (
+                            200,
+                            try JSONValue.object([
+                                "project_id": .string(id), "next_cursor": .null,
+                                "chats": .array([
+                                    .object([
+                                        "id": .string(id + "-chat"), "project_id": .string(id),
+                                        "title": .string(
+                                            id == affected ? "Saved hidden conversation" : "Current conversation"),
+                                    ])
+                                ]),
+                            ]).encoded()
+                        )
+                    }))
+            model.projects.negotiate(true)
+            await model.projects.refresh()
+            XCTAssertNil(model.projects.errorMessage)
+            io.selection = [removed]
+            host.updateProjectFolders { try grants.choose(project: affected) }
+            try FileManager.default.removeItem(at: removed)
+            host.refreshProjectFolders()
+            model.projects.select(selected)
+            model.activeChatId = selected + "-chat"
+            model.composerDraft = "Keep my draft"
+            var sent: [String] = []
+            model.outboundTap = { sent.append($0) }
+            let (view, window) = panel(
+                MacProjectSidebar(query: "").background(model.themeStore.palette.bg), model: model, width: 360)
+            defer { window.close() }
+            try await settle()
+            XCTAssertLessThan(view.fittingSize.height, 340)
+            window.setContentSize(NSSize(width: 360, height: view.fittingSize.height))
+            view.layoutSubtreeIfNeeded()
+            let warning = try recognizedText(view)
+            XCTAssertTrue(warning.contains("Saved project"), warning)
+            XCTAssertTrue(warning.contains("chats are saved"), warning)
+            XCTAssertTrue(warning.contains("Choose folders"), warning)
+            XCTAssertTrue(warning.contains("missing-workspace"), warning)
+            XCTAssertFalse(warning.contains("Saved hidden conversation"))
+            try attach(view, name: "Collapsed project folder recovery")
+            io.selection = nil
+            host.updateProjectFolders { try grants.choose(project: affected) }
+            XCTAssertNotNil(grants.unavailableProjects[affected])
+            io.selection = [replacement]
+            host.updateProjectFolders { try grants.choose(project: affected) }
+            try await settle()
+            XCTAssertFalse(try recognizedText(view).contains("Choose folders"))
+            XCTAssertTrue(grants.unavailableProjects.isEmpty)
+            XCTAssertEqual(model.projects.projects.count, 2)
+            XCTAssertEqual(model.projects.chats[affected]?.first?.displayTitle, "Saved hidden conversation")
+            XCTAssertEqual(model.projects.selectedId, selected)
+            XCTAssertEqual(model.activeChatId, selected + "-chat")
+            XCTAssertEqual(model.composerDraft, "Keep my draft")
+            XCTAssertTrue(sent.isEmpty)
+        }
+
         func testProjectTreeKeepsRowsCompactAndSearchDoesNotNavigate() async throws {
             XCTAssertNotNil(ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"])
             let (model, suite) = try panelModel()
@@ -1073,12 +1178,12 @@
             return result
         }
 
-        private func panelModel() throws -> (AppModel, String) {
+        private func panelModel(host: MacComputerHost? = nil) throws -> (AppModel, String) {
             let suite = "MacWorkbenchViewTests.\(UUID().uuidString)"
             let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
             let model = AppModel(
                 conversationResumeStore: ConversationResumeStore(defaults: defaults),
-                tokenStore: InMemoryTokenStore(), defaults: defaults)
+                tokenStore: InMemoryTokenStore(), defaults: defaults, computerHost: host)
             model.signedIn = true
             model.connected = true
             model.bindConversationAccount(

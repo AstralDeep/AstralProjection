@@ -198,7 +198,10 @@
                     NotificationCenter.default.addObserver(
                         forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
                     ) { [weak self] _ in
-                        Task { @MainActor in self?.refreshPermissions() }
+                        Task { @MainActor in
+                            self?.refreshProjectFolders()
+                            self?.refreshPermissions()
+                        }
                     })
                 let center = NSWorkspace.shared.notificationCenter
                 let authority = authority
@@ -227,6 +230,7 @@
                 self.authority.revokeProject(project)
                 if self.session?.projectContext?.projectId == project { self.cancelWork() }
             }
+            self.projectGrants.onManifestChange = { [weak self] in self?.publishProjectManifest() }
             refreshPermissions()
         }
         private static func executionDistribution() -> Bool {
@@ -361,7 +365,10 @@
         func reconcileProjects(_ ids: Set<String>) throws {
             guard workspaceNegotiated, projectMode else { return }
             try projectGrants.reconcile(projectIds: ids)
-            guard let descriptor, let manifest = projectGrants.manifest else { return }
+            publishProjectManifest()
+        }
+        private func publishProjectManifest() {
+            guard projectMode, let descriptor, let manifest = projectGrants.manifest else { return }
             pendingManifest = manifest
             if projectHostAnnounced {
                 sendEvent("project_workspaces_changed", additional: ["project_manifest": manifest.json])
@@ -374,10 +381,12 @@
             guard projectMode else { return }
             do {
                 try operation()
-                guard let manifest = projectGrants.manifest else { return }
-                pendingManifest = manifest
-                sendEvent("project_workspaces_changed", additional: ["project_manifest": manifest.json])
+                publishProjectManifest()
             } catch { projectGrantError = error.localizedDescription }
+        }
+        func refreshProjectFolders() {
+            guard projectMode else { return }
+            do { try projectGrants.validateCurrent() } catch { projectGrantError = error.localizedDescription }
         }
         private func acceptManifest(_ value: JSONValue) {
             guard projectMode, let pendingManifest, projectGrants.manifest == pendingManifest,
@@ -865,6 +874,7 @@
                     throw ComputerHostError(
                         "permission_denied", "This Mac has not granted the requested computer capability.")
                 }
+                if projectMode { try projectGrants.validateCurrent() }
                 let ticket = try authority.admit(request)
                 queue.append((request, ticket))
                 drain()
@@ -888,7 +898,8 @@
             do {
                 workspaces =
                     projectMode
-                    ? (["read_file", "list_dir", "write_file", "delete_path"].contains(request.verb)
+                    ? (request.projectContext?.grantRevision != nil
+                        || ["read_file", "list_dir", "write_file", "delete_path"].contains(request.verb)
                         ? try projectGrants.snapshot(context: request.projectContext) : []) : files.snapshot()
             } catch {
                 respond(request.id, error: error)
@@ -903,6 +914,12 @@
                     result = .success(
                         try await driver.execute(request, workspaces: workspaces) {
                             try authority.verify(ticket)
+                            if let project = request.projectContext?.projectId,
+                                !workspaces.allSatisfy({ $0.matchesRoot($0.root) })
+                            {
+                                authority.revokeProject(project)
+                                throw ComputerHostError("stale_project_grant", "The project's folders changed.")
+                            }
                             guard desktopProbe() else {
                                 authority.setDesktopAvailable(false)
                                 throw ComputerHostError(
@@ -921,16 +938,25 @@
             let authority = authority
             let desktopProbe = desktopProbe
             let roots: [String]
+            let workspaces: [ComputerWorkspace]
             do {
-                roots =
-                    projectMode && Self.commandVerbs.contains(request.verb)
-                    ? try projectGrants.snapshot(context: request.projectContext).map(\.root) : files.roots
+                workspaces =
+                    projectMode
+                        && (request.projectContext?.grantRevision != nil || Self.commandVerbs.contains(request.verb))
+                    ? try projectGrants.snapshot(context: request.projectContext) : []
+                roots = projectMode ? workspaces.map(\.root) : files.roots
             } catch {
                 respond(request.id, error: error)
                 return
             }
             let authorize: @Sendable () throws -> Void = {
                 try authority.verify(ticket)
+                if let project = request.projectContext?.projectId,
+                    !workspaces.allSatisfy({ $0.matchesRoot($0.root) })
+                {
+                    authority.revokeProject(project)
+                    throw ComputerHostError("stale_project_grant", "The project's folders changed.")
+                }
                 guard desktopProbe() else {
                     authority.setDesktopAvailable(false)
                     throw ComputerHostError(
@@ -976,6 +1002,7 @@
         private func answer(
             _ request: ComputerHostRequest, ticket: ComputerHostTicket, with result: Result<[String: JSONValue], Error>
         ) {
+            refreshProjectFolders()
             do {
                 try authority.verify(ticket)
                 switch result {

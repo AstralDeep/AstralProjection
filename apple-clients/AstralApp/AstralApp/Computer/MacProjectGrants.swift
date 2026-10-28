@@ -33,11 +33,13 @@
         private struct Bookmark: Codable {
             let data: Data
             let identity: ComputerWorkspaceIdentity
+            let path: String?
         }
         private struct Entry: Codable {
             var revision: UInt64
             var bookmarks: [Bookmark]
             var quarantined: Bool
+            var unavailable: Bool?
         }
         private struct Document: Codable {
             let scope: String
@@ -52,6 +54,8 @@
         }
         private(set) var manifest: ComputerProjectManifest?
         private(set) var errorMessage: String?
+        private(set) var unavailableProjects: [String: [String]] = [:]
+        @ObservationIgnored var onManifestChange: () -> Void = {}
         @ObservationIgnored var onRevoke: (String) -> Void = { _ in }
         @ObservationIgnored private let grants: MacComputerWorkspaceGrantIO
         @ObservationIgnored private let persistence: MacProjectGrantPersistence
@@ -91,6 +95,7 @@
             catalog = nil
             key = next
             document = nil
+            unavailableProjects = [:]
             errorMessage = nil
             guard let next else { return }
             let operation = epoch
@@ -122,6 +127,7 @@
             catalog = nil
         }
         func reconcile(projectIds: Set<String>) throws {
+            try validateCurrent(notify: false)
             guard projectIds.allSatisfy(ProjectIdentity.valid), var candidate = document, let key else {
                 throw ComputerHostError("project_catalog_unavailable", "The complete project catalog is not available.")
             }
@@ -157,6 +163,7 @@
                         }
                         try current(operation, key: key)
                         candidate.projects[id]?.revision = try increment(entry.revision)
+                        candidate.projects[id]?.bookmarks = restored.map(\.bookmark)
                         candidate.generation = try increment(candidate.generation)
                         try persistence.write(key, JSONEncoder().encode(candidate))
                         try current(operation, key: key)
@@ -168,7 +175,10 @@
                         try current(operation, key: key)
                         candidate.projects[id]?.revision = try increment(entry.revision)
                         candidate.projects[id]?.quarantined = true
+                        candidate.projects[id]?.unavailable = true
                         candidate.generation = try increment(candidate.generation)
+                        document = candidate
+                        updateNotices()
                         try persistence.write(key, JSONEncoder().encode(candidate))
                         try current(operation, key: key)
                         document = candidate
@@ -221,11 +231,13 @@
             }
         }
         func remove(project: String, path: String) throws {
+            try validateCurrent()
             choices[project] = UUID()
             let current = resources[project, default: []]
             try replace(project: project, selected: current.filter { $0.workspace.root != path }, retained: true)
         }
         func primary(project: String, path: String) throws {
+            try validateCurrent()
             choices[project] = UUID()
             let current = resources[project, default: []]
             guard let first = current.first(where: { $0.workspace.root == path }) else { return }
@@ -233,6 +245,7 @@
                 project: project, selected: [first] + current.filter { $0.workspace.root != path }, retained: true)
         }
         func snapshot(context: ComputerProjectContext?) throws -> [ComputerWorkspace] {
+            try validateCurrent()
             guard let context, let manifest, context.manifestGeneration <= manifest.generation,
                 let entry = manifest.projects.first(where: { $0.projectId == context.projectId }),
                 entry.grantRevision == context.grantRevision
@@ -240,6 +253,52 @@
                 throw ComputerHostError("stale_project_grant", "The origin project's folders are no longer available.")
             }
             return resources[context.projectId, default: []].map(\.workspace)
+        }
+        func clear(project: String) throws {
+            choices[project] = UUID()
+            try replace(project: project, selected: [])
+        }
+        func validateCurrent(notify: Bool = true) throws {
+            let invalid = resources.filter { _, items in
+                items.contains { !$0.workspace.matchesRoot($0.workspace.root) }
+            }.map(\.key)
+            guard !invalid.isEmpty, var candidate = document, let key else { return }
+            let operation = epoch
+            manifest = nil
+            do {
+                for id in invalid {
+                    let removed = resources.removeValue(forKey: id) ?? []
+                    onRevoke(id)
+                    release(removed)
+                    try current(operation, key: key)
+                    if let entry = candidate.projects[id] {
+                        candidate.projects[id]?.revision = try increment(entry.revision)
+                        candidate.projects[id]?.quarantined = true
+                        candidate.projects[id]?.unavailable = true
+                    }
+                }
+                candidate.generation = try increment(candidate.generation)
+                document = candidate
+                updateNotices()
+                try persistence.write(key, JSONEncoder().encode(candidate))
+                try current(operation, key: key)
+                try publish()
+                if notify { onManifestChange() }
+            } catch {
+                if epoch == operation { fail(error) }
+                throw error
+            }
+        }
+        private func updateNotices() {
+            guard let document, let catalog else {
+                unavailableProjects = [:]
+                return
+            }
+            unavailableProjects = document.projects.reduce(into: [:]) { result, pair in
+                let (id, entry) = pair
+                guard catalog.contains(id), entry.quarantined else { return }
+                result[id] = entry.unavailable == true ? entry.bookmarks.compactMap(\.path) : []
+            }
         }
         private func replace(project: String, selected: [Resource], retained: Bool = false) throws {
             guard var candidate = document, let key, catalog?.contains(project) == true else {
@@ -298,10 +357,23 @@
             let accessed = grants.startAccess(url)
             do {
                 let workspace = try ComputerWorkspace(root: url.path)
+                guard
+                    !workspace.root.split(separator: "/").contains(where: {
+                        [".trash", ".trashes"].contains($0.lowercased())
+                    })
+                else {
+                    throw ComputerHostError(
+                        "stale_project_grant", "Folders in Trash cannot be used. Choose a workspace folder again.")
+                }
+                if let path = bookmark?.path, path != workspace.root {
+                    throw ComputerHostError("stale_project_grant", "The saved folder moved. Choose its location again.")
+                }
                 if let bookmark, bookmark.identity != workspace.rootIdentity {
                     throw ComputerHostError("stale_project_grant", "The saved folder identity changed.")
                 }
-                let saved = try bookmark ?? Bookmark(data: grants.makeBookmark(url), identity: workspace.rootIdentity)
+                let saved = try Bookmark(
+                    data: bookmark?.data ?? grants.makeBookmark(url), identity: workspace.rootIdentity,
+                    path: workspace.root)
                 let (resolved, stale) = try grants.resolveBookmark(saved.data)
                 guard !stale, workspace.matchesRoot(resolved.path) else {
                     throw ComputerHostError("stale_project_grant", "The selected folder changed.")
@@ -316,6 +388,7 @@
             ComputerHostWorkspaceRoot(name: URL(fileURLWithPath: path).lastPathComponent, path: path)
         }
         private func publish() throws {
+            updateNotices()
             guard let document, let catalog else { return }
             let projects = try document.projects.keys.sorted().compactMap { id -> ComputerProjectWorkspace? in
                 guard catalog.contains(id), let entry = document.projects[id], !entry.quarantined else { return nil }
@@ -344,6 +417,7 @@
                 }
                 release(items)
             }
+            updateNotices()
             errorMessage =
                 "The folder change was not saved. Access is revoked for this session. Restarting may restore previously saved folders; retry when storage is available. \(error.localizedDescription)"
         }

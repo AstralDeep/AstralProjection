@@ -62,6 +62,19 @@
                     Text(error).font(ConsoleTypography.caption).foregroundStyle(p.error)
                         .accessibilityIdentifier("project-grant-refusal")
                 }
+                if !model.macComputerHost.projectGrants.unavailableProjects.isEmpty {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Folders unavailable on this Mac.").foregroundStyle(p.warning)
+                            Text("Projects and chats are saved.").foregroundStyle(p.muted)
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle").foregroundStyle(p.warning)
+                    }
+                    .font(ConsoleTypography.caption).padding(.horizontal, 12)
+                    .accessibilityIdentifier("project-folders-unavailable")
+                }
                 if !search.isEmpty, visibleProjects.isEmpty {
                     Text("No matching chats").font(ConsoleTypography.caption).foregroundStyle(p.muted)
                         .padding(.horizontal, 12)
@@ -72,6 +85,9 @@
                         searching: !search.isEmpty)
                     VStack(alignment: .leading, spacing: 2) {
                         projectHeader(project, expanded: expanded)
+                        if let paths = model.macComputerHost.projectGrants.unavailableProjects[project.id] {
+                            folderRecovery(project, paths: paths)
+                        }
                         if expanded {
                             VStack(alignment: .leading, spacing: 0) {
                                 if search.isEmpty {
@@ -172,6 +188,13 @@
                             try model.macComputerHost.projectGrants.choose(project: project.id)
                         }
                     }
+                    if model.macComputerHost.projectGrants.unavailableProjects[project.id] != nil {
+                        Button("Remove saved folders", role: .destructive) {
+                            model.macComputerHost.updateProjectFolders {
+                                try model.macComputerHost.projectGrants.clear(project: project.id)
+                            }
+                        }
+                    }
                     Button("Delete empty project", role: .destructive) {
                         Task { await model.projects.delete(project) }
                     }
@@ -186,6 +209,26 @@
             .background(
                 model.projects.selectedId == project.id ? p.text.opacity(0.04) : .clear,
                 in: RoundedRectangle(cornerRadius: 6))
+        }
+
+        private func folderRecovery(_ project: ProjectRecord, paths: [String]) -> some View {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Computer access needs folders again.").foregroundStyle(p.warning)
+                ForEach(paths, id: \.self) { path in
+                    Text(verbatim: path).lineLimit(1).truncationMode(.middle).foregroundStyle(p.muted).help(path)
+                        .accessibilityLabel("Saved folder: \(path)")
+                }
+                Button("Choose folders…") {
+                    model.macComputerHost.updateProjectFolders {
+                        try model.macComputerHost.projectGrants.choose(project: project.id)
+                    }
+                }
+                .buttonStyle(.plain).foregroundStyle(p.accent)
+                .accessibilityLabel("Choose folders for \(project.name)")
+                .accessibilityIdentifier("project-recover-folders-\(project.id)")
+            }
+            .font(ConsoleTypography.caption).padding(.leading, 52).padding(.trailing, 8).padding(.vertical, 4)
+            .accessibilityElement(children: .contain).accessibilityIdentifier("project-folder-warning-\(project.id)")
         }
 
         private func folderRow(project: String, path: String, index: Int) -> some View {
