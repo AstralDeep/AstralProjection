@@ -336,26 +336,18 @@ def test_transport_responses_are_never_accepted_as_state() -> None:
 
 def test_resource_descriptor_and_tool_metadata_shapes() -> None:
     resource = panel_resource()
-    assert set(resource) == {"uri", "mimeType", "title", "text"}
+    assert set(resource) == {"uri", "mimeType", "title", "text", "_meta"}
     assert resource["uri"] == PANEL_RESOURCE_URI
-    assert resource["mimeType"] == PANEL_RESOURCE_MIME
+    assert resource["mimeType"] == PANEL_RESOURCE_MIME == "text/html;profile=mcp-app"
     assert resource["text"] == panel_document()
+    assert resource["_meta"]["ui"] == {
+        "csp": {"connectDomains": [], "resourceDomains": [], "frameDomains": [], "baseUriDomains": []},
+        "permissions": {},
+    }
     metadata = panel_tool_metadata()
-    assert set(metadata) == {
-        "openai/outputTemplate",
-        "openai/toolInvocation/invoking",
-        "openai/toolInvocation/invoked",
-        "openai/widgetAccessible",
-        "openai/resultCanProduceUI",
-    }
-    assert metadata["openai/outputTemplate"] == {
-        "type": "resource",
-        "uri": PANEL_RESOURCE_URI,
-        "mimeType": PANEL_RESOURCE_MIME,
-        "title": "Astral Work status",
-    }
+    assert metadata["ui"] == {"resourceUri": PANEL_RESOURCE_URI, "visibility": ["model"]}
+    assert metadata["openai/outputTemplate"] == PANEL_RESOURCE_URI
     assert metadata["openai/widgetAccessible"] is False
-    assert metadata["openai/resultCanProduceUI"] is True
 
 
 def test_document_carries_accessibility_and_keyboard_semantics() -> None:
@@ -368,7 +360,7 @@ def test_document_carries_accessibility_and_keyboard_semantics() -> None:
     assert 'event.key !== "Escape"' in document
     assert 'rel = "noopener noreferrer"' in document
     assert 'anchor.target = "_blank"' in document
-    assert "window.openai" in document
+    assert "ui/initialize" in document
     assert "addEventListener(\"message\"" in document
 
 
@@ -380,3 +372,15 @@ def test_validate_panel_view_normalizes_without_mutating_the_input() -> None:
     assert validated == view
     minimal = validate_panel_view({"kind": PANEL_KIND, "state": "waiting", "title": "t"})
     assert set(minimal) == {"kind", "state", "title"}
+
+
+@pytest.mark.parametrize("url", ["//evil.test/a", "/\\evil.test/a", "https://", "https://a@evil.test/x", "mailto:"])
+def test_ambiguous_artifact_urls_are_rejected(url: str) -> None:
+    with pytest.raises(InvalidPanelView):
+        render_chatgpt_panel(_view(artifacts=[{**_ARTIFACT, "url": url}]))
+
+
+@pytest.mark.parametrize("media_type", [[], {}, None, 3])
+def test_non_string_artifact_media_types_are_rejected(media_type: object) -> None:
+    with pytest.raises(InvalidPanelView):
+        render_chatgpt_panel(_view(artifacts=[{**_ARTIFACT, "media_type": media_type}]))

@@ -100,6 +100,18 @@ jobs:
           cache-dependency-path: tooling/web-ci/package-lock.json
       - working-directory: tooling/web-ci
         run: test "$(corepack npm --version)" = "11.16.0" && corepack npm ci --ignore-scripts
+      - name: Install the wheel for external panel browser qualification
+        run: |
+          python -m pip install --require-hashes -r tooling/python-ci/requirements.lock.txt
+          PIP_CONSTRAINT=tooling/python-ci/requirements.lock.txt python -m build --no-isolation
+          python - <<'PY'
+          from pathlib import Path
+          import zipfile
+          wheels = list(Path("dist").glob("astralprojection-*.whl"))
+          assert len(wheels) == 1
+          with zipfile.ZipFile(wheels[0]) as archive:
+              archive.extractall("build/panel-wheel")
+          PY
       - name: Run host checks with native coverage
         working-directory: tooling/web-ci
         env:
@@ -132,6 +144,8 @@ jobs:
           docker run --rm --init \
             --user "$(id -u):$(id -g)" \
             --env HOME=/tmp \
+            --env ASTRAL_PANEL_WHEEL_DIR=/workspace/build/panel-wheel \
+            --env ASTRAL_PANEL_COVERAGE_OUTPUT=/workspace/build/coverage/chatgpt-panel.json \
             --env ASTRAL_ASSIGNMENT_FIXTURE_DIR=/workspace/build/079/browser-fixtures \
             --env ASTRAL_EXPORT_COVERAGE_OUTPUT=/workspace/build/088/export-javascript.json \
             --env ASTRAL_ALL_CLIENT_COVERAGE_DIR=/workspace/build/coverage/javascript/browser-v8/client \
@@ -139,7 +153,16 @@ jobs:
             --volume "$GITHUB_WORKSPACE:/workspace" \
             --workdir /workspace/tooling/web-ci \
             "$image" \
-            /bin/bash -lc 'corepack npm run test:coverage-conversion:browser && node --test tests/mesh-custody.browser.test.mjs && corepack npm exec -- playwright test tests/mesh-enrollment.spec.js tests/continuity-contract-060.spec.js tests/voice-conversation-065.spec.js tests/persistent-agents-079.spec.js tests/offline-worker-088.spec.js tests/canvas-review-088.spec.js tests/native-export-088.spec.js tests/work-reads-088.spec.js tests/guidance-notes-088.spec.js tests/workspace-topbar-088.spec.js tests/native-chart-088.spec.js tests/first-task-088.spec.js tests/selection-088.spec.js --browser=chromium --workers=1'
+            /bin/bash -lc 'corepack npm run test:coverage-conversion:browser && node --test tests/mesh-custody.browser.test.mjs && corepack npm exec -- playwright test tests/mesh-enrollment.spec.js tests/continuity-contract-060.spec.js tests/voice-conversation-065.spec.js tests/persistent-agents-079.spec.js tests/offline-worker-088.spec.js tests/canvas-review-088.spec.js tests/native-export-088.spec.js tests/work-reads-088.spec.js tests/guidance-notes-088.spec.js tests/workspace-topbar-088.spec.js tests/native-chart-088.spec.js tests/first-task-088.spec.js tests/selection-088.spec.js tests/chatgpt-panel.spec.js --browser=chromium --workers=1'
+      - name: Enforce external panel executable-line coverage
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("build/coverage/chatgpt-panel.json").read_text())
+          counts = list(report["coverage"]["backend/webrender/static/chatgpt-panel.js"]["s"].values())
+          assert counts and sum(count > 0 for count in counts) / len(counts) >= .90
+          PY
       - name: Enforce portable export executable-line coverage
         shell: bash
         run: |

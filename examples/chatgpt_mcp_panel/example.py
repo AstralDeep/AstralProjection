@@ -1,8 +1,5 @@
-"""Executable installed-wheel example for ChatGPT MCP Extension hosts: a different
-developer consumes the published astralprojection distribution (no sibling checkout) and
-renders the bounded Astral Work status/artifact panel for every state, denial, recovery
-and fallback path; examples/chatgpt_mcp_panel/README.md documents the pins and duties,
-and tests/interop runs this file deterministically in a clean environment.
+"""Exercises the installed panel renderer with authorized state, denials and text fallback.
+The envelope helpers declare the MCP Apps bindings documented in README.md.
 """
 
 from __future__ import annotations
@@ -21,7 +18,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from envelopes import (  # noqa: E402
     ASTRALPROJECTION_PIN,
-    MCP_SDK_PIN,
+    MCP_APPS_SDK_PIN,
+    MCP_APPS_SPEC_COMMIT,
+    MCP_APPS_PROTOCOL_REVISION,
     MCP_SCHEMA_REVISION,
     TOOL_NAME,
     denied_tool_result,
@@ -200,7 +199,9 @@ def build_report() -> dict[str, Any]:
             "contractVersion": CONTRACT_VERSION,
             "uiProtocolVersion": UI_PROTOCOL_VERSION,
             "uiProtocolSha256": UI_PROTOCOL_SHA256,
-            "mcpSdk": MCP_SDK_PIN,
+            "mcpAppsSdk": MCP_APPS_SDK_PIN,
+            "mcpAppsSpecCommit": MCP_APPS_SPEC_COMMIT,
+            "mcpAppsProtocolRevision": MCP_APPS_PROTOCOL_REVISION,
             "mcpSchemaRevision": MCP_SCHEMA_REVISION,
         },
         "authorizedInputs": {

@@ -6,6 +6,8 @@ graceful MCP text fallback; registered into webrender/registry.py as the 'chatgp
 from __future__ import annotations
 
 import re
+from importlib.resources import files
+from urllib.parse import urlsplit
 from typing import Any
 
 from ..registry import register_target
@@ -14,7 +16,7 @@ from .mcp_renderer import render_mcp
 TARGET_NAME = "chatgpt"
 PANEL_KIND = "astral_work_status"
 PANEL_RESOURCE_URI = "ui://astralprojection/astral-work-status"
-PANEL_RESOURCE_MIME = "text/html"
+PANEL_RESOURCE_MIME = "text/html;profile=mcp-app"
 PANEL_RESOURCE_TITLE = "Astral Work status"
 
 STATE_WAITING = "waiting"
@@ -98,8 +100,18 @@ def _panel_url(value: Any, field: str) -> str:
     url = _clean_text(value, field).strip()
     if not url or len(url) > _MAX_URL or re.search(r"\s", url):
         raise InvalidPanelView(f"{field} must be a bounded whitespace-free URL")
-    if not _PANEL_URL.match(url):
+    if "\\" in url or url.startswith("//") or not _PANEL_URL.match(url):
         raise InvalidPanelView(f"{field} must be http(s), mailto, or root-relative")
+    try:
+        parsed = urlsplit(url)
+        if parsed.scheme.lower() in {"http", "https"}:
+            if not parsed.hostname or parsed.username is not None or parsed.password is not None:
+                raise ValueError("invalid HTTP authority")
+            parsed.port
+        elif parsed.scheme.lower() == "mailto" and not parsed.path:
+            raise ValueError("empty mail recipient")
+    except ValueError as error:
+        raise InvalidPanelView(f"{field} must have a valid URL authority") from error
     return url
 
 
@@ -131,7 +143,7 @@ def _validated_artifact(value: Any) -> dict[str, Any]:
         "media_type": value.get("media_type"),
         "url": _panel_url(value.get("url"), "artifact url"),
     }
-    if artifact["media_type"] not in _ARTIFACT_MEDIA_TYPES:
+    if not isinstance(artifact["media_type"], str) or artifact["media_type"] not in _ARTIFACT_MEDIA_TYPES:
         raise InvalidPanelView("artifact media_type is not in the allowed set")
     if "size_bytes" in value:
         size = value["size_bytes"]
@@ -247,11 +259,12 @@ _DOCUMENT = """<!doctype html>
 body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg);
   font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
 .ap-panel { max-width: 560px; margin: 0 auto; background: var(--card);
-  border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  border: 1px solid var(--line); border-radius: 12px; padding: 16px; overflow-wrap: anywhere; }
 .ap-title { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .ap-state { display: inline-flex; align-items: center; gap: 6px; font-weight: 600;
   font-size: 13px; border: 1px solid var(--line); border-radius: 999px;
-  padding: 2px 10px; margin: 0 0 8px; }
+  padding: 2px 10px; margin: 0 0 8px; max-width: 100%; }
+.ap-state span { min-width: 0; }
 .ap-state[data-state="running"] { color: var(--info); }
 .ap-state[data-state="succeeded"] { color: var(--ok); }
 .ap-state[data-state="failed"] { color: var(--err); }
@@ -283,157 +296,15 @@ body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg);
   <ul class="ap-artifacts" id="ap-artifacts" hidden></ul>
   <p class="ap-off" id="ap-off">This panel shows the live Astral Work status when the chat host supports resource panels. The full status is always available in the assistant messages.</p>
 </main>
-<script>
-(function () {
-  "use strict";
-  var PANEL_KIND = "astral_work_status";
-  var LABELS = {
-    "waiting": "Waiting to start",
-    "running": "Running",
-    "input_required": "Input required",
-    "failed": "Failed",
-    "cancelled": "Cancelled",
-    "succeeded": "Completed"
-  };
-  var MAX_ARTIFACTS = 8;
-
-  function el(id) { return document.getElementById(id); }
-
-  function readBridge() {
-    var host = null;
-    try { host = window.openai || null; } catch (error) { host = null; }
-    if (!host || typeof host !== "object") return null;
-    var candidates = [host.toolOutput, host.toolResponseMetadata];
-    for (var i = 0; i < candidates.length; i++) {
-      var value = candidates[i];
-      if (value && typeof value === "object" && value.kind === PANEL_KIND
-        && typeof value.state === "string" && LABELS[value.state]) return value;
-    }
-    return null;
-  }
-
-  function setText(id, text) {
-    var node = el(id);
-    node.textContent = text;
-    node.hidden = !text;
-  }
-
-  function safeHref(url) {
-    if (typeof url !== "string") return null;
-    var candidate = url.trim();
-    if (!candidate || candidate.length > 2048 || /\\s/.test(candidate)) return null;
-    if (/^(https?:\\/\\/|mailto:|\\/)/i.test(candidate)) return candidate;
-    return null;
-  }
-
-  function formatBytes(size) {
-    if (size < 1024) return size + " B";
-    var units = ["KB", "MB", "GB", "TB"];
-    var value = size;
-    for (var i = 0; i < units.length; i++) {
-      value = value / 1024;
-      if (value < 1024 || i === units.length - 1) {
-        return (Math.round(value * 10) / 10) + " " + units[i];
-      }
-    }
-    return size + " B";
-  }
-
-  function render(view) {
-    var pill = el("ap-state");
-    pill.setAttribute("data-state", view.state);
-    el("ap-state-text").textContent = LABELS[view.state] || view.state;
-    var spin = el("ap-spin");
-    if (spin) spin.hidden = view.state !== "running";
-    var bar = el("ap-progress");
-    var fill = el("ap-progress-fill");
-    var progress = view.progress;
-    if (view.state === "running" && progress && typeof progress.completed === "number"
-      && typeof progress.total === "number" && progress.total > 0) {
-      bar.removeAttribute("aria-hidden");
-      var percent = Math.round((progress.completed / progress.total) * 100);
-      percent = Math.max(0, Math.min(100, percent));
-      fill.style.width = percent + "%";
-      bar.setAttribute("aria-valuemin", "0");
-      bar.setAttribute("aria-valuemax", "100");
-      bar.setAttribute("aria-valuenow", String(percent));
-    } else {
-      bar.setAttribute("aria-hidden", "true");
-      fill.style.width = "0";
-    }
-    el("ap-title").textContent =
-      typeof view.title === "string" && view.title ? view.title : "Astral Work";
-    setText("ap-message", typeof view.status_message === "string" ? view.status_message : "");
-    setText("ap-detail", typeof view.detail === "string" ? view.detail : "");
-    var list = el("ap-artifacts");
-    list.textContent = "";
-    var artifacts = Array.isArray(view.artifacts) ? view.artifacts : [];
-    for (var i = 0; i < artifacts.length && i < MAX_ARTIFACTS; i++) {
-      var artifact = artifacts[i];
-      if (!artifact || typeof artifact !== "object") continue;
-      var title = typeof artifact.title === "string" && artifact.title
-        ? artifact.title : "Artifact";
-      var link = document.createElement("li");
-      var href = safeHref(artifact.url);
-      if (href) {
-        var anchor = document.createElement("a");
-        anchor.href = href;
-        anchor.target = "_blank";
-        anchor.rel = "noopener noreferrer";
-        anchor.textContent = title;
-        link.appendChild(anchor);
-      } else {
-        var plain = document.createElement("span");
-        plain.textContent = title;
-        link.appendChild(plain);
-      }
-      var meta = [];
-      if (typeof artifact.media_type === "string" && artifact.media_type) {
-        meta.push(artifact.media_type);
-      }
-      if (typeof artifact.size_bytes === "number" && artifact.size_bytes >= 0) {
-        meta.push(formatBytes(artifact.size_bytes));
-      }
-      if (typeof artifact.note === "string" && artifact.note) meta.push(artifact.note);
-      if (meta.length) {
-        var line = document.createElement("div");
-        line.className = "ap-meta";
-        line.textContent = meta.join(" \\u00b7 ");
-        link.appendChild(line);
-      }
-      list.appendChild(link);
-    }
-    list.hidden = !list.childElementCount;
-    el("ap-off").hidden = true;
-  }
-
-  var initial = readBridge();
-  if (initial) render(initial);
-
-  window.addEventListener("message", function (event) {
-    var data = event.data;
-    if (data && typeof data === "object" && data.kind === PANEL_KIND
-      && typeof data.state === "string" && LABELS[data.state]) render(data);
-  });
-
-  document.addEventListener("keydown", function (event) {
-    if (event.key !== "Escape") return;
-    var host = null;
-    try { host = window.openai || null; } catch (error) { host = null; }
-    if (host && typeof host.requestClose === "function") {
-      try { host.requestClose(); return; } catch (error) { }
-    }
-    el("ap-panel").focus();
-  });
-})();
-</script>
+<script>__ASTRAL_PANEL_SCRIPT__</script>
 </body>
 </html>
 """
 
 
 def panel_document() -> str:
-    return _DOCUMENT
+    script = files("webrender").joinpath("static/chatgpt-panel.js").read_text(encoding="utf-8")
+    return _DOCUMENT.replace("__ASTRAL_PANEL_SCRIPT__", script)
 
 
 def panel_resource() -> dict[str, Any]:
@@ -441,22 +312,21 @@ def panel_resource() -> dict[str, Any]:
         "uri": PANEL_RESOURCE_URI,
         "mimeType": PANEL_RESOURCE_MIME,
         "title": PANEL_RESOURCE_TITLE,
-        "text": _DOCUMENT,
+        "text": panel_document(),
+        "_meta": {"ui": {
+            "csp": {"connectDomains": [], "resourceDomains": [], "frameDomains": [], "baseUriDomains": []},
+            "permissions": {},
+        }},
     }
 
 
 def panel_tool_metadata() -> dict[str, Any]:
     return {
-        "openai/outputTemplate": {
-            "type": "resource",
-            "uri": PANEL_RESOURCE_URI,
-            "mimeType": PANEL_RESOURCE_MIME,
-            "title": PANEL_RESOURCE_TITLE,
-        },
+        "ui": {"resourceUri": PANEL_RESOURCE_URI, "visibility": ["model"]},
+        "openai/outputTemplate": PANEL_RESOURCE_URI,
         "openai/toolInvocation/invoking": "Loading Astral Work status",
         "openai/toolInvocation/invoked": "Loaded Astral Work status",
         "openai/widgetAccessible": False,
-        "openai/resultCanProduceUI": True,
     }
 
 

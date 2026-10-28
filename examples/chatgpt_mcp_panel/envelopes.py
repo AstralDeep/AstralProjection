@@ -11,8 +11,10 @@ from typing import Any
 
 import webrender.targets.chatgpt_panel as chatgpt_panel
 
-MCP_SDK_PIN = "mcp==2.3.0"
-MCP_SCHEMA_REVISION = "2026-07-28"
+MCP_APPS_SDK_PIN = "@modelcontextprotocol/ext-apps==2.0.4"
+MCP_APPS_SPEC_COMMIT = "7af9a75da720b8a81be0f9aff47b25f75e9530ad"
+MCP_APPS_PROTOCOL_REVISION = "2026-01-26"
+MCP_SCHEMA_REVISION = "2025-11-25"
 ASTRALPROJECTION_PIN = "astralprojection==0.1.0"
 TOOL_NAME = "astral_work_status"
 
@@ -32,7 +34,7 @@ def tool_descriptor() -> dict[str, Any]:
 
 def resources_read_result() -> dict[str, Any]:
     resource = chatgpt_panel.panel_resource()
-    contents = {key: resource[key] for key in ("uri", "mimeType", "title", "text")}
+    contents = {key: resource[key] for key in ("uri", "mimeType", "title", "text", "_meta")}
     return {"contents": [contents]}
 
 
@@ -71,7 +73,9 @@ def summarize_envelope(envelope: dict[str, Any]) -> dict[str, Any]:
 
 __all__ = [
     "ASTRALPROJECTION_PIN",
-    "MCP_SDK_PIN",
+    "MCP_APPS_SDK_PIN",
+    "MCP_APPS_SPEC_COMMIT",
+    "MCP_APPS_PROTOCOL_REVISION",
     "MCP_SCHEMA_REVISION",
     "TOOL_NAME",
     "denied_tool_result",

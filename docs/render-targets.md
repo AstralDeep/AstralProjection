@@ -123,57 +123,33 @@ They render the structured `components` of each frame themselves
 
 ## `chatgpt`
 
-- `install()` registers `render_chatgpt_panel_target` under the lowercase name
-  `chatgpt`. The target renders the Astral Work status/artifact panel for OpenAI MCP
-  Extension hosts: a static vanilla HTML/CSS/JS panel document served as a
-  `text/html` resource (`ui://astralprojection/astral-work-status`), the validated view
-  model for the host's widget bridge, and bounded MCP text content blocks for every
-  other surface.
-- Unlike `mcp`, this target does not project arbitrary component trees: its registry
-  callable accepts exactly one panel view-model object (a one-element list carrying a
-  dict) and raises `InvalidPanelView` otherwise. The view model is a closed, bounded
-  shape: `kind` must be `astral_work_status`, `state` must be one of `waiting`,
-  `running`, `input_required`, `failed`, `cancelled` and `succeeded`, `title`, `detail`,
-  `status_message`, `progress` (only while running, with `0 <= completed <= total`), and
-  at most 8 `artifacts` are accepted; any other top-level or artifact key — including
-  `html`, `script`, `css`, `style`, `token` and `onclick` — is rejected. Strings are
-  bounded (title 200, detail 2000, message 500, artifact fields 128/200/200), lone
-  surrogates become U+FFFD, and control characters other than newline and tab are
-  rejected.
-- Artifact links are restricted to `http(s)`, `mailto:` and root-relative URLs of at
-  most 2048 characters without whitespace; `media_type` must match one allowlisted MIME
-  type exactly (`text/plain`, `text/markdown`, `text/csv`, `text/html`,
-  `application/json`, `application/pdf`, `image/png`, `image/jpeg`, `image/webp`), and
-  `size_bytes` must be an integer within `0..2^40`. The panel only links artifacts; it
-  never renders them inline. The document's JavaScript re-checks every URL against the
-  same rule and renders all dynamic text with `textContent`, so authored HTML, scripts
-  and untrusted styling cannot reach the widget even if a future host bridge changed.
-- Every state is rendered truthfully from the view model alone. The renderer has no
-  path that infers completion from a transport response: a `CallToolResult`-shaped
-  payload is rejected like any other non-conforming input, and the document's static
-  default is a neutral "status unavailable" notice, never a completion state.
-- `render_chatgpt_panel(view_model)` returns `kind`, `resource` (the descriptor plus the
-  full document text), `structuredContent` (the validated view model, JSON-safe),
-  `content` (text blocks routed through the bounded `mcp` renderer), and `metadata`
-  (the `_meta` fragment: `openai/outputTemplate`, `openai/toolInvocation/invoking`,
-  `openai/toolInvocation/invoked`, `openai/widgetAccessible` set to false, and
-  `openai/resultCanProduceUI`). Hosts without the extension ignore the metadata and
-  bridge and surface the text blocks, which carry the complete status; a host serving
-  the document under a stricter CSP that blocks inline scripts gets the document's
-  static notice instead of the live widget. The recommended serving posture — a
-  `default-src 'none'` CSP with no network or subresources and an
-  `iframe sandbox="allow-scripts"` without `allow-same-origin` — is documented in
-  [`examples/chatgpt_mcp_panel/README.md`](../examples/chatgpt_mcp_panel/README.md).
-- The document carries `role="status"` with `aria-live="polite"`, a
-  `role="progressbar"` when determinate progress exists, a labelled `region`, visible
-  `:focus-visible` outlines, reduced-motion support, and Escape handling that returns
-  focus to the panel (or calls a feature-detected host close hook).
-- The Windows, Android and Apple clients do not consume this target, and no
-  `contracts/ui_protocol.json` vocabulary changes: the panel input is a target-local
-  view model, not a component type. The OpenAI metadata key names follow the MCP
-  Extensions output-template pattern reviewed for this issue; the external ChatGPT host
-  and platform acceptance run in pull-request CI, and the synthetic host in
-  `examples/chatgpt_mcp_panel/` qualifies the serving posture over loopback HTTP.
+`install()` registers `render_chatgpt_panel_target`. Its one input is a one-element
+list containing a host-authorized, bounded `astral_work_status` view model. It renders
+waiting, running, input-required, failed, cancelled and successful work states;
+unknown fields, authored HTML/styles, invalid progress, oversized values and unsafe
+artifact links are rejected. `render_chatgpt_panel()` returns the static resource,
+validated structured content, complete bounded MCP text fallback, and UI tool metadata.
+
+The resource is `text/html;profile=mcp-app`; `_meta.ui.resourceUri` binds the tool to
+`ui://astralprojection/astral-work-status`. The optional OpenAI output-template alias
+is a URI string. Empty standard CSP allowlists and permissions accompany the resource.
+The host negotiates `io.modelcontextprotocol/ui` support and otherwise emits text content.
+
+The vanilla script implements the MCP Apps `2026-01-26` initialization, initialized,
+complete-input, result, cancellation and teardown lifecycle. It binds the parent source
+and referrer origin, matches the initialization ID, validates each result before using
+`textContent`, clears stale private state on malformed/error results, and retires late
+updates after teardown/cancellation or duplicate input. Escape returns panel focus.
+The view issues no product action or tool call; the host retains every authorization gate.
+
+The [installed-wheel example](../examples/chatgpt_mcp_panel/README.md) documents exact
+protocol/development SDK pins, referrer and sandbox requirements, CSP, accessibility,
+link rules and text fallback. The web browser suite runs the official AppBridge against
+the executed resource through a separate-origin sandbox proxy, including delayed results,
+foreign messages and revocation. The example's HTTP exerciser verifies envelopes only.
+Actual ChatGPT connector acceptance remains pending and is not a CI claim.
+Windows, Android and Apple do not consume this external target; shared protocol vocabulary,
+client dispositions, product defaults and deployment remain unchanged.
 
 ## `stubtext`
 

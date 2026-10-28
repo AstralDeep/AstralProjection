@@ -2559,13 +2559,22 @@
       "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
     },
     {
+      "path": "tooling/web-ci/package-lock.json",
+      "sourcePath": "tooling/web-ci/package-lock.json",
+      "sourceBlob": "200dea188f2416f171c5112f6223208e8cdf2e71",
+      "sourceMode": "100644",
+      "resultSha256": "1c73e51ca61a7aaeae421e76e4cf54e6e8f35b96a27b64a5bdcec5a531137531",
+      "task": "T063/T012",
+      "reason": " Pin the official MCP Apps AppBridge and its exact test-only MCP/Zod dependency graph for executable installed-panel lifecycle qualification."
+    },
+    {
       "path": "tooling/web-ci/package.json",
       "sourcePath": "tooling/web-ci/package.json",
       "sourceBlob": "b56acfe10999e5787d5c4eb506d5c0fea2031bb6",
       "sourceMode": "100644",
-      "resultSha256": "38222bff0b15c00aab0f799cd4b10457d92cb22ce8a8cb2f8815e7279678b134",
+      "resultSha256": "e0b919dea803f0f01374aa3f3cf70578a5a184444e79766cec7fef4d103e0bbd",
       "task": "T063/T012",
-      "reason": "Replace monorepo-only isolation probes with the tested standalone Projection product-closure check and expose the canonical Node-plus-browser coverage union command. Feature 088 T012: include maintained worker browser and unit tests in the existing JavaScript lint scope; dependency and lockfile entries are unchanged. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Backend/web readiness: collect exact-source Chromium coverage from the existing browser contracts and add reviewed CI-only conversion commands without changing product dependencies."
+      "reason": "Replace monorepo-only isolation probes with the tested standalone Projection product-closure check and expose the canonical Node-plus-browser coverage union command. Feature 088 T012: include maintained worker browser and unit tests in the existing JavaScript lint scope; dependency and lockfile entries are unchanged. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Backend/web readiness: collect exact-source Chromium coverage from the existing browser contracts and add reviewed CI-only conversion commands without changing product dependencies. Pin the official MCP Apps AppBridge and its exact test-only MCP/Zod dependency graph for executable installed-panel lifecycle qualification."
     },
     {
       "path": "tooling/web-ci/release-runner.mjs",
@@ -3435,7 +3444,7 @@
         }
       ],
       "task": "T056/T015",
-      "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes. Feature 088 Android CI now builds one dedicated opt-in coverage variant, runs all synthetic device scenarios against retained APKs, and preserves raw native JVM/device report evidence without changing normal debug/release behavior. Disable Gradle configuration caching only for opt-in coverage preparation, matching the qualified native coverage report invocation; normal debug/release configuration and all coverage gates remain unchanged. Use complete physical command lines for the emulator actionÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢s line-oriented script execution, preserving the exact device/report arguments and gates. Fair CI 2026-09-27: cap build-test and the instrumented emulator lane at 30 minutes and the readiness diagnostic at 15. Rewrite the stale header comment's AstralDeep principle reference so it describes Projection Constitution Principle X. Acquire the exact official Linux emulator archive used by the previous passing hosted run through a size-and-SHA-256-locked owned fixture, preserve recognized package metadata and verify unchanged emulator identity around system-image installation; retain the complete single device/report lane and unconditional process and temporary-AVD cleanup without changing the job, boot or test budgets. Make native owner workflows report immutable-range applicability on every PR and main push, preserve every affected owner gate, and disclose existing per-test retry outcomes."
+      "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes. Feature 088 Android CI now builds one dedicated opt-in coverage variant, runs all synthetic device scenarios against retained APKs, and preserves raw native JVM/device report evidence without changing normal debug/release behavior. Disable Gradle configuration caching only for opt-in coverage preparation, matching the qualified native coverage report invocation; normal debug/release configuration and all coverage gates remain unchanged. Use complete physical command lines for the emulator action\u00c3\u0192\u00c2\u00a2\u00c3\u00a2\u00e2\u20ac\u0161\u00c2\u00ac\u00c3\u00a2\u00e2\u20ac\u017e\u00c2\u00a2s line-oriented script execution, preserving the exact device/report arguments and gates. Fair CI 2026-09-27: cap build-test and the instrumented emulator lane at 30 minutes and the readiness diagnostic at 15. Rewrite the stale header comment's AstralDeep principle reference so it describes Projection Constitution Principle X. Acquire the exact official Linux emulator archive used by the previous passing hosted run through a size-and-SHA-256-locked owned fixture, preserve recognized package metadata and verify unchanged emulator identity around system-image installation; retain the complete single device/report lane and unconditional process and temporary-AVD cleanup without changing the job, boot or test budgets. Make native owner workflows report immutable-range applicability on every PR and main push, preserve every affected owner gate, and disclose existing per-test retry outcomes."
     },
     {
       "path": "workflows-disabled/apple-ci.yml",

@@ -1,12 +1,12 @@
-"""Interop tests for examples/chatgpt_mcp_panel: they pin the declared MCP revision and
-envelope shapes, run the wheel-only example deterministically inside a venv holding a
-freshly built installed wheel, and exercise the synthetic ChatGPT-style host over loopback
-HTTP including its declared CSP, sandbox posture and no-panel fallback.
+"""Validates installed-wheel panel metadata, state and text fallback envelopes.
+The loopback checks verify HTTP serving; the web suite separately executes the actual iframe lifecycle.
 """
 
 from __future__ import annotations
 
 import ast
+import importlib.metadata
+import shutil
 import hashlib
 import importlib.util
 import json
@@ -19,6 +19,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from packaging.requirements import Requirement
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLE_DIR = REPOSITORY_ROOT / "examples" / "chatgpt_mcp_panel"
@@ -44,13 +45,12 @@ _MCP_RESULT_KEYS = {"content", "isError", "structuredContent", "_meta"}
 _MCP_TEXT_BLOCK_KEYS = {"type", "text", "annotations", "_meta"}
 _SUMMARY_KEYS = {"isError", "contentText", "structuredState", "sha256"}
 _PANEL_STATES = {"waiting", "running", "input_required", "failed", "cancelled", "succeeded"}
-_OUTPUT_TEMPLATE_KEYS = {"type", "uri", "mimeType", "title"}
 _METADATA_KEYS = {
     "openai/outputTemplate",
     "openai/toolInvocation/invoking",
     "openai/toolInvocation/invoked",
     "openai/widgetAccessible",
-    "openai/resultCanProduceUI",
+    "ui",
 }
 
 
@@ -133,6 +133,26 @@ def wheel_python(tmp_path_factory) -> str:
     )
     with zipfile.ZipFile(wheels[0]) as archive:
         archive.extractall(site_packages)
+    pending = ["astralprims"]
+    copied: set[str] = set()
+    while pending:
+        name = pending.pop()
+        if name in copied:
+            continue
+        dependency = importlib.metadata.distribution(name)
+        copied.add(name)
+        for requirement in dependency.requires or []:
+            parsed = Requirement(requirement)
+            if parsed.marker is None or parsed.marker.evaluate({"extra": ""}):
+                pending.append(parsed.name)
+        for member in dependency.files or []:
+            if ".." in member.parts:
+                continue
+            source = dependency.locate_file(member)
+            destination = Path(site_packages) / member
+            if source.is_file():
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, destination)
     probe = subprocess.run(
         [str(python), "-I", "-c", "import astralprojection, webrender.targets.chatgpt_panel;print(astralprojection.__file__)"],
         capture_output=True,
@@ -198,16 +218,19 @@ def test_example_is_byte_identical_across_clean_runs(example_outputs) -> None:
 
 def test_example_pins_and_panel_resource_match_the_declared_target(example_outputs) -> None:
     document = json.loads(example_outputs[0])
-    assert document["pins"]["mcpSdk"] == "mcp==2.3.0"
-    assert document["pins"]["mcpSchemaRevision"] == "2026-07-28"
+    assert document["pins"]["mcpAppsSdk"] == "@modelcontextprotocol/ext-apps==2.0.4"
+    assert document["pins"]["mcpAppsProtocolRevision"] == "2026-01-26"
+    assert document["pins"]["mcpAppsSpecCommit"] == "7af9a75da720b8a81be0f9aff47b25f75e9530ad"
+    assert document["pins"]["mcpSchemaRevision"] == "2025-11-25"
     assert document["pins"]["astralprojection"] == "astralprojection==0.1.0"
     assert document["pins"]["contractVersion"] == "astralprojection.contract/v1"
     assert re.fullmatch(r"[0-9a-f]{64}", document["pins"]["uiProtocolSha256"])
     assert document["toolName"] == "astral_work_status"
     assert document["panelResource"]["uri"] == "ui://astralprojection/astral-work-status"
-    assert document["panelResource"]["mimeType"] == "text/html"
+    assert document["panelResource"]["mimeType"] == "text/html;profile=mcp-app"
     template = document["toolDescriptor"]["_meta"]["openai/outputTemplate"]
-    assert set(template) == _OUTPUT_TEMPLATE_KEYS
+    assert template == document["panelResource"]["uri"]
+    assert document["toolDescriptor"]["_meta"]["ui"]["resourceUri"] == template
     assert set(document["toolDescriptor"]["_meta"]) == _METADATA_KEYS
     assert document["toolDescriptor"]["_meta"]["openai/widgetAccessible"] is False
     read_result = document["resourcesReadResult"]
@@ -301,7 +324,7 @@ def test_example_runs_from_the_freshly_built_installed_wheel(
     _assert_summary(succeeded)
 
 
-def test_synthetic_host_exercises_the_panel_like_the_external_host(tmp_path, wheel_python) -> None:
+def test_loopback_http_serves_panel_envelopes(tmp_path, wheel_python) -> None:
     home = tmp_path / "host-home"
     home.mkdir()
     example = json.loads(_run_example(home, wheel_python))
@@ -321,7 +344,7 @@ def test_synthetic_host_exercises_the_panel_like_the_external_host(tmp_path, whe
         thread.join(timeout=10)
     assert summary["toolName"] == "astral_work_status"
     assert summary["outputTemplateUri"] == example["panelResource"]["uri"]
-    assert summary["outputTemplateMime"] == "text/html"
+    assert summary["outputTemplateMime"] == "text/html;profile=mcp-app"
     assert summary["resourceMatchesPanelDocument"] is True
     assert summary["panelCsp"] == host.PANEL_CSP
     assert "default-src 'none'" in summary["panelCsp"]
@@ -354,23 +377,6 @@ def test_synthetic_host_denies_unknown_work_items() -> None:
         thread.join(timeout=10)
     assert denial["isError"] is True
     assert "host policy denied" in denial["content"][0]["text"]
-
-
-def test_official_mcp_sdk_validates_panel_tool_result(example_outputs) -> None:
-    mcp_types = pytest.importorskip("mcp.types")
-    document = json.loads(example_outputs[0])
-    succeeded = next(
-        scenario["envelope"]
-        for scenario in document["stateScenarios"]
-        if scenario["structuredState"] == "succeeded"
-    )
-    raw = {
-        "content": [{"type": "text", "text": succeeded["contentText"]}],
-        "isError": succeeded["isError"],
-    }
-    result = mcp_types.CallToolResult.model_validate(raw)
-    assert result.is_error is False
-    assert all(block.type == "text" for block in result.content)
 
 
 def test_panel_document_digest_is_pinned_in_the_example_report(example_outputs) -> None:

@@ -605,10 +605,10 @@ def test_runtime_manifests_bind_exact_owning_dependency_inventory() -> None:
             "ed268e071ad98432ae418a6ac54189f64ae26e02049b9a7c49bbceffaf820171"
         ),
         "tooling/web-ci/package.json": (
-            "38222bff0b15c00aab0f799cd4b10457d92cb22ce8a8cb2f8815e7279678b134"
+            "e0b919dea803f0f01374aa3f3cf70578a5a184444e79766cec7fef4d103e0bbd"
         ),
         "tooling/web-ci/package-lock.json": (
-            "d0e6a477342e1d6ab3c95264a1ddde32dbb3fb1afb8288d9fac24e7f51dc0db8"
+            "1c73e51ca61a7aaeae421e76e4cf54e6e8f35b96a27b64a5bdcec5a531137531"
         ),
         "windows-client/requirements.in": (
             "697e2bc0786468f3621d2e043af81d6721e6734816cbe00eca7901958921a58f"
@@ -751,7 +751,7 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
     assert paths == sorted(paths)
     assert len(paths) == len(set(paths))
     assert len(extraction["entries"]) == 519
-    assert len(paths) == 388
+    assert len(paths) == 389
     assert sum(entry.get("resultStatus") == "removed" for entry in record["entries"]) == 20
 
     moved_workflows = {
@@ -773,7 +773,7 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
         f"unledgered imported changes: {sorted(changed_paths - set(paths))}; "
         f"ledger entries without imported changes: {sorted(set(paths) - changed_paths)}"
     )
-    assert len(extracted) - len(changed_paths) == 131
+    assert len(extracted) - len(changed_paths) == 130
 
     for entry in record["entries"]:
         path = entry["path"]

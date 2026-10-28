@@ -1,6 +1,5 @@
-"""Synthetic ChatGPT-style MCP host for local panel qualification: serves the pinned
-panel document and tool envelopes over loopback HTTP under the declared CSP and sandbox
-posture, and exercises them like the external host would; deterministic and offline.
+"""Serves the panel resource and tool envelopes for loopback HTTP envelope checks.
+The separate browser suite executes the installed document through the official AppBridge.
 """
 
 from __future__ import annotations
@@ -120,7 +119,7 @@ def _fetch(base_url: str, path: str) -> tuple[bytes, dict[str, str]]:
 def exercise(base_url: str, work_id: str) -> dict[str, Any]:
     descriptor_body, _ = _fetch(base_url, "/tools/list")
     descriptor = json.loads(descriptor_body)["tools"][0]
-    template = descriptor["_meta"]["openai/outputTemplate"]
+    template = descriptor["_meta"]["ui"]["resourceUri"]
 
     resource_body, _ = _fetch(
         base_url, f"/resources/read?uri={chatgpt_panel.PANEL_RESOURCE_URI}"
@@ -144,8 +143,8 @@ def exercise(base_url: str, work_id: str) -> dict[str, Any]:
 
     return {
         "toolName": descriptor["name"],
-        "outputTemplateUri": template["uri"],
-        "outputTemplateMime": template["mimeType"],
+        "outputTemplateUri": template,
+        "outputTemplateMime": resource["mimeType"],
         "resourceUri": resource["uri"],
         "resourceMatchesPanelDocument": (
             hashlib.sha256(resource["text"].encode("utf-8")).hexdigest()

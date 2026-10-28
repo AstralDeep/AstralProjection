@@ -142,7 +142,7 @@ def test_public_offline_worker_has_measured_ci_and_real_browser_gates() -> None:
         "tests/native-export-088.spec.js tests/work-reads-088.spec.js "
         "tests/guidance-notes-088.spec.js tests/workspace-topbar-088.spec.js "
         "tests/native-chart-088.spec.js tests/first-task-088.spec.js "
-        "tests/selection-088.spec.js "
+        "tests/selection-088.spec.js tests/chatgpt-panel.spec.js "
         "--browser=chromium"
     ) in web
     listed = subprocess.run(
@@ -1788,3 +1788,13 @@ def test_raw_coverage_is_retained_for_every_nonnative_producer():
         assert producer in convert
     for lane in ("--node", "--browser", "--offline-node", "--export-browser"):
         assert lane in convert
+
+
+def test_external_panel_browser_gate_executes_the_built_wheel() -> None:
+    web = _job_block((ACTIVE / "ci.yml").read_text(), "web")
+    assert "PIP_CONSTRAINT=tooling/python-ci/requirements.lock.txt python -m build --no-isolation" in web
+    assert 'archive.extractall("build/panel-wheel")' in web
+    assert "--env ASTRAL_PANEL_WHEEL_DIR=/workspace/build/panel-wheel" in web
+    assert "tests/chatgpt-panel.spec.js" in web
+    assert "--env ASTRAL_PANEL_COVERAGE_OUTPUT=/workspace/build/coverage/chatgpt-panel.json" in web
+    assert '["backend/webrender/static/chatgpt-panel.js"]["s"]' in web
