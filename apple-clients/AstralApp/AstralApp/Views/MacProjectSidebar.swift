@@ -79,6 +79,14 @@
                     Text("No matching chats").font(ConsoleTypography.caption).foregroundStyle(p.muted)
                         .padding(.horizontal, 12)
                 }
+                if model.projects.enabled, !model.projects.loading, model.projects.projects.isEmpty, search.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("No projects yet").font(ConsoleTypography.subheadline)
+                        Text("Create a project to start a chat.").font(ConsoleTypography.caption)
+                    }
+                    .foregroundStyle(p.muted).padding(.horizontal, 8).padding(.vertical, 6)
+                    .accessibilityIdentifier("project-empty-state")
+                }
                 ForEach(visibleProjects) { project in
                     let expanded = disclosure.isExpanded(
                         project.id, selected: model.projects.selectedId, active: activeProject,
@@ -133,6 +141,20 @@
                     renaming = nil
                 }
                 Button("Cancel", role: .cancel) { renaming = nil }
+            }
+            .alert(
+                "Delete project?",
+                isPresented: Binding(
+                    get: { model.projectPendingDeletion != nil },
+                    set: { if !$0 { model.cancelProjectDeletion() } }),
+                presenting: model.projectPendingDeletion
+            ) { _ in
+                Button("Cancel", role: .cancel) { model.cancelProjectDeletion() }
+                Button("Delete project", role: .destructive) { model.confirmProjectDeletion() }
+            } message: { project in
+                Text(
+                    "“\(project.name)” and all chats under this project will be deleted. Audit logs and local folders will be kept."
+                )
             }
         }
 
@@ -193,9 +215,7 @@
                             }
                         }
                     }
-                    Button("Delete empty project", role: .destructive) {
-                        Task { await model.projects.delete(project) }
-                    }
+                    Button("Delete project…", role: .destructive) { model.requestProjectDeletion(project) }
                 } label: {
                     Image(systemName: "ellipsis").frame(width: 24, height: 24)
                 }

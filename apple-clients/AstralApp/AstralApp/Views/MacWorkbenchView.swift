@@ -462,7 +462,6 @@
         @Environment(ThemeStore.self) private var theme
         let console: ConsoleModel
         @State private var query = ""
-        @State private var newChatHovered = false
         @FocusState private var searchFocused: Bool
         private var p: AstralPalette { theme.palette }
         private var chats: [ChatSummary] {
@@ -489,22 +488,6 @@
                     }
                 }
                 .frame(height: 32)
-                Button {
-                    model.newChat()
-                    model.consoleDrawerOpen = false
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "square.and.pencil").font(.system(size: 16)).frame(width: 24)
-                        Text(model.consoleLabel("new_chat")).font(ConsoleTypography.subheadline)
-                        Spacer(minLength: 0)
-                    }
-                    .foregroundStyle(p.text).padding(.horizontal, 8).frame(height: 30)
-                    .background(newChatHovered ? p.text.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 10))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain).disabled(model.mandatorySurface)
-                .accessibilityIdentifier("new-chat-button")
-                .onHover { newChatHovered = $0 }
                 MacSearchField(
                     prompt: "Search chats", text: $query, focused: $searchFocused, identifier: "workbench-chat-search")
                 ScrollView {

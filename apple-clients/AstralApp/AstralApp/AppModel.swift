@@ -283,6 +283,8 @@ final class AppModel: NSObject {
         @ObservationIgnored private var projectChoiceEpoch = UUID()
         @ObservationIgnored private var projectCreationTask: Task<Void, Never>?
         @ObservationIgnored private var projectCreationEpoch = UUID()
+        var projectPendingDeletion: ProjectRecord?
+        @ObservationIgnored private var projectDeletionAction: (() async -> Void)?
     #endif
     var activeChatId: String?
 
@@ -1163,6 +1165,7 @@ final class AppModel: NSObject {
             projectCreationTask?.cancel()
             projectCreationTask = nil
             projectCreationEpoch = UUID()
+            cancelProjectDeletion()
             projects.bind(scope: hostScope, client: projectClient)
             let hostDescriptor: ComputerHostDescriptor? = nil
             let hostCapable = macComputerHost.available
@@ -5376,6 +5379,34 @@ final class AppModel: NSObject {
             return token
         }
         func selectProject(_ id: String) { projects.select(id) }
+        func requestProjectDeletion(_ project: ProjectRecord) {
+            guard projects.enabled, !mandatorySurface, projects.projects.contains(where: { $0.id == project.id }) else {
+                return
+            }
+            let owner = downloadOwner
+            let connection = continuity.connectionGeneration
+            let requestedChats = Set(projects.chats[project.id]?.map(\.id) ?? [])
+            projectPendingDeletion = project
+            projectDeletionAction = { [weak self] in
+                guard let self, self.downloadOwner == owner, self.continuity.connectionGeneration == connection,
+                    self.projects.enabled
+                else { return }
+                let chats = requestedChats.union(self.projects.chats[project.id]?.map(\.id) ?? [])
+                guard let deletedChats = await self.projects.delete(project), self.downloadOwner == owner,
+                    self.continuity.connectionGeneration == connection
+                else { return }
+                for chat in chats.union(deletedChats) { self.clearConfirmedDeletion(chat) }
+            }
+        }
+        func cancelProjectDeletion() {
+            projectPendingDeletion = nil
+            projectDeletionAction = nil
+        }
+        func confirmProjectDeletion() {
+            let action = projectDeletionAction
+            cancelProjectDeletion()
+            Task { await action?() }
+        }
         func presentProjectCreation() {
             guard projects.enabled, !mandatorySurface else { return }
             cancelProjectChoice()
@@ -5383,6 +5414,7 @@ final class AppModel: NSObject {
         }
         private func retireProjectCatalog() {
             cancelProjectChoice()
+            cancelProjectDeletion()
             projectCreationTask?.cancel()
             projectCreationTask = nil
             projectCreationEpoch = UUID()

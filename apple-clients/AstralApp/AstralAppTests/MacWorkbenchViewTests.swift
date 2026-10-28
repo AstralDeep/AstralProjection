@@ -15,6 +15,30 @@
 
     @MainActor
     final class MacWorkbenchViewTests: XCTestCase {
+        func testEmptyProjectSidebarExplainsHowToStartWithoutGlobalChatButton() async throws {
+            let (model, suite) = try panelModel()
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            let (_, window) = try mountWorkbench(model, width: 1440, activity: false)
+            defer { window.close() }
+            model.projects.bind(
+                scope: "owner",
+                client: RestClient(
+                    serverBase: URL(string: "https://example.test")!, tokenProvider: { nil },
+                    transport: { _ in (200, Data(#"{"projects":[],"next_cursor":null}"#.utf8)) }))
+            model.projects.negotiate(true)
+            await model.projects.refresh()
+            window.makeKeyAndOrderFront(nil)
+            try await settle()
+            let content = try XCTUnwrap(window.contentView)
+            let sidebarWidth = try XCTUnwrap(model.consolePresentation).sidebarWidth
+            let text = try recognizedText(
+                content, rect: NSRect(x: 0, y: 0, width: sidebarWidth, height: content.bounds.height))
+            XCTAssertTrue(text.contains("No projects yet"), text)
+            XCTAssertTrue(text.contains("Create a project to start a chat"), text)
+            XCTAssertTrue(text.contains("Projects"), text)
+            XCTAssertFalse(text.localizedCaseInsensitiveContains("New Chat"), text)
+        }
+
         func testSidebarCreationUsesTheProjectSheetAndReconnectKeepsProjectControlsUnavailable() async throws {
             XCTAssertNotNil(ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"])
             let (model, suite) = try panelModel()
@@ -1291,9 +1315,10 @@
             return (view, window)
         }
 
-        private func recognizedText(_ view: NSView) throws -> String {
-            let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
-            view.cacheDisplay(in: view.bounds, to: bitmap)
+        private func recognizedText(_ view: NSView, rect: NSRect? = nil) throws -> String {
+            let bounds = rect ?? view.bounds
+            let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: bounds))
+            view.cacheDisplay(in: bounds, to: bitmap)
             let image = try XCTUnwrap(bitmap.cgImage)
             let request = VNRecognizeTextRequest()
             request.recognitionLevel = .accurate

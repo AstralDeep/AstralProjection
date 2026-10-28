@@ -160,22 +160,41 @@
                 await refresh()
             } catch { fail(error, connection: connection, operation: operation) }
         }
-        func delete(_ project: ProjectRecord) async {
-            guard enabled, let client else { return }
+        func delete(_ project: ProjectRecord) async -> Set<String>? {
+            guard enabled, let client else { return nil }
             let operation = beginMutation()
             let connection = epoch
             do {
-                try await client.deleteProject(id: project.id, revision: project.revision)
+                do {
+                    try await client.deleteProject(id: project.id, revision: project.revision)
+                } catch let error as ProjectAPIError {
+                    guard case .refused(404, _, _) = error else { throw error }
+                }
                 try current(connection)
-                guard mutationEpoch == operation else { return }
+                refreshEpoch = UUID()
+                loading = false
+                let deletedChats = Set(chats[project.id]?.map(\.id) ?? [])
                 projects.removeAll { $0.id == project.id }
                 chats.removeValue(forKey: project.id)
                 pendingChats.removeValue(forKey: project.id)
                 if selectedId == project.id { select(nil) }
-                try onReconciled(Set(projects.map(\.id)))
-                errorMessage = nil
-                await refresh()
-            } catch { fail(error, connection: connection, operation: operation) }
+                do {
+                    try onReconciled(Set(projects.map(\.id)))
+                } catch {
+                    try current(connection)
+                    fail(error, connection: connection, operation: operation)
+                    return deletedChats
+                }
+                if mutationEpoch == operation {
+                    errorMessage = nil
+                    await refresh()
+                }
+                try current(connection)
+                return deletedChats
+            } catch {
+                fail(error, connection: connection, operation: operation)
+                return nil
+            }
         }
         func createChat() async throws -> String {
             guard enabled, let client, let project = selectedId, projects.contains(where: { $0.id == project }) else {
