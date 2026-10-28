@@ -55,18 +55,15 @@ Windows client (`windows-client/astral_client/streaming.py`, `rest.py`).
 
 ## Notifications
 
-The Android push adapter is delivered and qualified but **not yet wired into the
-app runtime**: OS presentation, dismissal and product push availability wait for
-coordinated integration with the server-side push destination and delivery
-services. The adapter already declares the `POST_NOTIFICATIONS` permission and
-implements the full OS surface — permission request state (denied and revoked
-are distinct, revoked clears presented notifications), provider token callbacks
-with rotation generations and fingerprints, minimal payload receipt with the
-delivery pipeline's identity and text bounds, bounded duplicate suppression,
-foreground/background/terminated presentation decisions, and explicit
-unsupported-device behavior. See
+The Android notification adapter has a pure decision machine and an OS binding,
+with tests for permission state, owner-session retirement, token rotation,
+provider callback races, minimal payloads, notification presentation and opaque
+tap identity. It is not wired into the shipping app runtime. Provider selection,
+locked provider dependencies, authenticated enrollment and source navigation,
+foreground presence, physical-device delivery and live backend acceptance remain
+part of coordinated integration. See
 [`docs/push-notification-adapter.md`](docs/push-notification-adapter.md) for the
-contract and the integration seams a provider bridge must implement.
+integration interfaces and qualification limits.
 
 ## Prerequisites
 

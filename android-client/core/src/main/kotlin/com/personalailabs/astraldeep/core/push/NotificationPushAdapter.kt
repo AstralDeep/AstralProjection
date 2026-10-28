@@ -1,8 +1,4 @@
-// Pure decision machine for the Android notification adapter: permission and availability gates,
-// provider token enrollment with rotation generation and fingerprints, minimal payload receipt
-// with bounded duplicate suppression, and lifecycle-dependent presentation decisions.
-// AndroidNotificationAdapter binds these decisions to the OS; a push provider bridge supplies
-// token callbacks and message delivery during coordinated app integration.
+// Decides notification presentation and owner-session registration effects for the Android OS binding.
 
 package com.personalailabs.astraldeep.core.push
 
@@ -45,6 +41,13 @@ data class PushIdentity(
     }
 }
 
+data class PushBinding(
+    val ownerSessionId: String,
+    val deviceId: String,
+    val tokenGeneration: Int,
+    val serverTokenGeneration: Long? = null,
+)
+
 data class OsNotificationSpec(
     val notificationId: String,
     val displayId: Int,
@@ -65,7 +68,12 @@ sealed interface PushEffect {
         val token: String,
         val label: String?,
         val tokenGeneration: Int,
-    ) : PushEffect
+        val ownerSessionId: String,
+    ) : PushEffect {
+        val binding: PushBinding get() = PushBinding(ownerSessionId, deviceId, tokenGeneration)
+    }
+
+    data class RevokeDestination(val binding: PushBinding) : PushEffect
 
     data class PresentOs(val spec: OsNotificationSpec) : PushEffect
 
@@ -108,9 +116,11 @@ sealed interface MessageReceipt {
 
 class NotificationPushAdapter(
     private val identity: PushIdentity,
+    val ownerSessionId: String,
     private val acceptedCapacity: Int = DEFAULT_ACCEPTED_CAPACITY,
 ) {
     init {
+        require(ownerSessionId.isNotBlank() && ownerSessionId.length <= 256) { "owner_session" }
         require(acceptedCapacity > 0) { "accepted_capacity" }
     }
 
@@ -133,6 +143,18 @@ class NotificationPushAdapter(
     private var currentToken: String? = null
     private var currentFingerprint: String? = null
     private var currentGeneration: Int = 0
+    private var active = true
+    private var currentServerGeneration: Long? = null
+
+    val tokenGeneration: Int get() = currentGeneration
+
+    val binding: PushBinding?
+        get() =
+            if (active && registration is RegistrationState.Registered) {
+                PushBinding(ownerSessionId, identity.deviceId, currentGeneration, currentServerGeneration)
+            } else {
+                null
+            }
     private var retryableAttempts: Int = 0
 
     val platform: String get() = PLATFORM
@@ -142,6 +164,7 @@ class NotificationPushAdapter(
     val deviceUnsupported: Boolean get() = availability == ProviderAvailability.Unsupported
 
     fun seedAccepted(ids: Collection<String>) {
+        if (!active) return
         for (id in ids) {
             if (id.isNotBlank() && id !in acceptedIds) remember(id)
         }
@@ -151,7 +174,12 @@ class NotificationPushAdapter(
         lifecycle = phase
     }
 
-    fun onPermissionReport(granted: Boolean, notificationsEnabled: Boolean): List<PushEffect> {
+    fun onPermissionReport(
+        granted: Boolean,
+        notificationsEnabled: Boolean,
+        requestCompleted: Boolean = true,
+    ): List<PushEffect> {
+        if (!active) return emptyList()
         val previous = permission
         permission =
             when {
@@ -159,56 +187,49 @@ class NotificationPushAdapter(
                 granted && !notificationsEnabled -> PushPermissionState.Revoked
                 previous == PushPermissionState.Granted || previous == PushPermissionState.Revoked ->
                     PushPermissionState.Revoked
+                previous == PushPermissionState.NotDetermined && !requestCompleted -> PushPermissionState.NotDetermined
                 else -> PushPermissionState.Denied
             }
         return when {
             previous == PushPermissionState.Granted && permission == PushPermissionState.Revoked -> {
-                val cancelled = acceptedIds.toList()
-                acceptedIds.clear()
-                listOf(PushEffect.CancelPresented(cancelled))
+                retireRegistration()
             }
             permission == PushPermissionState.Granted -> bootstrapEffects()
             else -> emptyList()
         }
     }
 
-    fun onAvailability(supported: Boolean, reason: String? = null): List<PushEffect> {
+    fun onAvailability(
+        supported: Boolean,
+        reason: String? = null,
+    ): List<PushEffect> {
+        if (!active) return emptyList()
         availability = if (supported) ProviderAvailability.Supported else ProviderAvailability.Unsupported
         if (!supported) {
-            registration = RegistrationState.Idle
+            val effects = retireRegistration()
             unsupportedReason = reason ?: REASON_PROVIDER_UNAVAILABLE
-            currentToken = null
-            currentFingerprint = null
-            currentGeneration = 0
-            return emptyList()
+            return effects
         }
         unsupportedReason = null
         return bootstrapEffects()
     }
 
     fun onToken(token: String?): List<PushEffect> {
-        if (deviceUnsupported || permission != PushPermissionState.Granted) return emptyList()
+        if (!active || deviceUnsupported || permission != PushPermissionState.Granted) return emptyList()
         if (token == null) {
-            if (registration == RegistrationState.RequestingToken ||
-                registration == RegistrationState.Enrolling ||
-                registration is RegistrationState.Registered
-            ) {
-                registration = RegistrationState.FailedRetryable(CODE_TOKEN_UNAVAILABLE, ++retryableAttempts)
-                currentToken = null
-                currentFingerprint = null
-                currentGeneration = 0
-            }
-            return emptyList()
+            if (registration == RegistrationState.Idle) return emptyList()
+            val effects = retireRegistration()
+            registration = RegistrationState.FailedRetryable(CODE_TOKEN_UNAVAILABLE, ++retryableAttempts)
+            return effects
         }
         val normalized = token.trim()
         if (normalized.isEmpty() || normalized.length > MAX_TOKEN_CHARS || normalized.hasControlChars()) {
+            val effects = retireRegistration()
             registration = RegistrationState.FailedPermanent(CODE_TOKEN_INVALID)
-            return emptyList()
+            return effects
         }
         val fingerprint = tokenFingerprint(normalized)
         if (fingerprint == currentFingerprint) {
-            registration = RegistrationState.Registered(fingerprint, currentGeneration)
-            retryableAttempts = 0
             return emptyList()
         }
         currentToken = normalized
@@ -218,7 +239,10 @@ class NotificationPushAdapter(
         return listOf(enrollEffect(normalized))
     }
 
-    fun onTokenRequestFailed(transient: Boolean, code: String): List<PushEffect> {
+    fun onTokenRequestFailed(
+        transient: Boolean,
+        code: String,
+    ): List<PushEffect> {
         if (registration != RegistrationState.RequestingToken) return emptyList()
         registration =
             if (transient) {
@@ -229,16 +253,29 @@ class NotificationPushAdapter(
         return emptyList()
     }
 
-    fun onEnrollmentAccepted(): List<PushEffect> {
+    fun onEnrollmentAccepted(
+        tokenGeneration: Int,
+        serverTokenGeneration: Long,
+    ): List<PushEffect> {
+        require(serverTokenGeneration > 0) { "server_token_generation" }
         val fingerprint = currentFingerprint
-        if (registration != RegistrationState.Enrolling || fingerprint == null) return emptyList()
+        if (!active || tokenGeneration != currentGeneration ||
+            registration != RegistrationState.Enrolling || fingerprint == null
+        ) {
+            return emptyList()
+        }
         registration = RegistrationState.Registered(fingerprint, currentGeneration)
+        currentServerGeneration = serverTokenGeneration
         retryableAttempts = 0
         return emptyList()
     }
 
-    fun onEnrollmentRejected(transient: Boolean, code: String): List<PushEffect> {
-        if (registration != RegistrationState.Enrolling) return emptyList()
+    fun onEnrollmentRejected(
+        transient: Boolean,
+        code: String,
+        tokenGeneration: Int,
+    ): List<PushEffect> {
+        if (!active || tokenGeneration != currentGeneration || registration != RegistrationState.Enrolling) return emptyList()
         registration =
             if (transient) {
                 RegistrationState.FailedRetryable(code, ++retryableAttempts)
@@ -249,7 +286,7 @@ class NotificationPushAdapter(
     }
 
     fun retryRegistration(): List<PushEffect> {
-        if (deviceUnsupported || permission != PushPermissionState.Granted) return emptyList()
+        if (!active || deviceUnsupported || permission != PushPermissionState.Granted) return emptyList()
         return when (registration) {
             is RegistrationState.FailedRetryable -> {
                 val token = currentToken
@@ -266,8 +303,13 @@ class NotificationPushAdapter(
         }
     }
 
-    fun onMessage(data: JsonObject): MessageReceipt {
+    fun onMessage(
+        data: JsonObject,
+        deliveryBinding: PushBinding,
+    ): MessageReceipt {
+        if (!active) return MessageReceipt.NotPermitted
         if (deviceUnsupported) return MessageReceipt.Unsupported
+        if (binding != deliveryBinding) return MessageReceipt.NotPermitted
         val decoded = decodePushPayload(data)
         val payload =
             when (decoded) {
@@ -304,8 +346,36 @@ class NotificationPushAdapter(
 
     fun onDismissed(notificationId: String): Boolean = acceptedIds.removeAll { it == notificationId }
 
+    fun endSession(): List<PushEffect> {
+        if (!active) return emptyList()
+        active = false
+        return retireRegistration()
+    }
+
+    private fun retireRegistration(): List<PushEffect> {
+        val previous =
+            if (currentServerGeneration != null) {
+                PushBinding(ownerSessionId, identity.deviceId, currentGeneration, currentServerGeneration)
+            } else {
+                null
+            }
+        val cancelled = acceptedIds.toList()
+        acceptedIds.clear()
+        currentToken = null
+        currentFingerprint = null
+        currentServerGeneration = null
+        registration = RegistrationState.Idle
+        return if (previous != null) {
+            listOf(PushEffect.CancelPresented(cancelled), PushEffect.RevokeDestination(previous))
+        } else if (cancelled.isNotEmpty()) {
+            listOf(PushEffect.CancelPresented(cancelled))
+        } else {
+            emptyList()
+        }
+    }
+
     private fun enrollEffect(token: String): PushEffect =
-        PushEffect.EnrollDestination(identity.deviceId, PLATFORM, token, identity.label, currentGeneration)
+        PushEffect.EnrollDestination(identity.deviceId, PLATFORM, token, identity.label, currentGeneration, ownerSessionId)
 
     private fun specFor(payload: PushPayload): OsNotificationSpec =
         OsNotificationSpec(

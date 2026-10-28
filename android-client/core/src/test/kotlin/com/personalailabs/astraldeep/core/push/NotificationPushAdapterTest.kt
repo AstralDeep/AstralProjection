@@ -1,6 +1,4 @@
-// Tests the notification adapter decision machine: permission denial and revocation, provider
-// token enrollment and rotation, malformed and duplicate payloads, transient and permanent
-// provider failures, and foreground, background and terminated lifecycle presentation decisions.
+// Verifies permission, payload, registration and lifecycle decisions in the pure Android notification machine.
 
 package com.personalailabs.astraldeep.core.push
 
@@ -19,7 +17,7 @@ import kotlin.test.assertTrue
 class NotificationPushAdapterTest {
     @Test
     fun starts_deterministic_and_undetermined() {
-        val adapter = NotificationPushAdapter(IDENTITY)
+        val adapter = NotificationPushAdapter(IDENTITY, OWNER)
         assertEquals(PushLifecycle.Terminated, adapter.lifecycle)
         assertEquals(PushPermissionState.NotDetermined, adapter.permission)
         assertEquals(ProviderAvailability.Unknown, adapter.availability)
@@ -40,12 +38,12 @@ class NotificationPushAdapterTest {
 
     @Test
     fun rejects_invalid_capacity() {
-        assertFailsWith<IllegalArgumentException> { NotificationPushAdapter(IDENTITY, acceptedCapacity = 0) }
+        assertFailsWith<IllegalArgumentException> { NotificationPushAdapter(IDENTITY, OWNER, acceptedCapacity = 0) }
     }
 
     @Test
     fun unsupported_device_is_explicit_and_ignores_all_traffic() {
-        val adapter = NotificationPushAdapter(IDENTITY)
+        val adapter = NotificationPushAdapter(IDENTITY, OWNER)
         adapter.onPermissionReport(granted = true, notificationsEnabled = true)
         assertTrue(adapter.onAvailability(false, "no_provider_backend").isEmpty())
         assertTrue(adapter.deviceUnsupported)
@@ -68,7 +66,7 @@ class NotificationPushAdapterTest {
 
     @Test
     fun denied_permission_blocks_bootstrap_and_registration() {
-        val adapter = NotificationPushAdapter(IDENTITY)
+        val adapter = NotificationPushAdapter(IDENTITY, OWNER)
         adapter.onAvailability(true)
         assertTrue(adapter.onPermissionReport(granted = false, notificationsEnabled = false).isEmpty())
         assertEquals(PushPermissionState.Denied, adapter.permission)
@@ -80,7 +78,7 @@ class NotificationPushAdapterTest {
 
     @Test
     fun granted_permission_bootstraps_token_request_when_supported() {
-        val adapter = NotificationPushAdapter(IDENTITY)
+        val adapter = NotificationPushAdapter(IDENTITY, OWNER)
         assertTrue(adapter.onPermissionReport(granted = true, notificationsEnabled = true).isEmpty())
         adapter.onAvailability(true)
         assertEquals(RegistrationState.RequestingToken, adapter.registration)
@@ -88,7 +86,7 @@ class NotificationPushAdapterTest {
 
     @Test
     fun permission_report_completes_bootstrap_when_availability_was_ready_first() {
-        val adapter = NotificationPushAdapter(IDENTITY)
+        val adapter = NotificationPushAdapter(IDENTITY, OWNER)
         adapter.onAvailability(true)
         assertTrue(adapter.onPermissionReport(granted = false, notificationsEnabled = false).isEmpty())
         val granted = adapter.onPermissionReport(granted = true, notificationsEnabled = true)
@@ -98,14 +96,14 @@ class NotificationPushAdapterTest {
 
     @Test
     fun granted_then_disabled_notifications_revoke() {
-        val adapter = NotificationPushAdapter(IDENTITY)
+        val adapter = NotificationPushAdapter(IDENTITY, OWNER)
         adapter.onPermissionReport(granted = true, notificationsEnabled = true)
         adapter.onAvailability(true)
         deliverToken(adapter, "provider-token-A")
-        adapter.onEnrollmentAccepted()
+        adapter.onEnrollmentAccepted(adapter.tokenGeneration, (adapter.tokenGeneration).toLong())
         adapter.onMessage(payloadJson(id = "notif-0001"))
         assertEquals(listOf("notif-0001"), adapter.accepted)
-        assertIs<PushEffect.CancelPresented>(adapter.onPermissionReport(granted = true, notificationsEnabled = false).single())
+        assertIs<PushEffect.CancelPresented>(adapter.onPermissionReport(granted = true, notificationsEnabled = false).first())
         assertEquals(PushPermissionState.Revoked, adapter.permission)
         assertTrue(adapter.accepted.isEmpty())
     }
@@ -116,26 +114,26 @@ class NotificationPushAdapterTest {
         adapter.onMessage(payloadJson(id = "notif-0001"))
         adapter.onMessage(payloadJson(id = "notif-0002"))
         val effects = adapter.onPermissionReport(granted = false, notificationsEnabled = false)
-        val cancel = assertIs<PushEffect.CancelPresented>(effects.single())
+        val cancel = assertIs<PushEffect.CancelPresented>(effects.first())
         assertEquals(listOf("notif-0001", "notif-0002"), cancel.notificationIds)
         assertTrue(adapter.accepted.isEmpty())
         assertEquals(PushPermissionState.Revoked, adapter.permission)
-        assertEquals(RegistrationState.Registered(FINGERPRINT_A, 1), adapter.registration)
+        assertEquals(RegistrationState.Idle, adapter.registration)
     }
 
     @Test
     fun revocation_persists_until_regranted_without_cancelling_again() {
         val adapter = registeredAdapter()
         adapter.onMessage(payloadJson(id = "notif-0001"))
-        assertIs<PushEffect.CancelPresented>(adapter.onPermissionReport(granted = false, notificationsEnabled = false).single())
+        assertIs<PushEffect.CancelPresented>(adapter.onPermissionReport(granted = false, notificationsEnabled = false).first())
         assertTrue(adapter.onPermissionReport(granted = false, notificationsEnabled = false).isEmpty())
-        assertTrue(adapter.onPermissionReport(granted = true, notificationsEnabled = true).isEmpty())
+        assertIs<PushEffect.RequestToken>(adapter.onPermissionReport(granted = true, notificationsEnabled = true).single())
         assertEquals(PushPermissionState.Granted, adapter.permission)
     }
 
     @Test
     fun token_enrollment_uses_destination_contract() {
-        val adapter = NotificationPushAdapter(IDENTITY)
+        val adapter = NotificationPushAdapter(IDENTITY, OWNER)
         adapter.onPermissionReport(granted = true, notificationsEnabled = true)
         adapter.onAvailability(true)
         val effect = assertIs<PushEffect.EnrollDestination>(deliverToken(adapter, "provider-token-A").single())
@@ -145,7 +143,7 @@ class NotificationPushAdapterTest {
         assertEquals("owner phone", effect.label)
         assertEquals(1, effect.tokenGeneration)
         assertEquals(RegistrationState.Enrolling, adapter.registration)
-        assertTrue(adapter.onEnrollmentAccepted().isEmpty())
+        assertTrue(adapter.onEnrollmentAccepted(adapter.tokenGeneration, (adapter.tokenGeneration).toLong()).isEmpty())
         assertEquals(RegistrationState.Registered(FINGERPRINT_A, 1), adapter.registration)
     }
 
@@ -162,45 +160,45 @@ class NotificationPushAdapterTest {
         val effect = assertIs<PushEffect.EnrollDestination>(deliverToken(adapter, "provider-token-B").single())
         assertEquals("provider-token-B", effect.token)
         assertEquals(2, effect.tokenGeneration)
-        assertTrue(adapter.onEnrollmentAccepted().isEmpty())
+        assertTrue(adapter.onEnrollmentAccepted(adapter.tokenGeneration, (adapter.tokenGeneration).toLong()).isEmpty())
         assertEquals(RegistrationState.Registered(FINGERPRINT_B, 2), adapter.registration)
     }
 
     @Test
     fun invalid_tokens_fail_permanently() {
         for (token in listOf("", "   ", "x".repeat(4097), "token\u0007")) {
-            val adapter = NotificationPushAdapter(IDENTITY)
+            val adapter = NotificationPushAdapter(IDENTITY, OWNER)
             adapter.onPermissionReport(granted = true, notificationsEnabled = true)
             adapter.onAvailability(true)
-            assertTrue(deliverToken(adapter, token).isEmpty())
+            deliverToken(adapter, token)
             assertEquals(RegistrationState.FailedPermanent("token_invalid"), adapter.registration)
         }
     }
 
     @Test
     fun token_unavailable_is_retryable_and_retry_requests_a_token() {
-        val adapter = NotificationPushAdapter(IDENTITY)
+        val adapter = NotificationPushAdapter(IDENTITY, OWNER)
         adapter.onPermissionReport(granted = true, notificationsEnabled = true)
         adapter.onAvailability(true)
-        assertTrue(adapter.onToken(null).isEmpty())
+        adapter.onToken(null)
         assertEquals(RegistrationState.FailedRetryable("provider_token_unavailable", 1), adapter.registration)
         assertEquals(listOf<PushEffect>(PushEffect.RequestToken("retry")), adapter.retryRegistration())
         assertEquals(RegistrationState.RequestingToken, adapter.registration)
         deliverToken(adapter, "provider-token-A")
-        adapter.onEnrollmentAccepted()
+        adapter.onEnrollmentAccepted(adapter.tokenGeneration, (adapter.tokenGeneration).toLong())
         assertEquals(RegistrationState.Registered(FINGERPRINT_A, 1), adapter.registration)
     }
 
     @Test
     fun token_unavailable_outside_active_request_is_ignored() {
-        val adapter = NotificationPushAdapter(IDENTITY)
+        val adapter = NotificationPushAdapter(IDENTITY, OWNER)
         assertTrue(adapter.onToken(null).isEmpty())
         assertEquals(RegistrationState.Idle, adapter.registration)
     }
 
     @Test
     fun token_request_failure_classification() {
-        val adapter = NotificationPushAdapter(IDENTITY)
+        val adapter = NotificationPushAdapter(IDENTITY, OWNER)
         adapter.onPermissionReport(granted = true, notificationsEnabled = true)
         adapter.onAvailability(true)
         assertTrue(adapter.onTokenRequestFailed(transient = true, code = "provider_timeout").isEmpty())
@@ -220,26 +218,26 @@ class NotificationPushAdapterTest {
 
     @Test
     fun enrollment_rejection_classification_and_retry() {
-        val adapter = NotificationPushAdapter(IDENTITY)
+        val adapter = NotificationPushAdapter(IDENTITY, OWNER)
         adapter.onPermissionReport(granted = true, notificationsEnabled = true)
         adapter.onAvailability(true)
         deliverToken(adapter, "provider-token-A")
-        assertTrue(adapter.onEnrollmentRejected(transient = true, code = "destination_store_unavailable").isEmpty())
+        assertTrue(adapter.onEnrollmentRejected(transient = true, code = "destination_store_unavailable", tokenGeneration = adapter.tokenGeneration).isEmpty())
         assertEquals(RegistrationState.FailedRetryable("destination_store_unavailable", 1), adapter.registration)
         val retry = assertIs<PushEffect.EnrollDestination>(adapter.retryRegistration().single())
         assertEquals("provider-token-A", retry.token)
         assertEquals(1, retry.tokenGeneration)
-        assertTrue(adapter.onEnrollmentAccepted().isEmpty())
+        assertTrue(adapter.onEnrollmentAccepted(adapter.tokenGeneration, (adapter.tokenGeneration).toLong()).isEmpty())
         assertEquals(RegistrationState.Registered(FINGERPRINT_A, 1), adapter.registration)
     }
 
     @Test
     fun permanent_enrollment_rejection_needs_a_fresh_token() {
-        val adapter = NotificationPushAdapter(IDENTITY)
+        val adapter = NotificationPushAdapter(IDENTITY, OWNER)
         adapter.onPermissionReport(granted = true, notificationsEnabled = true)
         adapter.onAvailability(true)
         deliverToken(adapter, "provider-token-A")
-        assertTrue(adapter.onEnrollmentRejected(transient = false, code = "token_sender_mismatch").isEmpty())
+        assertTrue(adapter.onEnrollmentRejected(transient = false, code = "token_sender_mismatch", tokenGeneration = adapter.tokenGeneration).isEmpty())
         assertEquals(RegistrationState.FailedPermanent("token_sender_mismatch"), adapter.registration)
         assertTrue(adapter.retryRegistration().isEmpty())
         val effect = assertIs<PushEffect.EnrollDestination>(deliverToken(adapter, "provider-token-B").single())
@@ -249,8 +247,8 @@ class NotificationPushAdapterTest {
     @Test
     fun enrollment_decisions_outside_enrolling_are_ignored() {
         val adapter = registeredAdapter()
-        assertTrue(adapter.onEnrollmentAccepted().isEmpty())
-        assertTrue(adapter.onEnrollmentRejected(transient = true, code = "destination_store_unavailable").isEmpty())
+        assertTrue(adapter.onEnrollmentAccepted(adapter.tokenGeneration, (adapter.tokenGeneration).toLong()).isEmpty())
+        assertTrue(adapter.onEnrollmentRejected(transient = true, code = "destination_store_unavailable", tokenGeneration = adapter.tokenGeneration).isEmpty())
         assertEquals(RegistrationState.Registered(FINGERPRINT_A, 1), adapter.registration)
     }
 
@@ -332,11 +330,11 @@ class NotificationPushAdapterTest {
 
     @Test
     fun accepted_ledger_is_bounded_and_evicts_oldest() {
-        val adapter = NotificationPushAdapter(IDENTITY, acceptedCapacity = 2)
+        val adapter = NotificationPushAdapter(IDENTITY, OWNER, acceptedCapacity = 2)
         adapter.onPermissionReport(granted = true, notificationsEnabled = true)
         adapter.onAvailability(true)
         deliverToken(adapter, "provider-token-A")
-        adapter.onEnrollmentAccepted()
+        adapter.onEnrollmentAccepted(adapter.tokenGeneration, (adapter.tokenGeneration).toLong())
         for (id in listOf("notif-0001", "notif-0002", "notif-0003")) {
             assertIs<MessageReceipt.Accepted>(adapter.onMessage(payloadJson(id = id)))
         }
@@ -369,17 +367,20 @@ class NotificationPushAdapterTest {
         assertNotEquals(displayIdFor("notif-0001"), displayIdFor("notif-0002"))
     }
 
+    private fun NotificationPushAdapter.onMessage(data: JsonObject): MessageReceipt =
+        onMessage(data, binding ?: PushBinding(OWNER, VALID_DEVICE_ID, tokenGeneration))
+
     private fun deliverToken(
         adapter: NotificationPushAdapter,
         token: String?,
     ): List<PushEffect> = adapter.onToken(token)
 
     private fun registeredAdapter(): NotificationPushAdapter {
-        val adapter = NotificationPushAdapter(IDENTITY)
+        val adapter = NotificationPushAdapter(IDENTITY, OWNER)
         adapter.onPermissionReport(granted = true, notificationsEnabled = true)
         adapter.onAvailability(true)
         deliverToken(adapter, "provider-token-A")
-        adapter.onEnrollmentAccepted()
+        adapter.onEnrollmentAccepted(adapter.tokenGeneration, (adapter.tokenGeneration).toLong())
         return adapter
     }
 
@@ -399,6 +400,7 @@ class NotificationPushAdapterTest {
         }
 
     private companion object {
+        const val OWNER = "owner-session-A"
         const val VALID_DEVICE_ID = "device-0001-aa"
         const val FINGERPRINT_A = "7f8e385a0063a58631b876333391650f287a2c09dbf5c1de83ed6c0dea982dd5"
         const val FINGERPRINT_B = "3a42720a890a43e41f4fddac9239a843f00f254450415bf4073c3519e77c1290"

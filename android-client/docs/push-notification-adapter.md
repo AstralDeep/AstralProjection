@@ -1,90 +1,97 @@
-# Android push notification adapter
+# Android notification adapter
 
-The Android client ships a complete, independently testable OS notification
-adapter in two halves. The pure decision machine lives in
-`:core` (`core/src/main/kotlin/com/personalailabs/astraldeep/core/push/`) and the
-OS binding lives in `:app`
-(`app/src/main/kotlin/com/personalailabs/astraldeep/app/push/`). The adapter is
-**not yet wired into the app runtime**: product push availability waits for
-coordinated integration. Nothing in the current UI requests the permission,
-registers a provider, or presents OS notifications until that integration lands.
+The independently testable adapter consists of the Android-free
+`core.push.NotificationPushAdapter` and `app.push.AndroidNotificationAdapter`.
+The shipping Activity does not instantiate it. Product push availability requires
+the coordinated Android/Apple/server integration and real-provider qualification.
+No UI protocol vocabulary, navigation catalog, provider dependency, manifest
+service, authentication flow or deployment configuration changes here.
 
-## Ownership and scope
+## Owner and callback lifetime
 
-This contribution owns the adapter only. It adds exactly one manifest change
-(the `POST_NOTIFICATIONS` permission), two channel-name string resources, one
-notification icon drawable, and the push packages with their tests. No Gradle
-dependencies, no manifest services or receivers, and no workflow changes are
-included: the provider bridge (for example FCM) and its dependency lock changes
-belong to the coordinated integration step.
+Construct one adapter with the current authenticated `ownerSessionId` and
+`PushIdentity.deviceId`. The host supplies that opaque owner scope; it must never
+reuse it across different owners or servers. A cold start may recover the same
+scope only after authenticating its owner. Call `close()` synchronously before
+logout, account/server changes or retiring that scope. Closed instances cannot
+restart. Close clears local registration and notices, detaches the provider
+listener, unregisters the dismissal receiver and emits a revoke effect without
+waiting for REST. A failing integration callback remains a visible failure;
+receiver cleanup still runs.
 
-## Decision machine (`:core`, JVM-tested, Kover-gated)
+The provider supplies support, token request completion and message listeners.
+Request callbacks capture their request incarnation; callbacks arriving after a
+new token, retry or close are ignored. Enrollment callbacks must call
+`adapter.onEnrollmentAccepted(effect, serverTokenGeneration)` or
+`adapter.onEnrollmentRejected(effect, transient, code)` with the original effect.
+Repeated provider tokens cannot accept an outstanding enrollment. Stale owner,
+device and local token-generation callbacks cannot register a new session.
 
-`NotificationPushAdapter` holds every decision and no Android imports:
+`PushBinding` separates local `tokenGeneration` from the authoritative
+`serverTokenGeneration` returned by enrollment. Only a successful, positive server
+generation permits delivery. A message listener captures the accepted binding;
+rotation, permission loss and session retirement reject deliveries from previous
+bindings. Late enrollment success after retirement emits a conditional revoke for
+that returned server generation, preserving a newer destination.
 
-- **Permission.** `onPermissionReport(granted, notificationsEnabled)` derives
-  `NotDetermined / Granted / Denied / Revoked`. Granting while the provider is
-  supported and registration is idle requests a token; grant-then-revocation
-  (runtime toggle or `POST_NOTIFICATIONS` loss) cancels every presented
-  notification and clears the receipt ledger.
-- **Provider token callbacks.** `onToken` normalizes and validates the token
-  against the destination contract (1–4096 chars, no control characters),
-  fingerprints it with SHA-256, enrolls changed tokens with an incrementing
-  `tokenGeneration`, treats a repeated token as idempotent, and classifies
-  blanks/oversized/control-character tokens as permanent failures. `onToken(null)`
-  and `onTokenRequestFailed` / `onEnrollmentRejected` classify transient versus
-  permanent provider failures; `retryRegistration` re-requests a token or
-  re-enrolls the retained token only from the retryable state.
-- **Minimal payload receipt.** `onMessage` decodes the flattened minimal payload
-  (`notification_id`, `title`, `body`, optional `level`, `chat_id`) with the
-  delivery pipeline's bounds: the identity matches `^[A-Za-z0-9._:-]{8,128}$`,
-  titles are at most 128 characters, bodies at most 256, control characters are
-  rejected, at least one of title/body must be non-blank, and `level` must be
-  `info`, `warning`, or `error`. Malformed payloads return a typed
-  `Malformed` receipt and are never presented or acknowledged.
-- **Duplicates.** A bounded receipt ledger (64 entries, FIFO) suppresses
-  duplicates across surfaces and process restarts (the OS binding seeds it from
-  live notifications at start). Dismissal removes the entry, so a genuine
-  redelivery after user dismissal presents again.
-- **Lifecycle.** `Foreground` messages become in-app effects only; `Background`
-  and `Terminated` messages become OS presentation specs plus an acknowledgment,
-  and are presented only while permission is granted — otherwise the receipt is
-  `NotPermitted`. Error-level payloads target the high-importance alert channel.
-- **Unsupported devices.** `onAvailability(false, reason)` — reported by the
-  provider seam, for example on devices without a push provider backend — makes
-  the adapter explicitly unsupported: no token requests, no enrollment, and
-  `Unsupported` receipts for every message, until availability returns.
+The `revokeListener` receives `PushEffect.RevokeDestination(binding)`. Integration
+must retain its captured owner's authentication and use
+`DELETE /api/push/destinations/{device_id}?expected_token_generation=N`, with
+`N = binding.serverTokenGeneration`. A 409 is a stale-generation refusal; it must
+never fall back to an unconditional delete. Failed revokes require explicit
+integration failure/retry handling and cannot restore local presentation.
 
-## OS binding (`:app`) and integration seams
+## Permission and presentation
 
-`AndroidNotificationAdapter` creates the `astral_push` (default) and
-`astral_push_alerts` (high) channels, maps `POST_NOTIFICATIONS` and
-`areNotificationsEnabled()` facts into the machine, executes presentation
-(`NotificationCompat`, small icon `ic_notification`, auto-cancel, content intent
-to `MainActivity`, delete-intent receiver), cancellation, and dismissal, and
-exposes the seams a provider bridge must implement:
+Startup/resume calls `refreshPermission()` without treating an unrequested OS
+permission as an explicit denial. After the Activity's permission launcher
+returns, call `onPermissionResult(granted)`; an explicit OS recheck may use
+`refreshPermission(requestCompleted = true)`. Android versions
+before API 33 need no runtime POST_NOTIFICATIONS request. Notification permission
+loss retires registration, cancels notices and emits revoke; restoration requests
+a fresh provider token and enrollment. Unsupported providers and token loss also
+retire the registered destination.
 
-- implement `PushProvider` (`isSupported`, `requestToken`, `setMessageListener`);
-- deliver provider token rotations through `onProviderToken`;
-- perform the destination enrollment HTTP call from `enrollListener` and report
-  the outcome with `machine.onEnrollmentAccepted()` / `onEnrollmentRejected`;
-- perform the `/push/ack` call from `acknowledgeListener` (device id, notification id);
-- surface `ShowInApp` payloads from `inAppListener` in the UI;
-- request `POST_NOTIFICATIONS` from an Activity launcher when
-  `shouldRequestPermission()` is true, and call `refreshPermission()` on resume.
+Payloads carry an opaque bounded `notification_id`; legacy optional text/level/
+chat fields are validated but cannot authorize navigation. OS notices always use
+generic application text. Only `MessageReceipt.Accepted.effects` execute;
+malformed, duplicate, denied and unsupported receipts produce no presentation or
+acknowledgment. Foreground deliveries use the integration's in-app listener;
+background/terminated deliveries use the two Android channels. The bounded
+receipt ledger is seeded only from the same owner/device's active notices.
 
-All callbacks must run on one thread (the machine is not synchronized); the
-integration wires provider callbacks onto the main thread.
+Each notice has its own immutable content/delete PendingIntent data URI, even
+when integer display IDs collide. The content intent contains the opaque
+notification ID and authoritative server token generation. After authenticating
+and enrolling the current owner, pass the incoming Activity intent to
+`notificationIdFromTap()`. This validates scope and generation and returns only
+the opaque ID. Integration must then GET
+`/api/notifications/inbox/{notification_id}` through the authenticated server
+boundary and open only the authorized source returned for that current owner.
+A generic landing page or a provider-supplied chat ID does not complete source
+navigation. Two concurrent notices and cold-start delivery need this same path.
 
-## Verification
+The acknowledgment listener receives its captured `PushBinding` and opaque ID;
+its existing HTTP body remains `{device_id, notification_id}`. The coordinated
+runtime adds foreground presence using the server's accepted UI connection and
+its monotonic sequence; the adapter introduces no alternate protocol frame.
 
-- JVM: `:core` push tests under `core/src/test/kotlin/.../push/` cover golden
-  paths, bounds, denials, rotation, failures and recovery; they join the Kover
-  ≥ 90 % module gate.
-- Device: `NotificationPushAdapterInstrumentedTest` runs in the required
-  emulator lane and exercises the real notification manager with grant and
-  revoke via the instrumentation shell, presentation attributes, delete-intent
-  dismissal, cold-start seeding, rotation, retry recovery, malformed and
-  duplicate payloads, and the unsupported-device path.
-- Real-device push dispatch (physical device with the production provider) and
-  product push availability remain part of coordinated integration.
+## Verification and remaining integration gates
+
+The committed Gradle wrapper runs `ktlintCheck`, `:app:lintDebug`, `:core:test`,
+`:app:testDebugUnitTest`, `:core:koverVerify` and `:app:assembleDebug`. Core Kover
+retains the 90% module floor. Instrumented tests exercise actual Android
+notification manager presentation, permission-result revocation, dismissal, two
+PendingIntents, cold-start seeding, callback retirement and provider failures.
+A separate run revokes permission before instrumentation starts, because an
+Android runtime revoke terminates the app process; it verifies actual OS denial
+and the initial request/explicit denial distinction. The tests use deterministic provider seams and do not establish actual background
+provider delivery or a live authenticated navigation outcome.
+
+Coordinated acceptance still requires a locked shipping provider bridge, actual
+OS permission launcher interaction, foreground/background/terminated delivery
+on a physical Android device, notification taps to authorized sources against
+the live backend, and logout/account-switch/revocation failure cases with real
+Keycloak sessions. No provider credentials, sign-in bypass or fake enrollment is
+included. Local repair evidence is reported separately from CI/device/provider
+acceptance.

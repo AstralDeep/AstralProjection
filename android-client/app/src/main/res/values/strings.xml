@@ -3,4 +3,5 @@
     <string name="app_name">AstralDeep</string>
     <string name="push_channel_name">Astral notifications</string>
     <string name="push_alert_channel_name">Astral alerts</string>
+    <string name="push_notification_body">Open AstralDeep to view an update</string>
 </resources>
