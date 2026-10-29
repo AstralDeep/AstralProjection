@@ -192,15 +192,17 @@
             defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
             pane = MacBrowserPane()
             driver = MacBrowserDriver(host: nil, defaults: defaults, pane: pane)
+            let screen = try XCTUnwrap(NSScreen.main)
             window = NSWindow(
-                contentRect: CGRect(x: -20000, y: -20000, width: 1024, height: 768), styleMask: .borderless,
+                contentRect: CGRect(origin: screen.visibleFrame.origin, size: CGSize(width: 1024, height: 768)),
+                styleMask: .borderless,
                 backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             let container = NSView(frame: CGRect(x: 0, y: 0, width: 1024, height: 768))
             pane.webView.frame = container.bounds
             container.addSubview(pane.webView)
             window.contentView = container
-            window.orderBack(nil)
+            window.orderFront(nil)
             driver.takeover = { [unowned self] in self.takeovers += 1 }
             driver.agentActive = { [unowned self] in self.active }
             driver.bind(owner: "https://fixture.test|account-a")

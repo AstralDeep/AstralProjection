@@ -233,6 +233,14 @@
             .sheet(isPresented: $commandsPresented, onDismiss: finishPalette) {
                 MacWorkbenchCommandPalette(context: paletteContext, query: $paletteQuery) { paletteChoice = $0 }
             }
+            .sheet(
+                isPresented: Binding(
+                    get: { model.projectChooserPresented },
+                    set: { if !$0, model.projectChooserPresented { model.cancelProjectChoice() } }),
+                onDismiss: model.projectChoiceDidDismiss
+            ) {
+                MacProjectChoiceSheet()
+            }
             .sheet(item: $renamingChat) { chat in MacRenameChatSheet(chat: chat) }
             .bypassConfirmation(host: model.macComputerHost, origin: .palette)
             .onChange(of: model.composerDraft) { old, new in
@@ -463,7 +471,7 @@
         }
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 10) {
                     Image("AstralIcon").resizable().frame(width: 26, height: 26).clipShape(
                         RoundedRectangle(cornerRadius: 7)
@@ -474,51 +482,42 @@
                         Button {
                             model.consoleDrawerOpen = false
                         } label: {
-                            Image(systemName: "xmark").frame(width: 32, height: 36)
+                            Image(systemName: "xmark").font(.system(size: 16)).frame(width: 24, height: 24)
                         }
                         .buttonStyle(.plain).accessibilityLabel("Hide chats")
                     }
                 }
                 .frame(height: 32)
-                Button {
-                    model.newChat()
-                    model.consoleDrawerOpen = false
-                } label: {
-                    Label(model.consoleLabel("new_chat"), systemImage: "square.and.pencil")
-                        .font(ConsoleTypography.subheadline).frame(
-                            maxWidth: .infinity, minHeight: 40, alignment: .leading
-                        )
-                        .padding(.horizontal, 12)
-                        .background(p.primary.opacity(0.13), in: RoundedRectangle(cornerRadius: 9))
-                }
-                .buttonStyle(.plain).disabled(model.mandatorySurface)
-                .accessibilityIdentifier("new-chat-button")
                 MacSearchField(
                     prompt: "Search chats", text: $query, focused: $searchFocused, identifier: "workbench-chat-search")
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 3) {
-                        if model.historyLoading { ProgressView().controlSize(.small).padding(8) }
-                        if chats.isEmpty && !model.historyLoading && !query.isEmpty {
-                            Text("No matching chats").font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                                .padding(8)
-                        }
-                        ForEach(chats) { chat in
-                            Button {
-                                model.openChat(chat.id)
-                            } label: {
-                                HistoryRow(chat: chat, showsDetails: false)
-                                    .background(
-                                        model.activeChatId == chat.id ? p.primary.opacity(0.13) : .clear,
-                                        in: RoundedRectangle(cornerRadius: 8))
+                        if model.projects.projectPresentation {
+                            MacProjectSidebar(query: query).disabled(!model.projects.enabled)
+                        } else {
+                            if model.historyLoading { ProgressView().controlSize(.small).padding(8) }
+                            if chats.isEmpty && !model.historyLoading && !query.isEmpty {
+                                Text("No matching chats").font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                                    .padding(8)
                             }
-                            .buttonStyle(.plain).disabled(model.mandatorySurface)
-                            .accessibilityIdentifier("workbench-chat-\(chat.id)")
-                            .accessibilityValue(
-                                [chat.displayPreview, chat.relativeTime()].filter { !$0.isEmpty }.joined(
-                                    separator: ", ")
-                            )
-                            .contextMenu {
-                                Button("Delete conversation", role: .destructive) { model.deleteChat(chat.id) }
+                            ForEach(chats) { chat in
+                                Button {
+                                    model.openChat(chat.id)
+                                } label: {
+                                    HistoryRow(chat: chat, showsDetails: false)
+                                        .background(
+                                            model.activeChatId == chat.id ? p.text.opacity(0.08) : .clear,
+                                            in: RoundedRectangle(cornerRadius: 10))
+                                }
+                                .buttonStyle(.plain).disabled(model.mandatorySurface)
+                                .accessibilityIdentifier("workbench-chat-\(chat.id)")
+                                .accessibilityValue(
+                                    [chat.displayPreview, chat.relativeTime()].filter { !$0.isEmpty }.joined(
+                                        separator: ", ")
+                                )
+                                .contextMenu {
+                                    Button("Delete conversation", role: .destructive) { model.deleteChat(chat.id) }
+                                }
                             }
                         }
                     }
@@ -541,7 +540,7 @@
                     HStack(spacing: 10) {
                         Text(console.identity.initials).font(ConsoleTypography.caption.weight(.semibold))
                             .frame(width: 32, height: 32).background(p.primary.opacity(0.18), in: Circle())
-                        Text(console.identity.name).font(ConsoleTypography.caption.weight(.semibold))
+                        Text(console.identity.name).font(ConsoleTypography.subheadline)
                         Spacer(minLength: 0)
                         Image(systemName: "chevron.up.chevron.down").font(ConsoleTypography.caption2).foregroundStyle(
                             p.muted)
@@ -553,7 +552,7 @@
                 .accessibilityValue("\(console.identity.name), \(console.identity.role)")
                 .accessibilityIdentifier("console-settings-menu")
             }
-            .padding(16).frame(maxHeight: .infinity)
+            .padding(.horizontal, 8).padding(.vertical, 12).frame(maxHeight: .infinity)
             .background(p.surface.opacity(0.6))
             .overlay(alignment: .trailing) { p.border.frame(width: 1) }
         }

@@ -112,7 +112,9 @@ final class AppModel: NSObject {
     }
 
     struct ActivityRow: Identifiable, Equatable {
-        enum Approval: Equatable { case none, waiting, approved, granted, denied }
+        enum Approval: Equatable {
+            case none, waiting, withdrawing, submitted, approved, granted, denied, refused, expired, uncertain
+        }
         enum State: Equatable { case running, completed, failed, cancelled }
 
         let id: String
@@ -130,6 +132,11 @@ final class AppModel: NSObject {
             switch approval {
             case .none: return nil
             case .waiting: return "Approval waiting"
+            case .submitted: return "Decision submitted"
+            case .withdrawing: return nil
+            case .refused: return "Not approved"
+            case .expired: return "Approval expired"
+            case .uncertain: return "Outcome uncertain"
             case .approved: return "Approved"
             case .granted: return "Allowed for this task"
             case .denied: return "Denied"
@@ -187,6 +194,7 @@ final class AppModel: NSObject {
         didSet {
             if oldValue != serverBaseText {
                 #if os(macOS)
+                    retireProjectCatalog()
                     macComputerHost.signedOut()
                     macBrowser.bind(owner: nil)
                 #endif
@@ -208,6 +216,7 @@ final class AppModel: NSObject {
             if oldValue != authorityText {
                 #if os(macOS)
                     releaseComputerBypass()
+                    retireProjectCatalog()
                     macComputerHost.signedOut()
                     macBrowser.bind(owner: nil)
                 #endif
@@ -231,7 +240,15 @@ final class AppModel: NSObject {
     let voiceDeviceId: String
     @ObservationIgnored let voice: AppleVoiceSessionController
 
-    var signedIn = false
+    var signedIn = false {
+        didSet {
+            #if os(macOS)
+                if oldValue && !signedIn {
+                    retireProjectCatalog()
+                }
+            #endif
+        }
+    }
     var accountName = ""
     var connected = false {
         didSet {
@@ -268,6 +285,17 @@ final class AppModel: NSObject {
     var screen: Screen = .chat {
         didSet { if oldValue != screen { cancelMeshPresentation() } }
     }
+    #if os(macOS)
+        let projects = MacProjectCatalog()
+        private(set) var projectChooserPresented = false
+        @ObservationIgnored private var projectChoice: (() -> Void)?
+        @ObservationIgnored private var projectChoiceAfterDismissal: (() -> Void)?
+        @ObservationIgnored private var projectChoiceEpoch = UUID()
+        @ObservationIgnored private var projectCreationTask: Task<Void, Never>?
+        @ObservationIgnored private var projectCreationEpoch = UUID()
+        var projectPendingDeletion: ProjectRecord?
+        @ObservationIgnored private var projectDeletionAction: (() async -> Void)?
+    #endif
     var activeChatId: String?
 
     var composerDraft = ""
@@ -323,9 +351,36 @@ final class AppModel: NSObject {
     private(set) var activityLog: [String: [ActivityRow]] = [:]
     @ObservationIgnored private var activityAliases: [String: String] = [:]
     @ObservationIgnored private var activityOrder: [String] = []
+    private struct SubmittedApproval {
+        let owner: DownloadOwner
+        let connection: String?
+        let chat: String?
+        let row: String?
+        let decision: String
+        let expectsReceipt: Bool
+    }
+    private var approvalReceiptsSupported: Bool {
+        #if os(macOS)
+            return projects.enabled
+        #else
+            return false
+        #endif
+    }
+    @ObservationIgnored private var submittedApprovals: [String: SubmittedApproval] = [:]
     @ObservationIgnored private var decidedApprovals: Set<String> = []
     @ObservationIgnored private var screenThumbnailSource: String?
     @ObservationIgnored private var approvalRows: [String: String] = [:]
+    @ObservationIgnored private var approvalOrigins: [String: SubmittedApproval] = [:]
+    @ObservationIgnored private var approvalHosts: [String: String] = [:]
+    @ObservationIgnored private var withdrawingApprovals: Set<String> = []
+    #if os(macOS)
+        private struct RetiredComputerReviewKey: Hashable {
+            let chat: String?
+            let request: String
+        }
+        @ObservationIgnored private var retiredComputerReviews: [RetiredComputerReviewKey: SubmittedApproval] = [:]
+        @ObservationIgnored private var reviewRetirementOverflow: SubmittedApproval?
+    #endif
     @ObservationIgnored private var redispatchable: Set<String> = []
     @ObservationIgnored private var activityObservationPaused = false
     static let maximumActivityRows = 200
@@ -591,6 +646,18 @@ final class AppModel: NSObject {
         serverBaseText = storedBase.isEmpty ? AstralConfig.serverBaseURL : storedBase
         authorityText = storedAuthority.isEmpty ? AstralConfig.keycloakAuthority : storedAuthority
         super.init()
+        #if os(macOS)
+            macComputerHost.bypassDidEnable = { [weak self] host in self?.withdrawLocalComputerReviews(host) }
+            projects.onReconciled = { [weak self] ids in
+                guard let self else { return }
+                try self.macComputerHost.reconcileProjects(ids)
+                if let chat = self.activeChatId, let project = self.projects.project(for: chat),
+                    self.projects.selectedId == nil
+                {
+                    self.projects.select(project)
+                }
+            }
+        #endif
         canvasCapture.currentComponents = { [weak self] in self?.workspaceCanvas ?? [] }
         canvasCapture.currentScope = { [weak self] in
             guard let self, self.signedIn, self.screen == .chat, !self.isViewingHistory,
@@ -1164,7 +1231,20 @@ final class AppModel: NSObject {
                     return await self.computerChannelIsCurrent(socket: socket, owner: hostOwner, connection: connection)
                 }
             }
-            let hostDescriptor = macComputerHost.descriptor
+            macComputerHost.beginWorkspaceNegotiation(server: serverBase, account: hostOwner.account?.locatorStorageKey)
+            let projectClient = RestClient(
+                serverBase: serverBase,
+                projectConnection: .init(deviceId: voiceDeviceId, generation: connection),
+                tokenProvider: { [weak self] in
+                    guard let self else { return nil }
+                    return await self.projectAccessToken(owner: hostOwner, connection: connection)
+                })
+            projectCreationTask?.cancel()
+            projectCreationTask = nil
+            projectCreationEpoch = UUID()
+            cancelProjectDeletion()
+            projects.bind(scope: hostScope, client: projectClient)
+            let hostDescriptor: ComputerHostDescriptor? = nil
             let hostCapable = macComputerHost.available
             let macWorkbench = true
         #else
@@ -1188,6 +1268,13 @@ final class AppModel: NSObject {
         if pendingSurfaceKey == "safety" {
             retireOrdinarySurfaceRequests()
             surfaceFailureMessage = "Reload Safety to check current stop status before trying again."
+        }
+        if continuity.connectionGeneration != generation {
+            retireSubmittedApprovals()
+            #if os(macOS)
+                retiredComputerReviews.removeAll()
+                reviewRetirementOverflow = nil
+            #endif
         }
         resetViewportRefresh(clearSubmissionHistory: true)
         invalidateWorkRead()
@@ -1730,6 +1817,7 @@ final class AppModel: NSObject {
             let (w, h) = lastReportedViewport ?? (1280, 800)
             var descriptor = DeviceDescriptor.macos(viewportWidth: w, viewportHeight: h)
             descriptor.macWorkbenchSupported = true
+            descriptor.projectWorkspacesSupported = true
         #else
             let size = UIScreen.main.bounds.size
             let (w, h) = lastReportedViewport ?? (Int(size.width), Int(size.height))
@@ -1819,6 +1907,13 @@ final class AppModel: NSObject {
             return
         }
         consolePresentation = ConsolePresentation(frame: frame)
+        #if os(macOS)
+            let projectAck = frame.payload["device_profile"]?["console"]?["project_workspaces"]
+            let accepted = projectAck?["version"] == .number(1) && projectAck?["mode"] == .string("projects_only")
+            projects.negotiate(accepted)
+            macComputerHost.workspaceNegotiated(projects: accepted)
+            if accepted, connected { Task { await projects.refresh() } }
+        #endif
         viewportSnapshotSupported = frame.payload["viewport_snapshot_supported"]?.boolValue == true
     }
 
@@ -2003,6 +2098,16 @@ final class AppModel: NSObject {
         let resumeState = AppRegistrationResumeState(initial: initialResumed)
         wsTask = Task {
             let events = await client.events()
+            #if os(macOS)
+                let onRegistration: (@Sendable (InboundFrame, String) async -> Bool)? = {
+                    [weak self] frame, generation in
+                    guard let self else { return false }
+                    return await self.acceptRegistrationConfiguration(
+                        frame, socket: client, owner: owner, generation: generation)
+                }
+            #else
+                let onRegistration: (@Sendable (InboundFrame, String) async -> Bool)? = nil
+            #endif
             await client.start(
                 onConnect: { [weak self] in
                     guard let self else { return nil }
@@ -2016,7 +2121,7 @@ final class AppModel: NSObject {
                 onReplay: { [weak self] replay in
                     guard let self else { return false }
                     return await self.replayQueuedOperation(replay, socket: client, owner: owner)
-                })
+                }, onRegistration: onRegistration)
             for await event in events {
                 guard !Task.isCancelled, self.ws === client, self.downloadOwner == owner else { break }
                 await self.handle(event)
@@ -2056,6 +2161,18 @@ final class AppModel: NSObject {
         return frame
     }
 
+    #if os(macOS)
+        private func acceptRegistrationConfiguration(
+            _ frame: InboundFrame, socket: WSClient, owner: DownloadOwner, generation: String
+        ) -> Bool {
+            guard !Task.isCancelled, ws === socket, downloadOwner == owner,
+                continuity.connectionGeneration == generation
+            else { return false }
+            handleFrame(frame)
+            return true
+        }
+    #endif
+
     private func replayQueuedOperation(_ replay: QueuedOperationReplay, socket: WSClient, owner: DownloadOwner) -> Bool
     {
         guard !Task.isCancelled, ws === socket, downloadOwner == owner else { return false }
@@ -2066,6 +2183,9 @@ final class AppModel: NSObject {
         switch event {
         case .connected:
             connected = true
+            #if os(macOS)
+                if projects.enabled { Task { await projects.refresh() } }
+            #endif
             everConnected = true
             initialConnectionFailed = false
             resumeAuthenticatedRead()
@@ -2078,8 +2198,11 @@ final class AppModel: NSObject {
                 Task { await self.reconcileLLMFirstLoginOperation() }
             }
         case .disconnected:
+            retireSubmittedApprovals()
             #if os(macOS)
                 macComputerHost.disconnect()
+                projects.awaitNegotiation()
+                cancelProjectChoice()
             #endif
             resetViewportRefresh()
             invalidateWorkRead()
@@ -2121,7 +2244,16 @@ final class AppModel: NSObject {
         }
     }
 
-    func handleFrame(_ frame: InboundFrame) {
+    func handleFrame(_ incoming: InboundFrame) {
+        #if os(macOS)
+            let frame = sanitizedComputerReviews(incoming)
+        #else
+            let frame = incoming
+        #endif
+        if frame.name == "chat_status", frame.payload["approval_decision"] != nil {
+            consumeApprovalReceipt(frame)
+            return
+        }
         #if os(macOS)
             if macComputerHost.consume(frame) {
                 if ["computer_host", "computer_session"].contains(frame.name),
@@ -2132,6 +2264,18 @@ final class AppModel: NSObject {
                 return
             }
         #endif
+        if frame.name == "ui_render", frame.renderTarget == "chat",
+            !approvalPrompts.isEmpty
+                || submittedApprovals.values.contains(where: { $0.chat == activeChatId && $0.owner == downloadOwner }),
+            frame.chatId == nil || frame.chatId == activeChatId,
+            frame.payload["connection_generation"] == nil
+                || frame.payload["connection_generation"]?.stringValue == continuity.connectionGeneration,
+            let alert = frame.renderComponents.first(where: { $0.type == "alert" }),
+            let message = alert.raw["message"]?.stringValue, !message.isEmpty
+        {
+            errorBanner = message
+            bannerIsError = alert.raw["variant"]?.stringValue != "success"
+        }
         if consumeViewportStatus(frame) { return }
         if frame.name == "error",
             ["viewport_snapshot_rejected", "viewport_snapshot_retryable"].contains(
@@ -2237,6 +2381,11 @@ final class AppModel: NSObject {
             agents = Agent.list(from: frame.payload["agents"])
             agentsLoading = false
         case "history_list":
+            #if os(macOS)
+                if projects.enabled, frame.payload["projects_changed"]?.boolValue == true {
+                    Task { await projects.refresh() }
+                }
+            #endif
             history = (frame.payload["chats"]?.arrayValue ?? []).compactMap { ChatSummary(json: $0) }
             historyTitle = "Recent chats"
             historyLoading = false
@@ -2955,6 +3104,13 @@ final class AppModel: NSObject {
     private func reduceUiRender(_ frame: InboundFrame) {
         let comps = frame.renderComponents
         if frame.renderTarget == "chat" {
+            if frame.chatId == nil || frame.chatId == activeChatId,
+                let alert = comps.first(where: { $0.type == "alert" }),
+                let message = alert.raw["message"]?.stringValue, !message.isEmpty
+            {
+                errorBanner = message
+                bannerIsError = alert.raw["variant"]?.stringValue != "success"
+            }
             let text = flattenText(comps)
             if text.isEmpty || text.range(of: docMarker, options: .caseInsensitive) != nil { return }
             appendTurn(role: "assistant", text: text)
@@ -3505,8 +3661,10 @@ final class AppModel: NSObject {
     }
 
     private static func bypassApproved(_ card: AstralComponent) -> Bool {
-        card.raw["approval_source"] == .string("bypass")
-            || card.children.contains { $0.raw["payload"]?["approval_source"] == .string("bypass") }
+        ["bypass", "project_grant"].contains(card.raw["approval_source"]?.stringValue ?? "")
+            || card.children.contains {
+                ["bypass", "project_grant"].contains($0.raw["payload"]?["approval_source"]?.stringValue ?? "")
+            }
     }
 
     static func approvalSite(_ summary: String) -> String? {
@@ -3650,6 +3808,7 @@ final class AppModel: NSObject {
             rows.removeFirst(rows.count - Self.maximumActivityRows)
             activityAliases = activityAliases.filter { !dropped.contains($0.value) }
             approvalRows = approvalRows.filter { !dropped.contains($0.value) }
+            approvalOrigins = approvalOrigins.filter { approvalRows[$0.key] != nil }
             redispatchable.subtract(dropped)
         }
         guard rows != before else { return }
@@ -3733,9 +3892,22 @@ final class AppModel: NSObject {
     }
 
     private func finishActivityProgress() {
+        let unconfirmed = submittedApprovals.filter {
+            !$0.value.expectsReceipt && $0.value.owner == downloadOwner
+                && $0.value.connection == continuity.connectionGeneration && $0.value.chat == activeChatId
+        }
+        let unconfirmedRows = Set(unconfirmed.values.compactMap(\.row))
+        for id in unconfirmed.keys {
+            submittedApprovals.removeValue(forKey: id)
+            decidedApprovals.insert(id)
+        }
         updateActivity(activeChatId) { rows in
-            for index in rows.indices where rows[index].id.hasPrefix("progress-") && rows[index].state == .running {
+            for index in rows.indices
+            where rows[index].state == .running
+                && (rows[index].id.hasPrefix("progress-") || unconfirmedRows.contains(rows[index].id))
+            {
                 rows[index].state = .completed
+                redispatchable.remove(rows[index].id)
             }
         }
     }
@@ -3763,53 +3935,298 @@ final class AppModel: NSObject {
         }
     }
 
-    private func noteApprovalDecision(_ text: String) {
+    private func noteApprovalDecision(_ text: String) -> Bool {
         guard text.contains("authorize_action") || text.contains("remote_op_decision"),
             let frame = InboundFrame.parse(text), frame.name == "ui_event",
             ["authorize_action", "remote_op_decision"].contains(frame.payload["action"]?.stringValue ?? ""),
             let payload = frame.payload["payload"],
             let requestId = (payload["hitl_request_id"] ?? payload["proposal_id"])?.stringValue, !requestId.isEmpty
-        else { return }
-        let approval: ActivityRow.Approval
-        switch payload["decision"]?.stringValue {
-        case "approve", "approve_and_resume": approval = .approved
-        case "grant_task": approval = .granted
-        case "decline": approval = .denied
-        default: return
+        else { return true }
+        guard let decision = payload["decision"]?.stringValue,
+            ["approve", "approve_and_resume", "grant_task", "decline"].contains(decision),
+            !decidedApprovals.contains(requestId), !withdrawingApprovals.contains(requestId),
+            submittedApprovals[requestId] == nil
+        else { return false }
+        #if !os(macOS)
+            let approval: ActivityRow.Approval
+            switch decision {
+            case "approve", "approve_and_resume": approval = .approved
+            case "grant_task": approval = .granted
+            default: approval = .denied
+            }
+            if decidedApprovals.count >= 512 { decidedApprovals.removeAll() }
+            decidedApprovals.insert(requestId)
+            let linked = approvalRows[requestId]
+            updateActivity(activeChatId) { rows in
+                guard
+                    let index = linked.flatMap({ id in rows.firstIndex { $0.id == id } })
+                        ?? rows.lastIndex(where: { $0.approval == .waiting })
+                else { return }
+                rows[index].approval = approval
+                if approval == .denied {
+                    rows[index].state = .cancelled
+                } else {
+                    redispatchable.insert(rows[index].id)
+                }
+            }
+            observeActivityComponents()
+            return true
+        #else
+            guard submittedApprovals.count < 512 else { return false }
+            if let origin = approvalOrigins[requestId],
+                origin.owner != downloadOwner || origin.connection != continuity.connectionGeneration
+                    || origin.chat != activeChatId
+            {
+                errorBanner = "Open the original conversation to answer this review."
+                return false
+            }
+            let linked = approvalRows[requestId]
+            submittedApprovals[requestId] = SubmittedApproval(
+                owner: downloadOwner, connection: continuity.connectionGeneration,
+                chat: activeChatId, row: linked, decision: decision, expectsReceipt: approvalReceiptsSupported)
+            updateActivity(activeChatId) { rows in
+                guard let index = linked.flatMap({ id in rows.firstIndex { $0.id == id } }) else { return }
+                if approvalReceiptsSupported {
+                    rows[index].approval = .submitted
+                } else {
+                    rows[index].approval = .uncertain
+                    rows[index].result =
+                        "Decision sent. This server does not confirm review outcomes. Inspect the action result."
+                    if decision != "decline" { redispatchable.insert(rows[index].id) }
+                }
+            }
+            observeActivityComponents()
+            return true
+        #endif
+    }
+
+    #if os(macOS)
+        private func currentReviewScope(_ origin: SubmittedApproval) -> Bool {
+            origin.owner == downloadOwner && origin.connection == continuity.connectionGeneration
         }
-        if decidedApprovals.count >= 512 { decidedApprovals.removeAll() }
-        decidedApprovals.insert(requestId)
-        let linked = approvalRows[requestId]
-        updateActivity(activeChatId) { rows in
+
+        private func retireComputerReview(_ id: String, chat: String?) {
+            retiredComputerReviews = retiredComputerReviews.filter { currentReviewScope($0.value) }
+            if let overflow = reviewRetirementOverflow, !currentReviewScope(overflow) { reviewRetirementOverflow = nil }
+            let key = RetiredComputerReviewKey(chat: chat, request: id)
+            guard retiredComputerReviews[key] == nil else { return }
+            let origin = SubmittedApproval(
+                owner: downloadOwner, connection: continuity.connectionGeneration, chat: chat, row: nil,
+                decision: "withdraw", expectsReceipt: true)
+            guard retiredComputerReviews.count < 512 else {
+                reviewRetirementOverflow = origin
+                return
+            }
+            retiredComputerReviews[key] = origin
+        }
+
+        private func suppressComputerReview(_ card: AstralComponent, chat: String?) -> Bool {
+            guard let approval = Self.computerApproval(card) else { return false }
+            let id = approval.requestId
+            if macComputerHost.bypass,
+                let host = card.raw["computer_host_id"]?.stringValue, macComputerHost.isLocalReviewHost(host)
+            {
+                retireComputerReview(id, chat: chat)
+                return true
+            }
+            if let overflow = reviewRetirementOverflow, currentReviewScope(overflow) { return true }
+            return retiredComputerReviews[RetiredComputerReviewKey(chat: chat, request: id)].map(currentReviewScope)
+                == true
+        }
+
+        private func sanitizedComputerReviews(_ frame: InboundFrame) -> InboundFrame {
             guard
-                let index = linked.flatMap({ id in rows.firstIndex { $0.id == id } })
-                    ?? rows.lastIndex(where: { $0.approval == .waiting })
-            else { return }
-            rows[index].approval = approval
-            if approval == .denied {
-                rows[index].state = .cancelled
-            } else {
-                redispatchable.insert(rows[index].id)
+                ["ui_render", "ui_update", "ui_append", "ui_upsert", "ui_stream_data", "conversation_snapshot"]
+                    .contains(frame.name),
+                frame.payload["connection_generation"]?.stringValue == continuity.connectionGeneration
+            else { return frame }
+            let chat = frame.chatId ?? activeChatId
+            func stripped(_ value: JSONValue) -> JSONValue? {
+                if let values = value.arrayValue { return .array(values.compactMap(stripped)) }
+                guard var object = value.objectValue else { return value }
+                if object["type"] == .string("card"),
+                    suppressComputerReview(AstralComponent(type: "card", raw: value), chat: chat)
+                {
+                    return nil
+                }
+                for (key, child) in object { object[key] = stripped(child) }
+                return .object(object)
+            }
+            return InboundFrame(name: frame.name, payload: stripped(frame.payload) ?? .object([:]))
+        }
+    #endif
+
+    private func withdrawLocalComputerReviews(_ host: String) {
+        let ids = Set(
+            approvalHosts.compactMap { id, value -> String? in
+                guard value == host, !decidedApprovals.contains(id), let origin = approvalOrigins[id],
+                    origin.owner == downloadOwner, origin.connection == continuity.connectionGeneration
+                else { return nil }
+                return id
+            })
+        withdrawingApprovals.formUnion(ids)
+        for id in ids {
+            guard let origin = approvalOrigins[id] else { continue }
+            updateActivity(origin.chat) { rows in
+                if let index = rows.firstIndex(where: { $0.id == origin.row }) {
+                    rows[index].approval = .withdrawing
+                    if submittedApprovals[id] == nil {
+                        rows[index].action = "Review closed on this Mac"
+                        rows[index].state = .completed
+                        rows[index].result =
+                            "Approval mode changed. This closes only the local review; check the action outcome before retrying."
+                    } else {
+                        rows[index].result = "Computer approval mode changed; the server outcome is not yet known."
+                    }
+                }
             }
         }
+        removeApprovalCards(ids)
+        observeActivityComponents()
+    }
+
+    private func removeApprovalCards(_ ids: Set<String>) {
+        func stripped(_ value: JSONValue) -> JSONValue? {
+            guard var object = value.objectValue else { return value }
+            if let id = object["id"]?.stringValue,
+                ids.contains(where: { id == "hitl_" + $0 || id == "au_approval_" + $0 })
+            {
+                return nil
+            }
+            for (key, child) in object {
+                if let values = child.arrayValue { object[key] = .array(values.compactMap(stripped)) }
+            }
+            return .object(object)
+        }
+        func components(_ values: [AstralComponent]) -> [AstralComponent] {
+            values.compactMap { item in stripped(item.raw).map { AstralComponent(type: item.type, raw: $0) } }
+        }
+        func cleaned(_ turn: ChatTurn) -> ChatTurn {
+            ChatTurn(id: turn.id, role: turn.role, text: turn.text, components: components(turn.components))
+        }
+        activityObservationPaused = true
+        canvas = components(canvas)
+        transientCanvas = transientCanvas.map(components)
+        turns = turns.map(cleaned)
+        transientTurns = transientTurns.map(cleaned)
+        activityObservationPaused = false
+    }
+
+    private func retireSubmittedApprovals() {
+        let interrupted = submittedApprovals.merging(approvalOrigins.filter { withdrawingApprovals.contains($0.key) }) {
+            submitted, _ in submitted
+        }
+        for (id, pending) in interrupted {
+            decidedApprovals.insert(id)
+            updateActivity(pending.chat) { rows in
+                guard let index = pending.row.flatMap({ id in rows.firstIndex { $0.id == id } }) else { return }
+                rows[index].approval = pending.decision.isEmpty ? .expired : .uncertain
+                rows[index].state = .failed
+                rows[index].result =
+                    pending.decision.isEmpty
+                    ? "This local review was interrupted by a connection change. Check the action outcome before retrying."
+                    : "The connection changed before the decision outcome arrived. Inspect the action before retrying."
+            }
+        }
+        submittedApprovals.removeAll()
+        withdrawingApprovals.removeAll()
+        removeApprovalCards(Set(interrupted.keys))
+        observeActivityComponents()
+    }
+
+    private func consumeApprovalReceipt(_ frame: InboundFrame) {
+        #if os(macOS)
+            guard projects.enabled else { return }
+            if let value = frame.payload["approval_decision"], value["decision"] == .string("withdraw"),
+                value["state"] == .string("cancelled"), value["revision"] == .number(1),
+                let id = value["request_id"]?.stringValue, !id.isEmpty, id.count <= 200,
+                let connection = continuity.connectionGeneration,
+                frame.payload["connection_generation"] == .string(connection),
+                let chat = frame.chatId, !chat.isEmpty, chat.count <= 512,
+                let message = value["message"]?.stringValue, message.unicodeScalars.count <= 1000
+            {
+                retireComputerReview(id, chat: chat)
+            }
+        #else
+            return
+        #endif
+        guard let value = frame.payload["approval_decision"], let id = value["request_id"]?.stringValue,
+            let pending = submittedApprovals[id]
+                ?? (value["decision"] == .string("withdraw") ? approvalOrigins[id] : nil),
+            !decidedApprovals.contains(id), pending.expectsReceipt, pending.owner == downloadOwner,
+            let connection = pending.connection, connection == continuity.connectionGeneration,
+            frame.payload["connection_generation"] == .string(connection),
+            frame.payload["chat_id"]?.stringValue == pending.chat,
+            value["decision"]?.stringValue == pending.decision
+                || value["decision"] == .string("withdraw") && value["state"] == .string("cancelled"),
+            value["revision"] == .number(1),
+            let state = value["state"]?.stringValue,
+            ["accepted", "refused", "expired", "cancelled", "error", "uncertain"].contains(state),
+            let message = value["message"]?.stringValue, message.unicodeScalars.count <= 1000
+        else { return }
+        submittedApprovals.removeValue(forKey: id)
+        withdrawingApprovals.remove(id)
+        decidedApprovals.insert(id)
+        updateActivity(pending.chat) { rows in
+            guard let index = pending.row.flatMap({ id in rows.firstIndex { $0.id == id } }) else { return }
+            switch state {
+            case "accepted":
+                rows[index].approval = pending.decision == "grant_task" ? .granted : .approved
+                redispatchable.insert(rows[index].id)
+            case "expired":
+                rows[index].approval = .expired
+                rows[index].state = .failed
+            case "uncertain":
+                rows[index].approval = .uncertain
+                rows[index].state = .failed
+            case "cancelled":
+                rows[index].approval =
+                    pending.decision == "decline" && value["decision"] != .string("withdraw") ? .denied : .refused
+                rows[index].state = .cancelled
+            default:
+                rows[index].approval = .refused
+                rows[index].state = .failed
+            }
+            if value["decision"] == .string("withdraw") {
+                rows[index].approval = .none
+                rows[index].action = "Review closed on this Mac"
+                rows[index].state = .completed
+            }
+            if state != "accepted" { rows[index].result = message }
+        }
+        if state != "accepted", value["decision"] != .string("withdraw"), pending.chat == activeChatId {
+            errorBanner = message
+            bannerIsError = state != "cancelled"
+        }
+        removeApprovalCards([id])
         observeActivityComponents()
     }
 
     private func observeActivityComponents() {
         guard !activityObservationPaused else { return }
         let live = transientCanvas ?? canvas
+        let observed = Self.approvalCards(in: visibleTurns.suffix(8).flatMap(\.components) + live)
+        var retired = Set(observed.map(\.approval.requestId)).intersection(decidedApprovals.union(withdrawingApprovals))
         #if os(macOS)
-            let bypassing = macComputerHost.bypass
-        #else
-            let bypassing = false
+            retired.formUnion(
+                observed.filter { suppressComputerReview($0.card, chat: activeChatId) }.map(\.approval.requestId))
         #endif
-        let cards = Self.approvalCards(in: visibleTurns.suffix(8).flatMap(\.components) + live)
-            .filter { !decidedApprovals.contains($0.approval.requestId) }
-            .filter { !(bypassing && Self.bypassApproved($0.card)) }
+        if !retired.isEmpty { removeApprovalCards(retired) }
+        let cards =
+            observed
+            .filter {
+                !retired.contains($0.approval.requestId)
+                    && !withdrawingApprovals.contains($0.approval.requestId)
+                    && submittedApprovals[$0.approval.requestId] == nil
+            }
+            .filter { !Self.bypassApproved($0.card) }
         let pending = cards.map(\.approval)
         let prompts = cards.compactMap { Self.approvalPrompt($0.card, $0.approval) }
         if prompts != approvalPrompts { approvalPrompts = prompts }
-        for approval in pending where approvalRows[approval.requestId] == nil { linkApproval(approval) }
+        for item in cards where approvalRows[item.approval.requestId] == nil {
+            linkApproval(item.approval)
+            approvalHosts[item.approval.requestId] = item.card.raw["computer_host_id"]?.stringValue
+        }
         #if os(macOS)
             if macComputerHost.awaitingApproval == pending.isEmpty { macComputerHost.approvalWaiting(!pending.isEmpty) }
         #endif
@@ -3825,7 +4242,11 @@ final class AppModel: NSObject {
     }
 
     private func linkApproval(_ approval: PendingApproval) {
-        if approvalRows.count >= 512 { approvalRows.removeAll() }
+        if approvalRows.count >= 512 {
+            approvalRows.removeAll()
+            approvalOrigins.removeAll()
+            approvalHosts.removeAll()
+        }
         let chatId = activeChatId
         let position = activityPosition(chatId)
         var linked: String?
@@ -3845,6 +4266,10 @@ final class AppModel: NSObject {
         }
         guard let linked else { return }
         approvalRows[approval.requestId] = linked
+        approvalOrigins[approval.requestId] = SubmittedApproval(
+            owner: downloadOwner,
+            connection: continuity.connectionGeneration, chat: chatId, row: linked, decision: "",
+            expectsReceipt: approvalReceiptsSupported)
         announce(approval.summary.isEmpty ? "Approval waiting" : "Approval waiting: \(approval.summary)")
         if let image = approval.image { attachActivityThumbnail(image, to: linked, chatId: chatId) }
     }
@@ -3869,7 +4294,11 @@ final class AppModel: NSObject {
         activityAliases = [:]
         activityOrder = []
         decidedApprovals = []
+        submittedApprovals = [:]
         approvalRows = [:]
+        approvalOrigins = [:]
+        approvalHosts = [:]
+        withdrawingApprovals = []
         redispatchable = []
         screenThumbnailSource = nil
         #if os(macOS)
@@ -3980,6 +4409,14 @@ final class AppModel: NSObject {
 
     @discardableResult
     func replayQueuedOperation(_ replay: QueuedOperationReplay) -> Bool {
+        #if os(macOS)
+            if projects.negotiating { return false }
+            if projects.enabled, replay.conversationPurpose != nil, replay.chatId == nil {
+                bannerIsError = true
+                errorBanner = "Select a project and resend this message."
+                return false
+            }
+        #endif
         guard !["evidence", "terminal"].contains(replay.surface),
             let connectionGeneration = continuity.connectionGeneration
         else {
@@ -4218,6 +4655,22 @@ final class AppModel: NSObject {
     }
 
     func sendChat(_ text: String) {
+        #if os(macOS)
+            if projects.negotiating {
+                composerDraft = text
+                return
+            }
+            if projects.enabled, activeChatId.flatMap({ projects.project(for: $0) }) == nil {
+                composerDraft = text
+                let attachments = staged
+                createProjectChat { [weak self] in
+                    guard let self, self.composerDraft == text, self.staged == attachments else { return }
+                    self.sendChat(text)
+                    if self.composerDraft == text { self.composerDraft = "" }
+                }
+                return
+            }
+        #endif
         if timelineReadOnly { return }
         if mandatorySurface {
             composerDraft = text
@@ -4407,6 +4860,17 @@ final class AppModel: NSObject {
     }
 
     func sendEvent(_ action: String, _ payload: JSONValue = .object([:])) {
+        #if os(macOS)
+            if projects.negotiating, ["chat_message", "new_chat", "load_chat"].contains(action) { return }
+            if projects.enabled, action == "new_chat" {
+                newChat()
+                return
+            }
+            if projects.enabled, action == "chat_message", activeChatId.flatMap({ projects.project(for: $0) }) == nil {
+                createProjectChat { [weak self] in self?.sendEvent(action, payload) }
+                return
+            }
+        #endif
         if action == "computer_host_consent" {
             #if os(macOS)
                 guard signedIn, connected, macComputerHost.available, screen == .surface,
@@ -4512,6 +4976,10 @@ final class AppModel: NSObject {
         }
         if action == "chrome_open", payload["surface"]?.stringValue == "work" {
             beginWorkRead(payload)
+            return
+        }
+        if action == WorkContinuityRequest.action {
+            beginWorkContinuity(payload)
             return
         }
         if action == "chrome_open" || action == "chrome_close" { invalidateWorkRead() }
@@ -4778,7 +5246,7 @@ final class AppModel: NSObject {
     }
 
     private func rawSend(_ text: String) {
-        noteApprovalDecision(text)
+        guard noteApprovalDecision(text) else { return }
         let computerReview = ComputerHostOutbound.isReviewDecision(text)
         #if os(macOS)
             let localComputerSession = computerReview ? macComputerHost.recordApprovalInteraction() : nil
@@ -4967,9 +5435,22 @@ final class AppModel: NSObject {
         return true
     }
 
-    func activateVoice() async { await voice.activate() }
+    func activateVoice() async {
+        #if os(macOS)
+            if needsProjectSelection() {
+                requestProjectChoice { [weak self] in Task { await self?.activateVoice() } }
+                return
+            }
+            guard await prepareProjectChat() else { return }
+        #endif
+        await voice.activate()
+    }
 
     func performVoiceControl(_ action: VoiceControlAction) async {
+        if action == .start {
+            await activateVoice()
+            return
+        }
         await voice.perform(action)
     }
 
@@ -5033,8 +5514,194 @@ final class AppModel: NSObject {
         return serverBase.appendingPathComponent("api/export/canvas/\(chatId).html")
     }
 
+    #if os(macOS)
+        private func projectAccessToken(owner: DownloadOwner, connection: String) async -> String? {
+            guard downloadOwner == owner, continuity.connectionGeneration == connection else { return nil }
+            let token = await freshAccessToken()
+            guard downloadOwner == owner, continuity.connectionGeneration == connection else { return nil }
+            return token
+        }
+        func selectProject(_ id: String) { projects.select(id) }
+        func requestProjectDeletion(_ project: ProjectRecord) {
+            guard projects.enabled, !mandatorySurface, projects.projects.contains(where: { $0.id == project.id }) else {
+                return
+            }
+            let owner = downloadOwner
+            let connection = continuity.connectionGeneration
+            let requestedChats = Set(projects.chats[project.id]?.map(\.id) ?? [])
+            projectPendingDeletion = project
+            projectDeletionAction = { [weak self] in
+                guard let self, self.downloadOwner == owner, self.continuity.connectionGeneration == connection,
+                    self.projects.enabled
+                else { return }
+                let chats = requestedChats.union(self.projects.chats[project.id]?.map(\.id) ?? [])
+                guard let deletedChats = await self.projects.delete(project), self.downloadOwner == owner,
+                    self.continuity.connectionGeneration == connection
+                else { return }
+                for chat in chats.union(deletedChats) { self.clearConfirmedDeletion(chat) }
+            }
+        }
+        func cancelProjectDeletion() {
+            projectPendingDeletion = nil
+            projectDeletionAction = nil
+        }
+        func confirmProjectDeletion() {
+            let action = projectDeletionAction
+            cancelProjectDeletion()
+            Task { await action?() }
+        }
+        func presentProjectCreation() {
+            guard projects.enabled, !mandatorySurface else { return }
+            cancelProjectChoice()
+            projectChooserPresented = true
+        }
+        private func retireProjectCatalog() {
+            cancelProjectChoice()
+            cancelProjectDeletion()
+            projectCreationTask?.cancel()
+            projectCreationTask = nil
+            projectCreationEpoch = UUID()
+            projects.bind(scope: nil, client: nil)
+        }
+        private func needsProjectSelection(force: Bool = false) -> Bool {
+            projects.enabled && projects.selectedId == nil
+                && (force || activeChatId.flatMap { projects.project(for: $0) } == nil)
+        }
+        private func requestProjectChoice(_ action: @escaping () -> Void) {
+            let owner = downloadOwner
+            let connection = continuity.connectionGeneration
+            let navigation = conversationNavigationGeneration
+            let chat = activeChatId
+            projectChoiceAfterDismissal = nil
+            projectChoiceEpoch = UUID()
+            projectChoice = { [weak self] in
+                guard let self, self.downloadOwner == owner, self.continuity.connectionGeneration == connection,
+                    self.conversationNavigationGeneration == navigation, self.activeChatId == chat,
+                    self.projects.enabled
+                else { return }
+                action()
+            }
+            projectChooserPresented = true
+        }
+        func cancelProjectChoice() {
+            projectChoiceEpoch = UUID()
+            projectChooserPresented = false
+            projectChoice = nil
+            projectChoiceAfterDismissal = nil
+        }
+        func projectChoiceDidDismiss() {
+            guard !projectChooserPresented else { return }
+            let action = projectChoiceAfterDismissal
+            projectChoiceAfterDismissal = nil
+            action?()
+        }
+        func chooseProjectForPendingChat(_ id: String) {
+            guard projectChooserPresented, projects.enabled, projects.projects.contains(where: { $0.id == id }) else {
+                return
+            }
+            projects.select(id)
+            let action = projectChoice
+            cancelProjectChoice()
+            action?()
+        }
+        func createProject(name: String, chooseFolders: Bool) async {
+            let owner = downloadOwner
+            let server = serverBase
+            let connection = continuity.connectionGeneration
+            let navigation = conversationNavigationGeneration
+            let chat = activeChatId
+            let choice = projectChoiceEpoch
+            guard let id = await projects.createProject(name: name), !Task.isCancelled, downloadOwner == owner,
+                serverBase == server, activeChatId == chat,
+                continuity.connectionGeneration == connection, conversationNavigationGeneration == navigation,
+                projectChoiceEpoch == choice, projects.selectedId == id
+            else { return }
+            let finish = { [weak self] in
+                guard let self, self.downloadOwner == owner, self.serverBase == server, self.activeChatId == chat,
+                    self.continuity.connectionGeneration == connection,
+                    self.conversationNavigationGeneration == navigation, self.projectChoiceEpoch == choice,
+                    self.projects.enabled, self.projects.selectedId == id,
+                    self.projects.projects.contains(where: { $0.id == id })
+                else { return }
+                if chooseFolders {
+                    self.macComputerHost.updateProjectFolders {
+                        try self.macComputerHost.projectGrants.choose(project: id)
+                    }
+                }
+                guard self.downloadOwner == owner, self.serverBase == server, self.activeChatId == chat,
+                    self.continuity.connectionGeneration == connection,
+                    self.conversationNavigationGeneration == navigation, self.projectChoiceEpoch == choice,
+                    self.projects.enabled, self.projects.selectedId == id,
+                    self.projects.projects.contains(where: { $0.id == id })
+                else { return }
+                let action = self.projectChoice
+                self.cancelProjectChoice()
+                action?()
+            }
+            projectChoiceAfterDismissal = finish
+            projectChooserPresented = false
+        }
+        private func createProjectChat(force: Bool = false, then action: (() -> Void)? = nil) {
+            if needsProjectSelection(force: force) {
+                requestProjectChoice { [weak self] in self?.createProjectChat(force: force, then: action) }
+                return
+            }
+            guard projectCreationTask == nil else { return }
+            let operation = UUID()
+            projectCreationEpoch = operation
+            projectCreationTask = Task { [weak self] in
+                guard let self else { return }
+                let ready = await self.prepareProjectChat(force: force)
+                guard self.projectCreationEpoch == operation else { return }
+                self.projectCreationTask = nil
+                if ready { action?() }
+            }
+        }
+        private func prepareProjectChat(force: Bool = false) async -> Bool {
+            guard !projects.negotiating else { return false }
+            guard projects.enabled else { return true }
+            guard !mandatorySurface, !timelineReadOnly else { return false }
+            if !force, let activeChatId, projects.project(for: activeChatId) != nil { return true }
+            let owner = downloadOwner
+            let connection = continuity.connectionGeneration
+            let navigation = conversationNavigationGeneration
+            do {
+                let chat = try await projects.createChat()
+                guard !Task.isCancelled, downloadOwner == owner, continuity.connectionGeneration == connection,
+                    conversationNavigationGeneration == navigation
+                else { return false }
+                if force {
+                    let draft = composerDraft
+                    let attachments = staged
+                    clearContinuityChatKeepingConnection()
+                    resetChatState()
+                    composerDraft = draft
+                    staged = attachments
+                }
+                openChat(chat)
+                return activeChatId == chat
+            } catch {
+                guard !Task.isCancelled, downloadOwner == owner, continuity.connectionGeneration == connection,
+                    conversationNavigationGeneration == navigation
+                else { return false }
+                if !(error is CancellationError) {
+                    bannerIsError = true
+                    errorBanner = error.localizedDescription
+                }
+                return false
+            }
+        }
+    #endif
+
     func newChat() {
         if mandatorySurface { return }
+        #if os(macOS)
+            if projects.negotiating { return }
+            if projects.enabled {
+                createProjectChat(force: true)
+                return
+            }
+        #endif
         invalidateGuidance()
         if let account = conversationAccount {
             _ = conversationResumeStore.clear(.newChat, for: account)
@@ -5047,6 +5714,17 @@ final class AppModel: NSObject {
     }
 
     func openChat(_ chatId: String) {
+        #if os(macOS)
+            if projects.negotiating { return }
+            if projects.enabled {
+                guard let project = projects.project(for: chatId) else {
+                    errorBanner = "This chat is not in the current project catalog. Refresh projects and retry."
+                    bannerIsError = true
+                    return
+                }
+                projects.select(project)
+            }
+        #endif
         if ["evidence", "terminal"].contains(pendingSurfaceKey) { closeSurface() }
         consoleFullscreen = false
         consoleResultCollapsed = false
@@ -5364,6 +6042,50 @@ final class AppModel: NSObject {
                     guard let self else { return false }
                     return self.downloadOwner == owner && self.ws === socket && self.connected
                         && self.workReadEpoch == generation && self.screen == .surface
+                        && self.continuity.connectionGeneration == connection
+                }
+            }
+            guard !Task.isCancelled, self.workReadEpoch == generation,
+                self.downloadOwner == owner, self.ws === socket
+            else { return }
+            if !sent { self.failWorkRead(generation: generation) }
+        }
+    }
+
+    private func beginWorkContinuity(_ payload: JSONValue) {
+        guard signedIn, connected, !mandatorySurface, !mutationsLocked, screen == .surface,
+            pendingSurfaceKey == "work", conversationAccount != nil,
+            let command = WorkContinuityRequest(payload: payload), workReadUpdate?.permits(command) == true,
+            let socket = ws, let connection = continuity.connectionGeneration
+        else { return }
+        retireOrdinarySurfaceRequests()
+        invalidateWorkRead()
+        let generation = workReadEpoch
+        guard workReadState.beginContinuity(command, generation: generation), let request = workReadState.request else {
+            return
+        }
+        pendingSurfaceParams = request.params
+        pendingSurface = nil
+        let owner = downloadOwner
+        let text = command.frameText(requestGeneration: generation, connectionGeneration: connection)
+        guard workReadState.bindSubmission(frameText: text) else {
+            failWorkRead(generation: generation)
+            return
+        }
+        outboundTap?(text)
+        workReadTask = Task { [weak self] in
+            guard let self, await self.authenticatedSocketIsCurrent(socket, owner: owner, connection: connection) else {
+                if let self, self.workReadEpoch == generation, self.downloadOwner == owner {
+                    self.failWorkRead(generation: generation)
+                }
+                return
+            }
+            let sent = await socket.sendCurrentWorkEvent(text) { [weak self] in
+                await MainActor.run {
+                    guard let self else { return false }
+                    return self.downloadOwner == owner && self.ws === socket && self.connected
+                        && self.workReadEpoch == generation && self.screen == .surface
+                        && self.pendingSurfaceKey == "work" && !self.mandatorySurface && !self.mutationsLocked
                         && self.continuity.connectionGeneration == connection
                 }
             }

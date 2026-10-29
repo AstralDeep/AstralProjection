@@ -609,6 +609,7 @@
         var onChoose: (() -> Void)?
         var onBookmark: (() -> Void)?
         var onResolve: (() -> Void)?
+        var onStop: ((URL) -> Void)?
         var resolutions = 0
         var stale = false
         var resolveFailure = false
@@ -640,7 +641,10 @@
                     self.started.append($0)
                     return self.accessed
                 },
-                stopAccess: { self.stopped.append($0) })
+                stopAccess: {
+                    self.onStop?($0)
+                    self.stopped.append($0)
+                })
         }
     }
 #endif

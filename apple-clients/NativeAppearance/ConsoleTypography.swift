@@ -1,5 +1,5 @@
-// Registers the web console's licensed Open Sans font in the shared native app resources.
-// Apple console views use this typography on phone, tablet, desktop and watch.
+// Supplies native system typography on Mac and the registered console family on other Apple clients.
+// Console views share these size roles while code uses the platform's monospaced design on Mac.
 
 import CoreText
 import Foundation
@@ -7,7 +7,6 @@ import SwiftUI
 
 enum ConsoleTypography {
     static let sansName = "OpenSans-Regular"
-    static let monoName = sansName
 
     private static let registration: Void = {
         if let url = Bundle.main.url(forResource: "open-sans-latin", withExtension: "ttf") {
@@ -18,12 +17,20 @@ enum ConsoleTypography {
     static func registerFonts() { _ = registration }
 
     static func sans(_ size: CGFloat, relativeTo style: Font.TextStyle = .body) -> Font {
-        registerFonts()
-        return .custom(sansName, size: size, relativeTo: style)
+        #if os(macOS)
+            return .system(size: size)
+        #else
+            registerFonts()
+            return .custom(sansName, size: size, relativeTo: style)
+        #endif
     }
 
     static func mono(_ size: CGFloat, relativeTo style: Font.TextStyle = .body) -> Font {
-        sans(size, relativeTo: style)
+        #if os(macOS)
+            return .system(size: size, design: .monospaced)
+        #else
+            return sans(size, relativeTo: style)
+        #endif
     }
 
     static var body: Font { sans(16) }

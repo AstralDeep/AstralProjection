@@ -2404,7 +2404,7 @@ class OrchestratorClient(QObject):
         self.host_session_id = None
         capabilities = ["render", "stream", "agent_host"]
         if self.work_reads:
-            capabilities.append("work_read_v1")
+            capabilities.extend(("work_read_v1", "work_continuity_v1"))
         if self.device.get("console_contract") == "console/v2":
             capabilities.extend(("guidance_notes_v1", "guidance_selection_v1"))
         if isinstance(self.device.get("voice"), dict):
@@ -2765,7 +2765,7 @@ class OrchestratorClient(QObject):
                 or action == "update_device" or safe_payload.get("surface") == "evidence"):
             self._safe_status("send_rejected:" + action)
             return local
-        if action == "chrome_open" and safe_payload.get("surface") == "work":
+        if action == "chrome_work_continuity" or action == "chrome_open" and safe_payload.get("surface") == "work":
             self._safe_status("work_read_failed:" + request_generation)
             return local
         self._send(frame)
@@ -2912,17 +2912,32 @@ class OrchestratorClient(QObject):
         _uuid4(request_generation, "request_generation")
         if not isinstance(params, dict):
             raise WindowsProtocolError("Work parameters must be an object")
-        ws, loop, generation = self._ws, self._loop, self.connection_generation
-        if self._stop or not self._connected or ws is None or loop is None or not _is_uuid4(generation):
-            return False
         local = LocalOperationSubmission(str(uuid.uuid4()), request_generation, "chrome_open", None)
+        payload = {"surface": "work", "params": copy.deepcopy(params),
+                   "submission_id": local.submission_id, "request_generation": request_generation}
+        return self._send_current_work(local, payload, is_current=is_current)
+
+    def send_current_work_continuity(self, payload: dict, request_generation: str, *, is_current=lambda: True) -> bool:
+        from astralprojection.work_continuity import validate_continuity_payload
+
+        _uuid4(request_generation, "request_generation")
+        try:
+            command = validate_continuity_payload(payload)
+        except ValueError as error:
+            raise WindowsProtocolError("Work continuity command is invalid") from error
+        local = LocalOperationSubmission(command["submission_id"], request_generation, "chrome_work_continuity", None)
+        return self._send_current_work(local, command, is_current=is_current)
+
+    def _send_current_work(self, local, payload, *, is_current) -> bool:
+        ws, loop, generation = self._ws, self._loop, self.connection_generation
+        if self._stop or self._auth_hold or not self._connected or ws is None or loop is None or not _is_uuid4(generation):
+            return False
         local.validate()
+        request_generation = local.request_generation
         frame = {
-            "type": "ui_event", "action": "chrome_open", "session_id": None,
+            "type": "ui_event", "action": local.action, "session_id": None,
             "submission_id": local.submission_id, "request_generation": request_generation,
-            "connection_generation": generation,
-            "payload": {"surface": "work", "params": copy.deepcopy(params),
-                        "submission_id": local.submission_id, "request_generation": request_generation},
+            "connection_generation": generation, "payload": payload,
         }
         serialized = json.dumps(frame, ensure_ascii=False, separators=(",", ":"))
         self._work_read_generation = request_generation
@@ -2933,7 +2948,7 @@ class OrchestratorClient(QObject):
             return False
 
         async def send_current():
-            if (not is_current() or self._stop or not self._connected or self._ws is not ws
+            if (not is_current() or self._stop or self._auth_hold or not self._connected or self._ws is not ws
                     or self._loop is not loop or self.connection_generation != generation
                     or self._work_read_generation != request_generation):
                 return False

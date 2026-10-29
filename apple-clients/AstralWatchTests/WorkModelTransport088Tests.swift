@@ -108,7 +108,12 @@ final class WorkModelTransport088Tests: XCTestCase {
                 if case .frame(let frame) = event { model.handleFrame(frame) }
             }
         }
-        await socket.start(onConnect: { #"{"type":"register_ui","token":"synthetic-local-only"}"# })
+        let registration = String(
+            decoding: try JSONValue.object([
+                "type": .string("register_ui"), "token": .string("synthetic-local-only"),
+                "connection_generation": .string(connection),
+            ]).encoded(), as: UTF8.self)
+        await socket.start(onConnect: { registration })
         await fulfillment(of: [ready], timeout: socketEventTimeout)
         model.connected = true
         model.handleFrame(menu)
@@ -120,6 +125,99 @@ final class WorkModelTransport088Tests: XCTestCase {
         close(model)
         await socket.stop()
         consume.cancel()
+    }
+
+    func testExplicitContinuityUsesCapturedSubmissionOnTheActualCurrentSocket() async throws {
+        try await connected { model, _, peer in
+            let registered = try XCTUnwrap(peer.registeredConnection)
+            XCTAssertTrue(model.beginConversationConnection(registered))
+            model.handleFrame(menu)
+            open(model)
+            try await waitUntil("first physical read") { peer.reads.count == 1 }
+            let first = try XCTUnwrap(model.workReadState.generation)
+            let payload: JSONValue = .object([
+                "version": .number(1), "operation_id": .string(operation),
+                "expected_revision": .number(3), "submission_id": .string("fc5c2124-ce23-48d9-927b-9c004d950c10"),
+            ])
+            let control = AstralComponent(
+                json: .object([
+                    "type": .string("button"), "variant": .string("secondary"),
+                    "label": .string("Recheck completion"), "disabled": .bool(false), "local": .bool(false),
+                    "action": .string(WorkContinuityRequest.action), "payload": payload,
+                ]))!
+            peer.send(response(first, components: [control.raw]))
+            try await waitUntil("continuity offered") { displayed(model) }
+            #if os(watchOS)
+                model.sendWorkComponent(control)
+            #else
+                model.sendEvent(WorkContinuityRequest.action, payload)
+            #endif
+            XCTAssertEqual(model.workReadState.continuity, WorkContinuityRequest(payload: payload))
+            guard model.workReadState.continuity != nil else { return }
+            try await waitUntil("current continuity request") { peer.reads.count == 2 }
+            let frame = try XCTUnwrap(InboundFrame.parse(peer.reads[1]))
+            XCTAssertEqual(frame.payload["payload"], payload)
+            XCTAssertEqual(frame.payload["submission_id"]?.stringValue, "fc5c2124-ce23-48d9-927b-9c004d950c10")
+            XCTAssertEqual(frame.payload["connection_generation"]?.stringValue, registered)
+            XCTAssertNotEqual(frame.payload["request_generation"]?.stringValue, first)
+            peer.send(response(frame.payload["request_generation"]!.stringValue!))
+            try await waitUntil("fresh recovery state") { displayed(model) }
+            XCTAssertNil(model.workReadState.continuity)
+        }
+    }
+
+    func testContinuityRetirementBeforePhysicalSendCannotReplayTheCommand() async throws {
+        for mode in ["owner", "connection", "stopped", "disconnected"] {
+            try await connected { model, socket, peer in
+                let registered = try XCTUnwrap(peer.registeredConnection)
+                XCTAssertTrue(model.beginConversationConnection(registered))
+                model.handleFrame(menu)
+                open(model)
+                try await waitUntil("first physical read") { peer.reads.count == 1 }
+                let first = try XCTUnwrap(model.workReadState.generation)
+                let payload: JSONValue = .object([
+                    "version": .number(1), "operation_id": .string(operation), "expected_revision": .number(3),
+                    "submission_id": .string("fc5c2124-ce23-48d9-927b-9c004d950c10"),
+                ])
+                let control = AstralComponent(
+                    json: .object([
+                        "type": .string("button"), "variant": .string("secondary"),
+                        "label": .string("Recheck completion"),
+                        "disabled": .bool(false), "local": .bool(false),
+                        "action": .string(WorkContinuityRequest.action), "payload": payload,
+                    ]))!
+                peer.send(response(first, components: [control.raw]))
+                try await waitUntil("continuity offered") { displayed(model) }
+                if mode == "stopped" { await socket.stop() }
+                #if os(watchOS)
+                    model.sendWorkComponent(control)
+                #else
+                    model.sendEvent(WorkContinuityRequest.action, payload)
+                #endif
+                if mode == "owner" {
+                    model.bindConversationAccount(
+                        ConversationAccount(issuer: "https://iam.example.test", subject: "other")!)
+                } else if mode == "connection" {
+                    XCTAssertTrue(model.beginConversationConnection(operation))
+                }
+                if mode == "disconnected" { model.connected = false }
+                if mode == "stopped" || mode == "disconnected" {
+                    try await waitUntil("current send refused") { model.workReadFailed }
+                } else {
+                    let barrier = Outbound.uiEvent(
+                        action: "chrome_close", sessionId: nil,
+                        payload: .object(["surface": .string("work")]), requestGeneration: operation)
+                    let sent = await socket.sendCurrentWorkEvent(barrier) { true }
+                    XCTAssertTrue(sent)
+                    try await waitUntil("physical retirement barrier") { peer.reads.count == 2 }
+                }
+                XCTAssertFalse(
+                    peer.reads.contains {
+                        InboundFrame.parse($0)?.payload["action"]?.stringValue == WorkContinuityRequest.action
+                    })
+                XCTAssertNil(model.workReadState.continuity)
+            }
+        }
     }
 
     func testActualReadResponseNavigationAndCloseStayOnOneSocketAndNeverQueue() async throws {
@@ -219,6 +317,8 @@ private final class WorkModelPeer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "astral.work-model.test")
     private var connections: [NWConnection] = []
     private var received: [String] = []
+    private var registered: String?
+    var registeredConnection: String? { queue.sync { registered } }
     var reads: [String] { queue.sync { received } }
     init() throws {
         let options = NWProtocolWebSocket.Options()
@@ -256,6 +356,7 @@ private final class WorkModelPeer: @unchecked Sendable {
             }
             let text = String(decoding: data, as: UTF8.self)
             if InboundFrame.parse(text)?.name == "register_ui" {
+                self.registered = InboundFrame.parse(text)?.payload["connection_generation"]?.stringValue
                 self.send(#"{"type":"ready"}"#, to: connection)
             } else {
                 self.received.append(text)

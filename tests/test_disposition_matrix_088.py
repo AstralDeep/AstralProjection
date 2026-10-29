@@ -20,7 +20,7 @@ MATRIX = MANIFEST["presentation_contracts"]["disposition_matrix_088"]
 CLIENTS = ["web", "windows", "android", "ios", "macos", "watch", "voice"]
 NATIVE_CLIENTS = ("android", "ios", "macos", "watch")
 DISPOSITIONS = {"supported", "read_only_handoff", "omitted_by_server", "version_required"}
-WINDOWS_SURFACES = {"guidance_notes_088", "guidance_selection_088"}
+WINDOWS_SURFACES = {"guidance_notes_088", "guidance_selection_088", "work_continuity"}
 WINDOWS_WORKSPACE_ACTIONS = {"canvas_export": "export_canvas", "canvas_share": "share_canvas"}
 
 
@@ -204,7 +204,7 @@ def test_the_committed_matrix_is_a_closed_resolvable_web_first_table():
     assert covered == {
         "work_read_088", "work_save_088", "guidance_notes_088", "guidance_skills_088",
         "guidance_agents_088", "guidance_selection_088", "recurring_work_088",
-        "saved_results_088", "connections_088", "chrome_menu", "workspace_088",
+        "saved_results_088", "connections_088", "chrome_menu", "workspace_088", "work_continuity",
     }
     gated = {
         name for name, contract in MANIFEST["presentation_contracts"].items()
@@ -317,7 +317,7 @@ def test_the_voice_row_is_the_rote_profile_not_a_registration():
     assert MATRIX["client_profiles"]["voice"]["advertised_088_capabilities"] == []
 
 
-@pytest.mark.parametrize("destination", ["work_list", "work_detail", "work_result"])
+@pytest.mark.parametrize("destination", ["work_list", "work_detail", "work_result", "work_continuity"])
 def test_work_reads_adapt_exactly_as_each_row_declares(destination):
     row = _first(MATRIX, destination)
     raw = components_for(row)
@@ -399,7 +399,7 @@ def test_the_wrist_projection_pins_every_watch_row():
 def test_windows_supports_only_qualified_surfaces_and_workspace_actions():
     supported = {
         "guidance_notes_list", "guidance_notes_new", "guidance_notes_edit",
-        "guidance_notes_forget", "guidance_selection_form", "canvas_export", "canvas_share",
+        "guidance_notes_forget", "guidance_selection_form", "canvas_export", "canvas_share", "work_continuity",
     }
     handoffs = {"work_list", "work_detail", "work_result"}
     for row in MATRIX["rows"]:

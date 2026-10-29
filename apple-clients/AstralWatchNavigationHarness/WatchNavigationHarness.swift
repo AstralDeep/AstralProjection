@@ -42,6 +42,7 @@ private final class WatchNavigationSession {
     private let defaults: UserDefaults
     private let suite: String
     private let workClock: NavigationClock?
+    private var clockCommand: Task<Void, Never>?
 
     init() {
         let raw = ProcessInfo.processInfo.environment["ASTRAL_WATCH_NAVIGATION_PEER"] ?? ""
@@ -79,7 +80,7 @@ private final class WatchNavigationSession {
         for await event in events {
             if Task.isCancelled { break }
             if case .frame(let frame) = event, frame.name == "navigation_test_clock" {
-                await advanceClock(frame)
+                await startClock(frame)
                 continue
             }
             await model.handle(event)
@@ -89,8 +90,26 @@ private final class WatchNavigationSession {
                 ready = true
             }
         }
+        clockCommand?.cancel()
+        await clockCommand?.value
+        clockCommand = nil
         await socket.stop()
         await model.handle(.disconnected(reason: "The navigation test peer closed."))
+    }
+
+    private func startClock(_ frame: InboundFrame) async {
+        guard let command = frame.payload["command_id"]?.stringValue,
+            UUID(uuidString: command)?.uuidString.lowercased() == command
+        else { return }
+        guard clockCommand == nil else {
+            await acknowledgeClock(command, status: "rejected")
+            return
+        }
+        let task = Task {
+            await advanceClock(frame)
+            clockCommand = nil
+        }
+        clockCommand = task
     }
 
     private func advanceClock(_ frame: InboundFrame) async {
@@ -124,6 +143,7 @@ private final class WatchNavigationSession {
         }
         withObservationTracking {
             _ = model.workReadState.generation
+            _ = model.workVisible
         } onChange: {
             waiting.cancel()
         }

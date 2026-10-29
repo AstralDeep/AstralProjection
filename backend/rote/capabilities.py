@@ -137,6 +137,7 @@ class DeviceCapabilities:
     reduced_motion: bool = False
     pointer_type: str = "fine"
     mac_workbench_v1: bool = False
+    project_workspaces_v1: bool = False
 
 
 @dataclass
@@ -156,6 +157,7 @@ class DeviceProfile:
     supports_interactivity: bool = True
     supported_types: Optional[FrozenSet[str]] = None
     console_contract: str = ""
+    project_workspaces_v1: bool = False
 
     @staticmethod
     def from_dict(data: Dict[str, Any]) -> "DeviceProfile":
@@ -250,6 +252,11 @@ class DeviceProfile:
                 profile.max_grid_columns = min(
                     profile.max_grid_columns, load_host_config()[density_type]["max_grid_columns"]
                 )
+        profile.project_workspaces_v1 = (
+            profile.device_type == DeviceType.MACOS
+            and profile.console_contract == CONSOLE_CONTRACT
+            and caps.project_workspaces_v1
+        )
         st = data.get("supported_types")
         if isinstance(st, (list, tuple, set, frozenset)) and len(st) <= 256:
             cleaned = frozenset(
@@ -296,6 +303,8 @@ class DeviceProfile:
             d["supported_types"] = sorted(d["supported_types"])
         if self.console_contract == CONSOLE_CONTRACT:
             d["console"] = presentation(self.capabilities, watch=self.device_type == DeviceType.WATCH)
+            if self.project_workspaces_v1:
+                d["console"]["project_workspaces"] = {"version": 1, "mode": "projects_only"}
         else:
             d.pop("console_contract", None)
         return d

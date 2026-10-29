@@ -214,7 +214,6 @@
         }
 
         func testFooterItemsExposeLabelsAndValuesToAccessibility() async throws {
-            try SurfaceAccessibility.requireTrust()
             let model = try model(host: try host(available: true))
             var payload = Self.dispatch
             payload["type"] = .string("llm_usage_report")
@@ -222,7 +221,7 @@
             let mount = SurfaceMount(MacStatusFooter {}, model: model, size: CGSize(width: 900, height: 26))
             defer { mount.close() }
             try await mount.settle()
-            let tree = mount.accessibility
+            let tree = try mount.accessibility
             let connection = try XCTUnwrap(tree.first { $0.identifier == "workbench-status-connection" })
             XCTAssertEqual(connection.label, "Connection")
             XCTAssertEqual(connection.value, "Connected")

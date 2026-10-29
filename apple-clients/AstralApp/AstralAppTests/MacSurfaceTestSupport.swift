@@ -1,5 +1,5 @@
 // Mounts workbench surfaces offscreen in a chosen theme, drives them with real key and mouse events, and reads the
-// accessibility tree when the test host is trusted; PNGs also go to ASTRAL_SETTINGS_SNAPSHOT_DIR when it is set.
+// accessibility tree of the test process's named windows; PNGs also go to ASTRAL_SETTINGS_SNAPSHOT_DIR when set.
 
 #if os(macOS)
     import AppKit
@@ -13,6 +13,10 @@
 
     @MainActor
     enum SurfaceAccessibility {
+        enum Failure: Error, Equatable {
+            case missingWindow, ambiguousWindow, foreignWindow
+        }
+
         struct Element {
             let identifier: String?
             let label: String?
@@ -23,15 +27,13 @@
             let selected: Bool
         }
 
-        static func requireTrust() throws {
-            try XCTSkipUnless(
-                AXIsProcessTrusted(), "Reading the accessibility tree needs a test host with Accessibility access")
-        }
-
-        static func elements(windowTitle: String) -> [Element] {
-            guard let window = window(title: windowTitle) else { return [] }
+        static func elements(windowTitle: String) throws -> [Element] {
+            let window = try window(title: windowTitle)
+            let decorations = [kAXCloseButtonAttribute, kAXMinimizeButtonAttribute, kAXZoomButtonAttribute]
+                .compactMap { attribute($0, of: window) }
             var found: [Element] = []
             func walk(_ element: AXUIElement, depth: Int) {
+                guard !decorations.contains(where: { CFEqual($0, element) }) else { return }
                 found.append(
                     Element(
                         identifier: attribute(kAXIdentifierAttribute, of: element) as? String,
@@ -51,10 +53,17 @@
             return found
         }
 
-        private static func window(title: String) -> AXUIElement? {
+        private static func window(title: String) throws -> AXUIElement {
             let application = AXUIElementCreateApplication(getpid())
             let windows = attribute(kAXWindowsAttribute, of: application) as? [AXUIElement] ?? []
-            return windows.first { attribute(kAXTitleAttribute, of: $0) as? String == title }
+            let matches = windows.filter { attribute(kAXTitleAttribute, of: $0) as? String == title }
+            guard matches.count <= 1 else { throw Failure.ambiguousWindow }
+            guard let window = matches.first else { throw Failure.missingWindow }
+            var pid: pid_t = 0
+            guard AXUIElementGetPid(window, &pid) == .success, pid == getpid() else {
+                throw Failure.foreignWindow
+            }
+            return window
         }
 
         private static func attribute(_ name: String, of element: AXUIElement) -> CFTypeRef? {
@@ -86,7 +95,9 @@
             view = hosting
         }
 
-        var accessibility: [SurfaceAccessibility.Element] { SurfaceAccessibility.elements(windowTitle: window.title) }
+        var accessibility: [SurfaceAccessibility.Element] {
+            get throws { try SurfaceAccessibility.elements(windowTitle: window.title) }
+        }
 
         func settle() async throws {
             for _ in 0..<5 {

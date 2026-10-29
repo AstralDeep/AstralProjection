@@ -5737,7 +5737,60 @@
     } finally { meshPending = false; }
   }
 
+  function workContinuityPayload(payload) {
+    return payload && typeof payload === "object" && !Array.isArray(payload)
+      && Object.keys(payload).length === 4
+      && ["version", "operation_id", "expected_revision", "submission_id"].every(function (key) {
+        return Object.prototype.hasOwnProperty.call(payload, key);
+      }) && payload.version === 1 && Number.isSafeInteger(payload.expected_revision)
+      && payload.expected_revision > 0 && isCanonicalUuid4(payload.operation_id)
+      && isCanonicalUuid4(payload.submission_id);
+  }
+
+  function workSavePayload(payload) {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload) || payload.version !== 1
+        || !isCanonicalUuid4(payload.operation_id) || !isCanonicalUuid4(payload.submission_id)
+        || !Number.isSafeInteger(payload.expected_revision) || payload.expected_revision < 1) return false;
+    var fields = payload.command === "propose"
+      ? ["version", "command", "operation_id", "submission_id", "publication_id", "expected_revision", "conversation_id", "expected_workspace_revision", "expected_workspace_publication_id"]
+      : payload.command === "save" ? ["version", "command", "operation_id", "action_id", "submission_id", "expected_revision", "proposal_digest"] : [];
+    if (!fields.length || Object.keys(payload).length !== fields.length || !fields.every(function (key) {
+      return Object.prototype.hasOwnProperty.call(payload, key);
+    })) return false;
+    if (payload.command === "save") return isCanonicalUuid4(payload.action_id) && payload.action_id !== payload.submission_id
+      && typeof payload.proposal_digest === "string" && /^[0-9a-f]{64}$/.test(payload.proposal_digest);
+    return isCanonicalUuid4(payload.publication_id) && payload.publication_id !== payload.submission_id
+      && typeof payload.conversation_id === "string" && payload.conversation_id.length > 0
+      && payload.conversation_id.length <= 512 && payload.conversation_id.trim() === payload.conversation_id
+      && Array.from(payload.conversation_id).every(function (value) { return value === " " || !/[\p{C}\p{Z}]/u.test(value); })
+      && Number.isSafeInteger(payload.expected_workspace_revision) && payload.expected_workspace_revision >= 0
+      && (payload.expected_workspace_revision === 0 ? payload.expected_workspace_publication_id === null
+        : isCanonicalUuid4(payload.expected_workspace_publication_id));
+  }
+
+  function currentWorkCommand(actionName, payload, validate) {
+    var current = ownerSurfaceRequest;
+    if (!validate(payload) || !current || current.surface !== "work" || !current.received
+        || current.socket !== ws || current.connection !== connectionGeneration
+        || current.privacyEpoch !== accountPrivacyEpoch || accountSignedOut || !isSocketReady()
+        || timelineMode || modalIsMandatory() || !modalRoot) return false;
+    return Array.prototype.some.call(modalRoot.querySelectorAll('[data-ui-action], [data-action]'), function (control) {
+      if ((control.getAttribute("data-ui-action") || control.getAttribute("data-action")) !== actionName
+          || control.disabled || control.getAttribute("aria-disabled") === "true") return false;
+      var offered;
+      try { offered = JSON.parse(control.getAttribute("data-ui-payload") || control.getAttribute("data-payload") || "{}"); }
+      catch (_error) { return false; }
+      return validate(offered) && Object.keys(payload).every(function (key) {
+        return payload[key] === offered[key];
+      });
+    });
+  }
+
   function action(name, payload, exposeStatus, meshPrepared) {
+    var continuityAction = name === "chrome_work_continuity";
+    var workSaveAction = name === "chrome_work_result_save";
+    if (continuityAction && !currentWorkCommand(name, payload, workContinuityPayload)
+        || workSaveAction && !currentWorkCommand(name, payload, workSavePayload)) return;
     if (name === "chrome_mesh_identity" || name === "chrome_mesh_redeem" || name === "chrome_mesh_create" && !meshPrepared) {
       meshLocalAction(name, payload || {});
       return;
@@ -5751,10 +5804,13 @@
     var selectionAction = name === "chrome_turn_selection_set";
     var safetyAction = ["chrome_safety_stop", "chrome_safety_resume", "chrome_safety_verify"].indexOf(name) !== -1;
     var terminalAction = ["chrome_terminal_input", "chrome_terminal_resize", "chrome_terminal_interrupt", "chrome_terminal_close"].indexOf(name) !== -1;
-    var ownerSurface = terminalAction ? "terminal" : meshAction ? "mesh" : safetyAction ? "safety" : noteAction || selectionAction ? "guidance"
+    var ownerSurface = continuityAction || workSaveAction ? "work" : terminalAction ? "terminal" : meshAction ? "mesh" : safetyAction ? "safety" : noteAction || selectionAction ? "guidance"
       : name === "chrome_open" && payload && ["work", "guidance", "evidence", "safety", "mesh", "terminal"].indexOf(payload.surface) !== -1
         ? payload.surface : null;
-    if (name === "chrome_open" || name === "chrome_close" || noteAction || selectionAction || safetyAction || meshAction || terminalAction) retireOwnerSurface();
+    if (name === "chrome_open" || name === "chrome_close" || noteAction || selectionAction || safetyAction || meshAction || terminalAction || continuityAction || workSaveAction) retireOwnerSurface();
+    if (continuityAction || workSaveAction) {
+      showModalSkeleton("chrome_open", { surface: "work", params: { mode: workSaveAction ? "result" : "detail", operation_id: payload.operation_id } });
+    }
     if (noteAction) {
       showModalSkeleton("chrome_open", { surface: "guidance", params: { mode: "list" } });
     }
@@ -5775,6 +5831,7 @@
       : requestState && (name === "chat_message" || name === "load_chat")
         ? requestState.generation : null;
     var submission = beginOperationSubmission(name, payload, suppliedGeneration, exposeStatus);
+    if (continuityAction || workSaveAction) delete submission.payload.request_generation;
     if (safetyAction || terminalAction || ownerSurface === "mesh") {
       delete submission.payload.submission_id;
       delete submission.payload.request_generation;
@@ -5783,7 +5840,7 @@
       type: "ui_event",
       action: name,
       payload: submission.payload,
-      session_id: ownerSurface ? undefined : activeChatId || undefined,
+      session_id: continuityAction || workSaveAction ? null : ownerSurface ? undefined : activeChatId || undefined,
       submission_id: submission.submissionId,
       request_generation: submission.requestGeneration,
     };
@@ -5860,7 +5917,7 @@
     send({
       type: "register_ui",
       token: token,
-      capabilities: ["render", "stream", "voice", "guidance_notes_v1", "guidance_selection_v1"],
+      capabilities: ["render", "stream", "voice", "guidance_notes_v1", "guidance_selection_v1", "work_read_v1", "work_continuity_v1"],
       session_id: "ui-" + Date.now(),
       device_id: voiceDeviceId,
       device: device,
@@ -7706,6 +7763,10 @@
     if (btn) {
       var act = btn.getAttribute("data-action"); var payload = {};
       try { payload = JSON.parse(btn.getAttribute("data-payload") || "{}"); } catch (_) {}
+      if (act === "chrome_work_continuity" || act === "chrome_work_result_save") {
+        if (modalRoot && modalRoot.contains(btn)) action(act, payload);
+        return;
+      }
       var compHost = btn.closest && btn.closest("[data-component-id]");
       if (compHost && payload.surface !== "safety" && payload.surface !== "terminal" && !payload.component_id) payload.component_id = compHost.getAttribute("data-component-id");
       if (payload.surface !== "safety" && payload.surface !== "terminal" && !payload.chat_id && activeChatId && !(act === "chrome_open" && (payload.surface === "work" || payload.surface === "evidence" || payload.surface === "terminal"))) {
@@ -8600,6 +8661,11 @@
     }
     var payload = {};
     try { payload = JSON.parse(el.getAttribute("data-ui-payload") || "{}"); } catch (err) {}
+    if (act === "chrome_work_continuity" || act === "chrome_work_result_save") {
+      e.preventDefault();
+      if (modalRoot && modalRoot.contains(el)) action(act, payload);
+      return;
+    }
     if (el.getAttribute("data-ui-collect") === "true") {
       payload.fields = collectChromeFields(el.closest("[data-ui-form]") || modalRoot);
     }

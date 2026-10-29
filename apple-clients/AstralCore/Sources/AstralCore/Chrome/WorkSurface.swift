@@ -53,6 +53,11 @@ public struct WorkReadRequest: Equatable, Sendable {
     }
 
     public static func claimsCurrentConnectionSemantics(frameText: String) -> Bool {
+        if let frame = InboundFrame.parse(frameText), frame.name == "ui_event",
+            frame.payload["action"]?.stringValue == WorkContinuityRequest.action
+        {
+            return true
+        }
         guard let frame = InboundFrame.parse(frameText), frame.name == "ui_event",
             let action = frame.payload["action"]?.stringValue,
             ["chrome_open", "chrome_close"].contains(action)
@@ -61,6 +66,7 @@ public struct WorkReadRequest: Equatable, Sendable {
     }
 
     public static func isCurrentConnectionEvent(_ text: String) -> Bool {
+        if WorkContinuityRequest(frameText: text) != nil { return true }
         if WorkReadRequest(frameText: text) != nil { return true }
         guard let replay = QueuedOperationReplay(frameText: text), replay.action == "chrome_close",
             let frame = InboundFrame.parse(text), frame.payload["session_id"] == .null,
@@ -130,6 +136,13 @@ public struct WorkSurfaceUpdate: Equatable, Sendable {
         return components.contains(where: contains)
     }
 
+    public func permits(_ request: WorkContinuityRequest) -> Bool {
+        func contains(_ component: AstralComponent) -> Bool {
+            WorkContinuityRequest(component: component) == request || component.children.contains(where: contains)
+        }
+        return components.contains(where: contains)
+    }
+
     private static func valid(_ value: JSONValue, count: inout Int, depth: Int = 0) -> Bool {
         count += 1
         guard count <= 1024, depth <= 8, let fields = value.objectValue,
@@ -167,6 +180,10 @@ public struct WorkSurfaceUpdate: Equatable, Sendable {
                 }
             }
         case "button":
+            if fields["action"]?.stringValue == WorkContinuityRequest.action {
+                return fields["local"]?.boolValue == false && fields["disabled"]?.boolValue != nil
+                    && fields["payload"].flatMap(WorkContinuityRequest.init(payload:)) != nil
+            }
             guard fields["action"]?.stringValue == "chrome_open", fields["local"]?.boolValue == false,
                 fields["disabled"]?.boolValue != nil, let payload = fields["payload"]
             else { return false }
@@ -180,6 +197,7 @@ public struct WorkReadState: Equatable, Sendable {
     public private(set) var request: WorkReadRequest?
     public private(set) var generation: String?
     public private(set) var submissionId: String?
+    public private(set) var continuity: WorkContinuityRequest?
     public init() {}
 
     @discardableResult
@@ -188,6 +206,20 @@ public struct WorkReadState: Equatable, Sendable {
         self.request = request
         self.generation = generation
         submissionId = nil
+        continuity = nil
+        return true
+    }
+
+    @discardableResult
+    public mutating func beginContinuity(_ command: WorkContinuityRequest, generation: String) -> Bool {
+        guard
+            let read = WorkReadRequest(
+                payload: .object([
+                    "surface": .string("work"),
+                    "params": .object(["mode": .string("detail"), "operation_id": .string(command.operationId)]),
+                ])), begin(read, generation: generation)
+        else { return false }
+        continuity = command
         return true
     }
 
@@ -195,10 +227,18 @@ public struct WorkReadState: Equatable, Sendable {
         request = nil
         generation = nil
         submissionId = nil
+        continuity = nil
     }
 
     @discardableResult
     public mutating func bindSubmission(frameText: String) -> Bool {
+        if let continuity {
+            guard WorkContinuityRequest(frameText: frameText) == continuity,
+                InboundFrame.parse(frameText)?.payload["request_generation"]?.stringValue == generation
+            else { return false }
+            submissionId = continuity.submissionId
+            return true
+        }
         guard let frame = InboundFrame.parse(frameText),
             WorkReadRequest(frameText: frameText) == request,
             frame.payload["request_generation"]?.stringValue == generation,
@@ -214,7 +254,8 @@ public struct WorkReadState: Equatable, Sendable {
             return submissionId != nil && refusal.submissionId == submissionId
         }
         guard let status = OperationStatus(frame: frame) else { return false }
-        return status.action == "chrome_open" && status.surface == "work" && status.chatId == nil
+        return status.action == (continuity == nil ? "chrome_open" : WorkContinuityRequest.action)
+            && status.surface == "work" && status.chatId == nil
             && status.requestGeneration == generation && status.connectionGeneration == connectionGeneration
             && status.terminal && status.state != "completed"
     }

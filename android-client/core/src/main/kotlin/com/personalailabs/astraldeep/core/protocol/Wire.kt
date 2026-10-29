@@ -263,7 +263,10 @@ object Wire {
             putJsonArray("capabilities") {
                 add("render")
                 add("stream")
-                if (workReads) add("work_read_v1")
+                if (workReads) {
+                    add("work_read_v1")
+                    add("work_continuity_v1")
+                }
                 if (guidanceNotes) add("guidance_notes_v1")
                 if (device.consoleContract == ConsoleModel.CONTRACT) add("guidance_selection_v1")
                 if (device.hasMicrophone && device.hasAudioOutput) add("voice")
@@ -326,6 +329,11 @@ object Wire {
         }
         val safety = SafetySurfaceRequest.isEvent(action, payload)
         val mesh = MeshSurfaceRequest.isEvent(action, payload)
+        val continuity = action == WorkContinuity.ACTION
+        require(
+            !continuity || requestGeneration != null && submissionId != null &&
+                WorkContinuity.validPayload(payload) && payload["submission_id"] == JsonPrimitive(submissionId),
+        ) { "Continuity requests require captured payload and current request identity" }
         require(!safety || requestGeneration != null && submissionId != null && SafetySurfaceRequest.validPayload(action, payload)) {
             "Safety requests require exact payload and envelope correlation"
         }
@@ -336,7 +344,7 @@ object Wire {
             buildJsonObject {
                 payload.forEach(::put)
                 if (!safety && !mesh && submissionId != null) put("submission_id", submissionId)
-                if (!safety && !mesh && requestGeneration != null) put("request_generation", requestGeneration)
+                if (!safety && !mesh && !continuity && requestGeneration != null) put("request_generation", requestGeneration)
             }
         return buildJsonObject {
             put("type", "ui_event")

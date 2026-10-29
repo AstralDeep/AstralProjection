@@ -4,6 +4,7 @@
 package com.personalailabs.astraldeep.app.transport
 
 import com.personalailabs.astraldeep.core.protocol.DeviceCapabilities
+import com.personalailabs.astraldeep.core.protocol.WorkContinuity
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -117,6 +118,48 @@ class WorkReadTransport088Test {
         assertFalse(client.sendCurrentSurfaceEvent("guidance", "chrome_open", buildJsonObject { put("surface", "work") }, { true }) { _, _ -> error("wrong surface") })
         assertTrue(socket.frames.isEmpty())
     }
+
+    @Test fun registered_continuity_keeps_captured_submission_and_current_connection() {
+        val client = OrchestratorClient("ws://localhost:9/ws")
+        val socket = Socket()
+        client.installOpenSocketForTest(socket)
+        client.replayPendingForTest(connection, {}, {}, { true })
+        val payload = continuityPayload()
+        var issued: LocalSubmission? = null
+        assertTrue(
+            client.sendCurrentSurfaceEvent("work", WorkContinuity.ACTION, payload, { true }) { value, generation ->
+                issued = value
+                assertEquals(connection, generation)
+            },
+        )
+        val frame = Json.parseToJsonElement(socket.frames.single()).jsonObject
+        assertEquals(payload, frame["payload"])
+        assertEquals(payload["submission_id"], frame["submission_id"])
+        assertEquals(connection, frame["connection_generation"]!!.jsonPrimitive.content)
+        assertEquals(issued!!.requestGeneration, frame["request_generation"]!!.jsonPrimitive.content)
+        assertTrue(client.pendingActions().isEmpty())
+    }
+
+    @Test fun continuity_never_enters_generic_queue_or_survives_retired_current_scope() {
+        val client = OrchestratorClient("ws://localhost:9/ws")
+        client.sendEvent(WorkContinuity.ACTION, null, continuityPayload())
+        assertTrue(client.pendingActions().isEmpty())
+        val socket = Socket()
+        client.installOpenSocketForTest(socket)
+        client.replayPendingForTest(connection, {}, {}, { true })
+        var current = true
+        assertFalse(client.sendCurrentSurfaceEvent("work", WorkContinuity.ACTION, continuityPayload(), { current }) { _, _ -> current = false })
+        assertTrue(socket.frames.isEmpty())
+        assertTrue(client.pendingActions().isEmpty())
+    }
+
+    private fun continuityPayload() =
+        buildJsonObject {
+            put("version", 1)
+            put("operation_id", "180cd30b-cc38-432d-8349-1851b0d3ad7e")
+            put("expected_revision", 3)
+            put("submission_id", "fc5c2124-ce23-48d9-927b-9c004d950c10")
+        }
 
     private fun workPayload(params: JsonObject) =
         buildJsonObject {

@@ -7,6 +7,76 @@
     @testable import AstralCore
 
     final class ComputerWorkspaceTests: XCTestCase {
+        func testMissingReadAndPreEffectWriteDenialCarryTypedOutcomes() throws {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let workspace = try ComputerWorkspace(root: root.path)
+            let path = root.appendingPathComponent("missing.txt").path
+            XCTAssertThrowsError(try workspace.read(path, maximum: 100)) { error in
+                XCTAssertEqual((error as? ComputerHostError)?.code, "not_found")
+                XCTAssertEqual((error as? ComputerHostError)?.effectState, "not_started")
+                XCTAssertEqual((error as? ComputerHostError)?.responseError["effect_state"], .string("not_started"))
+            }
+            XCTAssertThrowsError(
+                try workspace.write(path, content: "new", overwrite: false) {
+                    throw ComputerHostError("permission_denied", "revoked")
+                }
+            ) { error in
+                XCTAssertEqual((error as? ComputerHostError)?.effectState, "not_started")
+            }
+            XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+        }
+
+        func testDenialAfterTemporaryWriteRetainsUncertainOutcome() throws {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let workspace = try ComputerWorkspace(root: root.path)
+            let path = root.appendingPathComponent("target.txt").path
+            var calls = 0
+            XCTAssertThrowsError(
+                try workspace.write(path, content: "new", overwrite: false) {
+                    calls += 1
+                    if calls == 3 { throw ComputerHostError("permission_denied", "revoked") }
+                }
+            ) { error in
+                XCTAssertNil((error as? ComputerHostError)?.effectState)
+            }
+            XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+        }
+
+        func testReviewedCreateRefusesAFileCreatedAfterReview() throws {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let workspace = try ComputerWorkspace(root: root.path)
+            let file = root.appendingPathComponent("target.txt")
+            XCTAssertThrowsError(try workspace.read(file.path, maximum: 100))
+            try Data("competing".utf8).write(to: file)
+            XCTAssertThrowsError(try workspace.write(file.path, content: "reviewed", overwrite: false, authorize: {}))
+            XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "competing")
+        }
+
+        func testReviewedCreateRefusesACompetingFileBeforeRename() throws {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let workspace = try ComputerWorkspace(root: root.path)
+            let file = root.appendingPathComponent("target.txt")
+            XCTAssertThrowsError(try workspace.read(file.path, maximum: 100)) { error in
+                XCTAssertEqual((error as? ComputerHostError)?.code, "not_found")
+            }
+            var checks = 0
+            XCTAssertThrowsError(
+                try workspace.write(file.path, content: "reviewed", overwrite: false) {
+                    checks += 1
+                    if checks == 3 { try Data("competing".utf8).write(to: file) }
+                })
+            XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "competing")
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), ["target.txt"])
+        }
+
         func testCredentialRootsAndInvalidTextAreRejected() throws {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             try FileManager.default.createDirectory(

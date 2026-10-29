@@ -42,6 +42,7 @@ import com.personalailabs.astraldeep.core.protocol.DeviceCapabilities
 import com.personalailabs.astraldeep.core.protocol.Inbound
 import com.personalailabs.astraldeep.core.protocol.ProtocolManifest
 import com.personalailabs.astraldeep.core.protocol.VoiceControl
+import com.personalailabs.astraldeep.core.protocol.WorkContinuity
 import com.personalailabs.astraldeep.core.protocol.isGuidanceNoteAction
 import com.personalailabs.astraldeep.core.protocol.isPrivateChromeSurface
 import com.personalailabs.astraldeep.core.sdui.Canvas
@@ -1067,6 +1068,30 @@ class AppViewModel(
                 TurnSelection.fromJson(payload)?.isGuidanceSelection == true && surfaceOffers(state.pendingSurface, action, payload)
             ) {
                 requestPrivateSurface("guidance", state.pendingSurfaceParams, action, payload)
+            }
+            return
+        }
+        if (action == WorkContinuity.ACTION) {
+            val current = _state.value
+
+            fun offered(component: Component): Boolean =
+                component.type == "button" && component.attributes["action"] == JsonPrimitive(action) &&
+                    component.attributes["payload"] == payload && component.attributes["disabled"] == JsonPrimitive(false) &&
+                    component.attributes["local"] == JsonPrimitive(false) || component.children.any(::offered)
+            if (current.screen == Screen.Surface && current.pendingSurfaceKey == "work" &&
+                current.connection == ConnectionState.Connected && !current.mandatorySurface && !current.mutationsLocked &&
+                current.pendingSurfaceConnectionGeneration == current.connectionGeneration &&
+                WorkContinuity.validPayload(payload) && current.pendingSurface?.components?.any(::offered) == true
+            ) {
+                requestPrivateSurface(
+                    "work",
+                    buildJsonObject {
+                        put("mode", "detail")
+                        put("operation_id", payload.getValue("operation_id"))
+                    },
+                    action,
+                    payload,
+                )
             }
             return
         }

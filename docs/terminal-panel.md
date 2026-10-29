@@ -26,7 +26,9 @@ controls on a desktop. See [terminal-monitor.md](terminal-monitor.md).
   `backend/rote/adapter.py` adapts it (`ComponentAdapter.adapt_terminal_surface`),
   including the declared code-to-text fallback for profiles without code support.
 - The web renderer emits the panel through the shared escaped chrome renderer
-  (`render_html`); output is literal selectable text and never becomes a link.
+  (`render_html`) wrapped in the shared modal shell (`render_modal_shell`), so the
+  served `chrome_render` html is the same focusable dialog every other owner
+  surface ships; output is literal selectable text and never becomes a link.
 
 ## Actions
 
@@ -64,7 +66,9 @@ independently in a client.
 ## Verification
 
 - `tests/test_terminal_protocol.py` binds the contract, fixture, sanitizer and
-  dispositions, including the deterministic malicious-sequence vector.
+  dispositions, including the deterministic malicious-sequence vector, and pins
+  every fixture frame group (interactive, read-only and web modal renders) to
+  the shared builder output so the fixture cannot drift from the renderer.
 - `tests/rote/test_terminal_panel.py` covers adaptation, refusals and bounds.
 - `tests/chrome/test_terminal_views.py` covers builder golden paths, failure
   statuses, the watch handoff and accessible escaped web rendering.

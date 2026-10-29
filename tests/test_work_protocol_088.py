@@ -23,7 +23,7 @@ BUILDERS = {
     "saved_results_088": ("saved_results_v1", "saved_results", build_saved_results_view),
 }
 NEW_ACTIONS = {SAVE_ACTION, "chrome_job_stop"}
-ACTION_COUNT = 163
+ACTION_COUNT = 164
 
 
 def manifest():
@@ -167,3 +167,24 @@ def test_new_088_surfaces_are_not_yet_menu_destinations():
     model = menu_model_dict(work_enabled=True, export_enabled=True)
     encoded = json.dumps(model)
     assert "saved_results" not in encoded and "recurring" not in encoded
+
+
+def test_continuity_contract_is_closed_and_matches_all_shared_fixture_forms():
+    document = manifest()
+    contract = document["presentation_contracts"]["work_continuity"]
+    assert contract["client_capability"] == "work_continuity_v1"
+    assert set(contract["clients"]) == {"web", "windows", "android", "macos", "ios", "watchos"}
+    assert contract["actions"] == {"chrome_work_continuity": ["version", "operation_id", "expected_revision", "submission_id"]}
+    assert contract["reconnect"] == "fresh_owner_read_only"
+    assert document["accept_actions"].count("chrome_work_continuity") == 1
+    value = fixture(contract)
+    for mode, state in value["states"].items():
+        view = build_work_view(state)
+        assert value["frames"][mode]["components"] == [item.to_dict() for item in view.components]
+        validate_work_components(value["frames"][mode]["components"])
+        assert value["web_frames"][mode]["html"] == render_modal_shell(view.title, render_html(view), "work")
+        controls = [item for item in nodes(value["frames"][mode]) if item.get("action") == "chrome_work_continuity"]
+        assert bool(controls) is (mode == "waiting")
+        for control in controls:
+            assert control["payload"] == value["command"]
+            assert control["disabled"] is False and control["local"] is False

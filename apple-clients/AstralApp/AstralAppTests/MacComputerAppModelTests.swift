@@ -9,6 +9,17 @@
 
     @MainActor
     final class MacComputerAppModelTests: XCTestCase {
+        func testProjectCapabilityIsAdvertisedWithoutActivatingBeforeServerSelection() throws {
+            let model = AppModel(
+                tokenStore: InMemoryTokenStore(), defaults: UserDefaults(suiteName: UUID().uuidString)!)
+            model.signedIn = true
+            var sent: [JSONValue] = []
+            model.outboundTap = { if let frame = try? JSONValue.parse(Data($0.utf8)) { sent.append(frame) } }
+            model.reportDeviceCapabilities()
+            let update = try XCTUnwrap(sent.first { $0["action"] == .string("update_device") })
+            XCTAssertEqual(update["payload"]?["device"]?["project_workspaces_v1"], .bool(true))
+            XCTAssertFalse(model.projects.enabled)
+        }
         func testLocalConsentNeverEntersServerOperationQueue() {
             let model = AppModel(
                 tokenStore: InMemoryTokenStore(),
