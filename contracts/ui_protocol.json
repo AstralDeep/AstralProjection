@@ -4791,6 +4791,7 @@
     "chrome_user_skill_save",
     "chrome_user_skill_toggle",
     "chrome_visibility_set",
+    "chrome_work_continuity",
     "chrome_work_result_save",
     "chrome_workspace_timeline_live",
     "chrome_workspace_timeline_view",
@@ -4837,8 +4838,7 @@
     "voice_speech_mute_set",
     "voice_speech_stop",
     "voice_visible_chat_update",
-    "watch_task",
-    "chrome_work_continuity"
+    "watch_task"
   ],
   "client_local_actions": [
     "attach_existing",
