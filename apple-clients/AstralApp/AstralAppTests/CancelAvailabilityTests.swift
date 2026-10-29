@@ -28,6 +28,13 @@
             model.activeChatId = chat
             var sent: [JSONValue] = []
             model.outboundTap = { text in if let frame = try? JSONValue.parse(Data(text.utf8)) { sent.append(frame) } }
+            model.currentApprovalDecisionSendOverride = { text, sentConnection in
+                guard sentConnection == self.connection,
+                    let frame = try? JSONValue.parse(Data(text.utf8)),
+                    ["authorize_action", "remote_op_decision"].contains(frame["action"]?.stringValue ?? "")
+                else { return false }
+                return true
+            }
             return (model, { sent })
         }
 
@@ -58,15 +65,21 @@
                 payload: ["proposal_id": .string(String(repeating: "a", count: 32)), "decision": .string("approve")])
             let decision = try XCTUnwrap(sent().last)
             let request = try XCTUnwrap(decision["request_generation"]?.stringValue)
+            XCTAssertTrue(model.localOperationSubmissions.values.contains { $0.requestGeneration == request })
             XCTAssertFalse(model.turnActive)
             model.handleFrame(
-                try status(request, action: "remote_op_decision", state: "running", terminal: false, sequence: 1))
+                try status(
+                    request, action: "remote_op_decision", state: "running", terminal: false, sequence: 1,
+                    chat: chat))
+            XCTAssertEqual(model.operationStatuses[operation]?.requestGeneration, request)
             XCTAssertTrue(model.canCancelTurn)
             XCTAssertTrue(model.cancelCurrentTurn())
             let cancel = try XCTUnwrap(cancels(sent()).last)
             XCTAssertEqual(cancel["session_id"], .string(chat))
             model.handleFrame(
-                try status(request, action: "remote_op_decision", state: "completed", terminal: true, sequence: 2))
+                try status(
+                    request, action: "remote_op_decision", state: "completed", terminal: true, sequence: 2,
+                    chat: chat))
             XCTAssertFalse(model.canCancelTurn)
             XCTAssertFalse(model.cancelCurrentTurn())
             XCTAssertEqual(cancels(sent()).count, 1)

@@ -89,6 +89,7 @@
                 model.connected = true
                 let connection = UUID().uuidString.lowercased()
                 XCTAssertTrue(model.beginConversationConnection(connection))
+                model.currentApprovalDecisionSendOverride = { _, sentConnection in sentConnection == connection }
                 model.activeChatId = "33333333-3333-4333-8333-333333333333"
                 model.projects.bind(
                     scope: "owner",

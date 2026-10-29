@@ -64,7 +64,7 @@ def test_contract_is_read_only_closed_and_uses_the_existing_vocabulary():
     assert set(CONTRACT["controls"]["actions"]) <= set(MANIFEST["accept_actions"])
     assert not {name for name in MANIFEST["push_types"] if name["name"].startswith("terminal")}
     assert not {name for name in MANIFEST["client_local_actions"] if "terminal" in name}
-    assert len(MANIFEST["push_types"]) == 72
+    assert len(MANIFEST["push_types"]) == 74
     assert len(MANIFEST["accept_actions"]) == 164
     assert len(MANIFEST["client_local_actions"]) == 5
     used = {node["type"] for frame in FIXTURE["frames"].values() for node in _walk(frame["components"])}

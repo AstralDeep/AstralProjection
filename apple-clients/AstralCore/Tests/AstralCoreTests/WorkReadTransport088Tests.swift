@@ -81,6 +81,34 @@ final class WorkReadTransport088Tests: XCTestCase {
         }
     }
 
+    func testApprovalDecisionUsesOnlyTheBoundCurrentSocket() async throws {
+        try await connected(connectionGeneration: generation) { client, peer in
+            let text = Outbound.uiEvent(
+                action: "remote_op_decision", sessionId: "11111111-1111-4111-8111-111111111111",
+                payload: .object([
+                    "proposal_id": .string(String(repeating: "ab", count: 16)),
+                    "decision": .string("approve"),
+                ]),
+                submissionId: "44444444-4444-4444-8444-444444444444",
+                requestGeneration: "55555555-5555-4555-8555-555555555555")
+            let other = "66666666-6666-4666-8666-666666666666"
+            let malformed = await client.sendCurrentApprovalDecision("{}", connectionGeneration: generation) { true }
+            let foreign = await client.sendCurrentApprovalDecision(text, connectionGeneration: other) { true }
+            let stale = await client.sendCurrentApprovalDecision(text, connectionGeneration: generation) { false }
+            XCTAssertFalse(malformed)
+            XCTAssertFalse(foreign)
+            XCTAssertFalse(stale)
+            peer.expectSingleRead()
+            let sent = await client.sendCurrentApprovalDecision(text, connectionGeneration: generation) { true }
+            XCTAssertTrue(sent)
+            await fulfillment(of: [peer.twoReads], timeout: socketEventTimeout)
+            XCTAssertEqual(peer.reads, [text])
+            await client.stop()
+            let stopped = await client.sendCurrentApprovalDecision(text, connectionGeneration: generation) { true }
+            XCTAssertFalse(stopped)
+        }
+    }
+
     private func viewportFrame() -> String {
         let generation = "33333333-3333-4333-8333-333333333333"
         let submission = "44444444-4444-4444-8444-444444444444"

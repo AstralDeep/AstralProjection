@@ -96,6 +96,42 @@
             }
             return (try directory(Array(parts.dropLast())), name)
         }
+        private func parentForWrite(
+            _ path: String, begin: () -> Void, authorize: () throws -> Void
+        ) throws -> (Int32, String) {
+            let parts = try components(path)
+            guard let name = parts.last else {
+                throw ComputerHostError("permission_denied", "The workspace root cannot be modified.")
+            }
+            var fd = Darwin.openat(descriptor, ".", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+            guard fd >= 0 else { throw failure() }
+            for part in parts.dropLast() {
+                var child = Darwin.openat(fd, part, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+                if child < 0, errno == ENOENT {
+                    do {
+                        try authorize()
+                    } catch {
+                        Darwin.close(fd)
+                        throw error
+                    }
+                    begin()
+                    if mkdirat(fd, part, mode_t(0o700)) != 0, errno != EEXIST {
+                        let error = failure()
+                        Darwin.close(fd)
+                        throw error
+                    }
+                    child = Darwin.openat(fd, part, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+                }
+                if child < 0 {
+                    let error = failure()
+                    Darwin.close(fd)
+                    throw error
+                }
+                Darwin.close(fd)
+                fd = child
+            }
+            return (fd, name)
+        }
         private func failure() -> ComputerHostError {
             let code = errno == ENOENT ? "not_found" : "failed"
             return ComputerHostError(code, "The workspace operation was refused or failed (errno \(errno)).")
@@ -214,7 +250,7 @@
         ) throws {
             let bytes = Array(content.utf8)
             guard bytes.count <= 262144 else { throw ComputerHostError("out_of_range", "The write exceeds 256 KiB.") }
-            let (parent, name) = try parent(path)
+            let (parent, name) = try parentForWrite(path, begin: begin, authorize: authorize)
             defer { Darwin.close(parent) }
             var existing = stat()
             var original: Int32 = -1
@@ -222,6 +258,7 @@
                 guard existing.st_mode & S_IFMT == S_IFREG else {
                     throw ComputerHostError("permission_denied", "Only regular files can be replaced.")
                 }
+                guard overwrite else { throw alreadyExists() }
                 if overwrite {
                     original = Darwin.openat(parent, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
                     guard original >= 0 else { throw failure() }
@@ -260,9 +297,13 @@
             if original >= 0 { try preserve(from: original, to: fd, mode: existing.st_mode) }
             guard fsync(fd) == 0 else { throw failure() }
             try authorize()
-            guard renameatx_np(parent, temporary, parent, name, overwrite ? 0 : UInt32(RENAME_EXCL)) == 0 else {
+            if renameatx_np(parent, temporary, parent, name, overwrite ? 0 : UInt32(RENAME_EXCL)) != 0 {
+                if !overwrite && errno == EEXIST { throw alreadyExists() }
                 throw failure()
             }
+        }
+        private func alreadyExists() -> ComputerHostError {
+            ComputerHostError("already_exists", "File exists; retry with if_exists=overwrite to replace it")
         }
         public func delete(_ path: String, authorize: () throws -> Void) throws {
             try preEffect { begin in try deletePath(path, begin: begin, authorize: authorize) }

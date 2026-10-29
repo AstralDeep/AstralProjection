@@ -58,6 +58,7 @@
             model.activeChatId = "33333333-3333-4333-8333-333333333333"
             var sent: [JSONValue] = []
             model.outboundTap = { text in if let frame = try? JSONValue.parse(Data(text.utf8)) { sent.append(frame) } }
+            model.currentApprovalDecisionSendOverride = { _, _ in true }
             return (model, { sent })
         }
 

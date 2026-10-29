@@ -358,6 +358,8 @@ final class AppModel: NSObject {
         let row: String?
         let decision: String
         let expectsReceipt: Bool
+        let submissionId: String?
+        let requestGeneration: String?
     }
     private var approvalReceiptsSupported: Bool {
         #if os(macOS)
@@ -513,6 +515,11 @@ final class AppModel: NSObject {
     #endif
     @ObservationIgnored let connectionActivity: ConnectionActivity
     @ObservationIgnored private var registeredAccessToken: String?
+    #if os(macOS) && DEBUG
+        func uiAuthRefreshCredentialStateForTesting(matches token: String) -> (active: Bool, registered: Bool) {
+            (tokens?.accessToken == token, registeredAccessToken == token)
+        }
+    #endif
     @ObservationIgnored private var refreshedWithinMarginAccessToken: String?
     @ObservationIgnored private var wsTask: Task<Void, Never>?
     @ObservationIgnored private var authSession: ASWebAuthenticationSession?
@@ -522,6 +529,19 @@ final class AppModel: NSObject {
     @ObservationIgnored private var refreshTask: Task<RefreshResult, Never>?
     @ObservationIgnored private var refreshTaskGeneration = -1
     @ObservationIgnored private var refreshContext: CredentialRefreshContext?
+    #if os(macOS)
+        @ObservationIgnored private var uiAuthRefreshReadyContext: SocketAuthenticationContext?
+        @ObservationIgnored private var uiAuthRefreshTask: Task<Bool, Never>?
+        @ObservationIgnored private var uiAuthRefreshTaskID: UUID?
+        @ObservationIgnored private var uiAuthRefreshPendingRequestID: String?
+        @ObservationIgnored private var uiAuthRefreshAck: CheckedContinuation<UIAuthRefreshAcknowledgement?, Never>?
+        @ObservationIgnored private var uiAuthRefreshTimeoutTask: Task<Void, Never>?
+        @ObservationIgnored private var uiAuthRefreshTimerTask: Task<Void, Never>?
+        @ObservationIgnored var uiAuthRefreshSleeper: @Sendable (UInt64) async -> Void = {
+            try? await Task.sleep(nanoseconds: $0)
+        }
+        @ObservationIgnored var uiAuthRefreshAcknowledgementTimeoutNanoseconds: UInt64 = 8_000_000_000
+    #endif
     @ObservationIgnored private var authenticationReadIntent: AuthenticationReadIntent?
     @ObservationIgnored private var sessionGeneration = 0
     @ObservationIgnored private var conversationNavigationGeneration = 0
@@ -569,6 +589,7 @@ final class AppModel: NSObject {
     @ObservationIgnored var announcer: (String) -> Void = { AccessibilityNotification.Announcement($0).post() }
 
     @ObservationIgnored var currentConnectionVoiceSendOverride: ((String) -> Void)?
+    @ObservationIgnored var currentApprovalDecisionSendOverride: (@Sendable (String, String) -> Bool)?
 
     var serverBase: URL {
         URL(string: serverBaseText) ?? URL(string: AstralConfig.serverBaseURL)!
@@ -828,6 +849,118 @@ final class AppModel: NSObject {
         let connection: String
         let token: String
     }
+
+    #if os(macOS)
+        private struct UIAuthRefreshIdentity: Equatable {
+            let issuer: String
+            let subject: String
+            let clientClaim: String
+            let client: String
+            let sessionClaim: String
+            let session: String
+            let audience: Set<String>
+            let scopes: Set<String>
+            let realmRoles: Set<String>
+            let resourceRoles: [String: Set<String>]
+            let groups: Set<String>
+
+            init?(token: TokenSet) {
+                guard let claims = token.claims?.objectValue,
+                    let issuer = claims["iss"]?.stringValue,
+                    !issuer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                    let subject = claims["sub"]?.stringValue,
+                    !subject.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, subject != "unknown"
+                else { return nil }
+                let clientKey: String
+                if claims["azp"] != nil {
+                    clientKey = "azp"
+                } else if claims["client_id"] != nil {
+                    clientKey = "client_id"
+                } else {
+                    return nil
+                }
+                let sessionKey: String
+                if claims["sid"] != nil {
+                    sessionKey = "sid"
+                } else if claims["session_state"] != nil {
+                    sessionKey = "session_state"
+                } else {
+                    return nil
+                }
+                guard let client = claims[clientKey]?.stringValue,
+                    !client.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                    let session = claims[sessionKey]?.stringValue,
+                    !session.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                else { return nil }
+                self.issuer = issuer
+                self.subject = subject
+                clientClaim = clientKey
+                self.client = client
+                sessionClaim = sessionKey
+                self.session = session
+                guard let audience = Self.claimSet(claims, key: "aud"),
+                    let scopes = Self.claimSet(claims, key: "scope"),
+                    let groups = Self.claimSet(claims, key: "groups")
+                else { return nil }
+                self.audience = audience
+                self.scopes = scopes
+                let realmAccess: [String: JSONValue]
+                switch claims["realm_access"] {
+                case nil, .some(.null): realmAccess = [:]
+                case .some(.object(let values)): realmAccess = values
+                default: return nil
+                }
+                guard let realmRoles = Self.claimSet(realmAccess, key: "roles") else { return nil }
+                self.realmRoles = realmRoles
+                var resources: [String: Set<String>] = [:]
+                let resourceAccess: [String: JSONValue]
+                switch claims["resource_access"] {
+                case nil, .some(.null): resourceAccess = [:]
+                case .some(.object(let values)): resourceAccess = values
+                default: return nil
+                }
+                for (name, value) in resourceAccess {
+                    guard let object = value.objectValue,
+                        let roles = Self.claimSet(object, key: "roles")
+                    else { return nil }
+                    resources[name] = roles
+                }
+                resourceRoles = resources
+                self.groups = groups
+            }
+
+            static func isValidRotation(from old: TokenSet, to fresh: TokenSet, now: Date) -> Bool {
+                guard UIAuthRefreshIdentity(token: old) == UIAuthRefreshIdentity(token: fresh),
+                    let oldClaims = old.claims, let freshClaims = fresh.claims,
+                    let oldIssued = oldClaims["iat"]?.numberValue, oldIssued.isFinite,
+                    let newIssued = freshClaims["iat"]?.numberValue, newIssued.isFinite,
+                    let oldExpiry = oldClaims["exp"]?.numberValue, oldExpiry.isFinite,
+                    let newExpiry = freshClaims["exp"]?.numberValue, newExpiry.isFinite,
+                    let oldID = oldClaims["jti"]?.stringValue, !oldID.isEmpty,
+                    let newID = freshClaims["jti"]?.stringValue, !newID.isEmpty,
+                    newIssued >= oldIssued, newExpiry > oldExpiry,
+                    newExpiry > now.timeIntervalSince1970, oldID != newID
+                else { return false }
+                return true
+            }
+
+            private static func claimSet(_ claims: [String: JSONValue], key: String) -> Set<String>? {
+                switch claims[key] {
+                case nil, .some(.null): return []
+                case .some(.string(let value)):
+                    return Set(value.split(whereSeparator: \.isWhitespace).map(String.init))
+                case .some(.array(let values)):
+                    var result = Set<String>()
+                    for value in values {
+                        guard let string = value.stringValue, !string.isEmpty else { return nil }
+                        result.insert(string)
+                    }
+                    return result
+                default: return nil
+                }
+            }
+        }
+    #endif
 
     private struct AuthenticationReadIntent {
         let owner: DownloadOwner
@@ -1259,7 +1392,14 @@ final class AppModel: NSObject {
             resumed: resumed,
             connectionGeneration: connection,
             resume: resume, workReadSupported: true, guidanceNotesSupported: true,
-            computerHost: hostDescriptor, computerHostCapable: hostCapable, macWorkbenchSupported: macWorkbench)
+            computerHost: hostDescriptor, computerHostCapable: hostCapable, macWorkbenchSupported: macWorkbench,
+            uiAuthRefreshSupported: {
+                #if os(macOS)
+                    return true
+                #else
+                    return false
+                #endif
+            }())
     }
 
     @discardableResult
@@ -1468,12 +1608,52 @@ final class AppModel: NSObject {
             let scope = try? ServerSessionScope(server: serverBase, oidc: oidc), scope == session.scope
         else { return .rejected("server session required") }
         let generation = sessionGeneration
+        #if os(macOS)
+            let readySocketContext: SocketAuthenticationContext? = {
+                guard let ready = uiAuthRefreshReadyContext,
+                    ready.owner == downloadOwner, ready.socket === ws,
+                    ready.connection == continuity.connectionGeneration,
+                    ready.token == registeredAccessToken, tokens?.accessToken == ready.token,
+                    socketAuthenticationIsCurrent(ready)
+                else { return nil }
+                return ready
+            }()
+            let activeToken = readySocketContext.flatMap { _ in tokens }
+            let readyIdentity = activeToken.flatMap { UIAuthRefreshIdentity(token: $0) }
+            let storedIdentity = readySocketContext.flatMap { _ in UIAuthRefreshIdentity(token: session.tokenSet) }
+            if readySocketContext != nil, readyIdentity == nil || storedIdentity != readyIdentity {
+                return .rejected("registered server session identity is unavailable")
+            }
+        #endif
         do {
             let transport = ServerSessionTransport(scope: scope, transport: serverSessionTransport)
             let result = try await transport.refresh(session)
             guard !Task.isCancelled, generation == sessionGeneration, serverSession == session,
                 self.oidc.map({ try? ServerSessionScope(server: serverBase, oidc: $0) }) == scope
             else { return .transient("session changed") }
+            guard result.scope == session.scope, result.owner == session.owner else {
+                return .rejected("server session identity changed")
+            }
+            #if os(macOS)
+                if let ready = readySocketContext {
+                    guard let activeToken, let readyIdentity else {
+                        return .rejected("registered server session identity is unavailable")
+                    }
+                    let sameAccessToken = result.accessToken == activeToken.accessToken
+                    guard socketAuthenticationIsCurrent(ready), ready.socket === ws,
+                        ready.connection == continuity.connectionGeneration,
+                        uiAuthRefreshReadyContext?.token == ready.token,
+                        registeredAccessToken == ready.token, tokens?.accessToken == ready.token,
+                        UIAuthRefreshIdentity(token: result.tokenSet) == readyIdentity,
+                        sameAccessToken
+                            || UIAuthRefreshIdentity.isValidRotation(
+                                from: activeToken, to: result.tokenSet, now: credentialClock())
+                    else {
+                        surfaceFailureMessage = "Your sign-in changed. Sign in again to continue."
+                        return .rejected("server session refresh changed identity or authorization")
+                    }
+                }
+            #endif
             try serverSessionStorage.save(JSONEncoder().encode(result), key: scope.storageKey)
             serverSession = result
             return .ok(result.tokenSet)
@@ -1562,6 +1742,42 @@ final class AppModel: NSObject {
                 return .rejected("refreshed credentials do not match the session")
             }
             guard tokens == context.original || tokens == set else { return .transient("session changed") }
+            #if os(macOS)
+                var installedOnCurrentSocket = false
+                if let registeredAccessToken, registeredAccessToken != set.accessToken,
+                    let ready = uiAuthRefreshReadyContext,
+                    ready.owner == downloadOwner, ready.socket === ws,
+                    ready.connection == continuity.connectionGeneration, ready.token == registeredAccessToken
+                {
+                    guard
+                        UIAuthRefreshIdentity.isValidRotation(
+                            from: context.original, to: set, now: credentialClock())
+                    else {
+                        if refreshContext?.id == context.id {
+                            refreshTask = nil
+                            refreshContext = nil
+                        }
+                        surfaceFailureMessage = "Your sign-in changed. Sign in again to continue."
+                        return .rejected("refreshed credentials changed identity or authorization")
+                    }
+                    let installed = await installRefreshedCredentialOnCurrentSocket(set, ready: ready)
+                    let installedByThisCall =
+                        registeredAccessToken == context.original.accessToken
+                        && tokens == context.original
+                    let installedByConcurrentRefresh = registeredAccessToken == set.accessToken && tokens == set
+                    guard installed, !Task.isCancelled, ready.owner == downloadOwner, ready.socket === ws,
+                        ready.connection == continuity.connectionGeneration,
+                        installedByThisCall || installedByConcurrentRefresh
+                    else {
+                        if refreshContext?.id == context.id {
+                            refreshTask = nil
+                            refreshContext = nil
+                        }
+                        return .transient("credential refresh was not confirmed on the current connection")
+                    }
+                    installedOnCurrentSocket = true
+                }
+            #endif
             if refreshContext?.id == context.id {
                 refreshTask = nil
                 refreshContext = nil
@@ -1569,7 +1785,28 @@ final class AppModel: NSObject {
                 refreshedWithinMarginAccessToken = credentialIsWithinRefreshMargin(set) ? set.accessToken : nil
                 if !serverCustodyRequired { store.save(StoredTokens(from: set)) }
             }
-            if renewSocket { renewRegisteredSocket(ifChanged: set) }
+            #if os(macOS)
+                if installedOnCurrentSocket, let ready = uiAuthRefreshReadyContext,
+                    ready.owner == downloadOwner, ready.socket === ws,
+                    ready.connection == continuity.connectionGeneration,
+                    registeredAccessToken != set.accessToken
+                {
+                    registeredAccessToken = set.accessToken
+                    uiAuthRefreshReadyContext = SocketAuthenticationContext(
+                        owner: ready.owner, socket: ready.socket, connection: ready.connection, token: set.accessToken)
+                    scheduleUIAuthRefresh(for: set, context: uiAuthRefreshReadyContext!)
+                } else if let ready = uiAuthRefreshReadyContext,
+                    ready.owner == downloadOwner, ready.socket === ws,
+                    ready.connection == continuity.connectionGeneration,
+                    ready.token == set.accessToken, registeredAccessToken == set.accessToken
+                {
+                    scheduleUIAuthRefresh(for: set, context: ready)
+                } else if renewSocket {
+                    renewRegisteredSocket(ifChanged: set)
+                }
+            #else
+                if renewSocket { renewRegisteredSocket(ifChanged: set) }
+            #endif
         } else if refreshContext?.id == context.id {
             refreshTask = nil
             refreshContext = nil
@@ -1601,9 +1838,11 @@ final class AppModel: NSObject {
             context.owner == owner, context.connection == connection, connected
         else { return false }
         let result = await refreshOutcome()
-        guard !Task.isCancelled, socketAuthenticationIsCurrent(context), connected else { return false }
+        guard !Task.isCancelled, context.owner == downloadOwner, ws === context.socket,
+            continuity.connectionGeneration == context.connection, connected
+        else { return false }
         switch result {
-        case .ok(let set): return set.accessToken == context.token
+        case .ok(let set): return set.accessToken == registeredAccessToken
         case .rejected:
             await signOut(revokeRemote: false)
             return false
@@ -1621,9 +1860,167 @@ final class AppModel: NSObject {
         case .ok, .rejected:
             await signOut(revokeRemote: false)
         case .transient:
-            surfaceFailureMessage = "The session could not reconnect. Retry when the connection is available."
+            #if os(macOS)
+                if surfaceFailureMessage == "Your sign-in changed. Sign in again to continue." {
+                    await signOut(revokeRemote: false)
+                } else {
+                    surfaceFailureMessage = "The session could not reconnect. Retry when the connection is available."
+                }
+            #else
+                surfaceFailureMessage = "The session could not reconnect. Retry when the connection is available."
+            #endif
         }
     }
+
+    #if os(macOS)
+        private func installRefreshedCredentialOnCurrentSocket(
+            _ set: TokenSet, ready: SocketAuthenticationContext
+        ) async -> Bool {
+            if let inFlight = uiAuthRefreshTask { return await inFlight.value }
+            guard socketAuthenticationIsCurrent(ready), tokens?.accessToken == ready.token,
+                let identity = UIAuthRefreshIdentity(token: set),
+                UIAuthRefreshIdentity(token: tokens ?? set) == identity,
+                let request = UIAuthRefreshRequest(
+                    requestID: UUID().uuidString.lowercased(), connectionGeneration: ready.connection,
+                    token: set.accessToken)
+            else { return false }
+            let taskID = UUID()
+            uiAuthRefreshTaskID = taskID
+            let task = Task { @MainActor [weak self] in
+                guard let self else { return false }
+                return await self.performUIAuthRefresh(request, ready: ready, taskID: taskID)
+            }
+            uiAuthRefreshTask = task
+            let result = await task.value
+            if uiAuthRefreshTaskID == taskID {
+                uiAuthRefreshTask = nil
+                uiAuthRefreshTaskID = nil
+            }
+            return result
+        }
+
+        private func performUIAuthRefresh(
+            _ request: UIAuthRefreshRequest, ready: SocketAuthenticationContext, taskID: UUID
+        ) async -> Bool {
+            let authentication = authSession
+            guard let socket = ws, socket === ready.socket, downloadOwner == ready.owner,
+                continuity.connectionGeneration == ready.connection, registeredAccessToken == ready.token,
+                tokens?.accessToken == ready.token, authSession === authentication
+            else { return false }
+            uiAuthRefreshPendingRequestID = request.requestID
+            let ack = await withCheckedContinuation { continuation in
+                uiAuthRefreshAck = continuation
+                uiAuthRefreshTimeoutTask?.cancel()
+                uiAuthRefreshTimeoutTask = Task { @MainActor [weak self] in
+                    try? await Task.sleep(
+                        nanoseconds: self?.uiAuthRefreshAcknowledgementTimeoutNanoseconds ?? 8_000_000_000)
+                    guard !Task.isCancelled, self?.uiAuthRefreshTaskID == taskID else { return }
+                    self?.resolveUIAuthRefresh(nil)
+                }
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    let sent = await socket.sendCurrentUIAuthRefresh(request) {
+                        await MainActor.run {
+                            self.socketAuthenticationIsCurrent(ready)
+                                && self.uiAuthRefreshTaskID == taskID
+                                && self.authSession === authentication
+                        }
+                    }
+                    guard !sent else { return }
+                    guard self.uiAuthRefreshTaskID == taskID else { return }
+                    self.resolveUIAuthRefresh(nil)
+                }
+            }
+            guard let ack, ack.accepted, ack.requestID == request.requestID,
+                ack.connectionGeneration == ready.connection,
+                uiAuthRefreshTaskID == taskID, ws === ready.socket, downloadOwner == ready.owner,
+                continuity.connectionGeneration == ready.connection, registeredAccessToken == ready.token,
+                authSession === authentication
+            else {
+                if let ack, !ack.accepted {
+                    surfaceFailureMessage = "Your sign-in changed. Sign in again to continue."
+                } else if ack == nil {
+                    surfaceFailureMessage =
+                        "The current connection did not confirm the sign-in refresh. Reconnect to continue."
+                }
+                return false
+            }
+            return true
+        }
+
+        private func resolveUIAuthRefresh(_ acknowledgement: UIAuthRefreshAcknowledgement?) {
+            guard let continuation = uiAuthRefreshAck else { return }
+            uiAuthRefreshAck = nil
+            uiAuthRefreshTimeoutTask?.cancel()
+            uiAuthRefreshTimeoutTask = nil
+            uiAuthRefreshPendingRequestID = nil
+            continuation.resume(returning: acknowledgement)
+        }
+
+        private func acceptUIAuthRefreshReady(_ frame: InboundFrame) {
+            guard let ready = UIAuthRefreshReady(frame: frame),
+                let context = socketAuthenticationContext, context.connection == ready.connectionGeneration,
+                let token = tokens, UIAuthRefreshIdentity(token: token) != nil,
+                context.token == token.accessToken
+            else { return }
+            uiAuthRefreshReadyContext = context
+            scheduleUIAuthRefresh(for: token, context: context)
+        }
+
+        private func acceptUIAuthRefreshAcknowledgement(_ frame: InboundFrame) {
+            guard let acknowledgement = UIAuthRefreshAcknowledgement(frame: frame),
+                uiAuthRefreshTaskID != nil, uiAuthRefreshAck != nil,
+                uiAuthRefreshTask != nil, let context = uiAuthRefreshReadyContext,
+                acknowledgement.requestID == uiAuthRefreshPendingRequestID,
+                acknowledgement.connectionGeneration == context.connection
+            else { return }
+            resolveUIAuthRefresh(acknowledgement)
+        }
+
+        private func scheduleUIAuthRefresh(for token: TokenSet, context: SocketAuthenticationContext) {
+            uiAuthRefreshTimerTask?.cancel()
+            guard UIAuthRefreshIdentity(token: token) != nil else { return }
+            let jwtExpiry = token.claims?["exp"]?.numberValue.map(Date.init(timeIntervalSince1970:)) ?? token.expiresAt
+            let secondsUntilExpiry = min(token.expiresAt, jwtExpiry).timeIntervalSince(credentialClock())
+            let delay = max(15, secondsUntilExpiry > 60 ? secondsUntilExpiry - 60 : secondsUntilExpiry)
+            let nanoseconds = UInt64(min(delay, 86_400) * 1_000_000_000)
+            uiAuthRefreshTimerTask = Task { @MainActor [weak self] in
+                await self?.uiAuthRefreshSleeper(nanoseconds)
+                guard !Task.isCancelled, let self,
+                    self.downloadOwner == context.owner, self.ws === context.socket,
+                    self.continuity.connectionGeneration == context.connection,
+                    self.registeredAccessToken == context.token
+                else { return }
+                let outcome = await self.refreshOutcome()
+                guard self.downloadOwner == context.owner, self.ws === context.socket,
+                    self.continuity.connectionGeneration == context.connection
+                else { return }
+                if case .rejected = outcome {
+                    self.surfaceFailureMessage = "Your sign-in expired. Sign in again to continue."
+                    await self.signOut(revokeRemote: false)
+                } else if case .transient = outcome {
+                    if self.surfaceFailureMessage == "Your sign-in changed. Sign in again to continue." {
+                        await self.signOut(revokeRemote: false)
+                    } else {
+                        self.surfaceFailureMessage = "Your sign-in could not be refreshed. Reconnect to continue."
+                    }
+                }
+            }
+        }
+
+        private func retireUIAuthRefresh() {
+            uiAuthRefreshReadyContext = nil
+            uiAuthRefreshTimerTask?.cancel()
+            uiAuthRefreshTimerTask = nil
+            uiAuthRefreshTimeoutTask?.cancel()
+            uiAuthRefreshTimeoutTask = nil
+            resolveUIAuthRefresh(nil)
+            uiAuthRefreshTask?.cancel()
+            uiAuthRefreshTask = nil
+            uiAuthRefreshTaskID = nil
+            uiAuthRefreshPendingRequestID = nil
+        }
+    #endif
 
     private func renewRegisteredSocket(ifChanged set: TokenSet) {
         guard signedIn, connected, let registeredAccessToken, registeredAccessToken != set.accessToken else { return }
@@ -1698,6 +2095,9 @@ final class AppModel: NSObject {
     }
 
     func signOut(revokeRemote: Bool = true) async {
+        #if os(macOS)
+            retireUIAuthRefresh()
+        #endif
         #if os(macOS)
             releaseComputerBypass()
             macComputerHost.signedOut()
@@ -2072,6 +2472,9 @@ final class AppModel: NSObject {
     }
 
     private func connectWS(resumed initialResumed: Bool) {
+        #if os(macOS)
+            retireUIAuthRefresh()
+        #endif
         invalidateWorkRead()
         retireOrdinarySurfaceRequests()
         authenticationReadIntent = nil
@@ -2198,6 +2601,9 @@ final class AppModel: NSObject {
                 Task { await self.reconcileLLMFirstLoginOperation() }
             }
         case .disconnected:
+            #if os(macOS)
+                retireUIAuthRefresh()
+            #endif
             retireSubmittedApprovals()
             #if os(macOS)
                 macComputerHost.disconnect()
@@ -2249,6 +2655,16 @@ final class AppModel: NSObject {
             let frame = sanitizedComputerReviews(incoming)
         #else
             let frame = incoming
+        #endif
+        #if os(macOS)
+            if frame.name == "ui_auth_refresh_ready" {
+                acceptUIAuthRefreshReady(frame)
+                return
+            }
+            if frame.name == "ui_auth_refreshed" {
+                acceptUIAuthRefreshAcknowledgement(frame)
+                return
+            }
         #endif
         if frame.name == "chat_status", frame.payload["approval_decision"] != nil {
             consumeApprovalReceipt(frame)
@@ -2381,12 +2797,16 @@ final class AppModel: NSObject {
             agents = Agent.list(from: frame.payload["agents"])
             agentsLoading = false
         case "history_list":
+            let summaries = (frame.payload["chats"]?.arrayValue ?? []).compactMap { ChatSummary(json: $0) }
             #if os(macOS)
-                if projects.enabled, frame.payload["projects_changed"]?.boolValue == true {
-                    Task { await projects.refresh() }
+                if projects.enabled {
+                    projects.mergeRecentActivity(summaries)
+                    if frame.payload["projects_changed"]?.boolValue == true {
+                        Task { await projects.refresh() }
+                    }
                 }
             #endif
-            history = (frame.payload["chats"]?.arrayValue ?? []).compactMap { ChatSummary(json: $0) }
+            history = summaries
             historyTitle = "Recent chats"
             historyLoading = false
             historyLoaded = true
@@ -2524,13 +2944,27 @@ final class AppModel: NSObject {
         case "saved_components_list":
             break
         case "auth_required":
-            resetViewportRefresh()
-            retireOrdinarySurfaceRequests()
-            if pendingSurfaceKey == "safety" {
-                surfaceFailureMessage = "Reload Safety to check current stop status before trying again."
-            }
-            if pendingSurfaceKey == "terminal" {
-                surfaceFailureMessage = "The session could not update. Reconnect and retry this screen."
+            let canRefreshInPlace: Bool
+            #if os(macOS)
+                canRefreshInPlace =
+                    socketAuthenticationContext.map {
+                        uiAuthRefreshReadyContext?.owner == $0.owner
+                            && uiAuthRefreshReadyContext?.socket === $0.socket
+                            && uiAuthRefreshReadyContext?.connection == $0.connection
+                            && uiAuthRefreshReadyContext?.token == $0.token
+                    } ?? false
+            #else
+                canRefreshInPlace = false
+            #endif
+            if !canRefreshInPlace {
+                resetViewportRefresh()
+                retireOrdinarySurfaceRequests()
+                if pendingSurfaceKey == "safety" {
+                    surfaceFailureMessage = "Reload Safety to check current stop status before trying again."
+                }
+                if pendingSurfaceKey == "terminal" {
+                    surfaceFailureMessage = "The session could not update. Reconnect and retry this screen."
+                }
             }
             if let context = socketAuthenticationContext {
                 Task { await self.handleAuthRequired(context) }
@@ -3898,7 +4332,9 @@ final class AppModel: NSObject {
         }
         let unconfirmedRows = Set(unconfirmed.values.compactMap(\.row))
         for id in unconfirmed.keys {
-            submittedApprovals.removeValue(forKey: id)
+            if let pending = submittedApprovals.removeValue(forKey: id), let submissionId = pending.submissionId {
+                clearLocalOperationSubmission(submissionId: submissionId)
+            }
             decidedApprovals.insert(id)
         }
         updateActivity(activeChatId) { rows in
@@ -3972,6 +4408,30 @@ final class AppModel: NSObject {
             observeActivityComponents()
             return true
         #else
+            let submissionId = frame.payload["submission_id"]?.stringValue
+            let requestGeneration = frame.payload["request_generation"]?.stringValue
+            guard let submissionId, let requestGeneration,
+                payload["submission_id"] == .string(submissionId),
+                payload["request_generation"] == .string(requestGeneration),
+                let submission = localOperationSubmissions[submissionId],
+                submission.action == frame.payload["action"]?.stringValue,
+                submission.requestGeneration == requestGeneration,
+                submission.connectionGeneration == continuity.connectionGeneration,
+                submission.chatId == activeChatId,
+                frame.payload["session_id"]?.stringValue == activeChatId
+            else {
+                if let submissionId, let requestGeneration,
+                    let submission = localOperationSubmissions[submissionId],
+                    submission.action == frame.payload["action"]?.stringValue,
+                    submission.requestGeneration == requestGeneration,
+                    submission.chatId == activeChatId
+                {
+                    clearLocalOperationSubmission(submissionId: submissionId)
+                }
+                bannerIsError = true
+                errorBanner = "Reconnect and reopen this review before sending a decision."
+                return false
+            }
             guard submittedApprovals.count < 512 else { return false }
             if let origin = approvalOrigins[requestId],
                 origin.owner != downloadOwner || origin.connection != continuity.connectionGeneration
@@ -3983,7 +4443,8 @@ final class AppModel: NSObject {
             let linked = approvalRows[requestId]
             submittedApprovals[requestId] = SubmittedApproval(
                 owner: downloadOwner, connection: continuity.connectionGeneration,
-                chat: activeChatId, row: linked, decision: decision, expectsReceipt: approvalReceiptsSupported)
+                chat: activeChatId, row: linked, decision: decision, expectsReceipt: approvalReceiptsSupported,
+                submissionId: submissionId, requestGeneration: requestGeneration)
             updateActivity(activeChatId) { rows in
                 guard let index = linked.flatMap({ id in rows.firstIndex { $0.id == id } }) else { return }
                 if approvalReceiptsSupported {
@@ -4012,7 +4473,7 @@ final class AppModel: NSObject {
             guard retiredComputerReviews[key] == nil else { return }
             let origin = SubmittedApproval(
                 owner: downloadOwner, connection: continuity.connectionGeneration, chat: chat, row: nil,
-                decision: "withdraw", expectsReceipt: true)
+                decision: "withdraw", expectsReceipt: true, submissionId: nil, requestGeneration: nil)
             guard retiredComputerReviews.count < 512 else {
                 reviewRetirementOverflow = origin
                 return
@@ -4167,6 +4628,14 @@ final class AppModel: NSObject {
         submittedApprovals.removeValue(forKey: id)
         withdrawingApprovals.remove(id)
         decidedApprovals.insert(id)
+        if let submissionId = pending.submissionId,
+            let submission = localOperationSubmissions[submissionId],
+            submission.requestGeneration == pending.requestGeneration,
+            submission.connectionGeneration == connection,
+            submission.chatId == pending.chat
+        {
+            clearLocalOperationSubmission(submissionId: submissionId)
+        }
         updateActivity(pending.chat) { rows in
             guard let index = pending.row.flatMap({ id in rows.firstIndex { $0.id == id } }) else { return }
             switch state {
@@ -4269,7 +4738,7 @@ final class AppModel: NSObject {
         approvalOrigins[approval.requestId] = SubmittedApproval(
             owner: downloadOwner,
             connection: continuity.connectionGeneration, chat: chatId, row: linked, decision: "",
-            expectsReceipt: approvalReceiptsSupported)
+            expectsReceipt: approvalReceiptsSupported, submissionId: nil, requestGeneration: nil)
         announce(approval.summary.isEmpty ? "Approval waiting" : "Approval waiting: \(approval.summary)")
         if let image = approval.image { attachActivityThumbnail(image, to: linked, chatId: chatId) }
     }
@@ -4400,7 +4869,8 @@ final class AppModel: NSObject {
                 connectionGeneration: connectionGeneration)
         else { return }
         localOperationSubmissions[submission.submissionId] = submission
-        if exposeStatus { statusText = submission.label }
+        let approvalDuringActiveTurn = turnActive && ["authorize_action", "remote_op_decision"].contains(action)
+        if exposeStatus && !approvalDuringActiveTurn { statusText = submission.label }
     }
 
     private func localSubmissionShowsActivity(_ submission: LocalOperationSubmission) -> Bool {
@@ -4472,6 +4942,12 @@ final class AppModel: NSObject {
         }
     }
 
+    private func clearLocalOperationSubmission(submissionId: String) {
+        guard let submission = localOperationSubmissions.removeValue(forKey: submissionId) else { return }
+        componentPendingOperations.removeValue(forKey: submissionId)
+        if statusText == submission.label { statusText = latestActiveOperationStatusText() }
+    }
+
     private func operationOwnsActiveChatTurn(
         action: String,
         requestGeneration: String
@@ -4520,6 +4996,9 @@ final class AppModel: NSObject {
     }
 
     private func operationChatId(action: String, payload: JSONValue) -> String? {
+        #if os(macOS)
+            if ["authorize_action", "remote_op_decision"].contains(action) { return activeChatId }
+        #endif
         if action == "chat_message" || action == "load_chat"
             || conversationMutationActions.contains(action)
         {
@@ -5248,17 +5727,61 @@ final class AppModel: NSObject {
     private func rawSend(_ text: String) {
         guard noteApprovalDecision(text) else { return }
         let computerReview = ComputerHostOutbound.isReviewDecision(text)
+        let approvalRequestId = trackedApprovalRequestId(text)
         #if os(macOS)
             let localComputerSession = computerReview ? macComputerHost.recordApprovalInteraction() : nil
         #else
             let localComputerSession: String? = nil
         #endif
         outboundTap?(text)
-        guard let socket = ws else { return }
         let owner = downloadOwner
         let connection = continuity.connectionGeneration
         let navigation = conversationNavigationGeneration
         let chatId = activeChatId
+        if let approvalRequestId, !computerReview {
+            guard let pending = submittedApprovals[approvalRequestId], let connection,
+                pending.connection == connection, pending.chat == chatId, pending.owner == owner
+            else {
+                retireUnsentOperation(text)
+                return
+            }
+            if let sendOverride = currentApprovalDecisionSendOverride {
+                if !sendOverride(text, connection) { retireUnsentOperation(text) }
+                return
+            }
+            guard let socket = ws, connected else {
+                retireUnsentOperation(text)
+                return
+            }
+            Task { [weak self] in
+                guard let self,
+                    await self.authenticatedSocketIsCurrent(socket, owner: owner, connection: connection)
+                else {
+                    self?.retireUnsentOperation(text)
+                    return
+                }
+                let sent = await socket.sendCurrentApprovalDecision(text, connectionGeneration: connection) {
+                    [weak self] in
+                    await MainActor.run {
+                        guard let self, self.signedIn, self.connected, self.downloadOwner == owner,
+                            self.ws === socket, self.continuity.connectionGeneration == connection,
+                            self.activeChatId == chatId,
+                            let current = self.submittedApprovals[approvalRequestId]
+                        else { return false }
+                        return current.submissionId == pending.submissionId
+                            && current.requestGeneration == pending.requestGeneration
+                            && current.connection == connection && current.chat == chatId
+                            && current.owner == owner
+                    }
+                }
+                if !sent { self.retireUnsentOperation(text) }
+            }
+            return
+        }
+        guard let socket = ws else {
+            if approvalRequestId != nil { retireUnsentOperation(text) }
+            return
+        }
         let safety = SafetySurfaceRequest.claimsCurrentConnectionSemantics(frameText: text)
         let mesh =
             InboundFrame.parse(text)?.payload["action"]?.stringValue?.hasPrefix("chrome_mesh_") == true
@@ -5362,6 +5885,7 @@ final class AppModel: NSObject {
         else {
             return
         }
+        let approvalRetired = retireUnsentApproval(frame)
         if parameterRequests.values.contains(request) {
             parameterFailures.insert(request)
             surfaceFailureMessage = "The action was not sent. Review your entries and retry after reconnecting."
@@ -5372,6 +5896,50 @@ final class AppModel: NSObject {
         failOrdinarySurface(
             generation: request, message: "The session could not update. Reconnect and retry this screen.")
         clearLocalOperationSubmission(requestGeneration: request)
+        if approvalRetired {
+            bannerIsError = true
+            errorBanner = "The approval decision was not confirmed. Check the action before trying again."
+        }
+    }
+
+    private func trackedApprovalRequestId(_ text: String) -> String? {
+        guard let frame = InboundFrame.parse(text),
+            ["authorize_action", "remote_op_decision"].contains(frame.payload["action"]?.stringValue ?? ""),
+            let payload = frame.payload["payload"],
+            let requestId = (payload["hitl_request_id"] ?? payload["proposal_id"])?.stringValue,
+            let submissionId = frame.payload["submission_id"]?.stringValue,
+            let pending = submittedApprovals[requestId]
+        else { return nil }
+        guard pending.submissionId == submissionId,
+            pending.requestGeneration == frame.payload["request_generation"]?.stringValue,
+            pending.connection == continuity.connectionGeneration,
+            pending.chat == activeChatId,
+            pending.owner == downloadOwner
+        else { return nil }
+        return requestId
+    }
+
+    private func retireUnsentApproval(_ frame: InboundFrame) -> Bool {
+        guard let payload = frame.payload["payload"],
+            let requestId = (payload["hitl_request_id"] ?? payload["proposal_id"])?.stringValue,
+            let pending = submittedApprovals[requestId],
+            pending.submissionId == frame.payload["submission_id"]?.stringValue,
+            pending.requestGeneration == frame.payload["request_generation"]?.stringValue
+        else { return false }
+        submittedApprovals.removeValue(forKey: requestId)
+        withdrawingApprovals.remove(requestId)
+        if decidedApprovals.count >= 512 { decidedApprovals.removeAll() }
+        decidedApprovals.insert(requestId)
+        updateActivity(pending.chat) { rows in
+            guard let index = pending.row.flatMap({ id in rows.firstIndex { $0.id == id } }) else { return }
+            rows[index].approval = .uncertain
+            rows[index].state = .failed
+            rows[index].result = "The decision could not be confirmed. Inspect the action before trying again."
+        }
+        removeApprovalCards([requestId])
+        if let submissionId = pending.submissionId { clearLocalOperationSubmission(submissionId: submissionId) }
+        observeActivityComponents()
+        return true
     }
 
     private func restoreUnsentQuery(_ text: String, navigation: Int, chatId: String?) {

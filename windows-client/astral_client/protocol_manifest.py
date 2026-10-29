@@ -79,6 +79,8 @@ CLASSIFICATION: dict[str, str] = {
     "agent_permissions_updated": IGNORED,
     "llm_config_ack": IGNORED,
     "llm_usage_report": IGNORED,
+    "ui_auth_refresh_ready": IGNORED,
+    "ui_auth_refreshed": IGNORED,
     "audit_append": IGNORED,
     "agent_creation_progress": IGNORED,
     "notification": HANDLED,

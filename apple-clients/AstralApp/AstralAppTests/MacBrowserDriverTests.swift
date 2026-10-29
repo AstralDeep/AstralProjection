@@ -95,7 +95,7 @@
             XCTAssertEqual(harness.pane.webView.url?.path, "/form")
             let redirect = await harness.failure("browser_navigate", ["url": .string(harness.url("/redirect"))])
             XCTAssertEqual(redirect?.code, "origin_not_approved")
-            XCTAssertEqual(harness.pane.webView.url?.path, "/form")
+            try await harness.expectPage("document.title", "Order form")
             harness.driver.userNavigate("http://localhost:\(harness.server.port)/next")
             try await harness.expectEventually { self.harness.pane.webView.url?.host == "localhost" }
             try await harness.expectEventually { !self.harness.pane.isLoading }

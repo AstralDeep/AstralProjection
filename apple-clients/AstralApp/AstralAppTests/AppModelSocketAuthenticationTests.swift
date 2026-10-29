@@ -22,10 +22,13 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
 
     private func withModel(
         jwtLifetime: TimeInterval = 3600, liveness: LivenessPolicy? = nil,
+        uiAuthRefreshSupported: Bool = false,
+        advanceCredentialClockWhenTimerFires: TimeInterval? = nil,
         _ body: (AppModel, SocketAuthenticationPeer, InMemoryTokenStore, CredentialTestClock) async throws -> Void
     ) async throws {
         let clock = CredentialTestClock()
         let peer = try SocketAuthenticationPeer(clock: clock, jwtLifetime: jwtLifetime)
+        peer.uiAuthRefreshSupported = uiAuthRefreshSupported
         peer.start()
         defer { peer.stop() }
         await fulfillment(of: [peer.ready], timeout: 10)
@@ -42,6 +45,11 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
         let model = AppModel(
             conversationResumeStore: ConversationResumeStore(defaults: defaults),
             tokenStore: store, defaults: defaults, credentialClock: { clock.now })
+        #if os(macOS)
+            if let advanceCredentialClockWhenTimerFires {
+                model.uiAuthRefreshSleeper = { _ in clock.advance(advanceCredentialClockWhenTimerFires) }
+            }
+        #endif
         if let liveness { model.socketLiveness = liveness }
         let registered = peer.expectRegistration()
         await model.bootstrap()
@@ -54,6 +62,97 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
         }
         await model.signOut(revokeRemote: false)
     }
+
+    #if os(macOS)
+        private func withServerCustodyModel(
+            candidateSession: String, candidateScope: String = "openid profile",
+            candidateClaims: [String: Any] = [:], reuseAccessToken: Bool = false,
+            additionalReplyTokens: [String] = [],
+            uiAuthRefreshSleeper: @escaping @Sendable (UInt64) async -> Void = {
+                try? await Task.sleep(nanoseconds: $0)
+            },
+            _ body: (
+                AppModel, SocketAuthenticationPeer, InMemoryMeshKeyStorage, CredentialTestClock,
+                ServerSessionScope, ServerCustodyRefreshReplies
+            ) async throws -> Void
+        ) async throws {
+            let clock = CredentialTestClock()
+            let peer = try SocketAuthenticationPeer(clock: clock)
+            peer.uiAuthRefreshSupported = true
+            peer.start()
+            defer { peer.stop() }
+            await fulfillment(of: [peer.ready], timeout: 10)
+            let port = try XCTUnwrap(peer.listener.port).rawValue
+            let suite = "AppModelSocketAuthenticationTests.ServerCustody.\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            defaults.set("https://server.test", forKey: "serverBase")
+            defaults.set("https://issuer.example.test", forKey: "authority")
+
+            let model = AppModel(
+                tokenStore: InMemoryTokenStore(), defaults: defaults,
+                webSocket: WSClient(url: URL(string: "ws://127.0.0.1:\(port)/ws")!),
+                credentialClock: { clock.now })
+            model.uiAuthRefreshSleeper = uiAuthRefreshSleeper
+            let scope = try ServerSessionScope(server: model.serverBase, oidc: try XCTUnwrap(model.oidc))
+            let initialSession = try ServerSession(
+                scope: scope, owner: "owner", accessToken: peer.originalToken,
+                cookie: "astral_session=synthetic", cookieExpiresAt: clock.now.addingTimeInterval(7200))
+            let storage = InMemoryMeshKeyStorage()
+            try storage.save(JSONEncoder().encode(initialSession), key: scope.storageKey)
+            model.serverSessionStorage = storage
+
+            let initialRefreshToken = serverCustodyJWT(
+                issuer: scope.issuer, clientID: model.clientId, session: "fixture-session",
+                expiry: clock.now.addingTimeInterval(120))
+            let candidateToken =
+                reuseAccessToken
+                ? initialRefreshToken
+                : serverCustodyJWT(
+                    issuer: scope.issuer, clientID: model.clientId, session: candidateSession,
+                    expiry: clock.now.addingTimeInterval(7200), marker: "candidate", scope: candidateScope,
+                    extraClaims: candidateClaims)
+            let replies = ServerCustodyRefreshReplies(
+                tokens: [initialRefreshToken, candidateToken] + additionalReplyTokens)
+            model.serverSessionTransport = { request in
+                if request.httpMethod == "POST" {
+                    return ServerSessionReply(
+                        body: .object(["outcome": .string("revoked"), "revoked": .bool(true), "queued": .bool(false)]))
+                }
+                let token = await replies.next()
+                return ServerSessionReply(
+                    body: .object([
+                        "authenticated": .bool(true), "access_token": .string(token),
+                        "resumed": .bool(true), "user_id": .string("owner"),
+                    ]))
+            }
+
+            let registered = peer.expectRegistration()
+            await model.bootstrap()
+            await fulfillment(of: [registered], timeout: 10)
+            try await waitUntil { model.connected }
+            do {
+                try await body(model, peer, storage, clock, scope, replies)
+            } catch {
+                await model.signOut(revokeRemote: false)
+                throw error
+            }
+            await model.signOut(revokeRemote: false)
+        }
+
+        private func serverCustodyJWT(
+            issuer: String, clientID: String, session: String, expiry: Date, marker: String = "fixture",
+            scope: String = "openid profile", extraClaims: [String: Any] = [:]
+        ) -> String {
+            var claims: [String: Any] = [
+                "iss": issuer, "sub": "owner", "azp": clientID, "sid": session,
+                "scope": scope, "jti": marker, "iat": expiry.timeIntervalSince1970 - 3600,
+                "exp": expiry.timeIntervalSince1970,
+            ]
+            claims.merge(extraClaims) { _, replacement in replacement }
+            return "fixture." + PKCE.base64url(try! JSONSerialization.data(withJSONObject: claims)) + ".fixture"
+        }
+    #endif
 
     func testRESTTokenRotationRenewsTheRegisteredSocket() async throws {
         try await withModel { model, peer, store, clock in
@@ -70,6 +169,261 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
     }
 
     #if os(macOS)
+        func testServerCustodyRefreshRejectsChangedSessionBeforePersistingCandidate() async throws {
+            try await withServerCustodyModel(candidateSession: "changed-session") {
+                model, peer, storage, clock, scope, _ in
+                let registered = try XCTUnwrap(peer.registrations.last)
+                let priorData = try XCTUnwrap(storage.load(scope.storageKey))
+                let priorSession = try JSONDecoder().decode(ServerSession.self, from: priorData)
+                XCTAssertEqual(registered.token, priorSession.accessToken)
+
+                clock.advance(180)
+                _ = try? await model.rest.chats()
+
+                let persistedData = try XCTUnwrap(storage.load(scope.storageKey))
+                let persistedSession = try JSONDecoder().decode(ServerSession.self, from: persistedData)
+                XCTAssertEqual(persistedSession.accessToken, priorSession.accessToken)
+                XCTAssertTrue(peer.authRefreshes.isEmpty)
+                XCTAssertEqual(peer.registrations.count, 1)
+                XCTAssertTrue(model.signedIn)
+            }
+        }
+
+        func testServerCustodyRefreshRejectsIdentityAndAuthorizationChangesBeforePersisting() async throws {
+            let cases: [(String, [String: Any])] = [
+                ("session", ["sid": "different-session"]),
+                ("audience", ["aud": ["different-client"]]),
+                ("malformed_audience", ["aud": ["astral-desktop", 7]]),
+                ("scope", ["scope": "openid profile changed"]),
+                ("malformed_scope", ["scope": ["openid", 7]]),
+                ("malformed_roles", ["realm_access": ["roles": ["operator", 7]]]),
+                ("malformed_resource_access", ["resource_access": ["astral-desktop": 7]]),
+                ("subject", ["sub": "different-owner"]),
+                ("issuer", ["iss": "https://different-issuer.example.test"]),
+                ("client", ["azp": "different-client"]),
+                ("client_key_fallback", ["azp": 7, "client_id": "astral-desktop"]),
+                ("session_key_fallback", ["sid": 7, "session_state": "fixture-session"]),
+                ("reused_token_id", ["jti": "fixture"]),
+            ]
+            for (label, claims) in cases {
+                try await withServerCustodyModel(candidateSession: "fixture-session", candidateClaims: claims) {
+                    model, peer, storage, clock, scope, _ in
+                    let initial = try XCTUnwrap(peer.registrations.last)
+                    let prior = try JSONDecoder().decode(
+                        ServerSession.self, from: XCTUnwrap(storage.load(scope.storageKey)))
+                    clock.advance(180)
+                    _ = try? await model.rest.chats()
+
+                    let persisted = try JSONDecoder().decode(
+                        ServerSession.self, from: XCTUnwrap(storage.load(scope.storageKey)))
+                    XCTAssertEqual(persisted.accessToken, prior.accessToken, label)
+                    XCTAssertTrue(peer.authRefreshes.isEmpty, label)
+                    XCTAssertEqual(peer.registrations.count, 1, label)
+                    XCTAssertEqual(peer.registrations.first?.token, initial.token, label)
+                    XCTAssertTrue(model.signedIn, label)
+                }
+            }
+        }
+
+        func testServerCustodyLateRefreshCannotRestoreAfterLogout() async throws {
+            try await withServerCustodyModel(candidateSession: "fixture-session") {
+                model, peer, storage, clock, scope, replies in
+                await replies.holdNext()
+                clock.advance(180)
+                let refresh = Task { _ = try? await model.rest.chats() }
+                await replies.waitUntilHeld()
+
+                await model.signOut(revokeRemote: false)
+                await replies.release()
+                _ = await refresh.value
+
+                XCTAssertFalse(model.signedIn)
+                XCTAssertNil(try storage.load(scope.storageKey))
+                XCTAssertEqual(peer.registrations.count, 1)
+                XCTAssertTrue(peer.authRefreshes.isEmpty)
+            }
+        }
+
+        func testServerCustodyLateRefreshCannotRestoreAfterServerScopeChange() async throws {
+            try await withServerCustodyModel(candidateSession: "fixture-session") {
+                model, peer, storage, clock, scope, replies in
+                await replies.holdNext()
+                clock.advance(180)
+                let refresh = Task { _ = try? await model.rest.chats() }
+                await replies.waitUntilHeld()
+
+                model.serverBaseText = "https://foreign.test"
+                await replies.release()
+                _ = await refresh.value
+
+                XCTAssertNil(try storage.load(scope.storageKey))
+                XCTAssertEqual(peer.registrations.count, 1)
+                XCTAssertTrue(peer.authRefreshes.isEmpty)
+            }
+        }
+
+        func testServerCustodyRefreshKeepsCurrentSocketAuthorityUntilAcceptedAck() async throws {
+            try await withServerCustodyModel(candidateSession: "fixture-session") {
+                model, peer, storage, clock, scope, _ in
+                let initial = try XCTUnwrap(peer.registrations.last)
+                clock.advance(180)
+                _ = try? await model.rest.chats()
+                try await waitUntil { peer.authRefreshes.count == 1 }
+
+                let refresh = try XCTUnwrap(peer.authRefreshes.first)
+                XCTAssertEqual(refresh.socket, initial.socket)
+                XCTAssertEqual(refresh.frame.payload["type"], .string("refresh_ui_auth"))
+                XCTAssertEqual(peer.registrations.count, 1)
+                let candidateToken = try XCTUnwrap(refresh.frame.payload["token"]?.stringValue)
+                XCTAssertEqual(
+                    try JSONDecoder().decode(ServerSession.self, from: XCTUnwrap(storage.load(scope.storageKey)))
+                        .accessToken,
+                    candidateToken)
+                let state = model.uiAuthRefreshCredentialStateForTesting(matches: candidateToken)
+                XCTAssertTrue(state.active)
+                XCTAssertTrue(state.registered)
+                XCTAssertTrue(model.connected)
+            }
+        }
+
+        func testServerCustodyRefreshAcceptsSameStillValidJWTWithoutAnAuthFrame() async throws {
+            try await withServerCustodyModel(candidateSession: "fixture-session", reuseAccessToken: true) {
+                model, peer, storage, clock, scope, _ in
+                let initial = try XCTUnwrap(peer.registrations.last)
+                clock.advance(5)
+                _ = try? await model.rest.chats()
+
+                let persisted = try JSONDecoder().decode(
+                    ServerSession.self, from: XCTUnwrap(storage.load(scope.storageKey)))
+                XCTAssertEqual(persisted.accessToken, initial.token)
+                XCTAssertTrue(peer.authRefreshes.isEmpty)
+                XCTAssertEqual(peer.registrations.count, 1)
+                let state = model.uiAuthRefreshCredentialStateForTesting(matches: initial.token)
+                XCTAssertTrue(state.active)
+                XCTAssertTrue(state.registered)
+            }
+        }
+
+        func testServerCustodyTimerReschedulesAfterSameJWTThenRenewsOnCurrentSocket() async throws {
+            let timer = ControlledCredentialSleeper()
+            let sleeper: @Sendable (UInt64) async -> Void = { await timer.sleep($0) }
+            try await withServerCustodyModel(
+                candidateSession: "fixture-session", reuseAccessToken: true,
+                additionalReplyTokens: [
+                    serverCustodyJWT(
+                        issuer: "https://issuer.example.test", clientID: AstralConfig.macosClientId,
+                        session: "fixture-session", expiry: Date().addingTimeInterval(7_200), marker: "later")
+                ],
+                uiAuthRefreshSleeper: sleeper
+            ) { model, peer, _, clock, _, _ in
+                let initial = try XCTUnwrap(peer.registrations.last)
+                await timer.waitUntilScheduled(1)
+                clock.advance(80)
+                await timer.fireNext()
+                await timer.waitUntilScheduled(2)
+
+                XCTAssertTrue(peer.authRefreshes.isEmpty)
+                XCTAssertEqual(peer.registrations.count, 1)
+                let unchangedState = model.uiAuthRefreshCredentialStateForTesting(matches: initial.token)
+                XCTAssertTrue(unchangedState.active)
+                XCTAssertTrue(unchangedState.registered)
+
+                clock.advance(45)
+                await timer.fireNext()
+                try await waitUntil { peer.authRefreshes.count == 1 }
+
+                let refresh = try XCTUnwrap(peer.authRefreshes.first)
+                XCTAssertEqual(refresh.socket, initial.socket)
+                XCTAssertEqual(refresh.frame.payload["connection_generation"], initial.generation.map(JSONValue.string))
+                XCTAssertEqual(peer.registrations.count, 1)
+                let freshToken = try XCTUnwrap(refresh.frame.payload["token"]?.stringValue)
+                let updatedState = model.uiAuthRefreshCredentialStateForTesting(matches: freshToken)
+                XCTAssertTrue(updatedState.active)
+                XCTAssertTrue(updatedState.registered)
+                XCTAssertTrue(model.connected)
+            }
+        }
+
+        func testServerCustodyRefreshRefusalDoesNotReplaceCurrentSocketRegistration() async throws {
+            try await withServerCustodyModel(candidateSession: "fixture-session") {
+                model, peer, _, clock, _, _ in
+                peer.configureAuthRefreshAck(.refused)
+                let initial = try XCTUnwrap(peer.registrations.last)
+                clock.advance(180)
+                _ = try? await model.rest.chats()
+                try await waitUntil { peer.authRefreshes.count == 1 }
+
+                XCTAssertEqual(peer.authRefreshes.first?.socket, initial.socket)
+                XCTAssertEqual(peer.registrations.count, 1)
+                let state = model.uiAuthRefreshCredentialStateForTesting(matches: initial.token)
+                XCTAssertTrue(state.active)
+                XCTAssertTrue(state.registered)
+                XCTAssertTrue(model.signedIn)
+            }
+        }
+
+        func testServerCustodyTimeoutKeepsCurrentSocketAndTokenBeforeAndAfterAckWait() async throws {
+            try await withServerCustodyModel(candidateSession: "fixture-session") {
+                model, peer, storage, clock, scope, _ in
+                peer.configureAuthRefreshAck(.omitted)
+                model.uiAuthRefreshAcknowledgementTimeoutNanoseconds = 500_000_000
+                let initial = try XCTUnwrap(peer.registrations.last)
+                clock.advance(180)
+                let refresh = Task { _ = try? await model.rest.chats() }
+                try await waitUntil { peer.authRefreshes.count == 1 }
+
+                let candidate = try JSONDecoder().decode(
+                    ServerSession.self, from: XCTUnwrap(storage.load(scope.storageKey)))
+                XCTAssertEqual(candidate.accessToken, peer.authRefreshes.first?.frame.payload["token"]?.stringValue)
+                let stateBeforeAck = model.uiAuthRefreshCredentialStateForTesting(matches: initial.token)
+                XCTAssertTrue(stateBeforeAck.active)
+                XCTAssertTrue(stateBeforeAck.registered)
+                XCTAssertEqual(peer.registrations.count, 1)
+
+                _ = await refresh.value
+                let stateAfterTimeout = model.uiAuthRefreshCredentialStateForTesting(matches: initial.token)
+                XCTAssertTrue(stateAfterTimeout.active)
+                XCTAssertTrue(stateAfterTimeout.registered)
+                XCTAssertEqual(peer.registrations.count, 1)
+                XCTAssertTrue(model.signedIn)
+            }
+        }
+
+        func testServerCustodyAfterAckTimeoutStillChecksCandidateAgainstActiveSocketIdentity() async throws {
+            try await withServerCustodyModel(candidateSession: "fixture-session") {
+                model, peer, storage, clock, scope, replies in
+                peer.configureAuthRefreshAck(.omitted)
+                model.uiAuthRefreshAcknowledgementTimeoutNanoseconds = 100_000_000
+                let initial = try XCTUnwrap(peer.registrations.last)
+                clock.advance(180)
+                let refresh = Task { _ = try? await model.rest.chats() }
+                try await waitUntil { peer.authRefreshes.count == 1 }
+                _ = await refresh.value
+
+                let persistedCandidate = try JSONDecoder().decode(
+                    ServerSession.self, from: XCTUnwrap(storage.load(scope.storageKey)))
+                let initialState = model.uiAuthRefreshCredentialStateForTesting(matches: initial.token)
+                XCTAssertTrue(initialState.active)
+                XCTAssertTrue(initialState.registered)
+
+                let changedIdentity = serverCustodyJWT(
+                    issuer: scope.issuer, clientID: model.clientId, session: "different-session",
+                    expiry: clock.now.addingTimeInterval(7200), marker: "next-candidate")
+                await replies.append(changedIdentity)
+                clock.advance(7200)
+                _ = try? await model.rest.chats()
+
+                let afterRejectedRefresh = try JSONDecoder().decode(
+                    ServerSession.self, from: XCTUnwrap(storage.load(scope.storageKey)))
+                XCTAssertEqual(afterRejectedRefresh.accessToken, persistedCandidate.accessToken)
+                let finalState = model.uiAuthRefreshCredentialStateForTesting(matches: initial.token)
+                XCTAssertTrue(finalState.active)
+                XCTAssertTrue(finalState.registered)
+                XCTAssertEqual(peer.authRefreshes.count, 1)
+                XCTAssertEqual(peer.registrations.count, 1)
+            }
+        }
+
         func testComputerDenialWireTracksTheActualRegistrationAcrossCredentialRenewal() async throws {
             try await withModel { model, peer, _, clock in
                 XCTAssertFalse(model.macComputerHost.available)
@@ -540,6 +894,184 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
         }
     }
 
+    #if os(macOS)
+        func testExpiredCredentialRefreshesInPlaceWithoutRetiringAnActiveLongTurn() async throws {
+            try await withModel(jwtLifetime: 120, uiAuthRefreshSupported: true) { model, peer, store, clock in
+                let initial = try XCTUnwrap(peer.registrations.last)
+                XCTAssertTrue(initial.capabilities.contains("ui_auth_refresh_v1"))
+
+                model.sendChat("Keep this long-running turn connected")
+                try await waitUntil {
+                    peer.events.contains { $0.frame.payload["action"] == .string("chat_message") }
+                }
+                clock.advance(180)
+
+                _ = try await model.rest.chats()
+
+                try await waitUntil { peer.authRefreshes.count == 1 }
+                let refreshed = try XCTUnwrap(peer.authRefreshes.first)
+                XCTAssertEqual(refreshed.socket, initial.socket)
+                XCTAssertEqual(
+                    refreshed.frame.payload["connection_generation"], .string(try XCTUnwrap(initial.generation)))
+                XCTAssertEqual(refreshed.frame.payload["token"]?.stringValue, store.load()?.accessToken)
+                XCTAssertEqual(peer.registrations.count, 1)
+                XCTAssertTrue(model.turnActive)
+                XCTAssertEqual(
+                    peer.events.filter { $0.frame.payload["action"] == .string("chat_message") }.count, 1)
+            }
+        }
+
+        func testExpiryTimerRefreshesBeforeDeadlineOnTheExistingSocket() async throws {
+            try await withModel(
+                jwtLifetime: 120, uiAuthRefreshSupported: true,
+                advanceCredentialClockWhenTimerFires: 60
+            ) { model, peer, store, _ in
+                let initial = try XCTUnwrap(peer.registrations.last)
+                try await waitUntil { peer.authRefreshes.count == 1 && store.load()?.accessToken != initial.token }
+                XCTAssertEqual(peer.registrations.count, 1)
+                XCTAssertEqual(peer.authRefreshes.first?.socket, initial.socket)
+                XCTAssertNil(model.errorBanner)
+            }
+        }
+
+        func testAuthRequiredRenewsTheBoundSocketWithoutReplayingAnActiveTurn() async throws {
+            try await withModel(jwtLifetime: 3600, uiAuthRefreshSupported: true) { model, peer, store, _ in
+                let initial = try XCTUnwrap(peer.registrations.last)
+                model.sendChat("Continue while the server renews this session")
+                try await waitUntil {
+                    peer.events.contains { $0.frame.payload["action"] == .string("chat_message") }
+                }
+                peer.send(#"{"type":"auth_required","reason":"expired"}"#, socket: initial.socket)
+
+                try await waitUntil { peer.authRefreshes.count == 1 && store.load()?.accessToken != initial.token }
+                XCTAssertEqual(peer.registrations.count, 1)
+                XCTAssertEqual(peer.authRefreshes.first?.socket, initial.socket)
+                XCTAssertTrue(model.turnActive)
+                XCTAssertEqual(
+                    peer.events.filter { $0.frame.payload["action"] == .string("chat_message") }.count, 1)
+            }
+        }
+
+        func testRESTAndAuthRequiredShareOneInPlaceRefreshForAnActiveTurn() async throws {
+            try await withModel(uiAuthRefreshSupported: true) { model, peer, store, clock in
+                let initial = try XCTUnwrap(peer.registrations.last)
+                model.sendChat("Keep the same active turn during a shared refresh")
+                try await waitUntil {
+                    peer.events.contains { $0.frame.payload["action"] == .string("chat_message") }
+                }
+                clock.advance(7200)
+                peer.holdRefresh()
+                let refreshRequest = peer.expectRefresh()
+                let restRead = Task { try? await model.rest.chats() }
+                await fulfillment(of: [refreshRequest], timeout: 10)
+                peer.send(#"{"type":"auth_required","reason":"expired"}"#, socket: initial.socket)
+                try await Task.sleep(nanoseconds: 20_000_000)
+                peer.releaseRefresh()
+
+                try await waitUntil { peer.authRefreshes.count == 1 && store.load()?.accessToken != initial.token }
+                _ = await restRead.value
+                XCTAssertEqual(peer.refreshCount, 1)
+                XCTAssertEqual(peer.registrations.count, 1)
+                XCTAssertEqual(peer.authRefreshes.first?.socket, initial.socket)
+                XCTAssertTrue(model.turnActive)
+                XCTAssertEqual(
+                    peer.events.filter { $0.frame.payload["action"] == .string("chat_message") }.count, 1)
+            }
+        }
+
+        func testUncorrelatedRefreshAcknowledgementTimesOutWithoutInstallingOrReconnecting() async throws {
+            try await withModel(jwtLifetime: 120, uiAuthRefreshSupported: true) { model, peer, store, clock in
+                model.uiAuthRefreshAcknowledgementTimeoutNanoseconds = 10_000_000
+                peer.configureAuthRefreshAck(.wrongRequest)
+                let initial = try XCTUnwrap(peer.registrations.last)
+                clock.advance(180)
+                let request = Task { try? await model.rest.chats() }
+                try await waitUntil { peer.authRefreshes.count == 1 }
+                try await waitUntil { model.surfaceFailureMessage != nil }
+                XCTAssertEqual(peer.registrations.count, 1)
+                XCTAssertEqual(store.load()?.accessToken, initial.token)
+                XCTAssertNil(model.errorBanner)
+                request.cancel()
+            }
+        }
+
+        func testChangedStableSessionClaimDoesNotInstallCredentialOrSendRefreshFrame() async throws {
+            try await withModel(jwtLifetime: 120, uiAuthRefreshSupported: true) { model, peer, store, clock in
+                let initial = try XCTUnwrap(peer.registrations.last)
+                peer.configureRefresh(status: 200, session: "different-session")
+                clock.advance(180)
+                let request = Task { try? await model.rest.chats() }
+                try await waitUntil { model.surfaceFailureMessage != nil }
+                XCTAssertTrue(peer.authRefreshes.isEmpty)
+                XCTAssertEqual(peer.registrations.count, 1)
+                XCTAssertEqual(store.load()?.accessToken, initial.token)
+                request.cancel()
+            }
+        }
+
+        func testRefreshedCredentialWithoutAStableSessionClaimIsNotInstalled() async throws {
+            try await withModel(jwtLifetime: 120, uiAuthRefreshSupported: true) { model, peer, store, clock in
+                let initial = try XCTUnwrap(peer.registrations.last)
+                peer.configureRefresh(status: 200, includeSessionClaim: false)
+                clock.advance(180)
+                let request = Task { try? await model.rest.chats() }
+                try await waitUntil { model.surfaceFailureMessage != nil }
+                XCTAssertTrue(peer.authRefreshes.isEmpty)
+                XCTAssertEqual(peer.registrations.count, 1)
+                XCTAssertEqual(store.load()?.accessToken, initial.token)
+                request.cancel()
+            }
+        }
+
+        func testRefreshRefusalClosesTheSessionWithoutReplayingTheActiveQuery() async throws {
+            try await withModel(uiAuthRefreshSupported: true) { model, peer, store, _ in
+                let initial = try XCTUnwrap(peer.registrations.last)
+                model.sendChat("Do not replay after an auth refusal")
+                try await waitUntil {
+                    peer.events.contains { $0.frame.payload["action"] == .string("chat_message") }
+                }
+                peer.configureAuthRefreshAck(.refused)
+                peer.send(#"{"type":"auth_required","reason":"expired"}"#, socket: initial.socket)
+
+                try await waitUntil { !model.signedIn }
+                XCTAssertEqual(peer.registrations.count, 1)
+                XCTAssertNil(store.load())
+                XCTAssertEqual(
+                    peer.events.filter { $0.frame.payload["action"] == .string("chat_message") }.count, 1)
+            }
+        }
+
+        func testLogoutCancelsPendingSameSocketCredentialAcknowledgement() async throws {
+            try await withModel(jwtLifetime: 120, uiAuthRefreshSupported: true) { model, peer, store, clock in
+                peer.configureAuthRefreshAck(.omitted)
+                clock.advance(180)
+                let request = Task { _ = try? await model.rest.chats() }
+                try await waitUntil { peer.authRefreshes.count == 1 }
+                await model.signOut(revokeRemote: false)
+                _ = await request.value
+
+                XCTAssertFalse(model.signedIn)
+                XCTAssertNil(store.load())
+                XCTAssertEqual(peer.registrations.count, 1)
+            }
+        }
+
+        func testDisconnectCancelsPendingSameSocketCredentialAcknowledgement() async throws {
+            try await withModel(jwtLifetime: 120, uiAuthRefreshSupported: true) { model, peer, store, clock in
+                peer.configureAuthRefreshAck(.omitted)
+                clock.advance(180)
+                let initial = try XCTUnwrap(peer.registrations.last)
+                let request = Task { try? await model.rest.chats() }
+                try await waitUntil { peer.authRefreshes.count == 1 }
+                peer.disconnect(socket: initial.socket)
+                try await waitUntil { model.surfaceFailureMessage != nil }
+                XCTAssertEqual(store.load()?.accessToken, initial.token)
+                XCTAssertEqual(peer.authRefreshes.count, 1)
+                request.cancel()
+            }
+        }
+    #endif
+
     func testStaleSocketIsReplacedBeforeSendingAndTheQueryArrivesOnce() async throws {
         try await withModel(liveness: LivenessPolicy(interval: 3600, timeout: 0.5, freshness: 0)) {
             model, peer, _, _ in
@@ -953,11 +1485,80 @@ private final class CredentialTestClock: @unchecked Sendable {
     }
 }
 
+private actor ServerCustodyRefreshReplies {
+    private var tokens: [String]
+    private var consumed = 0
+    private var heldIndex: Int?
+    private var currentlyHeld = false
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+    private var heldWaiters: [CheckedContinuation<Void, Never>] = []
+    init(tokens: [String]) { self.tokens = tokens }
+    func append(_ token: String) { tokens.append(token) }
+    func holdNext() { heldIndex = consumed }
+    func next() async -> String {
+        let index = consumed
+        consumed += 1
+        precondition(!tokens.isEmpty, "unexpected server custody refresh")
+        let token = tokens.removeFirst()
+        if heldIndex == index {
+            await withCheckedContinuation { continuation in
+                releaseContinuation = continuation
+                currentlyHeld = true
+                for waiter in heldWaiters { waiter.resume() }
+                heldWaiters.removeAll()
+            }
+        }
+        return token
+    }
+    func waitUntilHeld() async {
+        if currentlyHeld { return }
+        await withCheckedContinuation { heldWaiters.append($0) }
+    }
+    func release() {
+        releaseContinuation?.resume()
+        releaseContinuation = nil
+    }
+}
+
+private actor ControlledCredentialSleeper {
+    private var scheduled: [UInt64] = []
+    private var continuations: [CheckedContinuation<Void, Never>] = []
+    private var waiters: [(Int, CheckedContinuation<Void, Never>)] = []
+
+    func sleep(_ nanoseconds: UInt64) async {
+        await withCheckedContinuation { continuation in
+            scheduled.append(nanoseconds)
+            continuations.append(continuation)
+            let ready = waiters.filter { $0.0 <= scheduled.count }
+            waiters.removeAll { $0.0 <= scheduled.count }
+            for (_, waiter) in ready { waiter.resume() }
+        }
+    }
+
+    func waitUntilScheduled(_ count: Int) async {
+        if scheduled.count >= count { return }
+        await withCheckedContinuation { waiters.append((count, $0)) }
+    }
+
+    func fireNext() {
+        precondition(!continuations.isEmpty, "no scheduled credential timer")
+        continuations.removeFirst().resume()
+    }
+}
+
 private final class SocketAuthenticationPeer: @unchecked Sendable {
+    enum AuthRefreshAckBehavior: Equatable {
+        case accepted
+        case wrongRequest
+        case wrongGeneration
+        case refused
+        case omitted
+    }
     struct Registration {
         let socket: Int
         let token: String
         let generation: String?
+        let capabilities: Set<String>
     }
     struct Event {
         let socket: Int
@@ -982,6 +1583,7 @@ private final class SocketAuthenticationPeer: @unchecked Sendable {
     private var connections: [Connection] = []
     private var observedRegistrations: [Registration] = []
     private var observedEvents: [Event] = []
+    private var observedAuthRefreshes: [Event] = []
     private var observedRefreshes = 0
     private var observedAuthorization: [String] = []
     private var registrationExpectation: XCTestExpectation?
@@ -990,27 +1592,36 @@ private final class SocketAuthenticationPeer: @unchecked Sendable {
     private var pendingRefresh: [Connection] = []
     private var refreshStatus = 200
     private var refreshedSubject = "owner"
+    private var refreshedSession = "fixture-session"
     private var refreshLifetime: TimeInterval = 86400
+    private var includeSessionClaim = true
     private var silenced: Set<Int> = []
+    var uiAuthRefreshSupported = false
+    private var authRefreshAckBehavior = AuthRefreshAckBehavior.accepted
 
     init(clock: CredentialTestClock, jwtLifetime: TimeInterval = 3600) throws {
         self.clock = clock
-        originalToken = Self.token("original", subject: "owner", expiry: clock.now.addingTimeInterval(jwtLifetime))
+        originalToken = Self.token(
+            "original", subject: "owner", session: "fixture-session",
+            expiry: clock.now.addingTimeInterval(jwtLifetime))
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
         listener = try NWListener(using: parameters)
     }
 
-    private static func token(_ marker: String, subject: String, expiry: Date) -> String {
-        let payload: [String: Any] = [
-            "iss": "https://issuer.example.test", "sub": subject, "jti": marker,
+    private static func token(_ marker: String, subject: String, session: String?, expiry: Date) -> String {
+        var payload: [String: Any] = [
+            "iss": "https://issuer.example.test", "sub": subject, "azp": "astral-desktop",
+            "scope": "openid profile", "jti": marker, "iat": expiry.timeIntervalSince1970 - 3600,
             "exp": expiry.timeIntervalSince1970,
         ]
+        if let session { payload["sid"] = session }
         return "fixture." + PKCE.base64url(try! JSONSerialization.data(withJSONObject: payload)) + ".fixture"
     }
 
     var registrations: [Registration] { queue.sync { observedRegistrations } }
     var events: [Event] { queue.sync { observedEvents } }
+    var authRefreshes: [Event] { queue.sync { observedAuthRefreshes } }
     var refreshCount: Int { queue.sync { observedRefreshes } }
     var restAuthorization: [String] { queue.sync { observedAuthorization } }
 
@@ -1031,11 +1642,19 @@ private final class SocketAuthenticationPeer: @unchecked Sendable {
     }
 
     func holdRefresh() { queue.sync { holdsRefresh = true } }
-    func configureRefresh(status: Int, subject: String = "owner", lifetime: TimeInterval = 86400) {
+    func configureAuthRefreshAck(_ behavior: AuthRefreshAckBehavior) {
+        queue.sync { authRefreshAckBehavior = behavior }
+    }
+    func configureRefresh(
+        status: Int, subject: String = "owner", session: String = "fixture-session", lifetime: TimeInterval = 86400,
+        includeSessionClaim: Bool = true
+    ) {
         queue.sync {
             refreshStatus = status
             refreshedSubject = subject
+            refreshedSession = session
             refreshLifetime = lifetime
+            self.includeSessionClaim = includeSessionClaim
         }
     }
     func releaseRefresh() {
@@ -1111,6 +1730,7 @@ private final class SocketAuthenticationPeer: @unchecked Sendable {
     private func respondRefresh(_ connection: Connection) {
         let token = Self.token(
             "rotated-\(observedRefreshes)", subject: refreshedSubject,
+            session: includeSessionClaim ? refreshedSession : nil,
             expiry: clock.now.addingTimeInterval(refreshLifetime))
         respond(
             connection, status: refreshStatus,
@@ -1164,10 +1784,12 @@ private final class SocketAuthenticationPeer: @unchecked Sendable {
             guard opcode == 1, let text = String(bytes: body, encoding: .utf8), let frame = InboundFrame.parse(text)
             else { continue }
             if frame.name == "register_ui" {
+                let capabilities = Set(frame.payload["capabilities"]?.arrayValue?.compactMap(\.stringValue) ?? [])
                 observedRegistrations.append(
                     Registration(
                         socket: connection.socket, token: frame.payload["token"]?.stringValue ?? "",
-                        generation: frame.payload["connection_generation"]?.stringValue))
+                        generation: frame.payload["connection_generation"]?.stringValue,
+                        capabilities: capabilities))
                 registrationExpectation?.fulfill()
                 registrationExpectation = nil
                 send(#"{"type":"ready"}"#, to: connection)
@@ -1176,6 +1798,35 @@ private final class SocketAuthenticationPeer: @unchecked Sendable {
                         #"{"type":"rote_config","device_profile":{"device_type":"macos","console":{}}}"#,
                         to: connection)
                 #endif
+                if self.uiAuthRefreshSupported, capabilities.contains("ui_auth_refresh_v1"),
+                    let generation = frame.payload["connection_generation"]?.stringValue
+                {
+                    send(
+                        String(
+                            decoding: try! JSONValue.object([
+                                "type": .string("ui_auth_refresh_ready"),
+                                "connection_generation": .string(generation),
+                            ]).encoded(), as: UTF8.self),
+                        to: connection)
+                }
+            } else if frame.name == "refresh_ui_auth" {
+                observedAuthRefreshes.append(Event(socket: connection.socket, frame: frame))
+                guard authRefreshAckBehavior != .omitted else { continue }
+                var ackFields: [String: JSONValue] = [
+                    "type": .string("ui_auth_refreshed"),
+                    "request_id": frame.payload["request_id"] ?? .null,
+                    "connection_generation": frame.payload["connection_generation"] ?? .null,
+                    "accepted": .bool(authRefreshAckBehavior != .refused),
+                ]
+                if authRefreshAckBehavior == .wrongRequest {
+                    ackFields["request_id"] = .string("55555555-5555-4555-8555-555555555555")
+                } else if authRefreshAckBehavior == .wrongGeneration {
+                    ackFields["connection_generation"] = .string("66666666-6666-4666-8666-666666666666")
+                } else if authRefreshAckBehavior == .refused {
+                    ackFields["closed_code"] = .string("identity_changed")
+                }
+                let ack = JSONValue.object(ackFields)
+                send(String(decoding: try! ack.encoded(), as: UTF8.self), to: connection)
             } else {
                 observedEvents.append(Event(socket: connection.socket, frame: frame))
             }

@@ -68,6 +68,8 @@ public struct ClientDispositions: Sendable {
         "stream_list": "no native stream-browser surface (matches Windows/Android)",
         "stream_unsubscribed": "terminal state arrives via ui_stream_data done flag",
         "system_config": "dashboard data; natives use agent_list (044)",
+        "ui_auth_refresh_ready": "macOS credential-renewal negotiation only",
+        "ui_auth_refreshed": "macOS credential-renewal acknowledgement only",
     ]
 
     private static func frames(
@@ -108,6 +110,7 @@ public struct ClientDispositions: Sendable {
         frames: ios.frames.merging([
             "computer_request": .handled, "computer_session": .handled, "computer_host": .handled,
             "llm_usage_report": .handled,
+            "ui_auth_refresh_ready": .handled, "ui_auth_refreshed": .handled,
         ]) { _, new in new },
         components: fullComponentSet(fallbacks: [
             "audio": "web-only media, server degrade ladder (044 channel decision)",
@@ -193,7 +196,8 @@ public struct ClientDispositions: Sendable {
         "rote_config", "saved_components_list", "stream_data", "stream_error",
         "stream_list", "stream_subscribed", "stream_unsubscribed",
         "system_config", "task_completed", "task_started", "tool_progress",
-        "ui_append", "ui_render", "ui_stream_data", "ui_update", "ui_upsert",
+        "ui_append", "ui_auth_refresh_ready", "ui_auth_refreshed", "ui_render", "ui_stream_data", "ui_update",
+        "ui_upsert",
         "user_message_acked", "user_preferences", "voice_announcement_media", "voice_local_announcement",
         "voice_control_binding", "voice_session_state", "voice_submission_rejected",
         "voice_local_final_rejected", "voice_local_session_ready", "voice_local_turn_bound",

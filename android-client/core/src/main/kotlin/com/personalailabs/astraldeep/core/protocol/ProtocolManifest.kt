@@ -80,6 +80,8 @@ object ProtocolManifest {
             "agent_permissions_updated" to IGNORED,
             "llm_config_ack" to IGNORED,
             "llm_usage_report" to IGNORED,
+            "ui_auth_refresh_ready" to IGNORED,
+            "ui_auth_refreshed" to IGNORED,
             "audit_append" to IGNORED,
             "agent_creation_progress" to IGNORED,
             "agent_tunnel" to IGNORED,

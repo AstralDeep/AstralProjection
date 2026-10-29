@@ -130,7 +130,7 @@ class ProtocolManifestTest {
             assertEquals("replace", frame.getValue("mode").jsonPrimitive.content)
         }
         assertEquals(164, root.getValue("accept_actions").jsonArray.size)
-        assertEquals(72, manifestPushTypes().size)
+        assertEquals(74, manifestPushTypes().size)
         assertTrue(ProtocolManifest.isHandled("chrome_surface"))
         assertTrue(manifestPushTypes().none { it.startsWith("evidence") })
         val watch = fixture.getValue("watch_components").jsonArray
@@ -213,6 +213,14 @@ class ProtocolManifestTest {
     fun classification_values_are_valid() {
         val allowed = setOf(ProtocolManifest.HANDLED, ProtocolManifest.IGNORED)
         assertTrue(ProtocolManifest.classification.values.all { it in allowed })
+    }
+
+    @Test
+    fun mac_only_auth_refresh_frames_are_ignored_by_android() {
+        for (frame in listOf("ui_auth_refresh_ready", "ui_auth_refreshed")) {
+            assertEquals(ProtocolManifest.IGNORED, ProtocolManifest.classification[frame])
+            assertFalse(ProtocolManifest.isHandled(frame))
+        }
     }
 
     @Test

@@ -7,6 +7,97 @@
     @testable import AstralCore
 
     final class ComputerWorkspaceTests: XCTestCase {
+        func testWriteCreatesNestedParentDirectoriesInsideWorkspace() throws {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let workspace = try ComputerWorkspace(root: root.path)
+            let path = root.appendingPathComponent("minecraft/src/main.py").path
+
+            try workspace.write(path, content: "print('hello')", overwrite: false, authorize: {})
+
+            XCTAssertEqual(try String(contentsOfFile: path, encoding: .utf8), "print('hello')")
+            XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("minecraft/src").path))
+            XCTAssertThrowsError(try workspace.write(path, content: "changed", overwrite: false, authorize: {}))
+            XCTAssertEqual(try String(contentsOfFile: path, encoding: .utf8), "print('hello')")
+            try workspace.write(path, content: "updated", overwrite: true, authorize: {})
+            XCTAssertEqual(try String(contentsOfFile: path, encoding: .utf8), "updated")
+        }
+
+        func testNestedWriteDenialAndInvalidContentCreateNoDirectories() throws {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let workspace = try ComputerWorkspace(root: root.path)
+            let path = root.appendingPathComponent("new/nested/file.txt").path
+
+            XCTAssertThrowsError(
+                try workspace.write(path, content: "blocked", overwrite: false) {
+                    throw ComputerHostError("permission_denied", "revoked")
+                }
+            ) { error in
+                XCTAssertEqual((error as? ComputerHostError)?.effectState, "not_started")
+            }
+            XCTAssertThrowsError(
+                try workspace.write(
+                    path, content: String(repeating: "x", count: 262145), overwrite: false, authorize: {}))
+            XCTAssertThrowsError(
+                try workspace.write(
+                    root.path + "/../escaped/nested/file.txt", content: "blocked", overwrite: false, authorize: {})
+            )
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("new").path))
+            XCTAssertFalse(
+                FileManager.default.fileExists(
+                    atPath: root.deletingLastPathComponent().appendingPathComponent("escaped").path))
+        }
+
+        func testNestedWriteAuthorityRevocationAfterParentCreationReportsUncertainEffect() throws {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let workspace = try ComputerWorkspace(root: root.path)
+            let path = root.appendingPathComponent("first/second/file.txt").path
+            var checks = 0
+
+            XCTAssertThrowsError(
+                try workspace.write(path, content: "blocked", overwrite: false) {
+                    checks += 1
+                    if checks == 2 { throw ComputerHostError("permission_denied", "revoked") }
+                }
+            ) { error in
+                XCTAssertNil((error as? ComputerHostError)?.effectState)
+            }
+
+            XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("first").path))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("first/second").path))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+        }
+
+        func testSymlinkInsertedBeforeMissingParentCreationIsNotFollowed() throws {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            let outside = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+            defer {
+                try? FileManager.default.removeItem(at: root)
+                try? FileManager.default.removeItem(at: outside)
+            }
+            let workspace = try ComputerWorkspace(root: root.path)
+            let path = root.appendingPathComponent("missing/child/file.txt").path
+
+            XCTAssertThrowsError(
+                try workspace.write(path, content: "blocked", overwrite: false) {
+                    try FileManager.default.createSymbolicLink(
+                        at: root.appendingPathComponent("missing"), withDestinationURL: outside)
+                }
+            ) { error in
+                XCTAssertNil((error as? ComputerHostError)?.effectState)
+            }
+
+            XCTAssertFalse(FileManager.default.fileExists(atPath: outside.appendingPathComponent("child").path))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: outside.appendingPathComponent("file.txt").path))
+        }
+
         func testMissingReadAndPreEffectWriteDenialCarryTypedOutcomes() throws {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -118,6 +209,24 @@
             XCTAssertThrowsError(try workspace.delete(root.path, authorize: {}))
             try workspace.delete(path, authorize: {})
             XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+        }
+
+        func testRefusedExistingFileExplainsHowToOverwrite() throws {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let workspace = try ComputerWorkspace(root: root.path)
+            let path = root.appendingPathComponent("existing.txt").path
+            try workspace.write(path, content: "original", overwrite: false, authorize: {})
+
+            XCTAssertThrowsError(try workspace.write(path, content: "replacement", overwrite: false, authorize: {})) {
+                error in
+                XCTAssertEqual((error as? ComputerHostError)?.code, "already_exists")
+                XCTAssertEqual(
+                    (error as? ComputerHostError)?.message,
+                    "File exists; retry with if_exists=overwrite to replace it")
+            }
+            XCTAssertEqual(try String(contentsOfFile: path, encoding: .utf8), "original")
         }
 
         func testTruncatedReadEndsOnTheLastCompleteScalar() throws {

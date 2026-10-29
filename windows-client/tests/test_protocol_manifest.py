@@ -118,6 +118,13 @@ def test_classification_values_are_valid():
     assert set(CLASSIFICATION.values()) <= {HANDLED, IGNORED}
 
 
+def test_mac_only_auth_refresh_frames_are_ignored_by_windows():
+    for frame_type in ("ui_auth_refresh_ready", "ui_auth_refreshed"):
+        assert is_classified(frame_type)
+        assert not is_handled(frame_type)
+        assert CLASSIFICATION[frame_type] == IGNORED
+
+
 def test_core_loop_frames_are_handled():
     for frame in (
         "rote_config",
@@ -223,7 +230,7 @@ def test_evidence_inspection_uses_existing_correlated_modal_and_watch_handoff():
         assert frame["type"] == frame_type and frame["request_generation"] == generation
         assert frame["region"] == "modal" and frame["mode"] == "replace" and frame["surface_key"] == "evidence"
     assert is_handled("chrome_surface")
-    assert len(data["accept_actions"]) == 164 and len(_manifest_push_types()) == 72
+    assert len(data["accept_actions"]) == 164 and len(_manifest_push_types()) == 74
     assert not any(name.startswith("evidence") for name in _manifest_push_types())
     assert {component["type"] for component in fixture["native_frame"]["components"]} <= set(data["component_types"])
     watch = fixture["watch_components"]

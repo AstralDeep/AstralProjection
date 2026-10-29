@@ -8,6 +8,68 @@
 
     @MainActor final class MacProjectCatalogTests: XCTestCase {
         let project = "12345678-1234-1234-9234-123456789abc"
+
+        func testMostRecentFirstUsesActivityAndStableIDTies() throws {
+            func chat(_ id: String, _ updatedAt: JSONValue? = nil) throws -> ChatSummary {
+                var value: [String: JSONValue] = ["id": .string(id), "project_id": .string(project)]
+                if let updatedAt { value["updated_at"] = updatedAt }
+                return try XCTUnwrap(ChatSummary(json: .object(value)))
+            }
+
+            let chats = [
+                try chat("older", .number(1_700_000_000)),
+                try chat("tie-b", .number(1_800_000_000_000)),
+                try chat("missing-time", .string("")),
+                try chat("tie-a", .number(1_800_000_000)),
+                try chat("invalid", .string("not-a-timestamp")),
+            ]
+            XCTAssertEqual(
+                MacProjectCatalog.mostRecentFirst(chats).map(\.id),
+                ["tie-a", "tie-b", "older", "invalid", "missing-time"])
+            XCTAssertEqual(
+                MacProjectCatalog.mostRecentFirst(chats.reversed()).map(\.id),
+                ["tie-a", "tie-b", "older", "invalid", "missing-time"])
+        }
+
+        func testActivityDuringRefreshKeepsAuthoritativeMembershipAndNewestTimestamp() async throws {
+            let server = ProjectCatalogServer(project: project)
+            await server.setChatSnapshot(["active-chat": "100", "removed-chat": "150"])
+            let catalog = MacProjectCatalog()
+            catalog.bind(
+                scope: "owner/server/device",
+                client: RestClient(
+                    serverBase: URL(string: "https://example.test")!, tokenProvider: { "token" },
+                    transport: { try await server.respond($0) }))
+            catalog.negotiate(true)
+            await catalog.refresh()
+            XCTAssertEqual(Set(catalog.chats[project, default: []].map(\.id)), ["active-chat", "removed-chat"])
+
+            await server.setChatSnapshot(["active-chat": "150", "new-chat": "300"])
+            await server.holdNextChatRead()
+            let refresh = Task { await catalog.refresh() }
+            for _ in 0..<2000 {
+                if await server.chatReadIsHeld() { break }
+                await Task.yield()
+            }
+            let snapshotIsHeld = await server.chatReadIsHeld()
+            XCTAssertTrue(snapshotIsHeld)
+
+            let activity = try XCTUnwrap(
+                ChatSummary(
+                    json: .object([
+                        "id": .string("active-chat"), "project_id": .string(project),
+                        "updated_at": .string("200"),
+                    ])))
+            catalog.mergeRecentActivity([activity])
+            XCTAssertTrue(catalog.loading, "recent activity must not retire the authoritative refresh")
+
+            await server.releaseChatRead()
+            await refresh.value
+            XCTAssertEqual(Set(catalog.chats[project, default: []].map(\.id)), ["active-chat", "new-chat"])
+            XCTAssertEqual(catalog.chats[project]?.first(where: { $0.id == "active-chat" })?.updatedAt, "200")
+            XCTAssertNil(catalog.project(for: "removed-chat"))
+        }
+
         func testNoSelectionRefusesAndUncertainCreationReusesExactRequest() async throws {
             let server = ProjectCatalogServer(project: project)
             let catalog = MacProjectCatalog()
@@ -33,6 +95,9 @@
             XCTAssertEqual(requests, [id, id])
             XCTAssertNil(catalog.errorMessage)
             XCTAssertEqual(catalog.selectedId, project)
+            let created = try XCTUnwrap(catalog.chats[project]?.first(where: { $0.id == id }))
+            let createdAt = try XCTUnwrap(Double(created.updatedAt))
+            XCTAssertGreaterThan(createdAt, 0)
         }
         func testAllTextCreationEntrypointsPreserveDraftAndRetryTheSameChat() async throws {
             for route in ["button", "event", "send", "component"] {
@@ -502,6 +567,9 @@
 
     actor ProjectCatalogServer {
         var project: String
+        var chatSnapshot: [String: String]?
+        var holdNextChatReadResponse = false
+        var heldChatRead: CheckedContinuation<Void, Never>?
         var empty = false
         func startEmpty() { empty = true }
         var created: [String] = []
@@ -532,6 +600,13 @@
             heldCreation = nil
         }
         init(project: String) { self.project = project }
+        func setChatSnapshot(_ rows: [String: String]) { chatSnapshot = rows }
+        func holdNextChatRead() { holdNextChatReadResponse = true }
+        func chatReadIsHeld() -> Bool { heldChatRead != nil }
+        func releaseChatRead() {
+            heldChatRead?.resume()
+            heldChatRead = nil
+        }
         func failPagination() { pagedFailure = true }
         func respond(_ request: URLRequest) async throws -> (Int, Data) {
             if request.httpMethod == "PATCH" {
@@ -573,12 +648,25 @@
             }
             if request.url!.path.hasSuffix("/chats") && request.httpMethod == "GET" {
                 chatReads += 1
+                if holdNextChatReadResponse {
+                    holdNextChatReadResponse = false
+                    await withCheckedContinuation { heldChatRead = $0 }
+                }
                 let ids = racing && !(staleSnapshot && hold) ? Array(Set(created)) : []
                 if racing && staleSnapshot && hold && !created.isEmpty {
                     await withCheckedContinuation { heldSnapshot = $0 }
                 }
-                let rows: [JSONValue] = ids.map {
-                    .object(["id": .string($0), "project_id": .string(project), "title": .string("Server title")])
+                let selectedRows: [(String, String)]
+                if let chatSnapshot {
+                    selectedRows = chatSnapshot.keys.sorted().map { id in (id, chatSnapshot[id] ?? "100") }
+                } else {
+                    selectedRows = ids.map { ($0, "100") }
+                }
+                let rows: [JSONValue] = selectedRows.map { id, updatedAt in
+                    .object([
+                        "id": .string(id), "project_id": .string(project), "title": .string("Server title"),
+                        "updated_at": .string(updatedAt),
+                    ])
                 }
                 return (
                     200,

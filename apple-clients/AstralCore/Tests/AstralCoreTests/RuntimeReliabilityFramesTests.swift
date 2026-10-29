@@ -206,6 +206,17 @@ final class RuntimeReliabilityFramesTests: XCTestCase {
         XCTAssertFalse(
             outboundJSON["capabilities"]?.arrayValue?.contains(.string("agent_host")) ?? true
         )
+        XCTAssertFalse(
+            outboundJSON["capabilities"]?.arrayValue?.contains(.string("ui_auth_refresh_v1")) ?? true
+        )
+        let refreshCapable = try JSONValue.parse(
+            Data(
+                Outbound.registerUI(
+                    token: "token", sessionId: nil, device: .macos(viewportWidth: 800, viewportHeight: 600),
+                    resumed: false, uiAuthRefreshSupported: true
+                ).utf8))
+        XCTAssertTrue(
+            refreshCapable["capabilities"]?.arrayValue?.contains(.string("ui_auth_refresh_v1")) ?? false)
 
         let acknowledgement = try frame(
             """
@@ -258,5 +269,49 @@ final class RuntimeReliabilityFramesTests: XCTestCase {
         )
         XCTAssertNil(CandidateCapabilityMap(json: malformed))
         XCTAssertNil(CandidateCapabilityMap(json: .object(["capabilities": .object([:])])))
+    }
+
+    func testUIAuthRefreshFramesAreStrictlyGenerationAndRequestBound() throws {
+        let requestID = "44444444-4444-4444-8444-444444444444"
+        let request = try XCTUnwrap(
+            UIAuthRefreshRequest(
+                requestID: requestID, connectionGeneration: connection, token: "fixture-access-token"))
+        let parsedRequest = try XCTUnwrap(UIAuthRefreshRequest.parse(request.frameText))
+        XCTAssertEqual(parsedRequest, request)
+        XCTAssertNil(
+            UIAuthRefreshRequest.parse(
+                request.frameText.replacingOccurrences(
+                    of: "\"token\":\"fixture-access-token\"", with: "\"token\":\"fixture-access-token\",\"extra\":true")
+            ))
+
+        let ready = try frame(
+            """
+            {"type":"ui_auth_refresh_ready","connection_generation":"\(connection)"}
+            """)
+        XCTAssertEqual(UIAuthRefreshReady(frame: ready)?.connectionGeneration, connection)
+        XCTAssertNil(
+            UIAuthRefreshReady(
+                frame: try frame(
+                    """
+                    {"type":"ui_auth_refresh_ready","connection_generation":"\(connection)","extra":true}
+                    """)))
+
+        let accepted = try frame(
+            """
+            {"type":"ui_auth_refreshed","request_id":"\(requestID)","connection_generation":"\(connection)","accepted":true}
+            """)
+        XCTAssertEqual(UIAuthRefreshAcknowledgement(frame: accepted)?.requestID, requestID)
+        let refused = try frame(
+            """
+            {"type":"ui_auth_refreshed","request_id":"\(requestID)","connection_generation":"\(connection)","accepted":false,"closed_code":"identity_changed"}
+            """)
+        XCTAssertEqual(UIAuthRefreshAcknowledgement(frame: refused)?.accepted, false)
+        for invalid in [
+            "{\"type\":\"ui_auth_refreshed\",\"request_id\":\"\(requestID)\",\"connection_generation\":\"\(connection)\",\"accepted\":false}",
+            "{\"type\":\"ui_auth_refreshed\",\"request_id\":\"\(requestID)\",\"connection_generation\":\"\(connection)\",\"accepted\":true,\"closed_code\":\"invalid\"}",
+            "{\"type\":\"ui_auth_refreshed\",\"request_id\":\"\(requestID)\",\"connection_generation\":\"\(connection)\",\"accepted\":false,\"closed_code\":\"unknown\"}",
+        ] {
+            XCTAssertNil(UIAuthRefreshAcknowledgement(frame: try frame(invalid)))
+        }
     }
 }

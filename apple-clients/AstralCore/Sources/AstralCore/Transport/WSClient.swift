@@ -351,6 +351,54 @@ public actor WSClient {
         return await sendCurrentOwnerSurfaceEvent(text, using: current, isCurrent: isCurrent)
     }
 
+    @discardableResult
+    public func sendCurrentApprovalDecision(
+        _ text: String, connectionGeneration: String, isCurrent: @Sendable () async -> Bool
+    ) async -> Bool {
+        guard Self.isApprovalDecision(text), continuityUUID4(connectionGeneration) != nil,
+            registeredConnectionGeneration == connectionGeneration, established,
+            let current = task, current.state == .running
+        else { return false }
+        return await sendCurrentOwnerSurfaceEvent(
+            text, using: current, connectionGeneration: connectionGeneration, isCurrent: isCurrent)
+    }
+
+    @discardableResult
+    public func sendCurrentUIAuthRefresh(
+        _ request: UIAuthRefreshRequest,
+        isCurrent: @Sendable () async -> Bool
+    ) async -> Bool {
+        guard UIAuthRefreshRequest.parse(request.frameText) == request,
+            registeredConnectionGeneration == request.connectionGeneration,
+            established, let current = task, current.state == .running
+        else { return false }
+        return await sendCurrentOwnerSurfaceEvent(
+            request.frameText, using: current,
+            connectionGeneration: request.connectionGeneration,
+            isCurrent: isCurrent)
+    }
+
+    private static func isApprovalDecision(_ text: String) -> Bool {
+        guard text.utf8.count <= 16384,
+            let value = try? JSONValue.parse(Data(text.utf8)),
+            let frame = value.objectValue,
+            Set(frame.keys) == ["type", "action", "session_id", "submission_id", "request_generation", "payload"],
+            frame["type"] == .string("ui_event"),
+            let action = frame["action"]?.stringValue,
+            ["authorize_action", "remote_op_decision"].contains(action),
+            let submission = continuityUUID4(frame["submission_id"]?.stringValue),
+            let request = continuityUUID4(frame["request_generation"]?.stringValue),
+            let payload = frame["payload"]?.objectValue,
+            payload["submission_id"] == .string(submission),
+            payload["request_generation"] == .string(request),
+            let decision = payload["decision"]?.stringValue,
+            ["approve", "approve_and_resume", "grant_task", "decline"].contains(decision)
+        else { return false }
+        let idKey = action == "authorize_action" ? "hitl_request_id" : "proposal_id"
+        return payload[idKey]?.stringValue.map { !$0.isEmpty && $0.count <= 200 } == true
+            && Set(payload.keys).isSubset(of: [idKey, "decision", "submission_id", "request_generation"])
+    }
+
     private func sendCurrentOwnerSurfaceEvent(
         _ text: String, using current: URLSessionWebSocketTask,
         connectionGeneration: String? = nil,

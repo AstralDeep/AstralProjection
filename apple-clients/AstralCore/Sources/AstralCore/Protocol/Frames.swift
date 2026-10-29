@@ -4,6 +4,92 @@
 
 import Foundation
 
+public struct UIAuthRefreshRequest: Sendable, Equatable {
+    public let requestID: String
+    public let connectionGeneration: String
+    public let token: String
+
+    public init?(requestID: String, connectionGeneration: String, token: String) {
+        guard continuityUUID4(requestID) != nil, continuityUUID4(connectionGeneration) != nil,
+            !token.isEmpty, token.utf8.count <= 16384
+        else { return nil }
+        self.requestID = requestID
+        self.connectionGeneration = connectionGeneration
+        self.token = token
+    }
+
+    public var frameText: String {
+        Outbound.encode(
+            .object([
+                "type": .string("refresh_ui_auth"),
+                "request_id": .string(requestID),
+                "connection_generation": .string(connectionGeneration),
+                "token": .string(token),
+            ]))
+    }
+
+    public static func parse(_ text: String) -> UIAuthRefreshRequest? {
+        guard text.utf8.count <= 24576,
+            let value = try? JSONValue.parse(Data(text.utf8)),
+            let frame = value.objectValue,
+            Set(frame.keys) == ["type", "request_id", "connection_generation", "token"],
+            frame["type"] == .string("refresh_ui_auth"),
+            let requestID = frame["request_id"]?.stringValue,
+            let connection = frame["connection_generation"]?.stringValue,
+            let token = frame["token"]?.stringValue
+        else { return nil }
+        return UIAuthRefreshRequest(requestID: requestID, connectionGeneration: connection, token: token)
+    }
+}
+
+public struct UIAuthRefreshReady: Sendable, Equatable {
+    public let connectionGeneration: String
+
+    public init?(frame: InboundFrame) {
+        guard frame.name == "ui_auth_refresh_ready",
+            let value = frame.payload.objectValue,
+            Set(value.keys) == ["type", "connection_generation"],
+            value["type"] == .string("ui_auth_refresh_ready"),
+            let generation = continuityUUID4(value["connection_generation"]?.stringValue)
+        else { return nil }
+        connectionGeneration = generation
+    }
+}
+
+public struct UIAuthRefreshAcknowledgement: Sendable, Equatable {
+    public enum ClosedCode: String, Sendable {
+        case invalid
+        case identityChanged = "identity_changed"
+        case staleConnection = "stale_connection"
+        case authorityChanged = "authority_changed"
+        case sessionUnavailable = "session_unavailable"
+    }
+
+    public let requestID: String
+    public let connectionGeneration: String
+    public let accepted: Bool
+    public let closedCode: ClosedCode?
+
+    public init?(frame: InboundFrame) {
+        let value = frame.payload.objectValue ?? [:]
+        let code = value["closed_code"]?.stringValue.flatMap(ClosedCode.init(rawValue:))
+        guard frame.name == "ui_auth_refreshed",
+            Set(value.keys).isSubset(of: ["type", "request_id", "connection_generation", "accepted", "closed_code"]),
+            Set(value.keys).isSuperset(of: ["type", "request_id", "connection_generation", "accepted"]),
+            value["type"] == .string("ui_auth_refreshed"),
+            let requestID = continuityUUID4(value["request_id"]?.stringValue),
+            let connection = continuityUUID4(value["connection_generation"]?.stringValue),
+            let accepted = value["accepted"]?.boolValue,
+            value["closed_code"] == nil || code != nil,
+            accepted == (code == nil)
+        else { return nil }
+        self.requestID = requestID
+        connectionGeneration = connection
+        self.accepted = accepted
+        closedCode = code
+    }
+}
+
 public struct InboundFrame: Sendable, Equatable {
     public let name: String
     public let payload: JSONValue
@@ -797,7 +883,8 @@ public enum Outbound {
         guidanceNotesSupported: Bool = false,
         computerHost: ComputerHostDescriptor? = nil,
         computerHostCapable: Bool = false,
-        macWorkbenchSupported: Bool = false
+        macWorkbenchSupported: Bool = false,
+        uiAuthRefreshSupported: Bool = false
     ) -> String {
         guard continuityUUID4(connectionGeneration) != nil else { return "{}" }
         let voiceCapable =
@@ -809,6 +896,7 @@ public enum Outbound {
         if device.consoleContract == ConsoleModel.contract { capabilities.append("guidance_selection_v1") }
         if voiceCapable { capabilities.append("voice") }
         if computerHostCapable { capabilities.append("computer_host_capable") }
+        if uiAuthRefreshSupported { capabilities.append("ui_auth_refresh_v1") }
         let workbench =
             (macWorkbenchSupported || device.macWorkbenchSupported) && device.deviceType == "macos"
             && device.consoleContract == ConsoleModel.contract
