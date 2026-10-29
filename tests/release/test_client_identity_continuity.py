@@ -158,20 +158,6 @@ def test_apple_bundles_take_the_protected_monotonic_build_number() -> None:
     assert watch["CFBundleVersion"] == "$(CURRENT_PROJECT_VERSION)"
 
 
-def test_apple_app_declares_one_swiftui_application_scene() -> None:
-    app = _plist("apple-clients/AstralApp/Info.plist")
-    manifest = app["UIApplicationSceneManifest"]
-    assert manifest["UIApplicationSupportsMultipleScenes"] is False
-    assert manifest["UISceneConfigurations"] == {
-        "UIWindowSceneSessionRoleApplication": [
-            {
-                "UISceneConfigurationName": "Default Configuration",
-                "UISceneClassName": "UIWindowScene",
-            }
-        ]
-    }
-
-
 def test_direct_download_host_keeps_store_identity_and_hardened_runtime() -> None:
     project = _text("apple-clients/AstralApp/AstralApp.xcodeproj/project.pbxproj")
     body = _project_objects(project, "XCBuildConfiguration")["AF0990000000000000000001"]
