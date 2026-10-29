@@ -31,6 +31,43 @@ final class CanvasCapture088Tests: XCTestCase {
         return registry
     }
 
+    #if canImport(UIKit)
+        private func foregroundWindowScene() async throws -> UIWindowScene {
+            let application = UIApplication.shared
+            let scenes = application.connectedScenes.compactMap { $0 as? UIWindowScene }
+            if let active =
+                scenes
+                .filter({ $0.activationState == .foregroundActive })
+                .sorted(by: { $0.session.persistentIdentifier < $1.session.persistentIdentifier })
+                .first
+            {
+                return active
+            }
+            let target = scenes.sorted {
+                $0.session.persistentIdentifier < $1.session.persistentIdentifier
+            }.first
+            let targetIdentifier = target?.session.persistentIdentifier
+            let activated = expectation(
+                forNotification: UIScene.didActivateNotification, object: nil
+            ) { notification in
+                guard let scene = notification.object as? UIWindowScene,
+                    scene.activationState == .foregroundActive
+                else { return false }
+                return targetIdentifier == nil
+                    || scene.session.persistentIdentifier == targetIdentifier
+            }
+            application.requestSceneSessionActivation(
+                target?.session, userActivity: nil, options: nil, errorHandler: { _ in })
+            await fulfillment(of: [activated], timeout: 5)
+            return try XCTUnwrap(
+                application.connectedScenes.compactMap { $0 as? UIWindowScene }
+                    .filter { $0.activationState == .foregroundActive }
+                    .sorted {
+                        $0.session.persistentIdentifier < $1.session.persistentIdentifier
+                    }.first)
+        }
+    #endif
+
     func testCompositePixelsPreserveMeasuredLayoutAndOmitRawAuthority() async throws {
         for type in CanvasCaptureRegistry.compositePixelTypes.sorted() {
             let registry = registry()
@@ -561,9 +598,7 @@ final class CanvasCapture088Tests: XCTestCase {
                 window.close()
             }
         #else
-            let scene = try XCTUnwrap(
-                UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-                    .first { $0.activationState == .foregroundActive })
+            let scene = try await foregroundWindowScene()
             let prior = scene.windows.first { $0.isKeyWindow }
             let window = UIWindow(windowScene: scene)
             window.frame = scene.coordinateSpace.bounds
