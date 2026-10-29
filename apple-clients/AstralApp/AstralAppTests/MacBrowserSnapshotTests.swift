@@ -22,6 +22,12 @@
             harness = nil
         }
 
+        func testFixtureBrowserHasAnOnscreenWindow() throws {
+            XCTAssertTrue(harness.window.isVisible)
+            XCTAssertTrue(NSScreen.screens.contains { $0.visibleFrame.intersects(harness.window.frame) })
+            XCTAssertTrue(harness.pane.webView.window === harness.window)
+        }
+
         func testScriptCarriesThePolicyRulesAndRefusesAlteredResources() throws {
             let source = try XCTUnwrap(MacBrowserPane.script(bundle: .main))
             XCTAssertFalse(source.contains(MacBrowserPane.placeholder))

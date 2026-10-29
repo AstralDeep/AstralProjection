@@ -134,6 +134,22 @@ final class WatchWorkNavigationUITests: XCTestCase {
         XCTAssertEqual(peer.frames.count, 6)
     }
 
+    func testPendingClockRegistrationDoesNotBlockCurrentServerResponse() throws {
+        app.buttons["Work records"].tap()
+        let pending = try frame(0, action: "chrome_open", mode: "list")
+        let generation = try XCTUnwrap(pending["request_generation"] as? String)
+        let waiting = peer.advanceClock(generation: generation, milliseconds: 0, emptyRegistrationProbe: true)
+        waitForClock(waiting, status: "waiting")
+        let overlapping = peer.advanceClock(generation: generation, milliseconds: 0)
+        waitForClock(overlapping, status: "rejected")
+        peer.respond(to: pending, title: "Current response while clock waits")
+        XCTAssertTrue(app.staticTexts["Current response while clock waits"].waitForExistence(timeout: 5))
+        backToHome()
+        waitForClock(waiting, status: "retired")
+        _ = try frame(1, action: "chrome_close")
+        XCTAssertEqual(peer.frames.count, 2)
+    }
+
     func testBackDuringPendingReadCancelsViewTaskAndRejectsLateResponse() throws {
         app.buttons["Work records"].tap()
         let pending = try frame(0, action: "chrome_open", mode: "list")
