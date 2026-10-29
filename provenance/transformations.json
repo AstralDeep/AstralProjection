@@ -1303,9 +1303,9 @@
       "sourcePath": "apple-clients/AstralApp/Info.plist",
       "sourceBlob": "ec2a120865633b1e12fa257d17215c754701ce3d",
       "sourceMode": "100644",
-      "resultSha256": "ad042fdcf9eac8e78dfdd72a6cb2206ed781cf054b3c86e57812b30072bd6338",
+      "resultSha256": "ed1f3cf717a286ac5972f4ff4039ba5d0cae9c6cf54eb3eae0789da5c599d836",
       "task": "T066/T068/T007/T008/T010/T021/T033",
-      "reason": "Add NSSpeechRecognitionUsageDescription to the invoking iOS/macOS app target so the on-device SFSpeechRecognizer authorization prompt can be presented for client-local voice conversations; the watch target keeps its remote-PCM-only disposition and declares no speech usage. Reconcile this draft client-local speech source with qualified Projection main while retaining its native implementation and outstanding qualification blockers. Integrate the explicit-consent direct-download Mac computer host with bounded existing-v1 messages, current-channel delivery and controller-only defaults for other distributions. Add the Sparkle feed URL, EdDSA public key and verify-before-extraction settings for macOS in-app updates; the keys are inert on iOS."
+      "reason": "Add NSSpeechRecognitionUsageDescription to the invoking iOS/macOS app target so the on-device SFSpeechRecognizer authorization prompt can be presented for client-local voice conversations; the watch target keeps its remote-PCM-only disposition and declares no speech usage. Reconcile this draft client-local speech source with qualified Projection main while retaining its native implementation and outstanding qualification blockers. Integrate the explicit-consent direct-download Mac computer host with bounded existing-v1 messages, current-channel delivery and controller-only defaults for other distributions. Add the Sparkle feed URL, EdDSA public key and verify-before-extraction settings for macOS in-app updates; the keys are inert on iOS. Configure the SwiftUI app’s standard single-window application scene so UIKit can create the foreground UIWindowScene required by normal lifecycle and native capture."
     },
     {
       "path": "apple-clients/AstralCore/Package.swift",

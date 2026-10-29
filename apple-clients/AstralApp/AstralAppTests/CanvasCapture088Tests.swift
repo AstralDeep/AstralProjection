@@ -57,7 +57,8 @@ final class CanvasCapture088Tests: XCTestCase {
                     || scene.session.persistentIdentifier == targetIdentifier
             }
             application.requestSceneSessionActivation(
-                target?.session, userActivity: nil, options: nil, errorHandler: { _ in })
+                target?.session, userActivity: nil, options: nil,
+                errorHandler: { error in XCTFail("Scene activation request failed: \(error)") })
             await fulfillment(of: [activated], timeout: 5)
             return try XCTUnwrap(
                 application.connectedScenes.compactMap { $0 as? UIWindowScene }
