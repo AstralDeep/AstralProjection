@@ -164,7 +164,10 @@ def test_apple_app_declares_one_swiftui_application_scene() -> None:
     assert manifest["UIApplicationSupportsMultipleScenes"] is False
     assert manifest["UISceneConfigurations"] == {
         "UIWindowSceneSessionRoleApplication": [
-            {"UISceneConfigurationName": "Default Configuration"}
+            {
+                "UISceneConfigurationName": "Default Configuration",
+                "UISceneClassName": "UIWindowScene",
+            }
         ]
     }
 

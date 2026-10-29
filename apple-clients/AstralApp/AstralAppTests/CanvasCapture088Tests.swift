@@ -32,6 +32,24 @@ final class CanvasCapture088Tests: XCTestCase {
     }
 
     #if canImport(UIKit)
+        private func sceneDiagnostics(_ application: UIApplication) -> String {
+            let manifest = Bundle.main.infoDictionary?["UIApplicationSceneManifest"] as? [String: Any]
+            let configurations = manifest?["UISceneConfigurations"] as? [String: [[String: Any]]]
+            let sceneClass = configurations?["UIWindowSceneSessionRoleApplication"]?.first?["UISceneClassName"]
+                as? String ?? "missing"
+            let states = application.connectedScenes.compactMap { $0 as? UIWindowScene }
+                .map { String($0.activationState.rawValue) }.sorted()
+            let sample = states.prefix(8).joined(separator: ",")
+            let omitted = states.count > 8 ? ",…" : ""
+            let multipleScenes = (manifest?["UIApplicationSupportsMultipleScenes"] as? Bool)
+                .map { String($0) } ?? "missing"
+            return "applicationState=\(application.applicationState.rawValue), "
+                + "connectedWindowScenes=\(states.count)[\(sample)\(omitted)], "
+                + "openSessions=\(application.openSessions.count), "
+                + "supportsMultipleScenes=\(multipleScenes), "
+                + "manifestSceneClass=\(sceneClass.prefix(80))"
+        }
+
         private func foregroundWindowScene() async throws -> UIWindowScene {
             let application = UIApplication.shared
             let scenes = application.connectedScenes.compactMap { $0 as? UIWindowScene }
@@ -58,14 +76,20 @@ final class CanvasCapture088Tests: XCTestCase {
             }
             application.requestSceneSessionActivation(
                 target?.session, userActivity: nil, options: nil,
-                errorHandler: { error in XCTFail("Scene activation request failed: \(error)") })
+                errorHandler: { error in
+                    XCTFail(
+                        "Scene activation request failed: \(error); "
+                            + self.sceneDiagnostics(application))
+                })
             await fulfillment(of: [activated], timeout: 5)
             return try XCTUnwrap(
                 application.connectedScenes.compactMap { $0 as? UIWindowScene }
                     .filter { $0.activationState == .foregroundActive }
                     .sorted {
                         $0.session.persistentIdentifier < $1.session.persistentIdentifier
-                    }.first)
+                    }.first,
+                "No foreground UIWindowScene after activation; \(sceneDiagnostics(application))"
+            )
         }
     #endif
 

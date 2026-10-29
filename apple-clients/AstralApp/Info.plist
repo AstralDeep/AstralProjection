@@ -95,6 +95,8 @@
 				<dict>
 					<key>UISceneConfigurationName</key>
 					<string>Default Configuration</string>
+					<key>UISceneClassName</key>
+					<string>UIWindowScene</string>
 				</dict>
 			</array>
 		</dict>
