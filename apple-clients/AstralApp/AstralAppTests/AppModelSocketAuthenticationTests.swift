@@ -45,9 +45,11 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
         let model = AppModel(
             conversationResumeStore: ConversationResumeStore(defaults: defaults),
             tokenStore: store, defaults: defaults, credentialClock: { clock.now })
-        if let advanceCredentialClockWhenTimerFires {
-            model.uiAuthRefreshSleeper = { _ in clock.advance(advanceCredentialClockWhenTimerFires) }
-        }
+        #if os(macOS)
+            if let advanceCredentialClockWhenTimerFires {
+                model.uiAuthRefreshSleeper = { _ in clock.advance(advanceCredentialClockWhenTimerFires) }
+            }
+        #endif
         if let liveness { model.socketLiveness = liveness }
         let registered = peer.expectRegistration()
         await model.bootstrap()
@@ -892,181 +894,183 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
         }
     }
 
-    func testExpiredCredentialRefreshesInPlaceWithoutRetiringAnActiveLongTurn() async throws {
-        try await withModel(jwtLifetime: 120, uiAuthRefreshSupported: true) { model, peer, store, clock in
-            let initial = try XCTUnwrap(peer.registrations.last)
-            XCTAssertTrue(initial.capabilities.contains("ui_auth_refresh_v1"))
+    #if os(macOS)
+        func testExpiredCredentialRefreshesInPlaceWithoutRetiringAnActiveLongTurn() async throws {
+            try await withModel(jwtLifetime: 120, uiAuthRefreshSupported: true) { model, peer, store, clock in
+                let initial = try XCTUnwrap(peer.registrations.last)
+                XCTAssertTrue(initial.capabilities.contains("ui_auth_refresh_v1"))
 
-            model.sendChat("Keep this long-running turn connected")
-            try await waitUntil {
-                peer.events.contains { $0.frame.payload["action"] == .string("chat_message") }
+                model.sendChat("Keep this long-running turn connected")
+                try await waitUntil {
+                    peer.events.contains { $0.frame.payload["action"] == .string("chat_message") }
+                }
+                clock.advance(180)
+
+                _ = try await model.rest.chats()
+
+                try await waitUntil { peer.authRefreshes.count == 1 }
+                let refreshed = try XCTUnwrap(peer.authRefreshes.first)
+                XCTAssertEqual(refreshed.socket, initial.socket)
+                XCTAssertEqual(
+                    refreshed.frame.payload["connection_generation"], .string(try XCTUnwrap(initial.generation)))
+                XCTAssertEqual(refreshed.frame.payload["token"]?.stringValue, store.load()?.accessToken)
+                XCTAssertEqual(peer.registrations.count, 1)
+                XCTAssertTrue(model.turnActive)
+                XCTAssertEqual(
+                    peer.events.filter { $0.frame.payload["action"] == .string("chat_message") }.count, 1)
             }
-            clock.advance(180)
-
-            _ = try await model.rest.chats()
-
-            try await waitUntil { peer.authRefreshes.count == 1 }
-            let refreshed = try XCTUnwrap(peer.authRefreshes.first)
-            XCTAssertEqual(refreshed.socket, initial.socket)
-            XCTAssertEqual(
-                refreshed.frame.payload["connection_generation"], .string(try XCTUnwrap(initial.generation)))
-            XCTAssertEqual(refreshed.frame.payload["token"]?.stringValue, store.load()?.accessToken)
-            XCTAssertEqual(peer.registrations.count, 1)
-            XCTAssertTrue(model.turnActive)
-            XCTAssertEqual(
-                peer.events.filter { $0.frame.payload["action"] == .string("chat_message") }.count, 1)
         }
-    }
 
-    func testExpiryTimerRefreshesBeforeDeadlineOnTheExistingSocket() async throws {
-        try await withModel(
-            jwtLifetime: 120, uiAuthRefreshSupported: true,
-            advanceCredentialClockWhenTimerFires: 60
-        ) { model, peer, store, _ in
-            let initial = try XCTUnwrap(peer.registrations.last)
-            try await waitUntil { peer.authRefreshes.count == 1 && store.load()?.accessToken != initial.token }
-            XCTAssertEqual(peer.registrations.count, 1)
-            XCTAssertEqual(peer.authRefreshes.first?.socket, initial.socket)
-            XCTAssertNil(model.errorBanner)
-        }
-    }
-
-    func testAuthRequiredRenewsTheBoundSocketWithoutReplayingAnActiveTurn() async throws {
-        try await withModel(jwtLifetime: 3600, uiAuthRefreshSupported: true) { model, peer, store, _ in
-            let initial = try XCTUnwrap(peer.registrations.last)
-            model.sendChat("Continue while the server renews this session")
-            try await waitUntil {
-                peer.events.contains { $0.frame.payload["action"] == .string("chat_message") }
+        func testExpiryTimerRefreshesBeforeDeadlineOnTheExistingSocket() async throws {
+            try await withModel(
+                jwtLifetime: 120, uiAuthRefreshSupported: true,
+                advanceCredentialClockWhenTimerFires: 60
+            ) { model, peer, store, _ in
+                let initial = try XCTUnwrap(peer.registrations.last)
+                try await waitUntil { peer.authRefreshes.count == 1 && store.load()?.accessToken != initial.token }
+                XCTAssertEqual(peer.registrations.count, 1)
+                XCTAssertEqual(peer.authRefreshes.first?.socket, initial.socket)
+                XCTAssertNil(model.errorBanner)
             }
-            peer.send(#"{"type":"auth_required","reason":"expired"}"#, socket: initial.socket)
-
-            try await waitUntil { peer.authRefreshes.count == 1 && store.load()?.accessToken != initial.token }
-            XCTAssertEqual(peer.registrations.count, 1)
-            XCTAssertEqual(peer.authRefreshes.first?.socket, initial.socket)
-            XCTAssertTrue(model.turnActive)
-            XCTAssertEqual(
-                peer.events.filter { $0.frame.payload["action"] == .string("chat_message") }.count, 1)
         }
-    }
 
-    func testRESTAndAuthRequiredShareOneInPlaceRefreshForAnActiveTurn() async throws {
-        try await withModel(uiAuthRefreshSupported: true) { model, peer, store, clock in
-            let initial = try XCTUnwrap(peer.registrations.last)
-            model.sendChat("Keep the same active turn during a shared refresh")
-            try await waitUntil {
-                peer.events.contains { $0.frame.payload["action"] == .string("chat_message") }
+        func testAuthRequiredRenewsTheBoundSocketWithoutReplayingAnActiveTurn() async throws {
+            try await withModel(jwtLifetime: 3600, uiAuthRefreshSupported: true) { model, peer, store, _ in
+                let initial = try XCTUnwrap(peer.registrations.last)
+                model.sendChat("Continue while the server renews this session")
+                try await waitUntil {
+                    peer.events.contains { $0.frame.payload["action"] == .string("chat_message") }
+                }
+                peer.send(#"{"type":"auth_required","reason":"expired"}"#, socket: initial.socket)
+
+                try await waitUntil { peer.authRefreshes.count == 1 && store.load()?.accessToken != initial.token }
+                XCTAssertEqual(peer.registrations.count, 1)
+                XCTAssertEqual(peer.authRefreshes.first?.socket, initial.socket)
+                XCTAssertTrue(model.turnActive)
+                XCTAssertEqual(
+                    peer.events.filter { $0.frame.payload["action"] == .string("chat_message") }.count, 1)
             }
-            clock.advance(7200)
-            peer.holdRefresh()
-            let refreshRequest = peer.expectRefresh()
-            let restRead = Task { try? await model.rest.chats() }
-            await fulfillment(of: [refreshRequest], timeout: 10)
-            peer.send(#"{"type":"auth_required","reason":"expired"}"#, socket: initial.socket)
-            try await Task.sleep(nanoseconds: 20_000_000)
-            peer.releaseRefresh()
-
-            try await waitUntil { peer.authRefreshes.count == 1 && store.load()?.accessToken != initial.token }
-            _ = await restRead.value
-            XCTAssertEqual(peer.refreshCount, 1)
-            XCTAssertEqual(peer.registrations.count, 1)
-            XCTAssertEqual(peer.authRefreshes.first?.socket, initial.socket)
-            XCTAssertTrue(model.turnActive)
-            XCTAssertEqual(
-                peer.events.filter { $0.frame.payload["action"] == .string("chat_message") }.count, 1)
         }
-    }
 
-    func testUncorrelatedRefreshAcknowledgementTimesOutWithoutInstallingOrReconnecting() async throws {
-        try await withModel(jwtLifetime: 120, uiAuthRefreshSupported: true) { model, peer, store, clock in
-            model.uiAuthRefreshAcknowledgementTimeoutNanoseconds = 10_000_000
-            peer.configureAuthRefreshAck(.wrongRequest)
-            let initial = try XCTUnwrap(peer.registrations.last)
-            clock.advance(180)
-            let request = Task { try? await model.rest.chats() }
-            try await waitUntil { peer.authRefreshes.count == 1 }
-            try await waitUntil { model.surfaceFailureMessage != nil }
-            XCTAssertEqual(peer.registrations.count, 1)
-            XCTAssertEqual(store.load()?.accessToken, initial.token)
-            XCTAssertNil(model.errorBanner)
-            request.cancel()
-        }
-    }
+        func testRESTAndAuthRequiredShareOneInPlaceRefreshForAnActiveTurn() async throws {
+            try await withModel(uiAuthRefreshSupported: true) { model, peer, store, clock in
+                let initial = try XCTUnwrap(peer.registrations.last)
+                model.sendChat("Keep the same active turn during a shared refresh")
+                try await waitUntil {
+                    peer.events.contains { $0.frame.payload["action"] == .string("chat_message") }
+                }
+                clock.advance(7200)
+                peer.holdRefresh()
+                let refreshRequest = peer.expectRefresh()
+                let restRead = Task { try? await model.rest.chats() }
+                await fulfillment(of: [refreshRequest], timeout: 10)
+                peer.send(#"{"type":"auth_required","reason":"expired"}"#, socket: initial.socket)
+                try await Task.sleep(nanoseconds: 20_000_000)
+                peer.releaseRefresh()
 
-    func testChangedStableSessionClaimDoesNotInstallCredentialOrSendRefreshFrame() async throws {
-        try await withModel(jwtLifetime: 120, uiAuthRefreshSupported: true) { model, peer, store, clock in
-            let initial = try XCTUnwrap(peer.registrations.last)
-            peer.configureRefresh(status: 200, session: "different-session")
-            clock.advance(180)
-            let request = Task { try? await model.rest.chats() }
-            try await waitUntil { model.surfaceFailureMessage != nil }
-            XCTAssertTrue(peer.authRefreshes.isEmpty)
-            XCTAssertEqual(peer.registrations.count, 1)
-            XCTAssertEqual(store.load()?.accessToken, initial.token)
-            request.cancel()
-        }
-    }
-
-    func testRefreshedCredentialWithoutAStableSessionClaimIsNotInstalled() async throws {
-        try await withModel(jwtLifetime: 120, uiAuthRefreshSupported: true) { model, peer, store, clock in
-            let initial = try XCTUnwrap(peer.registrations.last)
-            peer.configureRefresh(status: 200, includeSessionClaim: false)
-            clock.advance(180)
-            let request = Task { try? await model.rest.chats() }
-            try await waitUntil { model.surfaceFailureMessage != nil }
-            XCTAssertTrue(peer.authRefreshes.isEmpty)
-            XCTAssertEqual(peer.registrations.count, 1)
-            XCTAssertEqual(store.load()?.accessToken, initial.token)
-            request.cancel()
-        }
-    }
-
-    func testRefreshRefusalClosesTheSessionWithoutReplayingTheActiveQuery() async throws {
-        try await withModel(uiAuthRefreshSupported: true) { model, peer, store, _ in
-            let initial = try XCTUnwrap(peer.registrations.last)
-            model.sendChat("Do not replay after an auth refusal")
-            try await waitUntil {
-                peer.events.contains { $0.frame.payload["action"] == .string("chat_message") }
+                try await waitUntil { peer.authRefreshes.count == 1 && store.load()?.accessToken != initial.token }
+                _ = await restRead.value
+                XCTAssertEqual(peer.refreshCount, 1)
+                XCTAssertEqual(peer.registrations.count, 1)
+                XCTAssertEqual(peer.authRefreshes.first?.socket, initial.socket)
+                XCTAssertTrue(model.turnActive)
+                XCTAssertEqual(
+                    peer.events.filter { $0.frame.payload["action"] == .string("chat_message") }.count, 1)
             }
-            peer.configureAuthRefreshAck(.refused)
-            peer.send(#"{"type":"auth_required","reason":"expired"}"#, socket: initial.socket)
-
-            try await waitUntil { !model.signedIn }
-            XCTAssertEqual(peer.registrations.count, 1)
-            XCTAssertNil(store.load())
-            XCTAssertEqual(
-                peer.events.filter { $0.frame.payload["action"] == .string("chat_message") }.count, 1)
         }
-    }
 
-    func testLogoutCancelsPendingSameSocketCredentialAcknowledgement() async throws {
-        try await withModel(jwtLifetime: 120, uiAuthRefreshSupported: true) { model, peer, store, clock in
-            peer.configureAuthRefreshAck(.omitted)
-            clock.advance(180)
-            let request = Task { _ = try? await model.rest.chats() }
-            try await waitUntil { peer.authRefreshes.count == 1 }
-            await model.signOut(revokeRemote: false)
-            _ = await request.value
-
-            XCTAssertFalse(model.signedIn)
-            XCTAssertNil(store.load())
-            XCTAssertEqual(peer.registrations.count, 1)
+        func testUncorrelatedRefreshAcknowledgementTimesOutWithoutInstallingOrReconnecting() async throws {
+            try await withModel(jwtLifetime: 120, uiAuthRefreshSupported: true) { model, peer, store, clock in
+                model.uiAuthRefreshAcknowledgementTimeoutNanoseconds = 10_000_000
+                peer.configureAuthRefreshAck(.wrongRequest)
+                let initial = try XCTUnwrap(peer.registrations.last)
+                clock.advance(180)
+                let request = Task { try? await model.rest.chats() }
+                try await waitUntil { peer.authRefreshes.count == 1 }
+                try await waitUntil { model.surfaceFailureMessage != nil }
+                XCTAssertEqual(peer.registrations.count, 1)
+                XCTAssertEqual(store.load()?.accessToken, initial.token)
+                XCTAssertNil(model.errorBanner)
+                request.cancel()
+            }
         }
-    }
 
-    func testDisconnectCancelsPendingSameSocketCredentialAcknowledgement() async throws {
-        try await withModel(jwtLifetime: 120, uiAuthRefreshSupported: true) { model, peer, store, clock in
-            peer.configureAuthRefreshAck(.omitted)
-            clock.advance(180)
-            let initial = try XCTUnwrap(peer.registrations.last)
-            let request = Task { try? await model.rest.chats() }
-            try await waitUntil { peer.authRefreshes.count == 1 }
-            peer.disconnect(socket: initial.socket)
-            try await waitUntil { model.surfaceFailureMessage != nil }
-            XCTAssertEqual(store.load()?.accessToken, initial.token)
-            XCTAssertEqual(peer.authRefreshes.count, 1)
-            request.cancel()
+        func testChangedStableSessionClaimDoesNotInstallCredentialOrSendRefreshFrame() async throws {
+            try await withModel(jwtLifetime: 120, uiAuthRefreshSupported: true) { model, peer, store, clock in
+                let initial = try XCTUnwrap(peer.registrations.last)
+                peer.configureRefresh(status: 200, session: "different-session")
+                clock.advance(180)
+                let request = Task { try? await model.rest.chats() }
+                try await waitUntil { model.surfaceFailureMessage != nil }
+                XCTAssertTrue(peer.authRefreshes.isEmpty)
+                XCTAssertEqual(peer.registrations.count, 1)
+                XCTAssertEqual(store.load()?.accessToken, initial.token)
+                request.cancel()
+            }
         }
-    }
+
+        func testRefreshedCredentialWithoutAStableSessionClaimIsNotInstalled() async throws {
+            try await withModel(jwtLifetime: 120, uiAuthRefreshSupported: true) { model, peer, store, clock in
+                let initial = try XCTUnwrap(peer.registrations.last)
+                peer.configureRefresh(status: 200, includeSessionClaim: false)
+                clock.advance(180)
+                let request = Task { try? await model.rest.chats() }
+                try await waitUntil { model.surfaceFailureMessage != nil }
+                XCTAssertTrue(peer.authRefreshes.isEmpty)
+                XCTAssertEqual(peer.registrations.count, 1)
+                XCTAssertEqual(store.load()?.accessToken, initial.token)
+                request.cancel()
+            }
+        }
+
+        func testRefreshRefusalClosesTheSessionWithoutReplayingTheActiveQuery() async throws {
+            try await withModel(uiAuthRefreshSupported: true) { model, peer, store, _ in
+                let initial = try XCTUnwrap(peer.registrations.last)
+                model.sendChat("Do not replay after an auth refusal")
+                try await waitUntil {
+                    peer.events.contains { $0.frame.payload["action"] == .string("chat_message") }
+                }
+                peer.configureAuthRefreshAck(.refused)
+                peer.send(#"{"type":"auth_required","reason":"expired"}"#, socket: initial.socket)
+
+                try await waitUntil { !model.signedIn }
+                XCTAssertEqual(peer.registrations.count, 1)
+                XCTAssertNil(store.load())
+                XCTAssertEqual(
+                    peer.events.filter { $0.frame.payload["action"] == .string("chat_message") }.count, 1)
+            }
+        }
+
+        func testLogoutCancelsPendingSameSocketCredentialAcknowledgement() async throws {
+            try await withModel(jwtLifetime: 120, uiAuthRefreshSupported: true) { model, peer, store, clock in
+                peer.configureAuthRefreshAck(.omitted)
+                clock.advance(180)
+                let request = Task { _ = try? await model.rest.chats() }
+                try await waitUntil { peer.authRefreshes.count == 1 }
+                await model.signOut(revokeRemote: false)
+                _ = await request.value
+
+                XCTAssertFalse(model.signedIn)
+                XCTAssertNil(store.load())
+                XCTAssertEqual(peer.registrations.count, 1)
+            }
+        }
+
+        func testDisconnectCancelsPendingSameSocketCredentialAcknowledgement() async throws {
+            try await withModel(jwtLifetime: 120, uiAuthRefreshSupported: true) { model, peer, store, clock in
+                peer.configureAuthRefreshAck(.omitted)
+                clock.advance(180)
+                let initial = try XCTUnwrap(peer.registrations.last)
+                let request = Task { try? await model.rest.chats() }
+                try await waitUntil { peer.authRefreshes.count == 1 }
+                peer.disconnect(socket: initial.socket)
+                try await waitUntil { model.surfaceFailureMessage != nil }
+                XCTAssertEqual(store.load()?.accessToken, initial.token)
+                XCTAssertEqual(peer.authRefreshes.count, 1)
+                request.cancel()
+            }
+        }
+    #endif
 
     func testStaleSocketIsReplacedBeforeSendingAndTheQueryArrivesOnce() async throws {
         try await withModel(liveness: LivenessPolicy(interval: 3600, timeout: 0.5, freshness: 0)) {
