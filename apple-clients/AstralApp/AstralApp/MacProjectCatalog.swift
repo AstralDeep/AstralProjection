@@ -33,7 +33,7 @@
                 let leftActivity = activityTimestamp(left.updatedAt)
                 let rightActivity = activityTimestamp(right.updatedAt)
                 switch (leftActivity, rightActivity) {
-                case let (left?, right?) where left != right:
+                case (let left?, let right?) where left != right:
                     return left > right
                 case (_?, nil):
                     return true
@@ -51,15 +51,16 @@
         }
 
         private static func updatingActivity(_ chat: ChatSummary, project: String, updatedAt: String) -> ChatSummary? {
-            ChatSummary(json: .object([
-                "id": .string(chat.id), "project_id": .string(project),
-                "title": .string(chat.title), "updated_at": .string(updatedAt),
-                "preview": .string(chat.preview),
-                "has_saved_components": .bool(chat.hasSavedComponents),
-                "icon": .string(chat.icon),
-                "time": .null,
-                "pinned": .bool(chat.pinned), "archived": .bool(chat.archived),
-            ]))
+            ChatSummary(
+                json: .object([
+                    "id": .string(chat.id), "project_id": .string(project),
+                    "title": .string(chat.title), "updated_at": .string(updatedAt),
+                    "preview": .string(chat.preview),
+                    "has_saved_components": .bool(chat.hasSavedComponents),
+                    "icon": .string(chat.icon),
+                    "time": .null,
+                    "pinned": .bool(chat.pinned), "archived": .bool(chat.archived),
+                ]))
         }
 
         func mergeRecentActivity(_ summaries: [ChatSummary]) {
@@ -250,7 +251,7 @@
                 refreshEpoch = UUID()
                 loading = false
                 let deletedChats = Set(chats[project.id]?.map(\.id) ?? [])
-                deletedChats.forEach { observedActivity.removeValue(forKey: $0) }
+                for deletedChat in deletedChats { observedActivity.removeValue(forKey: deletedChat) }
                 projects.removeAll { $0.id == project.id }
                 chats.removeValue(forKey: project.id)
                 pendingChats.removeValue(forKey: project.id)

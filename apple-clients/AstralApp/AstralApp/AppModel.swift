@@ -3953,16 +3953,6 @@ final class AppModel: NSObject {
         else { return true }
         guard let decision = payload["decision"]?.stringValue,
             ["approve", "approve_and_resume", "grant_task", "decline"].contains(decision),
-            let submissionId = frame.payload["submission_id"]?.stringValue,
-            let requestGeneration = frame.payload["request_generation"]?.stringValue,
-            payload["submission_id"] == .string(submissionId),
-            payload["request_generation"] == .string(requestGeneration),
-            let submission = localOperationSubmissions[submissionId],
-            submission.action == frame.payload["action"]?.stringValue,
-            submission.requestGeneration == requestGeneration,
-            submission.connectionGeneration == continuity.connectionGeneration,
-            submission.chatId == activeChatId,
-            frame.payload["session_id"]?.stringValue == activeChatId,
             !decidedApprovals.contains(requestId), !withdrawingApprovals.contains(requestId),
             submittedApprovals[requestId] == nil
         else { return false }
@@ -3991,6 +3981,30 @@ final class AppModel: NSObject {
             observeActivityComponents()
             return true
         #else
+            let submissionId = frame.payload["submission_id"]?.stringValue
+            let requestGeneration = frame.payload["request_generation"]?.stringValue
+            guard let submissionId, let requestGeneration,
+                payload["submission_id"] == .string(submissionId),
+                payload["request_generation"] == .string(requestGeneration),
+                let submission = localOperationSubmissions[submissionId],
+                submission.action == frame.payload["action"]?.stringValue,
+                submission.requestGeneration == requestGeneration,
+                submission.connectionGeneration == continuity.connectionGeneration,
+                submission.chatId == activeChatId,
+                frame.payload["session_id"]?.stringValue == activeChatId
+            else {
+                if let submissionId, let requestGeneration,
+                    let submission = localOperationSubmissions[submissionId],
+                    submission.action == frame.payload["action"]?.stringValue,
+                    submission.requestGeneration == requestGeneration,
+                    submission.chatId == activeChatId
+                {
+                    clearLocalOperationSubmission(submissionId: submissionId)
+                }
+                bannerIsError = true
+                errorBanner = "Reconnect and reopen this review before sending a decision."
+                return false
+            }
             guard submittedApprovals.count < 512 else { return false }
             if let origin = approvalOrigins[requestId],
                 origin.owner != downloadOwner || origin.connection != continuity.connectionGeneration
@@ -4555,7 +4569,9 @@ final class AppModel: NSObject {
     }
 
     private func operationChatId(action: String, payload: JSONValue) -> String? {
-        if ["authorize_action", "remote_op_decision"].contains(action) { return activeChatId }
+        #if os(macOS)
+            if ["authorize_action", "remote_op_decision"].contains(action) { return activeChatId }
+        #endif
         if action == "chat_message" || action == "load_chat"
             || conversationMutationActions.contains(action)
         {

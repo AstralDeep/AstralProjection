@@ -54,10 +54,12 @@
             let snapshotIsHeld = await server.chatReadIsHeld()
             XCTAssertTrue(snapshotIsHeld)
 
-            let activity = try XCTUnwrap(ChatSummary(json: .object([
-                "id": .string("active-chat"), "project_id": .string(project),
-                "updated_at": .string("200"),
-            ])))
+            let activity = try XCTUnwrap(
+                ChatSummary(
+                    json: .object([
+                        "id": .string("active-chat"), "project_id": .string(project),
+                        "updated_at": .string("200"),
+                    ])))
             catalog.mergeRecentActivity([activity])
             XCTAssertTrue(catalog.loading, "recent activity must not retire the authoritative refresh")
 

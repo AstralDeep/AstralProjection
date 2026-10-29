@@ -412,31 +412,46 @@
             let (model, suite) = try panelModel()
             defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
             let project = "12345678-1234-4234-9234-123456789abc"
-            let projects = JSONValue.object(["projects": .array([.object([
-                "project_id": .string(project), "name": .string("Ordering project"),
-                "position": .number(0), "revision": .number(1),
-                "created_at": .number(1), "updated_at": .number(1),
-            ])]), "next_cursor": .null])
+            let projects = JSONValue.object([
+                "projects": .array([
+                    .object([
+                        "project_id": .string(project), "name": .string("Ordering project"),
+                        "position": .number(0), "revision": .number(1),
+                        "created_at": .number(1), "updated_at": .number(1),
+                    ])
+                ]), "next_cursor": .null,
+            ])
             model.projects.bind(
                 scope: "owner",
                 client: RestClient(
                     serverBase: URL(string: "https://example.test")!, tokenProvider: { nil },
                     transport: { request in
                         if request.url!.path == "/api/projects" { return (200, try projects.encoded()) }
-                        return (200, try JSONValue.object([
-                            "project_id": .string(project),
-                            "chats": .array([
-                                .object(["id": .string("older"), "project_id": .string(project),
-                                         "title": .string("Older chat"), "updated_at": .number(1_700_000_000)]),
-                                .object(["id": .string("tie-b"), "project_id": .string(project),
-                                         "title": .string("Second tied chat"), "updated_at": .number(1_800_000_000_000)]),
-                                .object(["id": .string("new-active"), "project_id": .string(project),
-                                         "title": .string("New active chat"),
-                                         "updated_at": .number(1_900_000_000_000)]),
-                                .object(["id": .string("tie-a"), "project_id": .string(project),
-                                         "title": .string("First tied chat"), "updated_at": .number(1_800_000_000)]),
-                            ]), "next_cursor": .null,
-                        ]).encoded())
+                        return (
+                            200,
+                            try JSONValue.object([
+                                "project_id": .string(project),
+                                "chats": .array([
+                                    .object([
+                                        "id": .string("older"), "project_id": .string(project),
+                                        "title": .string("Older chat"), "updated_at": .number(1_700_000_000),
+                                    ]),
+                                    .object([
+                                        "id": .string("tie-b"), "project_id": .string(project),
+                                        "title": .string("Second tied chat"), "updated_at": .number(1_800_000_000_000),
+                                    ]),
+                                    .object([
+                                        "id": .string("new-active"), "project_id": .string(project),
+                                        "title": .string("New active chat"),
+                                        "updated_at": .number(1_900_000_000_000),
+                                    ]),
+                                    .object([
+                                        "id": .string("tie-a"), "project_id": .string(project),
+                                        "title": .string("First tied chat"), "updated_at": .number(1_800_000_000),
+                                    ]),
+                                ]), "next_cursor": .null,
+                            ]).encoded()
+                        )
                     }))
             model.projects.negotiate(true)
             await model.projects.refresh()

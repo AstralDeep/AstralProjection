@@ -112,5 +112,22 @@
             XCTAssertNotNil(model.errorBanner)
             XCTAssertEqual(sent().filter { $0["action"] == .string("remote_op_decision") }.count, 1)
         }
+
+        func testMissingCurrentOperationContextRefusesApprovalWithoutSpinner() throws {
+            let (model, suite) = try SurfaceFixtures.model()
+            suites.append(suite)
+            model.activeChatId = chat
+            model.canvas = [card()]
+            var attempted = 0
+            model.outboundTap = { _ in attempted += 1 }
+
+            model.decideApproval(try XCTUnwrap(model.approvalPrompts.first), allow: true)
+
+            XCTAssertTrue(model.approvalPrompts.contains { $0.requestId == request })
+            XCTAssertEqual(model.activity.last?.approval, .waiting)
+            XCTAssertNotEqual(model.statusText, "Submitting…")
+            XCTAssertNotNil(model.errorBanner)
+            XCTAssertEqual(attempted, 0)
+        }
     }
 #endif
