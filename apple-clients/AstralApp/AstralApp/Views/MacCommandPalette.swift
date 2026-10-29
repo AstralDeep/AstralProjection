@@ -239,7 +239,7 @@
                 Divider().overlay(p.border)
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: 2) {
                             list(rows)
                         }
                         .padding(8)

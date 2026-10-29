@@ -29,8 +29,11 @@
 
         static func elements(windowTitle: String) throws -> [Element] {
             let window = try window(title: windowTitle)
+            let decorations = [kAXCloseButtonAttribute, kAXMinimizeButtonAttribute, kAXZoomButtonAttribute]
+                .compactMap { attribute($0, of: window) }
             var found: [Element] = []
             func walk(_ element: AXUIElement, depth: Int) {
+                guard !decorations.contains(where: { CFEqual($0, element) }) else { return }
                 found.append(
                     Element(
                         identifier: attribute(kAXIdentifierAttribute, of: element) as? String,

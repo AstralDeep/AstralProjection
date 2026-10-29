@@ -98,6 +98,7 @@ final class WatchWorkNavigationUITests: XCTestCase {
         screenshot("Actual Watch Home List")
         app.buttons["Work records"].tap()
         let first = try frame(0, action: "chrome_open", mode: "list")
+        XCTAssertTrue(app.staticTexts["work-read-loading"].exists)
         let unavailable = app.staticTexts["This view is unavailable. Reconnect and retry."]
         try advanceClock(for: first, milliseconds: 10001, status: "rejected")
         try advanceClock(for: first, milliseconds: 9999)
@@ -136,6 +137,7 @@ final class WatchWorkNavigationUITests: XCTestCase {
     func testBackDuringPendingReadCancelsViewTaskAndRejectsLateResponse() throws {
         app.buttons["Work records"].tap()
         let pending = try frame(0, action: "chrome_open", mode: "list")
+        XCTAssertTrue(app.staticTexts["work-read-loading"].exists)
         let generation = try XCTUnwrap(pending["request_generation"] as? String)
         let waiting = peer.advanceClock(generation: generation, milliseconds: 0, emptyRegistrationProbe: true)
         waitForClock(waiting, status: "waiting")
