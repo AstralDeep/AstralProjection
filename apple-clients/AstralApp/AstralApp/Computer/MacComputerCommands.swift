@@ -231,6 +231,7 @@
     nonisolated final class MacComputerCommandJob: @unchecked Sendable {
         let id: String
         let session: String
+        let projectContext: ComputerProjectContext?
         let argv0: String
         let cwd: String
         let startedAt: Date
@@ -245,10 +246,12 @@
 
         init(
             id: String, session: String, argv0: String, cwd: String, startedAt: Date, started: Double,
-            output: MacComputerCommandOutput, process: any MacComputerCommandProcess
+            output: MacComputerCommandOutput, process: any MacComputerCommandProcess,
+            projectContext: ComputerProjectContext? = nil
         ) {
             self.id = id
             self.session = session
+            self.projectContext = projectContext
             self.argv0 = argv0
             self.cwd = cwd
             self.startedAt = startedAt
@@ -453,7 +456,8 @@
             let process = try spawner.spawn(plan, output: output)
             let job = MacComputerCommandJob(
                 id: UUID().uuidString.lowercased(), session: session, argv0: invocation.argv0, cwd: cwd,
-                startedAt: clock.date(), started: clock.now(), output: output, process: process)
+                startedAt: clock.date(), started: clock.now(), output: output, process: process,
+                projectContext: request.projectContext)
             let clock = clock
             Task { job.finish(await process.wait(), at: clock.now()) }
             guard registry.register(job, generation: generation) else {
@@ -507,6 +511,7 @@
                 }
             }
             try authorize()
+            _ = try record(request)
             let read = job.output.read(from: offset, streams: streams, maximum: maximum)
             return [
                 "job_id": .string(job.id), "state": .string(job.state), "exit_code": job.exitCode,
@@ -535,12 +540,21 @@
                 if value == SIGTERM { escalate(job) }
                 _ = await finished(job, within: 1)
             }
+            try authorize()
+            _ = try record(request)
             return ["job_id": .string(job.id), "state": .string(job.state), "exit_code": job.exitCode]
         }
 
         private func record(_ request: ComputerHostRequest) throws -> MacComputerCommandJob {
             guard let id = request.args["job_id"]?.stringValue, let job = registry.job(id) else {
                 throw ComputerHostError("not_found", "No command job with that job_id exists on this Mac.")
+            }
+            guard
+                (job.projectContext == nil && request.projectContext == nil)
+                    || (job.session == request.sessionId && job.projectContext == request.projectContext)
+            else {
+                throw ComputerHostError(
+                    "stale_project_grant", "This command belongs to another session or project grant.")
             }
             return job
         }

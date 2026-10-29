@@ -758,7 +758,7 @@
       },
       "payload": {
         "version": 1,
-        "agent": "null or {agent_id, revision_id} \u2014 one active declarative agent revision",
+        "agent": "null or {agent_id, revision_id} — one active declarative agent revision",
         "skills": "list of {skill_id, revision}, at most 20, unique",
         "notes": "list of {note_id, revision}, at most 8, unique",
         "shape": "Exactly the version-1 selection work_submit accepts; every button carries the complete resulting selection, never a delta. The all-empty shape clears the chat's selection and is never forwarded as a Work selection.",
@@ -819,7 +819,7 @@
           "button",
           "param_picker"
         ],
-        "text": "Notes appear only as category, revision and enabled state \u2014 never their value. Skills appear only as name, /command, revision and enabled state \u2014 never their instructions."
+        "text": "Notes appear only as category, revision and enabled state — never their value. Skills appear only as name, /command, revision and enabled state — never their instructions."
       },
       "legacy": "Hosts expose the picker only to clients advertising guidance_selection_v1; other clients submit Work without a selection exactly as before."
     },
@@ -3427,6 +3427,76 @@
       "interactive_scope": "Keyboard input, resize, interrupt and session close are advertised only on interactive_panel dispositions. Read-only monitors receive the complete list and output reads with platform-selection copy and never a partial command form; phone, tablet and tv render the read-only monitor through their declared ROTE fallbacks.",
       "unavailable_host": "When the host reports the terminal capability unavailable or refused, the panel renders the declared unavailable or denied state with recovery guidance and advertises no terminal controls; the omission stays server-declared and is never hidden independently in a client.",
       "watch": "Host renders only content-free state metadata and a phone or desktop handoff. Session id, target, directory, offsets and output are not sent to the watch."
+    },
+    "project_workspaces_v1": {
+      "version": 1,
+      "scope": "Owner-requested macOS-only project presentation and local folder grants; other clients preserve legacy behavior.",
+      "negotiation": "Authenticated register_ui capabilities includes project_workspaces_v1, device.project_workspaces_v1 is exactly true, and the server ROTE profile selects macos console/v2. Viewport updates retain the flag. Only the server acknowledgment selects projects-only presentation.",
+      "acknowledgment": "rote_config.device_profile.console.project_workspaces = {version:1, mode:projects_only}",
+      "clients": {
+        "macos": "projects-only sidebar, server project catalog, local device folder grants",
+        "browser": "compatible legacy history",
+        "windows": "compatible legacy history",
+        "android": "compatible legacy history",
+        "ios": "compatible legacy history",
+        "watch": "compatible legacy history"
+      },
+      "catalog": "Bearer REST /api/projects; direct owner-authorized project records, opaque cursor query items, revision-fenced rename/delete, and idempotent project/chat UUIDs. No local paths or bookmarks enter durable project records.",
+      "grant_scope": "Canonical server, protected account locator, stable device/host identity and project UUID; legacy bookmarks remain recovery-only. Sidebar selection is presentation, never request authority.",
+      "manifest": {
+        "field": "project_manifest",
+        "shape": {
+          "generation": "positive safe JSON integer",
+          "projects": [
+            {
+              "project_id": "canonical lowercase UUID (any version)",
+              "grant_revision": "positive safe JSON integer",
+              "roots": [
+                {
+                  "name": "1-128 printable characters",
+                  "path": "canonical absolute POSIX path, not /, maximum1024 Unicode scalar values"
+                }
+              ]
+            }
+          ]
+        },
+        "bounds": {
+          "projects": 64,
+          "roots_per_project": 16,
+          "total_roots": 256,
+          "encoded_bytes": 262144
+        },
+        "digest": "SHA-256 of UTF-8 JSON sorted keys, compact separators, unescaped Unicode and slashes; excludes digest itself.",
+        "ordering": "Roots retain order; root0 is primary. Full replacements are current owner/device/connection bound; equal generation is idempotent only with equal digest. Admission is all-or-nothing after owner catalog reconciliation; project-aware hosts omit legacy workspace_roots."
+      },
+      "context": {
+        "field": "project_context",
+        "shape": {
+          "chat_id": "exact existing chat identity, maximum512 Unicode scalars",
+          "project_id": "server-derived canonical UUID",
+          "grant_revision": "positive safe JSON integer or null for non-file authority",
+          "manifest_generation": "positive safe JSON integer"
+        },
+        "binding": "Fresh session identity for changed origin/project/grant; every request, review fingerprint, native ticket and command job retains and verifies immutable origin binding."
+      },
+      "updates": "Existing ui_event.computer_event event project_workspaces_changed carries host_id and project_manifest. Existing computer_host presence optionally carries project_manifest_ack {generation,digest,accepted,code?}. No re-registration on folder edits; accepted acknowledgment binds exactly current full bytes; removals revoke locally before send and persist a monotonic revision/tombstone.",
+      "consent": "Ordinary in-grant files/commands and their necessary session lifecycle use project_grant standing consent through both gates and effect checks. Missing, stale or foreign folder grants directly refuse file/command verbs. A valid text-only project uses ordinary bypass or explicit review for desktop/browser session lifecycle. Human Pause/Stop, permission, privacy, policy and exact terminal permit checks remain. Commands validate cwd but are not OS filesystem sandboxes.",
+      "approval_decisions": {
+        "frame": "chat_status",
+        "status": "approval_decision",
+        "field": "approval_decision",
+        "shape": {
+          "request_id": "canonical HITL UUID or remote proposal hex identity",
+          "decision": "approve | approve_and_resume | grant_task | decline | withdraw",
+          "state": "accepted | refused | expired | cancelled | error | uncertain",
+          "message": "bounded 1000 Unicode scalars",
+          "revision": 1
+        },
+        "binding": "Explicit decisions and authoritative computer-mode withdrawal on negotiated Mac connections emit receipts. A withdraw/cancelled receipt binds an existing owner/connection/origin-chat computer card; it is not a user decline and does not claim durable proposal expiry. Inflight decisions retain their canonical result. Owner, current connection_generation and origin chat_id bind the receipt; a bounded connection-local first-outcome cache serializes duplicates without effect replay. Standing/bypass execution emits no receipt or approval UI.",
+        "presentation": "Submitting a decision displays pending, never Approved. Only a matching server receipt settles it; stale/foreign, duplicate or contradictory later receipts cannot overwrite the first canonical outcome. Consume before ordinary status handling so acknowledgments do not alter busy state. Manual computer cards carry trusted computer_host_id for immediate exact-host removal when local bypass enables; No approval badge or notification is shown during the transition. Never-submitted reviews close locally with outcome-check guidance, including after server authority-cache loss; this does not claim cancellation of the action or durable proposal. Submitted outcomes remain pending until their canonical receipt or become uncertain on connection retirement. Sessionless lifecycle reviews retain trusted host/connection/project identity and the pending-review epoch; accepted manual permits and project standing work retain their normal effect checks. Captured card owner/connection/chat fences submission. Disconnect retires unacknowledged submissions as uncertain without replay. Uncertain outcomes never trigger automatic replay. Legacy clients do not receive this negotiated status."
+      },
+      "recovery": "A failed folder change revokes current-process authority, including refresh/reconnect/rebind, and visibly reports that it was not saved. A restart may restore the last successfully committed folders only after exact scope/bookmark/physical identity verification and durable fresh revision allocation. Failed restoration writes admit no grant; total storage failure cannot guarantee durable revocation. Explicit successful retry restores current-process access.",
+      "creation": "Every chatless entry uses the selected project or opens a chooser/create flow. Creation offers an optional native folder picker and text-only use; cancelling folder selection preserves the created text project. Pending intent, draft and current chat remain fenced to owner/server/connection/navigation until success."
     }
   },
   "frame_contracts": {
@@ -4838,7 +4908,7 @@
       "carried_on": [
         "computer_session"
       ],
-      "scope": "True while bypass permissions is on for this session's host. Only that host's own signed-in client connection switches it, with ui_event chrome_computer_bypass_set {host_id, enabled}; the server refuses it from any other socket, user, MCP or machine channel. While on, computer-use review cards on that host are approved by the server with approval_source bypass in the audit row and the tool result's _data, except privilege escalation commands, keyboard input into secure-input or terminal windows or without a known target window, terminal-app input, confirm_action, resume_session and actions aimed at the Astral app, which still ask. It clears when the owner turns it off, the host disconnects, re-registers or withdraws computer access, and on server restart. My computers shows the same state as a bypass on badge and the toggle on This computer.",
+      "scope": "Standing consent for supported computer/browser/app operations on this same authenticated host. Both confirmation gates execute or directly refuse without constructing approval cards. Exact single-use session/window/application-bound terminal permits remain required. Privilege escalation, secure-input, sign-in automation, Astral account/permission controls, human Pause/Stop and missing native authority are direct denials. Audit and results retain approval_source bypass. Host disconnect, replacement, withdrawal or bypass-off revokes it; project manifest updates preserve bypass on the same connection.",
       "introduced_by": "macOS live findings, Deep server contracts",
       "contract": "accept_actions.chrome_computer_bypass_set"
     },
@@ -4866,6 +4936,66 @@
       "scope": "When true the answering history_list also carries archived chats, each marked archived; a later owner-wide history refresh returns to the default listing.",
       "introduced_by": "macOS client production readiness, Deep server contracts",
       "contract": "accept_actions.get_history"
+    },
+    {
+      "field": "project_manifest",
+      "shape": "{generation,projects:[{project_id,grant_revision,roots:[{name,path}]}]}",
+      "carried_on": [
+        "computer_host descriptor",
+        "ui_event.computer_event (event=project_workspaces_changed)"
+      ],
+      "scope": "Negotiated owner/device/current-connection-bound complete replacement; never legacy roots.",
+      "contract": "presentation_contracts.project_workspaces_v1"
+    },
+    {
+      "field": "project_context",
+      "shape": "{chat_id,project_id,grant_revision,manifest_generation}",
+      "carried_on": [
+        "computer_session",
+        "computer_request"
+      ],
+      "scope": "Immutable server-stamped origin; null grant_revision cannot authorize files or commands.",
+      "contract": "presentation_contracts.project_workspaces_v1"
+    },
+    {
+      "field": "project_manifest_ack",
+      "shape": "{generation,digest,accepted,code?}",
+      "carried_on": [
+        "computer_host"
+      ],
+      "scope": "Targeted host acknowledgment correlated to exact generation and canonical bytes; rejected or stale acknowledgments never grant authority.",
+      "contract": "presentation_contracts.project_workspaces_v1"
+    },
+    {
+      "field": "project_id",
+      "shape": "canonical lowercase UUID",
+      "carried_on": [
+        "chat_created.payload",
+        "chat_loaded.chat",
+        "GET /api/chats",
+        "GET /api/chats/{id}",
+        "POST /api/chats"
+      ],
+      "scope": "Optional stored owner/chat membership; legacy payloads retain their existing shape.",
+      "contract": "presentation_contracts.project_workspaces_v1"
+    },
+    {
+      "field": "projects_changed",
+      "shape": "boolean",
+      "carried_on": [
+        "history_list"
+      ],
+      "scope": "Owner-only catalog invalidation; refresh all pages before reconciling local folder grants.",
+      "contract": "presentation_contracts.project_workspaces_v1"
+    },
+    {
+      "field": "approval_decision",
+      "shape": "object {request_id,decision,state,message,revision:1}",
+      "carried_on": [
+        "chat_status"
+      ],
+      "scope": "Negotiated Mac explicit decision acknowledgment only; connection_generation and chat_id bind the receipt. Never emitted for standing consent or other clients.",
+      "contract": "presentation_contracts.project_workspaces_v1"
     }
   ],
   "component_types": [

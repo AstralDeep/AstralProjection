@@ -15,6 +15,440 @@
 
     @MainActor
     final class MacWorkbenchViewTests: XCTestCase {
+        func testGuideNavigationStaysVisibleWhenTheLongArticleScrolls() async throws {
+            let (model, suite) = try panelModel()
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            let components = MacGuideSurfaceTests.components(longArticle: true)
+            model.screen = .surface
+            model.pendingSurfaceKey = "guide"
+            model.pendingSurface = .init(surfaceKey: "guide", title: "User guide", components: components)
+            let (view, window) = panel(
+                GuideTestHost().frame(width: 520, height: 320), model: model, width: 520)
+            defer { window.close() }
+            try await settle()
+            let first = try recognizedText(view)
+            XCTAssertTrue(first.contains("Quick reference"), first)
+            XCTAssertFalse(first.contains("End of guide article"), first)
+            func scrollViews(_ node: NSView) -> [NSScrollView] {
+                (node as? NSScrollView).map { [$0] } ?? node.subviews.flatMap(scrollViews)
+            }
+            let scroll = try XCTUnwrap(scrollViews(view).first)
+            let article = try XCTUnwrap(scroll.documentView)
+            scroll.contentView.scroll(
+                to: NSPoint(x: 0, y: max(0, article.bounds.height - scroll.contentView.bounds.height)))
+            scroll.reflectScrolledClipView(scroll.contentView)
+            try await settle()
+            let last = try recognizedText(view)
+            XCTAssertTrue(last.contains("End of guide article"), last)
+            XCTAssertTrue(last.contains("Quick reference"), last)
+            model.surfaceFailureMessage = "The guide request failed. Please retry."
+            try await settle()
+            let failed = try recognizedText(view)
+            XCTAssertTrue(failed.contains("guide request failed"), failed)
+            XCTAssertTrue(failed.contains("Quick reference"), failed)
+            model.surfaceFailureMessage = nil
+            model.pendingSurface = .init(
+                surfaceKey: "guide", title: "User guide",
+                components: MacGuideSurfaceTests.components(selected: "second", longArticle: true))
+            try await settle()
+            let changed = try recognizedText(view)
+            XCTAssertTrue(changed.contains("Guide article"), changed)
+            XCTAssertTrue(changed.contains("Everyday actions"), changed)
+            XCTAssertFalse(changed.contains("End of guide article"), changed)
+        }
+
+        func testEmptyProjectSidebarExplainsHowToStartWithoutGlobalChatButton() async throws {
+            let (model, suite) = try panelModel()
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            let (_, window) = try mountWorkbench(model, width: 1440, activity: false)
+            defer { window.close() }
+            model.projects.bind(
+                scope: "owner",
+                client: RestClient(
+                    serverBase: URL(string: "https://example.test")!, tokenProvider: { nil },
+                    transport: { _ in (200, Data(#"{"projects":[],"next_cursor":null}"#.utf8)) }))
+            model.projects.negotiate(true)
+            await model.projects.refresh()
+            window.makeKeyAndOrderFront(nil)
+            try await settle()
+            let content = try XCTUnwrap(window.contentView)
+            let sidebarWidth = try XCTUnwrap(model.consolePresentation).sidebarWidth
+            let text = try recognizedText(
+                content, rect: NSRect(x: 0, y: 0, width: sidebarWidth, height: content.bounds.height))
+            XCTAssertTrue(text.contains("No projects yet"), text)
+            XCTAssertTrue(text.contains("Create a project to start a chat"), text)
+            XCTAssertTrue(text.contains("Projects"), text)
+            XCTAssertFalse(text.localizedCaseInsensitiveContains("New Chat"), text)
+        }
+
+        func testSidebarCreationUsesTheProjectSheetAndReconnectKeepsProjectControlsUnavailable() async throws {
+            XCTAssertNotNil(ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"])
+            let (model, suite) = try panelModel()
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            let project = "12345678-1234-4234-9234-123456789abc"
+            let page =
+                #"{"projects":[{"project_id":"12345678-1234-4234-9234-123456789abc","name":"Retained project","position":0,"revision":1,"created_at":1,"updated_at":1}],"next_cursor":null}"#
+            let (_, window) = try mountWorkbench(model, width: 1440, activity: false)
+            defer { window.close() }
+            model.projects.bind(
+                scope: "owner",
+                client: RestClient(
+                    serverBase: URL(string: "https://example.test")!, tokenProvider: { nil },
+                    transport: { request in
+                        (
+                            200,
+                            Data(
+                                (request.url!.path == "/api/projects"
+                                    ? page
+                                    : #"{"project_id":"12345678-1234-4234-9234-123456789abc","chats":[],"next_cursor":null}"#)
+                                    .utf8
+                            )
+                        )
+                    }))
+            model.projects.negotiate(true)
+            await model.projects.refresh()
+            model.selectProject(project)
+            model.composerDraft = "preserved draft"
+            XCTAssertNil(model.projects.errorMessage)
+            model.history = [
+                try XCTUnwrap(
+                    ChatSummary(json: .object(["id": .string("legacy"), "title": .string("Legacy fallback row")])))
+            ]
+            let content = try XCTUnwrap(window.contentView)
+            window.makeKeyAndOrderFront(nil)
+            content.layoutSubtreeIfNeeded()
+            try await settle()
+            XCTAssertEqual(model.consolePresentation?.navigationMode, .sidebar)
+            XCTAssertTrue(try recognizedText(content).contains("Retained project"))
+            model.presentProjectCreation()
+            try await settle()
+            XCTAssertTrue(model.projectChooserPresented)
+            let sheet = try XCTUnwrap(window.attachedSheet)
+            let sheetView = try XCTUnwrap(sheet.contentView)
+            XCTAssertTrue(try recognizedText(sheetView).contains("Choose a project"))
+            XCTAssertEqual(model.projects.selectedId, project)
+            XCTAssertEqual(model.composerDraft, "preserved draft")
+            model.cancelProjectChoice()
+            try await settle()
+            XCTAssertNil(window.attachedSheet)
+            await model.handle(.disconnected(reason: "reconnect"))
+            try await settle()
+            let visible = try recognizedText(content)
+            XCTAssertTrue(visible.contains("Retained project"))
+            XCTAssertFalse(visible.contains("Legacy fallback row"))
+            model.presentProjectCreation()
+            try await settle()
+            XCTAssertFalse(model.projectChooserPresented)
+            XCTAssertNil(window.attachedSheet)
+            XCTAssertFalse(model.projects.enabled)
+        }
+
+        func testUnavailableFoldersRemainVisibleOnCollapsedProjectAndRecoveryPreservesChats() async throws {
+            XCTAssertNotNil(ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"])
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                .resolvingSymlinksInPath()
+            let removed = root.appendingPathComponent("missing-workspace")
+            let replacement = root.appendingPathComponent("replacement-workspace")
+            for url in [removed, replacement] {
+                try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            }
+            defer { try? FileManager.default.removeItem(at: root) }
+            let io = MacComputerTestWorkspaceGrants()
+            var bytes: [String: Data] = [:]
+            let grants = MacProjectGrants(
+                grants: io.port, persistence: .init(read: { bytes[$0] }, write: { bytes[$0] = $1 }))
+            let hostSuite = "FolderRecoveryHost." + UUID().uuidString
+            let hostDefaults = try XCTUnwrap(UserDefaults(suiteName: hostSuite))
+            defer { hostDefaults.removePersistentDomain(forName: hostSuite) }
+            let host = MacComputerHost(available: false, defaults: hostDefaults, projectGrants: grants)
+            let (model, suite) = try panelModel(host: host)
+            defer {
+                host.signedOut()
+                UserDefaults.standard.removePersistentDomain(forName: suite)
+            }
+            let affected = "12345678-1234-4234-9234-123456789abc"
+            let selected = "87654321-4321-4321-8321-cba987654321"
+            host.beginWorkspaceNegotiation(server: URL(string: "https://example.test")!, account: "owner")
+            host.workspaceNegotiated(projects: true)
+            model.projects.bind(
+                scope: "owner",
+                client: RestClient(
+                    serverBase: URL(string: "https://example.test")!, tokenProvider: { nil },
+                    transport: { request in
+                        if request.url!.path == "/api/projects" {
+                            return (
+                                200,
+                                try JSONValue.object([
+                                    "projects": .array(
+                                        [affected, selected].enumerated().map { index, id in
+                                            .object([
+                                                "project_id": .string(id),
+                                                "name": .string(index == 0 ? "Saved project" : "Current project"),
+                                                "position": .number(Double(index)), "revision": .number(1),
+                                                "created_at": .number(1), "updated_at": .number(1),
+                                            ])
+                                        }), "next_cursor": .null,
+                                ]).encoded()
+                            )
+                        }
+                        let id = request.url!.path.contains(affected) ? affected : selected
+                        return (
+                            200,
+                            try JSONValue.object([
+                                "project_id": .string(id), "next_cursor": .null,
+                                "chats": .array([
+                                    .object([
+                                        "id": .string(id + "-chat"), "project_id": .string(id),
+                                        "title": .string(
+                                            id == affected ? "Saved hidden conversation" : "Current conversation"),
+                                    ])
+                                ]),
+                            ]).encoded()
+                        )
+                    }))
+            model.projects.negotiate(true)
+            await model.projects.refresh()
+            XCTAssertNil(model.projects.errorMessage)
+            io.selection = [removed]
+            host.updateProjectFolders { try grants.choose(project: affected) }
+            try FileManager.default.removeItem(at: removed)
+            host.refreshProjectFolders()
+            model.projects.select(selected)
+            model.activeChatId = selected + "-chat"
+            model.composerDraft = "Keep my draft"
+            var sent: [String] = []
+            model.outboundTap = { sent.append($0) }
+            let (view, window) = panel(
+                MacProjectSidebar(query: "").background(model.themeStore.palette.bg), model: model, width: 360)
+            defer { window.close() }
+            try await settle()
+            XCTAssertLessThan(view.fittingSize.height, 340)
+            window.setContentSize(NSSize(width: 360, height: view.fittingSize.height))
+            view.layoutSubtreeIfNeeded()
+            let warning = try recognizedText(view)
+            XCTAssertTrue(warning.contains("Saved project"), warning)
+            XCTAssertTrue(warning.contains("chats are saved"), warning)
+            XCTAssertTrue(warning.contains("Choose folders"), warning)
+            XCTAssertTrue(warning.contains("missing-workspace"), warning)
+            XCTAssertFalse(warning.contains("Saved hidden conversation"))
+            try attach(view, name: "Collapsed project folder recovery")
+            io.selection = nil
+            host.updateProjectFolders { try grants.choose(project: affected) }
+            XCTAssertNotNil(grants.unavailableProjects[affected])
+            io.selection = [replacement]
+            host.updateProjectFolders { try grants.choose(project: affected) }
+            try await settle()
+            XCTAssertFalse(try recognizedText(view).contains("Choose folders"))
+            XCTAssertTrue(grants.unavailableProjects.isEmpty)
+            XCTAssertEqual(model.projects.projects.count, 2)
+            XCTAssertEqual(model.projects.chats[affected]?.first?.displayTitle, "Saved hidden conversation")
+            XCTAssertEqual(model.projects.selectedId, selected)
+            XCTAssertEqual(model.activeChatId, selected + "-chat")
+            XCTAssertEqual(model.composerDraft, "Keep my draft")
+            XCTAssertTrue(sent.isEmpty)
+        }
+
+        func testProjectTreeKeepsRowsCompactAndSearchDoesNotNavigate() async throws {
+            XCTAssertNotNil(ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"])
+            let io = MacComputerTestWorkspaceGrants()
+            var stored: [String: Data] = [:]
+            let grants = MacProjectGrants(
+                grants: io.port, persistence: .init(read: { stored[$0] }, write: { stored[$0] = $1 }))
+            let hostSuite = "ProjectTreeHost." + UUID().uuidString
+            let hostDefaults = try XCTUnwrap(UserDefaults(suiteName: hostSuite))
+            let computer = MacComputerHost(available: false, defaults: hostDefaults, projectGrants: grants)
+            let (model, suite) = try panelModel(host: computer)
+            defer {
+                computer.signedOut()
+                UserDefaults.standard.removePersistentDomain(forName: suite)
+                hostDefaults.removePersistentDomain(forName: hostSuite)
+            }
+            let first = "12345678-1234-4234-9234-123456789abc"
+            let second = "87654321-4321-4321-8321-cba987654321"
+            let projects: JSONValue = .object([
+                "projects": .array(
+                    [first, second].enumerated().map { index, id in
+                        .object([
+                            "project_id": .string(id), "name": .string(index == 0 ? "Project Alpha" : "Project Beta"),
+                            "position": .number(Double(index)), "revision": .number(1), "created_at": .number(1),
+                            "updated_at": .number(1),
+                        ])
+                    }), "next_cursor": .null,
+            ])
+            let titles = [
+                "**Step 1: Confirm working", "A long conversation title that must stay on one compact row",
+                "Read back saved poem",
+            ]
+            model.projects.bind(
+                scope: "owner",
+                client: RestClient(
+                    serverBase: URL(string: "https://example.test")!, tokenProvider: { nil },
+                    transport: { request in
+                        if request.url!.path == "/api/projects" { return (200, try projects.encoded()) }
+                        let id = request.url!.path.contains(first) ? first : second
+                        let values = id == first ? titles : ["Needle conversation"]
+                        return (
+                            200,
+                            try JSONValue.object([
+                                "project_id": .string(id),
+                                "chats": .array(
+                                    values.enumerated().map { index, title in
+                                        .object([
+                                            "id": .string(id + "-\(index)"), "project_id": .string(id),
+                                            "title": .string(title),
+                                        ])
+                                    }), "next_cursor": .null,
+                            ]).encoded()
+                        )
+                    }))
+            model.projects.negotiate(true)
+            await model.projects.refresh()
+            XCTAssertNil(model.projects.errorMessage)
+            model.projects.select(first)
+            model.activeChatId = first + "-0"
+            model.composerDraft = "Keep this draft"
+            var sent: [String] = []
+            model.outboundTap = { sent.append($0) }
+            let (view, window) = panel(
+                MacProjectSidebar(query: "").background(model.themeStore.palette.bg), model: model, width: 300)
+            defer { window.close() }
+            try await settle()
+            XCTAssertLessThan(view.fittingSize.height, 215)
+            let normal = try recognizedText(view)
+            XCTAssertTrue(normal.contains("Project Alpha") && normal.contains("Project Beta"), normal)
+            XCTAssertTrue(normal.contains("Read back saved poem"))
+            XCTAssertFalse(normal.contains("Needle conversation"))
+            XCTAssertEqual(model.projects.chats[first]?.first?.displayTitle, titles[0])
+            try attach(view, name: "Compact project tree")
+            view.rootView = AnyView(
+                MacProjectSidebar(query: "needle").background(model.themeStore.palette.bg)
+                    .environment(model).environment(model.themeStore))
+            try await settle()
+            let filtered = try recognizedText(view)
+            XCTAssertTrue(filtered.contains("Needle conversation"))
+            XCTAssertFalse(filtered.contains("Read back saved poem"))
+            try attach(view, name: "Temporary project search expansion")
+            view.rootView = AnyView(
+                MacProjectSidebar(query: "").background(model.themeStore.palette.bg)
+                    .environment(model).environment(model.themeStore))
+            try await settle()
+            XCTAssertFalse(try recognizedText(view).contains("Needle conversation"))
+            XCTAssertEqual(model.projects.selectedId, first)
+            XCTAssertEqual(model.activeChatId, first + "-0")
+            XCTAssertEqual(model.composerDraft, "Keep this draft")
+            XCTAssertTrue(sent.isEmpty)
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                .resolvingSymlinksInPath()
+            let folders = [root.appendingPathComponent("primary-root"), root.appendingPathComponent("secondary-root")]
+            for folder in folders {
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            }
+            defer { try? FileManager.default.removeItem(at: root) }
+            computer.beginWorkspaceNegotiation(server: URL(string: "https://example.test")!, account: "owner")
+            computer.workspaceNegotiated(projects: true)
+            await model.projects.refresh()
+            XCTAssertNil(model.projects.errorMessage)
+            io.selection = folders
+            computer.updateProjectFolders { try grants.choose(project: first) }
+            XCTAssertEqual(grants.roots(project: first), folders.map(\.path))
+            let graphite: [String: JSONValue] = [
+                "bg": .string("#121214"), "surface": .string("#1b1b1f"), "surface2": .string("#232328"),
+                "border": .string("#303033"), "primary": .string("#7c3aed"), "secondary": .string("#6e6e78"),
+                "accent": .string("#a78bfa"), "text": .string("#ececef"), "muted": .string("#93939b"),
+                "success": .string("#5ec28f"), "warning": .string("#d4a94a"), "error": .string("#e17272"),
+                "info": .string("#9a8cf2"), "onError": .string("#121214"), "fieldBorder": .string("#6e6e75"),
+            ]
+            for preset in ["graphite", "daylight", "custom"] {
+                if preset == "daylight" {
+                    model.themeStore.apply(preset: preset)
+                } else {
+                    let colors =
+                        preset == "graphite"
+                        ? graphite
+                        : graphite.merging([
+                            "bg": .string("#181818"), "surface": .string("#232323"), "surface2": .string("#2d2d2d"),
+                            "primary": .string("#7849d1"), "accent": .string("#a67df2"), "text": .string("#ffffff"),
+                            "muted": .string("#9f9f9f"),
+                        ]) { _, value in value }
+                    model.themeStore.apply(spec: .object(["colors": .object(colors)]))
+                }
+                for width in [260, 360] {
+                    view.rootView = AnyView(
+                        MacProjectSidebar(query: "")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .background(model.themeStore.palette.bg).environment(model).environment(model.themeStore)
+                            .preferredColorScheme(model.themeStore.colorScheme))
+                    window.setContentSize(NSSize(width: width, height: 340))
+                    try await settle()
+                    let text = try recognizedText(view)
+                    XCTAssertTrue(text.contains("Project Alpha") && text.contains("Project Beta"), text)
+                    XCTAssertTrue(text.contains("Primary") && text.contains("primary-root"), text)
+                    XCTAssertTrue(text.contains("secondary-root"), text)
+                    XCTAssertTrue(text.contains("Read back saved poem"), text)
+                    XCTAssertFalse(text.contains("Needle conversation"), text)
+                    try attach(view, name: "Project tree \(preset) \(width)")
+                }
+            }
+            model.themeStore.apply(spec: .object(["colors": .object(graphite)]))
+            for width in [1024, 1440] {
+                let (workbench, workbenchWindow) = try mountWorkbench(model, width: width, activity: false)
+                model.projects.negotiate(true)
+                model.consoleDrawerOpen = true
+                try await settle()
+                XCTAssertTrue(model.projects.enabled)
+                XCTAssertEqual(model.projects.chats[first]?.first?.displayTitle, titles[0])
+                try attach(workbench, name: "Project workbench graphite \(width)")
+                workbenchWindow.close()
+            }
+            XCTAssertEqual(model.projects.selectedId, first)
+            XCTAssertEqual(model.activeChatId, first + "-0")
+            XCTAssertEqual(model.composerDraft, "Keep this draft")
+            let actions = sent.compactMap { (try? JSONValue.parse(Data($0.utf8)))?["action"]?.stringValue }
+            XCTAssertEqual(actions.count, sent.count)
+            XCTAssertTrue(actions.allSatisfy { ["get_history", "update_device"].contains($0) }, "\(actions)")
+        }
+
+        func testSurfaceAccessibilityRejectsMissingOwnedWindow() {
+            XCTAssertThrowsError(
+                try SurfaceAccessibility.elements(windowTitle: "Absent surface \(UUID().uuidString)")
+            ) { error in
+                XCTAssertEqual(error as? SurfaceAccessibility.Failure, .missingWindow)
+            }
+        }
+
+        func testSurfaceAccessibilityRejectsAmbiguousOwnedWindows() async throws {
+            let (model, suite) = try SurfaceFixtures.model()
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            let first = SurfaceMount(Text("First sentinel"), model: model, size: CGSize(width: 240, height: 120))
+            let second = SurfaceMount(Text("Second sentinel"), model: model, size: CGSize(width: 240, height: 120))
+            defer {
+                first.close()
+                second.close()
+            }
+            second.window.title = first.window.title
+            try await first.settle()
+            try await second.settle()
+            let application = AXUIElementCreateApplication(getpid())
+            var rawWindows: CFTypeRef?
+            XCTAssertEqual(
+                AXUIElementCopyAttributeValue(application, kAXWindowsAttribute as CFString, &rawWindows), .success)
+            let windows = try XCTUnwrap(rawWindows as? [AXUIElement])
+            let duplicates = windows.filter { window in
+                var title: CFTypeRef?
+                return AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &title) == .success
+                    && title as? String == first.window.title
+            }
+            XCTAssertEqual(duplicates.count, 2)
+            for window in duplicates {
+                var pid: pid_t = 0
+                XCTAssertEqual(AXUIElementGetPid(window, &pid), .success)
+                XCTAssertEqual(pid, getpid())
+            }
+            XCTAssertThrowsError(try SurfaceAccessibility.elements(windowTitle: first.window.title)) { error in
+                XCTAssertEqual(error as? SurfaceAccessibility.Failure, .ambiguousWindow)
+            }
+        }
+
         func testSlashInAnEmptyComposerOpensThePaletteAndRunsTheChosenAction() async throws {
             let (model, suite) = try panelModel()
             defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
@@ -176,7 +610,6 @@
         }
 
         func testAgentDirectoryRowsExposeNamesStatusDescriptionAndOrder() async throws {
-            try SurfaceAccessibility.requireTrust()
             let (model, suite) = try SurfaceFixtures.model(menu: Self.twoAgentMenu())
             defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
             let mount = SurfaceMount(
@@ -184,7 +617,7 @@
                 size: CGSize(width: 360, height: 360))
             defer { mount.close() }
             try await mount.settle()
-            let tree = mount.accessibility
+            let tree = try mount.accessibility
             let dice = try XCTUnwrap(tree.first { $0.identifier == "workbench-agent-dice" })
             XCTAssertEqual(dice.label, "Dice Roller")
             XCTAssertEqual(dice.value, "Available")
@@ -931,12 +1364,12 @@
             return result
         }
 
-        private func panelModel() throws -> (AppModel, String) {
+        private func panelModel(host: MacComputerHost? = nil) throws -> (AppModel, String) {
             let suite = "MacWorkbenchViewTests.\(UUID().uuidString)"
             let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
             let model = AppModel(
                 conversationResumeStore: ConversationResumeStore(defaults: defaults),
-                tokenStore: InMemoryTokenStore(), defaults: defaults)
+                tokenStore: InMemoryTokenStore(), defaults: defaults, computerHost: host)
             model.signedIn = true
             model.connected = true
             model.bindConversationAccount(
@@ -964,9 +1397,10 @@
             return (view, window)
         }
 
-        private func recognizedText(_ view: NSView) throws -> String {
-            let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
-            view.cacheDisplay(in: view.bounds, to: bitmap)
+        private func recognizedText(_ view: NSView, rect: NSRect? = nil) throws -> String {
+            let bounds = rect ?? view.bounds
+            let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: bounds))
+            view.cacheDisplay(in: bounds, to: bitmap)
             let image = try XCTUnwrap(bitmap.cgImage)
             let request = VNRecognizeTextRequest()
             request.recognitionLevel = .accurate
@@ -1016,6 +1450,17 @@
                 try await Task.sleep(for: .milliseconds(50))
             }
             throw NSError(domain: "MacWorkbenchViewTests", code: 1)
+        }
+    }
+
+    private struct GuideTestHost: View {
+        @Environment(AppModel.self) var model
+        var body: some View {
+            if let components = model.pendingSurface?.components,
+                let document = MacGuideDocument(components: components)
+            {
+                MacGuideSurfaceView(document: document)
+            }
         }
     }
 

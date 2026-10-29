@@ -82,9 +82,10 @@
                     "s1", chat: chat, status: "completed", result: #"{"_data":{"status":"confirmation_required"}}"#))
             XCTAssertEqual(model.activity.first?.approval, .waiting)
             XCTAssertFalse(model.canCancelTurn)
+            model.canvas = [ActivityFrames.approvalCard("hitl-1")]
             model.emit(
                 "authorize_action", payload: ["hitl_request_id": .string("hitl-1"), "decision": .string("approve")])
-            XCTAssertEqual(model.activity.first?.approval, .approved)
+            XCTAssertEqual(model.activity.first?.approval, .uncertain)
             XCTAssertTrue(model.canCancelTurn)
             XCTAssertTrue(model.cancelCurrentTurn())
             XCTAssertEqual(cancels(sent()).count, 1)

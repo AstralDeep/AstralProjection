@@ -9,18 +9,23 @@ public struct ComputerHostTicket: Sendable, Equatable {
     public let digest: String
     public let epoch: UUID
     public let expiresAt: Double
+    public let projectContext: ComputerProjectContext?
 }
 
 public struct ComputerHostFence: Sendable {
     public private(set) var sessionId: String?
     public private(set) var active = false
+    public private(set) var projectContext: ComputerProjectContext?
     private var epoch = UUID()
     private var seen: [String: String] = [:]
     private var pending: Set<String> = []
     private var retired: Set<String> = []
     private var exhausted = false
     public init() {}
-    public mutating func begin(sessionId: String) throws {
+    public mutating func begin(sessionId: String, projectContext: ComputerProjectContext? = nil) throws {
+        if self.sessionId == sessionId, self.projectContext != projectContext {
+            throw ComputerHostError("no_session", "Changed project authority requires a fresh session.")
+        }
         guard computerUUID(sessionId), !retired.contains(sessionId), !exhausted else {
             throw ComputerHostError("no_session", "This session is retired. Start a new session.")
         }
@@ -30,6 +35,7 @@ public struct ComputerHostFence: Sendable {
                 throw ComputerHostError("no_session", "Restart the application before starting another session.")
             }
             self.sessionId = sessionId
+            self.projectContext = projectContext
             seen = [:]
         }
         active = true
@@ -49,12 +55,13 @@ public struct ComputerHostFence: Sendable {
         if let sessionId { retired.insert(sessionId) }
         if retired.count >= 128 { exhausted = true }
         sessionId = nil
+        projectContext = nil
         active = false
         epoch = UUID()
         pending = []
     }
     public mutating func admit(_ request: ComputerHostRequest, now: Double) throws -> ComputerHostTicket {
-        guard active, request.sessionId == sessionId else {
+        guard active, request.sessionId == sessionId, request.projectContext == projectContext else {
             throw ComputerHostError(active ? "no_session" : "paused", "No active matching computer session.")
         }
         guard now.isFinite, seen[request.id] == nil else {
@@ -67,11 +74,12 @@ public struct ComputerHostFence: Sendable {
         pending.insert(request.id)
         return ComputerHostTicket(
             requestId: request.id, sessionId: request.sessionId, digest: request.digest, epoch: epoch,
-            expiresAt: now + request.deadline)
+            expiresAt: now + request.deadline, projectContext: projectContext)
     }
     public func permits(_ ticket: ComputerHostTicket, now: Double) -> Bool {
         active && ticket.epoch == epoch && ticket.sessionId == sessionId && seen[ticket.requestId] == ticket.digest
-            && pending.contains(ticket.requestId) && now.isFinite && now < ticket.expiresAt
+            && ticket.projectContext == projectContext && pending.contains(ticket.requestId) && now.isFinite
+            && now < ticket.expiresAt
     }
     public mutating func complete(_ ticket: ComputerHostTicket) { pending.remove(ticket.requestId) }
 }

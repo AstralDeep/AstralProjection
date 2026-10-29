@@ -374,7 +374,6 @@
         }
 
         func testPaletteExposesNamesStateAndSelectionToAccessibility() async throws {
-            try SurfaceAccessibility.requireTrust()
             let model = try model(menu: try menu(handoff: true))
             let mount = SurfaceMount(
                 MacWorkbenchCommandPalette(
@@ -383,7 +382,7 @@
                 model: model, size: CGSize(width: 560, height: 460))
             defer { mount.close() }
             try await mount.settle()
-            let tree = mount.accessibility
+            let tree = try mount.accessibility
             XCTAssertEqual(tree.first { $0.identifier == "workbench-command-search" }?.label, "Search commands")
             XCTAssertEqual(tree.first { $0.identifier == "workbench-command-close" }?.label, "Close")
             let first = try XCTUnwrap(tree.first { $0.identifier == "workbench-command-app/new-chat" })

@@ -399,7 +399,7 @@ final class ConsoleInteractionTests: XCTestCase {
         XCTAssertEqual(sent.count, 1)
     }
 
-    func testActivityRowsFollowToolStepsApprovalDecisionsAndTheApprovedRedispatch() throws {
+    func testActivityRowsFollowToolStepsDecisionsAndServerRedispatch() throws {
         let model = try model()
         var sent: [JSONValue] = []
         model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
@@ -427,7 +427,12 @@ final class ConsoleInteractionTests: XCTestCase {
         model.sendEvent(
             "authorize_action", .object(["hitl_request_id": .string("r1"), "decision": .string("grant_task")]))
         XCTAssertEqual(sent.last?["action"], .string("authorize_action"))
-        XCTAssertEqual(model.activity.first?.approval, .granted)
+        #if os(macOS)
+            XCTAssertEqual(model.activity.first?.approval, .uncertain)
+            XCTAssertTrue(model.canCancelTurn)
+        #else
+            XCTAssertEqual(model.activity.first?.approval, .granted)
+        #endif
         model.handleFrame(ActivityFrames.step("s2", status: "in_progress", arguments: arguments))
         XCTAssertEqual(model.activity.count, 1)
         XCTAssertEqual(model.activity.first?.state, .running)
@@ -438,7 +443,11 @@ final class ConsoleInteractionTests: XCTestCase {
         XCTAssertEqual(row.state, .completed)
         XCTAssertEqual(row.result, "Clicked")
         XCTAssertEqual(row.accessibilityLabel, "click, at 10, 20")
-        XCTAssertEqual(row.accessibilityValue, "Allowed for this task, Clicked")
+        #if os(macOS)
+            XCTAssertEqual(row.accessibilityValue, "Outcome uncertain, Clicked")
+        #else
+            XCTAssertEqual(row.accessibilityValue, "Allowed for this task, Clicked")
+        #endif
         model.handleFrame(
             ActivityFrames.step(
                 "s3", name: "run_command", status: "in_progress",
@@ -477,8 +486,16 @@ final class ConsoleInteractionTests: XCTestCase {
         XCTAssertEqual(row.approval, .waiting)
         model.sendEvent(
             "authorize_action", .object(["hitl_request_id": .string("r9"), "decision": .string("decline")]))
-        XCTAssertEqual(model.activity.first?.approval, .denied)
-        XCTAssertEqual(model.activity.first?.state, .cancelled)
+        #if os(macOS)
+            XCTAssertEqual(model.activity.first?.approval, .uncertain)
+            XCTAssertTrue(model.canCancelTurn)
+            model.handleFrame(ActivityFrames.status("done"))
+            XCTAssertEqual(model.activity.first?.state, .completed)
+            XCTAssertFalse(model.canCancelTurn)
+        #else
+            XCTAssertEqual(model.activity.first?.approval, .denied)
+            XCTAssertEqual(model.activity.first?.state, .cancelled)
+        #endif
         model.canvas = [ActivityFrames.approvalCard("r9")]
         XCTAssertEqual(model.activity.count, 1)
         model.handleFrame(ActivityFrames.step("other", chat: "c2", status: "in_progress", arguments: "{}"))
@@ -619,7 +636,8 @@ final class ConsoleInteractionTests: XCTestCase {
             model.sendEvent(
                 "authorize_action", .object(["hitl_request_id": .string("r1"), "decision": .string("approve")]))
             XCTAssertFalse(fixture.host.awaitingApproval)
-            XCTAssertEqual(model.activity.first?.approval, .approved)
+            XCTAssertEqual(model.activity.first?.approval, .uncertain)
+            XCTAssertTrue(model.canCancelTurn)
             model.canvas = [ActivityFrames.approvalCard("r2")]
             XCTAssertTrue(fixture.host.awaitingApproval)
             model.canvas = []
