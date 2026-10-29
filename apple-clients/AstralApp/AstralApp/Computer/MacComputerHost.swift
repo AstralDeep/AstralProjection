@@ -114,8 +114,8 @@
         @ObservationIgnored private let permissionRequester: @MainActor (MacComputerPermission) -> Bool
         @ObservationIgnored private let settingsOpener: @MainActor (URL) -> Bool
         @ObservationIgnored private let desktopProbe: @Sendable () -> Bool
-        @ObservationIgnored private let desktopRearm: @MainActor () -> Bool
-        @ObservationIgnored private let localResume: @MainActor () -> Bool
+        @ObservationIgnored private var desktopRearm: @MainActor () -> Bool = { false }
+        @ObservationIgnored private var localResume: @MainActor () -> Bool = { false }
         @ObservationIgnored private let system: any MacComputerSystemIO
         @ObservationIgnored private let panelPresenter: @MainActor (NSPanel) -> Void
         @ObservationIgnored private let localInput: MacComputerLocalInput?
@@ -151,6 +151,8 @@
             settingsOpener: (@MainActor (URL) -> Bool)? = nil,
             desktopProbe: @escaping @Sendable () -> Bool = MacComputerDesktopProbe.usable,
             desktopRearm: (@MainActor () -> Bool)? = nil,
+            localDesktopRearmProbe: (@MainActor () -> Bool)? = nil,
+            localInputProof: (@MainActor () -> Bool)? = nil,
             system: any MacComputerSystemIO = MacComputerLiveSystem.shared,
             panelPresenter: (@MainActor (NSPanel) -> Void)? = nil,
             commands: MacComputerCommands? = nil,
@@ -174,15 +176,6 @@
             self.desktopProbe = desktopProbe
             let localInput = self.available && desktopRearm == nil ? MacComputerLocalInput(marker: marker) : nil
             self.localInput = localInput
-            self.desktopRearm =
-                desktopRearm ?? {
-                    localInput?.consume(current: NSApp.currentEvent?.cgEvent) == true
-                        && MacComputerDesktopProbe.localRearm()
-                }
-            self.localResume =
-                desktopRearm ?? {
-                    localInput?.consume(current: NSApp.currentEvent?.cgEvent) == true
-                }
             self.driver = driver ?? MacComputerDriver(marker: marker, system: system)
             if let stored = defaults.string(forKey: "computer.host.id"),
                 UUID(uuidString: stored)?.uuidString.lowercased() == stored
@@ -193,6 +186,23 @@
                 defaults.set(fresh, forKey: "computer.host.id")
                 hostId = fresh
             }
+            let localDesktopRearmProbe = localDesktopRearmProbe ?? MacComputerDesktopProbe.localRearm
+            let localInputProof = localInputProof ?? {
+                localInput?.consume(current: NSApp.currentEvent?.cgEvent) == true
+            }
+            let automatedRearmAllowed: @MainActor () -> Bool = { [weak self] in
+                defaults.bool(forKey: "computer.allowAutomatedRearm") && self?.consentEnabled == true
+            }
+            self.desktopRearm =
+                desktopRearm ?? {
+                    (automatedRearmAllowed() || localInputProof()) && localDesktopRearmProbe()
+                }
+            self.localResume =
+                desktopRearm ?? {
+                    automatedRearmAllowed()
+                        ? localDesktopRearmProbe()
+                        : localInputProof()
+                }
             if self.available {
                 observers.append(
                     NotificationCenter.default.addObserver(

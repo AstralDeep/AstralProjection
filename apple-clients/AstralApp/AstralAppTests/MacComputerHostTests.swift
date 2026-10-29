@@ -10,6 +10,49 @@
 
     @MainActor
     final class MacComputerHostTests: XCTestCase {
+        func testAutomatedRearmPreferenceDefaultsOffAndOptInAllowsActiveDesktopResume() throws {
+            for (automatedRearm, savedConsent) in [(false, true), (true, true), (true, false)] {
+                let suite = "automated-rearm-" + UUID().uuidString
+                let defaults = UserDefaults(suiteName: suite)!
+                defer { defaults.removePersistentDomain(forName: suite) }
+                let owner = "automated-rearm-owner"
+                let consentKey = "computer.consent." + SHA256.hash(data: Data(owner.utf8))
+                    .map { String(format: "%02x", $0) }.joined()
+                if savedConsent { defaults.set(true, forKey: consentKey) }
+                if automatedRearm { defaults.set(true, forKey: "computer.allowAutomatedRearm") }
+                var localProbes = 0
+                let host = MacComputerHost(
+                    available: true, defaults: defaults, driver: ComputerTestDriver(), monitor: ComputerTestMonitor(),
+                    permissionProvider: {
+                        MacComputerPermissions(accessibility: true, screen: true, monitoring: true)
+                    }, desktopProbe: { true }, localDesktopRearmProbe: {
+                        localProbes += 1
+                        return true
+                    }, localInputProof: { false }, system: MacComputerTestSystem(), panelPresenter: { _ in })
+                defer { host.stop() }
+                host.bind(owner: owner) { _ in true }
+                host.sessionLocked()
+
+                host.setEnabled(true)
+                let shouldEnable = automatedRearm && savedConsent
+                XCTAssertEqual(
+                    host.enabled, shouldEnable,
+                    "automatedRearm=\(automatedRearm), savedConsent=\(savedConsent): automated rearm requires both the opt-in and saved owner consent; otherwise local input is required.")
+                if shouldEnable {
+                    let id = UUID().uuidString.lowercased()
+                    host.consume(try session(host, id: id))
+                    host.pause()
+                    host.consume(try session(host, id: id, state: "paused"))
+                    host.resume()
+                    XCTAssertTrue(host.enabled)
+                    XCTAssertGreaterThanOrEqual(localProbes, 2, "Enable and resume each probe the local desktop.")
+                    XCTAssertEqual(host.session?.state, "paused", "Resume stays pending until the server acknowledges it.")
+                } else {
+                    XCTAssertEqual(localProbes, 0, "Disabled automation must require a hardware event first.")
+                }
+            }
+        }
+
         func testGrantedReviewOpensFixedSettingsWithoutRequestOrAuthorityChange() {
             for succeeds in [true, false] {
                 var requested = 0
