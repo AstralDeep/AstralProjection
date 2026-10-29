@@ -358,6 +358,8 @@ final class AppModel: NSObject {
         let row: String?
         let decision: String
         let expectsReceipt: Bool
+        let submissionId: String?
+        let requestGeneration: String?
     }
     private var approvalReceiptsSupported: Bool {
         #if os(macOS)
@@ -569,6 +571,7 @@ final class AppModel: NSObject {
     @ObservationIgnored var announcer: (String) -> Void = { AccessibilityNotification.Announcement($0).post() }
 
     @ObservationIgnored var currentConnectionVoiceSendOverride: ((String) -> Void)?
+    @ObservationIgnored var currentApprovalDecisionSendOverride: (@Sendable (String, String) -> Bool)?
 
     var serverBase: URL {
         URL(string: serverBaseText) ?? URL(string: AstralConfig.serverBaseURL)!
@@ -2381,12 +2384,16 @@ final class AppModel: NSObject {
             agents = Agent.list(from: frame.payload["agents"])
             agentsLoading = false
         case "history_list":
+            let summaries = (frame.payload["chats"]?.arrayValue ?? []).compactMap { ChatSummary(json: $0) }
             #if os(macOS)
-                if projects.enabled, frame.payload["projects_changed"]?.boolValue == true {
-                    Task { await projects.refresh() }
+                if projects.enabled {
+                    projects.mergeRecentActivity(summaries)
+                    if frame.payload["projects_changed"]?.boolValue == true {
+                        Task { await projects.refresh() }
+                    }
                 }
             #endif
-            history = (frame.payload["chats"]?.arrayValue ?? []).compactMap { ChatSummary(json: $0) }
+            history = summaries
             historyTitle = "Recent chats"
             historyLoading = false
             historyLoaded = true
@@ -3898,7 +3905,9 @@ final class AppModel: NSObject {
         }
         let unconfirmedRows = Set(unconfirmed.values.compactMap(\.row))
         for id in unconfirmed.keys {
-            submittedApprovals.removeValue(forKey: id)
+            if let pending = submittedApprovals.removeValue(forKey: id), let submissionId = pending.submissionId {
+                clearLocalOperationSubmission(submissionId: submissionId)
+            }
             decidedApprovals.insert(id)
         }
         updateActivity(activeChatId) { rows in
@@ -3944,6 +3953,16 @@ final class AppModel: NSObject {
         else { return true }
         guard let decision = payload["decision"]?.stringValue,
             ["approve", "approve_and_resume", "grant_task", "decline"].contains(decision),
+            let submissionId = frame.payload["submission_id"]?.stringValue,
+            let requestGeneration = frame.payload["request_generation"]?.stringValue,
+            payload["submission_id"] == .string(submissionId),
+            payload["request_generation"] == .string(requestGeneration),
+            let submission = localOperationSubmissions[submissionId],
+            submission.action == frame.payload["action"]?.stringValue,
+            submission.requestGeneration == requestGeneration,
+            submission.connectionGeneration == continuity.connectionGeneration,
+            submission.chatId == activeChatId,
+            frame.payload["session_id"]?.stringValue == activeChatId,
             !decidedApprovals.contains(requestId), !withdrawingApprovals.contains(requestId),
             submittedApprovals[requestId] == nil
         else { return false }
@@ -3983,7 +4002,8 @@ final class AppModel: NSObject {
             let linked = approvalRows[requestId]
             submittedApprovals[requestId] = SubmittedApproval(
                 owner: downloadOwner, connection: continuity.connectionGeneration,
-                chat: activeChatId, row: linked, decision: decision, expectsReceipt: approvalReceiptsSupported)
+                chat: activeChatId, row: linked, decision: decision, expectsReceipt: approvalReceiptsSupported,
+                submissionId: submissionId, requestGeneration: requestGeneration)
             updateActivity(activeChatId) { rows in
                 guard let index = linked.flatMap({ id in rows.firstIndex { $0.id == id } }) else { return }
                 if approvalReceiptsSupported {
@@ -4012,7 +4032,7 @@ final class AppModel: NSObject {
             guard retiredComputerReviews[key] == nil else { return }
             let origin = SubmittedApproval(
                 owner: downloadOwner, connection: continuity.connectionGeneration, chat: chat, row: nil,
-                decision: "withdraw", expectsReceipt: true)
+                decision: "withdraw", expectsReceipt: true, submissionId: nil, requestGeneration: nil)
             guard retiredComputerReviews.count < 512 else {
                 reviewRetirementOverflow = origin
                 return
@@ -4167,6 +4187,14 @@ final class AppModel: NSObject {
         submittedApprovals.removeValue(forKey: id)
         withdrawingApprovals.remove(id)
         decidedApprovals.insert(id)
+        if let submissionId = pending.submissionId,
+            let submission = localOperationSubmissions[submissionId],
+            submission.requestGeneration == pending.requestGeneration,
+            submission.connectionGeneration == connection,
+            submission.chatId == pending.chat
+        {
+            clearLocalOperationSubmission(submissionId: submissionId)
+        }
         updateActivity(pending.chat) { rows in
             guard let index = pending.row.flatMap({ id in rows.firstIndex { $0.id == id } }) else { return }
             switch state {
@@ -4269,7 +4297,7 @@ final class AppModel: NSObject {
         approvalOrigins[approval.requestId] = SubmittedApproval(
             owner: downloadOwner,
             connection: continuity.connectionGeneration, chat: chatId, row: linked, decision: "",
-            expectsReceipt: approvalReceiptsSupported)
+            expectsReceipt: approvalReceiptsSupported, submissionId: nil, requestGeneration: nil)
         announce(approval.summary.isEmpty ? "Approval waiting" : "Approval waiting: \(approval.summary)")
         if let image = approval.image { attachActivityThumbnail(image, to: linked, chatId: chatId) }
     }
@@ -4400,7 +4428,8 @@ final class AppModel: NSObject {
                 connectionGeneration: connectionGeneration)
         else { return }
         localOperationSubmissions[submission.submissionId] = submission
-        if exposeStatus { statusText = submission.label }
+        let approvalDuringActiveTurn = turnActive && ["authorize_action", "remote_op_decision"].contains(action)
+        if exposeStatus && !approvalDuringActiveTurn { statusText = submission.label }
     }
 
     private func localSubmissionShowsActivity(_ submission: LocalOperationSubmission) -> Bool {
@@ -4472,6 +4501,12 @@ final class AppModel: NSObject {
         }
     }
 
+    private func clearLocalOperationSubmission(submissionId: String) {
+        guard let submission = localOperationSubmissions.removeValue(forKey: submissionId) else { return }
+        componentPendingOperations.removeValue(forKey: submissionId)
+        if statusText == submission.label { statusText = latestActiveOperationStatusText() }
+    }
+
     private func operationOwnsActiveChatTurn(
         action: String,
         requestGeneration: String
@@ -4520,6 +4555,7 @@ final class AppModel: NSObject {
     }
 
     private func operationChatId(action: String, payload: JSONValue) -> String? {
+        if ["authorize_action", "remote_op_decision"].contains(action) { return activeChatId }
         if action == "chat_message" || action == "load_chat"
             || conversationMutationActions.contains(action)
         {
@@ -5248,17 +5284,61 @@ final class AppModel: NSObject {
     private func rawSend(_ text: String) {
         guard noteApprovalDecision(text) else { return }
         let computerReview = ComputerHostOutbound.isReviewDecision(text)
+        let approvalRequestId = trackedApprovalRequestId(text)
         #if os(macOS)
             let localComputerSession = computerReview ? macComputerHost.recordApprovalInteraction() : nil
         #else
             let localComputerSession: String? = nil
         #endif
         outboundTap?(text)
-        guard let socket = ws else { return }
         let owner = downloadOwner
         let connection = continuity.connectionGeneration
         let navigation = conversationNavigationGeneration
         let chatId = activeChatId
+        if let approvalRequestId, !computerReview {
+            guard let pending = submittedApprovals[approvalRequestId], let connection,
+                pending.connection == connection, pending.chat == chatId, pending.owner == owner
+            else {
+                retireUnsentOperation(text)
+                return
+            }
+            if let sendOverride = currentApprovalDecisionSendOverride {
+                if !sendOverride(text, connection) { retireUnsentOperation(text) }
+                return
+            }
+            guard let socket = ws, connected else {
+                retireUnsentOperation(text)
+                return
+            }
+            Task { [weak self] in
+                guard let self,
+                    await self.authenticatedSocketIsCurrent(socket, owner: owner, connection: connection)
+                else {
+                    self?.retireUnsentOperation(text)
+                    return
+                }
+                let sent = await socket.sendCurrentApprovalDecision(text, connectionGeneration: connection) {
+                    [weak self] in
+                    await MainActor.run {
+                        guard let self, self.signedIn, self.connected, self.downloadOwner == owner,
+                            self.ws === socket, self.continuity.connectionGeneration == connection,
+                            self.activeChatId == chatId,
+                            let current = self.submittedApprovals[approvalRequestId]
+                        else { return false }
+                        return current.submissionId == pending.submissionId
+                            && current.requestGeneration == pending.requestGeneration
+                            && current.connection == connection && current.chat == chatId
+                            && current.owner == owner
+                    }
+                }
+                if !sent { self.retireUnsentOperation(text) }
+            }
+            return
+        }
+        guard let socket = ws else {
+            if approvalRequestId != nil { retireUnsentOperation(text) }
+            return
+        }
         let safety = SafetySurfaceRequest.claimsCurrentConnectionSemantics(frameText: text)
         let mesh =
             InboundFrame.parse(text)?.payload["action"]?.stringValue?.hasPrefix("chrome_mesh_") == true
@@ -5362,6 +5442,7 @@ final class AppModel: NSObject {
         else {
             return
         }
+        let approvalRetired = retireUnsentApproval(frame)
         if parameterRequests.values.contains(request) {
             parameterFailures.insert(request)
             surfaceFailureMessage = "The action was not sent. Review your entries and retry after reconnecting."
@@ -5372,6 +5453,50 @@ final class AppModel: NSObject {
         failOrdinarySurface(
             generation: request, message: "The session could not update. Reconnect and retry this screen.")
         clearLocalOperationSubmission(requestGeneration: request)
+        if approvalRetired {
+            bannerIsError = true
+            errorBanner = "The approval decision was not confirmed. Check the action before trying again."
+        }
+    }
+
+    private func trackedApprovalRequestId(_ text: String) -> String? {
+        guard let frame = InboundFrame.parse(text),
+            ["authorize_action", "remote_op_decision"].contains(frame.payload["action"]?.stringValue ?? ""),
+            let payload = frame.payload["payload"],
+            let requestId = (payload["hitl_request_id"] ?? payload["proposal_id"])?.stringValue,
+            let submissionId = frame.payload["submission_id"]?.stringValue,
+            let pending = submittedApprovals[requestId]
+        else { return nil }
+        guard pending.submissionId == submissionId,
+            pending.requestGeneration == frame.payload["request_generation"]?.stringValue,
+            pending.connection == continuity.connectionGeneration,
+            pending.chat == activeChatId,
+            pending.owner == downloadOwner
+        else { return nil }
+        return requestId
+    }
+
+    private func retireUnsentApproval(_ frame: InboundFrame) -> Bool {
+        guard let payload = frame.payload["payload"],
+            let requestId = (payload["hitl_request_id"] ?? payload["proposal_id"])?.stringValue,
+            let pending = submittedApprovals[requestId],
+            pending.submissionId == frame.payload["submission_id"]?.stringValue,
+            pending.requestGeneration == frame.payload["request_generation"]?.stringValue
+        else { return false }
+        submittedApprovals.removeValue(forKey: requestId)
+        withdrawingApprovals.remove(requestId)
+        if decidedApprovals.count >= 512 { decidedApprovals.removeAll() }
+        decidedApprovals.insert(requestId)
+        updateActivity(pending.chat) { rows in
+            guard let index = pending.row.flatMap({ id in rows.firstIndex { $0.id == id } }) else { return }
+            rows[index].approval = .uncertain
+            rows[index].state = .failed
+            rows[index].result = "The decision could not be confirmed. Inspect the action before trying again."
+        }
+        removeApprovalCards([requestId])
+        if let submissionId = pending.submissionId { clearLocalOperationSubmission(submissionId: submissionId) }
+        observeActivityComponents()
+        return true
     }
 
     private func restoreUnsentQuery(_ text: String, navigation: Int, chatId: String?) {

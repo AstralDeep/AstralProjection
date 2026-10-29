@@ -26,6 +26,71 @@
         @ObservationIgnored private var pendingChats: [String: String] = [:]
         @ObservationIgnored private var refreshDuringCreation = false
         @ObservationIgnored private var pendingProject: (String, String)?
+        @ObservationIgnored private var observedActivity: [String: (raw: String, timestamp: Double)] = [:]
+
+        static func mostRecentFirst(_ chats: [ChatSummary]) -> [ChatSummary] {
+            chats.sorted { left, right in
+                let leftActivity = activityTimestamp(left.updatedAt)
+                let rightActivity = activityTimestamp(right.updatedAt)
+                switch (leftActivity, rightActivity) {
+                case let (left?, right?) where left != right:
+                    return left > right
+                case (_?, nil):
+                    return true
+                case (nil, _?):
+                    return false
+                default:
+                    return left.id < right.id
+                }
+            }
+        }
+
+        private static func activityTimestamp(_ value: String) -> Double? {
+            guard let timestamp = Double(value), timestamp.isFinite, timestamp >= 0 else { return nil }
+            return timestamp >= 1e11 ? timestamp / 1000 : timestamp
+        }
+
+        private static func updatingActivity(_ chat: ChatSummary, project: String, updatedAt: String) -> ChatSummary? {
+            ChatSummary(json: .object([
+                "id": .string(chat.id), "project_id": .string(project),
+                "title": .string(chat.title), "updated_at": .string(updatedAt),
+                "preview": .string(chat.preview),
+                "has_saved_components": .bool(chat.hasSavedComponents),
+                "icon": .string(chat.icon),
+                "time": .null,
+                "pinned": .bool(chat.pinned), "archived": .bool(chat.archived),
+            ]))
+        }
+
+        func mergeRecentActivity(_ summaries: [ChatSummary]) {
+            guard enabled, !summaries.isEmpty else { return }
+            var timestamps: [String: (String, Double)] = [:]
+            for summary in summaries {
+                guard let timestamp = Self.activityTimestamp(summary.updatedAt) else { continue }
+                if let current = timestamps[summary.id], current.1 >= timestamp { continue }
+                timestamps[summary.id] = (summary.updatedAt, timestamp)
+            }
+            for project in Array(chats.keys) {
+                guard var values = chats[project] else { continue }
+                var changed = false
+                for index in values.indices {
+                    let current = values[index]
+                    guard let incoming = timestamps[current.id],
+                        observedActivity[current.id].map({ incoming.1 > $0.timestamp }) ?? true
+                    else { continue }
+                    observedActivity[current.id] = (incoming.0, incoming.1)
+                    if Self.activityTimestamp(current.updatedAt).map({ incoming.1 > $0 }) ?? true,
+                        let updated = Self.updatingActivity(current, project: project, updatedAt: incoming.0)
+                    {
+                        values[index] = updated
+                        changed = true
+                    }
+                }
+                if changed {
+                    chats[project] = values
+                }
+            }
+        }
 
         func bind(scope: String?, client: RestClient?) {
             epoch = UUID()
@@ -40,6 +105,7 @@
             if self.scope != scope {
                 projects = []
                 chats = [:]
+                observedActivity = [:]
                 selectedId = nil
                 pendingChats = [:]
                 pendingProject = nil
@@ -105,8 +171,18 @@
                 }
                 try current(connection)
                 guard refreshEpoch == operation else { return }
+                for project in Array(allChats.keys) {
+                    guard let values = allChats[project] else { continue }
+                    allChats[project] = values.map { chat in
+                        guard let observed = observedActivity[chat.id],
+                            Self.activityTimestamp(chat.updatedAt).map({ observed.timestamp > $0 }) ?? true
+                        else { return chat }
+                        return Self.updatingActivity(chat, project: project, updatedAt: observed.raw) ?? chat
+                    }
+                }
                 projects = rows.sorted { ($0.position, $0.id) < ($1.position, $1.id) }
                 chats = allChats
+                observedActivity = [:]
                 if let selectedId, !rows.contains(where: { $0.id == selectedId }) { select(nil) }
                 loading = false
                 errorMessage = nil
@@ -174,6 +250,7 @@
                 refreshEpoch = UUID()
                 loading = false
                 let deletedChats = Set(chats[project.id]?.map(\.id) ?? [])
+                deletedChats.forEach { observedActivity.removeValue(forKey: $0) }
                 projects.removeAll { $0.id == project.id }
                 chats.removeValue(forKey: project.id)
                 pendingChats.removeValue(forKey: project.id)
@@ -217,7 +294,10 @@
                 }
                 pendingChats.removeValue(forKey: project)
                 if let chat = ChatSummary(
-                    json: .object(["id": .string(id), "project_id": .string(project), "title": .string("")]))
+                    json: .object([
+                        "id": .string(id), "project_id": .string(project), "title": .string(""),
+                        "updated_at": .number(Date().timeIntervalSince1970 * 1000),
+                    ]))
                 {
                     let current = chats[project]?.first { $0.id == id } ?? chat
                     chats[project, default: []].removeAll { $0.id == id }

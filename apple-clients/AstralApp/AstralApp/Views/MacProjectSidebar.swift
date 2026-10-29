@@ -23,10 +23,11 @@
         }
 
         private func chats(in project: ProjectRecord) -> [ChatSummary] {
-            (model.projects.chats[project.id] ?? []).filter {
+            let matches = (model.projects.chats[project.id] ?? []).filter {
                 search.isEmpty || project.name.localizedCaseInsensitiveContains(search)
                     || ($0.displayTitle + " " + $0.displayPreview).localizedCaseInsensitiveContains(search)
             }
+            return MacProjectCatalog.mostRecentFirst(matches)
         }
 
         var body: some View {
