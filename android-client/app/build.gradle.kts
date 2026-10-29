@@ -223,6 +223,12 @@ if (explicitDeployment) {
 val verifyAndroidDeploymentProfile = tasks.register<VerifyAndroidDeploymentProfileTask>("verifyDeploymentBuildProfile")
 tasks.named("preBuild") { dependsOn(verifyAndroidDeploymentProfile) }
 
+val firebaseProperties = listOf("astralFirebaseAppId", "astralFirebaseProjectId", "astralFirebaseSenderId", "astralFirebaseApiKey")
+val firebaseValues = firebaseProperties.map { providers.gradleProperty(it).orNull }
+require(firebaseValues.all { it == null } || firebaseValues.all { it != null && it.matches(Regex("[A-Za-z0-9_:.-]+")) }) {
+    "Firebase requires all four public client configuration properties"
+}
+
 val canonicalVoiceFixture =
     rootProject.layout.projectDirectory.file(
         "../contracts/fixtures/voice_065/client_conformance.json",
@@ -278,6 +284,9 @@ android {
 
     defaultConfig {
         applicationId = registeredApplicationId
+        for ((index, key) in listOf("APP_ID", "PROJECT_ID", "SENDER_ID", "API_KEY").withIndex()) {
+            buildConfigField("String", "ASTRAL_FIREBASE_$key", "\"${firebaseValues[index].orEmpty()}\"")
+        }
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = currentVersionCode
@@ -402,6 +411,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
     implementation(libs.appauth)
+    implementation(libs.firebase.messaging)
+    implementation(libs.play.services.basement)
     implementation(libs.coil.compose)
     implementation(libs.livekit.android)
     // Pinned to patch LiveKit's vulnerable protobuf-javalite (CVE-2024-7254)

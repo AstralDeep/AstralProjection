@@ -6,11 +6,12 @@ package com.personalailabs.astraldeep.app.auth
 import android.content.Context
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.personalailabs.astraldeep.app.push.PushCustodyStorage
 import net.openid.appauth.AuthState
 import java.security.MessageDigest
 import java.time.Instant
 
-class TokenStore(context: Context, file: String = FILE) : ServerSessionPersistence, MeshKeyStorage {
+class TokenStore(context: Context, file: String = FILE) : ServerSessionPersistence, MeshKeyStorage, PushCustodyStorage {
     private val prefs =
         EncryptedSharedPreferences.create(
             context,
@@ -19,6 +20,15 @@ class TokenStore(context: Context, file: String = FILE) : ServerSessionPersisten
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
         )
+
+    override fun loadPushCustody(): String? = runCatching { prefs.getString("push.owner_binding.v1", null) }.getOrNull()
+
+    override fun savePushCustody(value: String): Boolean =
+        runCatching {
+            prefs.edit().putString("push.owner_binding.v1", value).commit()
+        }.getOrDefault(false)
+
+    override fun clearPushCustody(): Boolean = runCatching { prefs.edit().remove("push.owner_binding.v1").commit() }.getOrDefault(false)
 
     fun load(): AuthState? = prefs.getString(KEY, null)?.let { runCatching { AuthState.jsonDeserialize(it) }.getOrNull() }
 

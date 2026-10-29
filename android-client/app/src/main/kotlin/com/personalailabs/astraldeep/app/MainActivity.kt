@@ -51,9 +51,7 @@ import com.personalailabs.astraldeep.app.auth.KeycloakLogout
 import com.personalailabs.astraldeep.app.auth.OidcAuth
 import com.personalailabs.astraldeep.app.auth.ServerSessionCoordinator
 import com.personalailabs.astraldeep.app.auth.ServerSessionException
-import com.personalailabs.astraldeep.app.auth.ServerSessionScope
 import com.personalailabs.astraldeep.app.auth.ServerSessionTransport
-import com.personalailabs.astraldeep.app.auth.TokenStore
 import com.personalailabs.astraldeep.app.auth.keycloakEndpoints
 import com.personalailabs.astraldeep.app.auth.routeAfterRefresh
 import com.personalailabs.astraldeep.app.render.CanvasCaptureRegistry
@@ -94,15 +92,9 @@ class MainActivity : ComponentActivity() {
     private val workspaceActions by lazy { WorkspaceActionController(this, { authToken.value }, canvasCapture) }
 
     private val authFence = AuthAttemptFence()
-    private val serverScope by lazy {
-        if (AppConfig.API_BASE.startsWith("https://")) {
-            ServerSessionScope(AppConfig.API_BASE, AppConfig.KEYCLOAK_AUTHORITY, AppConfig.OIDC_CLIENT_ID, AppConfig.OIDC_REDIRECT_URI)
-        } else {
-            null
-        }
-    }
+    private val serverScope by lazy { (application as AstralApp).serverScope }
     private val serverTransport by lazy { serverScope?.let { ServerSessionTransport(it) } }
-    private val serverSession by lazy { serverTransport?.let { ServerSessionCoordinator(it, store) } }
+    private val serverSession by lazy { (application as AstralApp).serverSession }
     private val client by lazy {
         OrchestratorClient(AppConfig.WS_URL, serverSession = {
             if (authFence.currentMode() == AuthAttemptFence.Mode.SERVER) {
@@ -126,6 +118,20 @@ class MainActivity : ComponentActivity() {
     private val keycloakLogout by lazy {
         KeycloakLogout(keycloakEndpoints(AppConfig.KEYCLOAK_AUTHORITY).endSessionEndpoint)
     }
+    private val pushRuntime by lazy { (application as AstralApp).pushRuntime }
+    private var pushViewModel: AppViewModel? = null
+    private var pushPermissionRequested = false
+
+    private fun maybeRequestPushPermission() {
+        if (pushPermissionRequested || !pushRuntime.shouldOfferPermissionRequest()) return
+        pushPermissionRequested = true
+        pushPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    private val pushPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            pushRuntime.onPermissionResult(granted)
+        }
 
     private data class PendingDownload(val url: String, val owner: ConversationResumeStore.AccountIdentity)
 
@@ -193,7 +199,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private val store by lazy { TokenStore(this) }
+    private val store by lazy { (application as AstralApp).tokenStore }
     private val conversationResumeStore by lazy { ConversationResumeStore(this) }
     private val authToken = MutableStateFlow<String?>(null)
     private val signInError = MutableStateFlow<String?>(null)
@@ -238,6 +244,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         workspaceActions.invalidateStale()
         componentActions.invalidateStale()
+        pushRuntime.start()
+        pushRuntime.handleTap(intent)
         val initial = authFence.capture()
         lifecycleScope.launch(Dispatchers.IO) {
             try {
@@ -268,6 +276,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val vm: AppViewModel =
                 viewModel(factory = AppViewModel.factory(client, rest, conversationResumeStore, voiceController, store))
+            pushViewModel = vm
             val uiState by vm.state.collectAsStateWithLifecycle()
             AstralTheme(palette = uiState.themePalette) {
                 val renderer =
@@ -286,6 +295,33 @@ class MainActivity : ComponentActivity() {
                 val token by authToken.collectAsStateWithLifecycle()
                 val error by signInError.collectAsStateWithLifecycle()
                 LaunchedEffect(uiState, token) {
+                    pushRuntime.inAppListener = {
+                        if (vm.ownsPushOwner(authToken.value)) {
+                            vm.presentPushInApp("AstralDeep", "Open Notifications to view an update", "info")
+                        }
+                    }
+                    pushRuntime.sourceListener = { source ->
+                        val current = vm.state.value
+                        if (!vm.ownsPushOwner(authToken.value) || current.mandatorySurface || current.mutationsLocked) {
+                            false
+                        } else {
+                            if (source.chatId != null) {
+                                vm.openChat(source.chatId)
+                            } else {
+                                vm.openSurface(
+                                    "notifications",
+                                    kotlinx.serialization.json.buildJsonObject {
+                                        put("entry_id", kotlinx.serialization.json.JsonPrimitive(source.notificationId))
+                                    },
+                                )
+                            }
+                            true
+                        }
+                    }
+                    pushRuntime.onUiConnection(
+                        uiState.connectionGeneration,
+                        uiState.connection == ConnectionState.Connected && vm.ownsPushOwner(authToken.value),
+                    )
                     if (vm.workspaceContext() == null) canvasCapture.clear()
                     workspaceActions.invalidateStale()
                     componentActions.invalidateStale()
@@ -352,9 +388,16 @@ class MainActivity : ComponentActivity() {
                 if (next == null || oldOwner != newOwner) {
                     workspaceActions.clear()
                     componentActions.clear()
+                    if (oldOwner != null && oldOwner != newOwner) {
+                        pushRuntime.onAccountChanged()
+                    }
                 }
                 authToken.value = next
                 signInError.value = error
+                if (next != null) {
+                    pushRuntime.onAuthenticated(checkNotNull(authToken.value))
+                    maybeRequestPushPermission()
+                }
             }
             if (next != null && ticket.mode == AuthAttemptFence.Mode.SERVER) {
                 checkNotNull(serverSession).withToken(next, publish)
@@ -386,7 +429,27 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startSignIn() {
+        pushRuntime.onAccountChanged()
+        val priorCoordinator = serverSession
+        val retired =
+            try {
+                priorCoordinator?.retire()
+            } catch (_: ServerSessionException) {
+                signInError.value = "The protected session could not be cleared. Retry sign-in."
+                return
+            }
         val ticket = authFence.begin()
+        if (retired != null && priorCoordinator != null) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    if (!priorCoordinator.logout(retired)) Log.w("MainActivity", "Previous server session logout unconfirmed")
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    Log.w("MainActivity", "Previous server session logout unconfirmed")
+                }
+            }
+        }
         pendingSignIn = null
         lifecycleScope.launch {
             try {
@@ -437,6 +500,8 @@ class MainActivity : ComponentActivity() {
             signInError.value = null
             authToken.value = null
         }
+        pushRuntime.onSignedOut()
+        pushViewModel = null
         if (custodyMode) {
             if (retired != null) {
                 lifecycleScope.launch(Dispatchers.IO) {
@@ -468,11 +533,31 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        pushRuntime.handleTap(intent)
+        if (authToken.value != null) pushRuntime.onAuthenticated(checkNotNull(authToken.value))
+    }
+
+    override fun onResume() {
+        super.onResume()
+        pushRuntime.onLifecycleActive()
+    }
+
+    override fun onPause() {
+        pushRuntime.onLifecycleInactive()
+        super.onPause()
+    }
+
     override fun onDestroy() {
         authFence.retire()
         pendingSignIn = null
         workspaceActions.clear()
         componentActions.clear()
+        pushViewModel = null
+        pushRuntime.inAppListener = null
+        pushRuntime.sourceListener = null
+        pushRuntime.onUiConnection(null, false)
         oidc.dispose()
         super.onDestroy()
     }

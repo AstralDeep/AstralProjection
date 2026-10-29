@@ -4,6 +4,7 @@
 import AstralCore
 import Foundation
 import XCTest
+
 @testable import AstralDeep
 
 @MainActor final class AppModelServerCustodyTests: XCTestCase {
@@ -36,8 +37,17 @@ import XCTest
         for change in ["signout", "server"] {
             let (model, storage, session) = try model()
             let entered = expectation(description: "real cookie authentication")
+            let retired = change == "server" ? expectation(description: "old scoped cookie retirement") : nil
             let gate = Gate()
             model.serverSessionTransport = { request in
+                if request.httpMethod == "POST" {
+                    XCTAssertEqual(request.url?.absoluteString, "https://server.test/api/auth/logout")
+                    XCTAssertEqual(request.value(forHTTPHeaderField: "Cookie"), session.cookie)
+                    XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer " + session.accessToken)
+                    if let retired { retired.fulfill() } else { XCTFail("local-only sign-out cannot revoke remotely") }
+                    return ServerSessionReply(
+                        body: .object(["outcome": .string("revoked"), "revoked": .bool(true), "queued": .bool(false)]))
+                }
                 XCTAssertEqual(request.url?.path, "/auth/session")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Cookie"), session.cookie)
                 XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
@@ -58,6 +68,7 @@ import XCTest
             XCTAssertNil(model.meshPublicIdentity)
             if change == "server" {
                 model.serverBaseText = "https://foreign.test"
+                await fulfillment(of: [retired!], timeout: 5)
             } else {
                 await model.signOut(revokeRemote: false)
             }

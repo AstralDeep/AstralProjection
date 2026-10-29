@@ -38,6 +38,10 @@ public struct ServerSession: Codable, Equatable, Sendable {
     public let accessToken: String
     public let cookie: String
     public let cookieExpiresAt: Date
+    public var pushIncarnation: String {
+        SHA256.hash(data: Data((scope.storageKey + "\u{0}" + cookie).utf8))
+            .map { String(format: "%02x", $0) }.joined()
+    }
 
     public var tokenSet: TokenSet {
         let set = TokenSet(accessToken: accessToken, refreshToken: nil, expiresIn: 0)

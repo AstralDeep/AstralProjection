@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Owner-bound mobile push delivery on iOS. The bundle id and the registered
+	     App identity never change; the APNs capability itself must also be enabled
+	     for the App id in the developer portal before device builds can register. -->
+	<key>aps-environment</key>
+	<string>$(ASTRAL_APS_ENVIRONMENT)</string>
+</dict>
+</plist>

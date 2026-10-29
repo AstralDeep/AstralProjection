@@ -108,7 +108,7 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
         model.activeChatId = "c1"
         let log = record(model)
         reduce(model, #"{"type":"notification","level":"error","chat_id":"c2","title":"Job failed","body":"boom"}"#)
-        XCTAssertEqual(model.errorBanner, "Job failed: boom")
+        XCTAssertEqual(model.errorBanner, "Job failed: boom — open it from History")
         XCTAssertTrue(model.bannerIsError)
         XCTAssertTrue(loadChats(log).isEmpty)
     }

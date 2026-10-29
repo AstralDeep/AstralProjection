@@ -156,6 +156,7 @@ def build_menu_model(
     work_enabled: bool = False,
     notes_enabled: bool = False,
     connections_enabled: bool = False,
+    notifications_enabled: bool = False,
     include_admin: bool = True,
     include_tour: bool = True,
 ) -> ChromeModel:
@@ -205,6 +206,7 @@ def build_menu_model(
     )
     account_items = (
         _ACCOUNT_ITEMS
+        + ((MenuItem("notifications", "Notifications", "notifications"),) if notifications_enabled else ())
         + ((_NOTES_ITEM,) if notes_enabled else ())
         + ((_BYO_AGENTS_ITEM,) if show_byo else ((_SKILLS_ONLY_ITEM,) if show_skills else ()))
         + ((_REMOTE_MACHINES_ITEM,) if show_remote else ())
@@ -235,6 +237,7 @@ def menu_model_dict(
     work_enabled: bool = False,
     notes_enabled: bool = False,
     connections_enabled: bool = False,
+    notifications_enabled: bool = False,
     include_admin: bool = True,
     include_tour: bool = True,
 ) -> Dict:
@@ -250,6 +253,7 @@ def menu_model_dict(
         work_enabled=work_enabled,
         notes_enabled=notes_enabled,
         connections_enabled=connections_enabled,
+        notifications_enabled=notifications_enabled,
         include_admin=include_admin,
         include_tour=include_tour,
     ).to_dict()

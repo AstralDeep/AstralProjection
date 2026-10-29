@@ -314,6 +314,67 @@ class ServerSession088Test {
             }
         }
 
+    @Test fun push_incarnation_tracks_actual_custody_refresh_restore_and_fresh_login() =
+        runBlocking {
+            Fixture().use { f ->
+                val transport = ServerSessionTransport(scope(f.origin), f.client) { now }
+                val memory = Memory()
+                val controller = ServerSessionCoordinator(transport, memory) { now }
+                assertNull(controller.pushSessionIncarnation(token))
+                assertTrue(controller.pushRequestHeaders(token).isEmpty())
+                val attempt = controller.begin()
+                f.server.enqueue(json(issued()).setHeader("Set-Cookie", cookieHeader))
+                controller.exchange(attempt, ServerAuthorizationCode(transport.scope, "initial", "v".repeat(43)))
+                val initial = assertNotNull(controller.pushSessionIncarnation(token))
+                assertEquals(cookie, controller.pushRequestHeaders(token)["Cookie"])
+                assertNull(controller.pushSessionIncarnation("foreign"))
+                val nextAccess = jwt(owner, "refreshed-signature")
+                f.server.enqueue(json(refreshed(nextAccess)))
+                controller.refresh()
+                assertEquals(initial, controller.pushSessionIncarnation(nextAccess))
+                assertEquals(nextAccess, controller.pushCurrentAccess(initial))
+                val restored = ServerSessionCoordinator(transport, memory) { now }
+                assertTrue(restored.restore())
+                assertEquals(initial, restored.pushSessionIncarnation(nextAccess))
+                controller.retire()
+                assertNull(controller.pushSessionIncarnation(token))
+                assertTrue(controller.pushRequestHeaders(token).isEmpty())
+                val fresh = controller.begin()
+                f.server.enqueue(json(issued()).setHeader("Set-Cookie", cookieHeader.replace("opaque.signed", "fresh.signed")))
+                controller.exchange(fresh, ServerAuthorizationCode(transport.scope, "fresh", "v".repeat(43)))
+                assertTrue(initial != controller.pushSessionIncarnation(token))
+                assertNull(controller.pushCurrentAccess(initial))
+            }
+        }
+
+    @Test fun retired_logout_uses_only_captured_old_custody_after_a_new_session_is_installed() =
+        runBlocking {
+            Fixture().use { f ->
+                val transport = ServerSessionTransport(scope(f.origin), f.client) { now }
+                val controller = ServerSessionCoordinator(transport, Memory()) { now }
+                val oldAttempt = controller.begin()
+                f.server.enqueue(json(issued()).setHeader("Set-Cookie", cookieHeader))
+                controller.exchange(oldAttempt, ServerAuthorizationCode(transport.scope, "old", "v".repeat(43)))
+                val retired = assertNotNull(controller.retire())
+                val freshToken = jwt(owner, "fresh-signature")
+                val freshAttempt = controller.begin()
+                f.server.enqueue(json(issued(freshToken)).setHeader("Set-Cookie", cookieHeader.replace("opaque.signed", "fresh.signed")))
+                controller.exchange(freshAttempt, ServerAuthorizationCode(transport.scope, "fresh", "v".repeat(43)))
+                val incarnation = controller.pushSessionIncarnation(freshToken)
+                f.server.enqueue(json(refreshed()))
+                f.server.enqueue(json("""{"outcome":"revoked","revoked":true,"queued":false}"""))
+                assertTrue(controller.logout(retired))
+                assertEquals(incarnation, controller.pushSessionIncarnation(freshToken))
+                f.server.takeRequest()
+                f.server.takeRequest()
+                val refresh = f.server.takeRequest()
+                val logout = f.server.takeRequest()
+                assertEquals(cookie, refresh.getHeader("Cookie"))
+                assertEquals(cookie, logout.getHeader("Cookie"))
+                assertEquals("Bearer $token", logout.getHeader("Authorization"))
+            }
+        }
+
     private class Memory : ServerSessionPersistence {
         var value: ServerSession? = null
         var saves = 0

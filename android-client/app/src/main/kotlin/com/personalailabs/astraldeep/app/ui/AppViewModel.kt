@@ -305,6 +305,9 @@ class AppViewModel(
 
     @Volatile private var workspaceEpoch: Long = 0
 
+    internal fun ownsPushOwner(access: String?): Boolean =
+        account != null && account == ConversationResumeStore.accountFromAccessToken(access.orEmpty())
+
     internal fun workspaceContext(): WorkspaceContext? = workspaceContext(_state.value, account, workspaceEpoch)
 
     internal fun componentContext(component: Component): ComponentActionContext? =
@@ -2107,10 +2110,15 @@ class AppViewModel(
                         msg.title?.takeIf { it.isNotBlank() },
                         msg.body?.takeIf { it.isNotBlank() },
                     ).joinToString(": ")
-                if (text.isBlank()) {
-                    s
-                } else {
-                    s.copy(banner = text, bannerKind = msg.level?.takeIf { it == "error" || it == "warning" } ?: "info")
+                when {
+                    text.isBlank() -> s
+                    msg.chatId != null && msg.chatId != s.activeChatId ->
+                        s.copy(
+                            banner = "$text — open it from History",
+                            bannerKind = msg.level?.takeIf { it == "error" || it == "warning" } ?: "info",
+                        )
+                    else ->
+                        s.copy(banner = text, bannerKind = msg.level?.takeIf { it == "error" || it == "warning" } ?: "info")
                 }
             }
             is Inbound.ComponentSaved ->
@@ -2349,6 +2357,22 @@ class AppViewModel(
         val cleared = clearConversationForSignOut()
         clearCredentials()
         return cleared
+    }
+
+    fun presentPushInApp(
+        title: String?,
+        body: String?,
+        level: String?,
+    ) {
+        val text =
+            listOfNotNull(
+                title?.takeIf { it.isNotBlank() },
+                body?.takeIf { it.isNotBlank() },
+            ).joinToString(": ")
+        if (text.isBlank()) return
+        _state.update {
+            it.copy(banner = text, bannerKind = level?.takeIf { kind -> kind == "error" || kind == "warning" } ?: "info")
+        }
     }
 
     fun clearConversationForSignOut(): Boolean {

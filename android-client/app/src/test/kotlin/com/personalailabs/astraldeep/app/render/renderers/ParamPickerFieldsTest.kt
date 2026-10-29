@@ -16,6 +16,18 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ParamPickerFieldsTest {
+    @Test
+    fun numeric_fields_emit_json_numbers_and_reject_nonfinite_values() {
+        val number = field("""{"name":"minute","kind":"number"}""")
+        for (value in listOf("480", "-240")) {
+            val result = fieldsOf(collectFields(listOf(number), mapOf("minute" to value), emptyMap(), emptyMap()))
+            assertFalse((result["minute"] as JsonPrimitive).isString)
+            assertEquals(value, (result["minute"] as JsonPrimitive).content)
+        }
+        val result = fieldsOf(collectFields(listOf(number), mapOf("minute" to "NaN"), emptyMap(), emptyMap()))
+        assertEquals(kotlinx.serialization.json.JsonNull, result["minute"])
+    }
+
     private fun field(json: String): JsonObject = Json.parseToJsonElement(json) as JsonObject
 
     private val provider =
