@@ -31,6 +31,47 @@ final class CanvasCapture088Tests: XCTestCase {
         return registry
     }
 
+    #if canImport(UIKit)
+        private func sceneDiagnostics(_ application: UIApplication) -> String {
+            let manifest = Bundle.main.infoDictionary?["UIApplicationSceneManifest"] as? [String: Any]
+            let configurations = manifest?["UISceneConfigurations"] as? [String: [[String: Any]]]
+            let sceneClass =
+                configurations?["UIWindowSceneSessionRoleApplication"]?.first?["UISceneClassName"]
+                as? String ?? "missing"
+            let states = application.connectedScenes.compactMap { $0 as? UIWindowScene }
+                .map { String($0.activationState.rawValue) }.sorted()
+            let sample = states.prefix(8).joined(separator: ",")
+            let omitted = states.count > 8 ? ",…" : ""
+            let multipleScenes =
+                (manifest?["UIApplicationSupportsMultipleScenes"] as? Bool)
+                .map { String($0) } ?? "missing"
+            return "applicationState=\(application.applicationState.rawValue), "
+                + "connectedWindowScenes=\(states.count)[\(sample)\(omitted)], "
+                + "openSessions=\(application.openSessions.count), "
+                + "supportsMultipleScenes=\(multipleScenes), "
+                + "manifestSceneClass=\(sceneClass.prefix(80))"
+        }
+
+        private func foregroundWindowScene() throws -> UIWindowScene {
+            let application = UIApplication.shared
+            let candidates = application.connectedScenes.compactMap { $0 as? UIWindowScene }
+                .filter {
+                    $0.activationState == .foregroundActive
+                        || $0.activationState == .foregroundInactive
+                }
+                .sorted {
+                    if $0.activationState != $1.activationState {
+                        return $0.activationState == .foregroundActive
+                    }
+                    return $0.session.persistentIdentifier < $1.session.persistentIdentifier
+                }
+            return try XCTUnwrap(
+                candidates.first,
+                "No foreground visible UIWindowScene; \(sceneDiagnostics(application))"
+            )
+        }
+    #endif
+
     func testCompositePixelsPreserveMeasuredLayoutAndOmitRawAuthority() async throws {
         for type in CanvasCaptureRegistry.compositePixelTypes.sorted() {
             let registry = registry()
@@ -561,9 +602,7 @@ final class CanvasCapture088Tests: XCTestCase {
                 window.close()
             }
         #else
-            let scene = try XCTUnwrap(
-                UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-                    .first { $0.activationState == .foregroundActive })
+            let scene = try foregroundWindowScene()
             let prior = scene.windows.first { $0.isKeyWindow }
             let window = UIWindow(windowScene: scene)
             window.frame = scene.coordinateSpace.bounds
@@ -575,7 +614,10 @@ final class CanvasCapture088Tests: XCTestCase {
             controller.view.layoutIfNeeded()
             webView.layoutIfNeeded()
             XCTAssertNotNil(window.windowScene)
-            XCTAssertEqual(window.windowScene?.activationState, .foregroundActive)
+            // XCTest can leave its visible foreground scene inactive while the app remains foregrounded.
+            let activationState = window.windowScene?.activationState
+            XCTAssertTrue(
+                activationState == .foregroundActive || activationState == .foregroundInactive)
             XCTAssertTrue(window.isKeyWindow)
             defer {
                 window.isHidden = true
