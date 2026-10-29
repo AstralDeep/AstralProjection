@@ -96,6 +96,42 @@
             }
             return (try directory(Array(parts.dropLast())), name)
         }
+        private func parentForWrite(
+            _ path: String, begin: () -> Void, authorize: () throws -> Void
+        ) throws -> (Int32, String) {
+            let parts = try components(path)
+            guard let name = parts.last else {
+                throw ComputerHostError("permission_denied", "The workspace root cannot be modified.")
+            }
+            var fd = Darwin.openat(descriptor, ".", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+            guard fd >= 0 else { throw failure() }
+            for part in parts.dropLast() {
+                var child = Darwin.openat(fd, part, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+                if child < 0, errno == ENOENT {
+                    do {
+                        try authorize()
+                    } catch {
+                        Darwin.close(fd)
+                        throw error
+                    }
+                    begin()
+                    if mkdirat(fd, part, mode_t(0o700)) != 0, errno != EEXIST {
+                        let error = failure()
+                        Darwin.close(fd)
+                        throw error
+                    }
+                    child = Darwin.openat(fd, part, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+                }
+                if child < 0 {
+                    let error = failure()
+                    Darwin.close(fd)
+                    throw error
+                }
+                Darwin.close(fd)
+                fd = child
+            }
+            return (fd, name)
+        }
         private func failure() -> ComputerHostError {
             let code = errno == ENOENT ? "not_found" : "failed"
             return ComputerHostError(code, "The workspace operation was refused or failed (errno \(errno)).")
@@ -214,7 +250,7 @@
         ) throws {
             let bytes = Array(content.utf8)
             guard bytes.count <= 262144 else { throw ComputerHostError("out_of_range", "The write exceeds 256 KiB.") }
-            let (parent, name) = try parent(path)
+            let (parent, name) = try parentForWrite(path, begin: begin, authorize: authorize)
             defer { Darwin.close(parent) }
             var existing = stat()
             var original: Int32 = -1
