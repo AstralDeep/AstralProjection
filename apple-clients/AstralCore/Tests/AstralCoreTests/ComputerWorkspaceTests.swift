@@ -211,6 +211,24 @@
             XCTAssertFalse(FileManager.default.fileExists(atPath: path))
         }
 
+        func testRefusedExistingFileExplainsHowToOverwrite() throws {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let workspace = try ComputerWorkspace(root: root.path)
+            let path = root.appendingPathComponent("existing.txt").path
+            try workspace.write(path, content: "original", overwrite: false, authorize: {})
+
+            XCTAssertThrowsError(try workspace.write(path, content: "replacement", overwrite: false, authorize: {})) {
+                error in
+                XCTAssertEqual((error as? ComputerHostError)?.code, "already_exists")
+                XCTAssertEqual(
+                    (error as? ComputerHostError)?.message,
+                    "File exists; retry with if_exists=overwrite to replace it")
+            }
+            XCTAssertEqual(try String(contentsOfFile: path, encoding: .utf8), "original")
+        }
+
         func testTruncatedReadEndsOnTheLastCompleteScalar() throws {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

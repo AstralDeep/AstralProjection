@@ -258,6 +258,7 @@
                 guard existing.st_mode & S_IFMT == S_IFREG else {
                     throw ComputerHostError("permission_denied", "Only regular files can be replaced.")
                 }
+                guard overwrite else { throw alreadyExists() }
                 if overwrite {
                     original = Darwin.openat(parent, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
                     guard original >= 0 else { throw failure() }
@@ -296,9 +297,13 @@
             if original >= 0 { try preserve(from: original, to: fd, mode: existing.st_mode) }
             guard fsync(fd) == 0 else { throw failure() }
             try authorize()
-            guard renameatx_np(parent, temporary, parent, name, overwrite ? 0 : UInt32(RENAME_EXCL)) == 0 else {
+            if renameatx_np(parent, temporary, parent, name, overwrite ? 0 : UInt32(RENAME_EXCL)) != 0 {
+                if !overwrite && errno == EEXIST { throw alreadyExists() }
                 throw failure()
             }
+        }
+        private func alreadyExists() -> ComputerHostError {
+            ComputerHostError("already_exists", "File exists; retry with if_exists=overwrite to replace it")
         }
         public func delete(_ path: String, authorize: () throws -> Void) throws {
             try preEffect { begin in try deletePath(path, begin: begin, authorize: authorize) }
