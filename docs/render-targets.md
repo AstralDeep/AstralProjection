@@ -1,6 +1,6 @@
 # Render targets
 
-Verified against the source tree on 2026-09-28. This page documents every
+Verified against the source tree on 2026-10-27. This page documents every
 render target of [`webrender.registry`](../backend/webrender/registry.py), as
 Constitution Principle II requires: how each is registered and selected, what
 it produces, and which clients consume it.
@@ -34,6 +34,7 @@ it produces, and which clients consume it.
 | `voice` | Built in | SSML string | No client in this repository registers a `voice` device; AstralDeep calls `render_voice` directly for watch speech |
 | `aom` | Built in | Accessibility-object-model dict tree | No client consumes it |
 | `mcp` | [`targets/mcp_renderer.py`](../backend/webrender/targets/mcp_renderer.py) `install()` | List of MCP text content blocks | AstralDeep's MCP server endpoint, for MCP clients |
+| `chatgpt` | [`targets/chatgpt_panel.py`](../backend/webrender/targets/chatgpt_panel.py) `install()` | Bounded panel document, validated view model, and MCP text blocks | OpenAI MCP Extension (ChatGPT-style) hosts via AstralDeep's MCP server endpoint, and [`examples/chatgpt_mcp_panel/`](../examples/chatgpt_mcp_panel/README.md) |
 | `stubtext` | [`targets/stub_renderer.py`](../backend/webrender/targets/stub_renderer.py) `install()` | Escaped plain text | Tests only |
 
 The Windows, Android and Apple clients do not consume any target's output.
@@ -119,6 +120,36 @@ They render the structured `components` of each frame themselves
   `[result truncated: N component(s) omitted]` block is appended when it fits
   the remaining result budget. A component with nothing portable becomes
   `[<type> component has no portable text representation]`.
+
+## `chatgpt`
+
+`install()` registers `render_chatgpt_panel_target`. Its one input is a one-element
+list containing a host-authorized, bounded `astral_work_status` view model. It renders
+waiting, running, input-required, failed, cancelled and successful work states;
+unknown fields, authored HTML/styles, invalid progress, oversized values and unsafe
+artifact links are rejected. `render_chatgpt_panel()` returns the static resource,
+validated structured content, complete bounded MCP text fallback, and UI tool metadata.
+
+The resource is `text/html;profile=mcp-app`; `_meta.ui.resourceUri` binds the tool to
+`ui://astralprojection/astral-work-status`. The optional OpenAI output-template alias
+is a URI string. Empty standard CSP allowlists and permissions accompany the resource.
+The host negotiates `io.modelcontextprotocol/ui` support and otherwise emits text content.
+
+The vanilla script implements the MCP Apps `2026-01-26` initialization, initialized,
+complete-input, result, cancellation and teardown lifecycle. It binds the parent source
+and referrer origin, matches the initialization ID, validates each result before using
+`textContent`, clears stale private state on malformed/error results, and retires late
+updates after teardown/cancellation or duplicate input. Escape returns panel focus.
+The view issues no product action or tool call; the host retains every authorization gate.
+
+The [installed-wheel example](../examples/chatgpt_mcp_panel/README.md) documents exact
+protocol/development SDK pins, referrer and sandbox requirements, CSP, accessibility,
+link rules and text fallback. The web browser suite runs the official AppBridge against
+the executed resource through a separate-origin sandbox proxy, including delayed results,
+foreign messages and revocation. The example's HTTP exerciser verifies envelopes only.
+Actual ChatGPT connector acceptance remains pending and is not a CI claim.
+Windows, Android and Apple do not consume this external target; shared protocol vocabulary,
+client dispositions, product defaults and deployment remain unchanged.
 
 ## `stubtext`
 

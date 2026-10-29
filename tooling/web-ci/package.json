@@ -27,10 +27,22 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@modelcontextprotocol/client": "2.4.0",
+    "@modelcontextprotocol/core": "2.4.0",
+    "@modelcontextprotocol/ext-apps": "2.0.4",
     "@playwright/test": "1.61.1",
     "eslint": "10.7.0",
     "espree": "11.2.0",
     "globals": "17.7.0",
-    "v8-to-istanbul": "9.3.0"
+    "v8-to-istanbul": "9.3.0",
+    "zod": "4.6.7"
+  },
+  "astralPanelProtocol": {
+    "uiRevision": "2026-01-26",
+    "mcpRevision": "2025-11-25",
+    "specSource": "https://github.com/modelcontextprotocol/ext-apps/blob/7af9a75da720b8a81be0f9aff47b25f75e9530ad/specification/2026-01-26/apps.mdx",
+    "sdkSourceCommit": "7af9a75da720b8a81be0f9aff47b25f75e9530ad",
+    "openaiReference": "https://developers.openai.com/plugins/reference",
+    "reviewedOn": "2026-10-28"
   }
 }
