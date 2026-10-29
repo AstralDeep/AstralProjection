@@ -163,7 +163,8 @@ struct WatchWorkSurfaceView: View {
                         .font(ConsoleTypography.footnote)
                     Button("Retry") { model.retryWorkRead() }.disabled(!model.connected)
                 } else {
-                    ProgressView("Loading…")
+                    Text("Loading…").font(ConsoleTypography.footnote)
+                        .accessibilityIdentifier("work-read-loading")
                 }
             }.padding(6)
         }

@@ -13,6 +13,7 @@ const ROOT = resolve(import.meta.dirname, "../../..");
 const CLIENT = resolve(ROOT, "backend/webrender/static/client.js");
 const SOURCE = await readFile(CLIENT, "utf8");
 const TERMINAL_FIXTURE = JSON.parse(await readFile(resolve(ROOT, "contracts/fixtures/terminal/panel_surface.json"), "utf8"));
+const SAVE_FIXTURE = JSON.parse(await readFile(resolve(ROOT, "contracts/fixtures/work_088/save_review.json"), "utf8"));
 const coverageOutput = process.env.ASTRAL_WORK_COVERAGE_OUTPUT;
 const rawCoverage = [];
 
@@ -93,6 +94,157 @@ for (const scope of ["work", "evidence", "safety", "terminal_panel", "terminal_m
 
     async function receive(page, frame) {
       await page.evaluate(value => window.__sockets.at(-1).receive(value), frame);
+    }
+
+    if (surface === "work") {
+      function savePayload(name) {
+        const all = [];
+        function visit(value) {
+          if (Array.isArray(value)) { value.forEach(visit); return; }
+          if (value && typeof value === "object") {
+            if (value.action === "chrome_work_result_save") all.push(value.payload);
+            Object.values(value).forEach(visit);
+          }
+        }
+        visit(SAVE_FIXTURE.frames[name]);
+        expect(all).toHaveLength(1);
+        return all[0];
+      }
+      async function offerSave(page, mode = "result_saveable") {
+        const pending = await open(page);
+        await receive(page, {...SAVE_FIXTURE.web_frames[mode], request_generation: pending.request_generation});
+        return pending;
+      }
+      test("retained result Save and review preserve closed bodies and exact current replies", async ({page}) => {
+        await setup(page);
+        const first = await offerSave(page);
+        await page.getByRole("button", {name: "Save result", exact: true}).click();
+        const proposed = await page.evaluate(() => window.__frames.findLast(frame => frame.action === "chrome_work_result_save"));
+        expect(proposed.payload).toEqual(savePayload("result_saveable"));
+        expect(proposed.session_id).toBeNull();
+        expect(proposed.connection_generation).toBe(first.connection_generation);
+        expect(proposed.request_generation).not.toBe(first.request_generation);
+        await receive(page, {...SAVE_FIXTURE.web_frames.review, request_generation: proposed.request_generation});
+        await page.getByRole("button", {name: "Save exactly this content", exact: true}).click();
+        const saved = await page.evaluate(() => window.__frames.findLast(frame => frame.action === "chrome_work_result_save"));
+        expect(saved.payload).toEqual(savePayload("review"));
+        expect(saved.submission_id).toBe(saved.payload.submission_id);
+        expect(saved.request_generation).not.toBe(proposed.request_generation);
+        await receive(page, reply(proposed, "Stale proposal result"));
+        await expect(page.getByText("Stale proposal result")).toHaveCount(0);
+        await receive(page, reply(saved, "Current saved result"));
+        await expect(page.getByText("Current saved result")).toBeVisible();
+      });
+      test("Save preserves the server's current nonempty workspace head", async ({page}) => {
+        await setup(page);
+        await offerSave(page);
+        const expected = {...savePayload("result_saveable"), expected_workspace_revision: 7,
+          expected_workspace_publication_id: "7132b0ba-0183-44c7-b362-6ec6fa86bbe0"};
+        const button = page.getByRole("button", {name: "Save result", exact: true});
+        await button.evaluate((control, payload) => {
+          const key = control.hasAttribute("data-ui-payload") ? "data-ui-payload" : "data-payload";
+          control.setAttribute(key, JSON.stringify(payload));
+        }, expected);
+        await button.click();
+        const sent = await page.evaluate(() => window.__frames.findLast(frame => frame.action === "chrome_work_result_save"));
+        expect(sent.payload).toEqual(expected);
+      });
+      for (const mode of ["result_saveable", "review"]) {
+        test(`uncertain ${mode} Save retries a read without replay`, async ({page}) => {
+          await setup(page);
+          await page.clock.install();
+          await offerSave(page, mode);
+          await page.getByRole("button", {name: mode === "review" ? "Save exactly this content" : "Save result", exact: true}).click();
+          await page.clock.fastForward(6100);
+          await page.getByRole("button", {name: "Retry", exact: true}).click();
+          expect(await page.evaluate(() => window.__frames.filter(frame => frame.action === "chrome_work_result_save").length)).toBe(1);
+          const last = await page.evaluate(() => window.__frames.at(-1));
+          expect(last.action).toBe("chrome_open");
+          expect(last.payload.params).toEqual({mode: "result", operation_id: savePayload(mode).operation_id});
+        });
+      }
+      for (const change of ["offline", "outside", "unknown", "revision", "version", "operation", "destination", "destination_control", "workspace", "publication", "digest", "command"]) {
+        test(`Save refuses ${change} without generic queue fallback`, async ({page}) => {
+          await setup(page);
+          const mode = change === "digest" ? "review" : "result_saveable";
+          await offerSave(page, mode);
+          const button = page.getByRole("button", {name: mode === "review" ? "Save exactly this content" : "Save result", exact: true});
+          if (change === "offline") await page.evaluate(() => { window.__sockets.at(-1).readyState = 3; });
+          else if (change === "outside") await button.evaluate(control => document.body.append(control));
+          else await button.evaluate((control, change) => {
+            const key = control.hasAttribute("data-ui-payload") ? "data-ui-payload" : "data-payload";
+            const payload = JSON.parse(control.getAttribute(key));
+            if (change === "unknown") payload.token = "forbidden";
+            if (change === "revision") payload.expected_revision = true;
+            if (change === "version") payload.version = "1";
+            if (change === "operation") payload.operation_id = "foreign";
+            if (change === "destination") payload.conversation_id = " invalid ";
+            if (change === "destination_control") payload.conversation_id = "inside\u0085id";
+            if (change === "command") payload.command = "retry";
+            if (change === "workspace") payload.expected_workspace_revision = "0";
+            if (change === "publication") payload.publication_id = payload.submission_id;
+            if (change === "digest") payload.proposal_digest = "bad";
+            control.setAttribute(key, JSON.stringify(payload));
+          }, change);
+          await button.click();
+          await page.evaluate(() => { window.__sockets.at(-1).readyState = 1; window.__sockets.at(-1).onopen?.(); });
+          expect(await page.evaluate(() => window.__frames.filter(frame => frame.action === "chrome_work_result_save").length)).toBe(0);
+        });
+      }
+
+      const continuity = {version: 1, operation_id: "90f3eb92-26b2-4cde-8adf-a9bd39253021",
+        expected_revision: 7, submission_id: "805ed918-320f-41ad-b9ec-e479c0cb4ae5"};
+      async function offerContinuity(page, changes = {}) {
+        const pending = await open(page);
+        const frame = reply(pending);
+        const payload = {...continuity, ...changes};
+        frame.html = `<div class="astral-modal-card" role="dialog"><button data-ui-action="chrome_work_continuity" data-ui-payload='${JSON.stringify(payload)}'>Recheck completion</button></div>`;
+        await receive(page, frame);
+        return pending;
+      }
+      test("explicit continuity preserves captured command and current correlation", async ({page}) => {
+        await setup(page);
+        const pending = await offerContinuity(page);
+        await page.getByRole("button", {name: "Recheck completion", exact: true}).click();
+        const sent = await page.evaluate(() => window.__frames.filter(frame => frame.action === "chrome_work_continuity").at(-1));
+        expect(sent.payload).toEqual(continuity);
+        expect(sent.submission_id).toBe(continuity.submission_id);
+        expect(sent.request_generation).not.toBe(pending.request_generation);
+        expect(sent.connection_generation).toBe(pending.connection_generation);
+        expect(sent.session_id).toBeNull();
+        await receive(page, reply(sent, "Rechecked current state"));
+        await expect(page.getByText("Rechecked current state")).toBeVisible();
+        await receive(page, reply(sent, "Stale duplicate command result"));
+        await expect(page.getByText("Stale duplicate command result")).toHaveCount(0);
+      });
+      for (const change of ["disconnected", "outside", "mandatory", "extra", "revision", "string_revision", "old_socket"]) {
+        test(`continuity rejects ${change} without reconnect replay`, async ({page}) => {
+          await setup(page);
+          await offerContinuity(page, change === "extra" ? {token: "forbidden"}
+            : change === "revision" ? {expected_revision: 1.5}
+            : change === "string_revision" ? {expected_revision: "7"} : {});
+          if (change === "disconnected") await page.evaluate(() => { window.__sockets.at(-1).readyState = 3; });
+          if (change === "outside") await page.getByRole("button", {name: "Recheck completion", exact: true}).evaluate(button => document.body.append(button));
+          if (change === "mandatory") await page.locator(".astral-modal-card").evaluate(card => card.setAttribute("data-mandatory", "true"));
+          if (change === "old_socket") await page.evaluate(() => { window.__sockets.at(-1).onopen?.(); });
+          const button = page.getByRole("button", {name: "Recheck completion", exact: true});
+          if (await button.count()) await button.click();
+          await page.evaluate(() => { window.__sockets.at(-1).readyState = 1; window.__sockets.at(-1).onopen?.(); });
+          expect(await page.evaluate(() => window.__frames.filter(frame => frame.action === "chrome_work_continuity").length)).toBe(0);
+        });
+      }
+      test("uncertain continuity retries a fresh read without replaying mutation", async ({page}) => {
+        await setup(page);
+        await page.clock.install();
+        await offerContinuity(page);
+        await page.getByRole("button", {name: "Recheck completion", exact: true}).click();
+        await page.clock.fastForward(6100);
+        await page.getByRole("button", {name: "Retry", exact: true}).click();
+        expect(await page.evaluate(() => window.__frames.filter(frame => frame.action === "chrome_work_continuity").length)).toBe(1);
+        const last = await page.evaluate(() => window.__frames.at(-1));
+        expect(last.action).toBe("chrome_open");
+        expect(last.payload.params).toEqual({mode: "detail", operation_id: continuity.operation_id});
+      });
     }
 
     if (scope === "terminal_panel") {

@@ -605,7 +605,7 @@ def test_runtime_manifests_bind_exact_owning_dependency_inventory() -> None:
             "ed268e071ad98432ae418a6ac54189f64ae26e02049b9a7c49bbceffaf820171"
         ),
         "tooling/web-ci/package.json": (
-            "38222bff0b15c00aab0f799cd4b10457d92cb22ce8a8cb2f8815e7279678b134"
+            "e73a8128e7358a37b4e815c31732014da5ede94b18d284990c3c0d2aafff99cc"
         ),
         "tooling/web-ci/package-lock.json": (
             "d0e6a477342e1d6ab3c95264a1ddde32dbb3fb1afb8288d9fac24e7f51dc0db8"

@@ -285,6 +285,14 @@ public actor WSClient {
         guard WorkReadRequest.isCurrentConnectionEvent(text),
             established, let current = task, current.state == .running
         else { return false }
+        if WorkContinuityRequest(frameText: text) != nil {
+            guard let connection = InboundFrame.parse(text)?.payload["connection_generation"]?.stringValue,
+                registeredConnectionGeneration == connection
+            else { return false }
+            return await sendCurrentOwnerSurfaceEvent(
+                text, using: current,
+                connectionGeneration: connection, isCurrent: isCurrent)
+        }
         return await sendCurrentOwnerSurfaceEvent(text, using: current, isCurrent: isCurrent)
     }
 

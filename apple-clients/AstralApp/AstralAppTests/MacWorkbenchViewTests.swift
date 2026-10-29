@@ -416,6 +416,21 @@
             }
         }
 
+        func testSurfaceAccessibilityKeepsUnnamedContentButtonsAndOmitsWindowDecorations() async throws {
+            let (model, suite) = try SurfaceFixtures.model()
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            let mount = SurfaceMount(
+                Button("Unnamed content action") {}.buttonStyle(.plain), model: model,
+                size: CGSize(width: 280, height: 120))
+            mount.window.styleMask.insert(.closable)
+            defer { mount.close() }
+            try await mount.settle()
+            XCTAssertNotNil(mount.window.standardWindowButton(.closeButton))
+            let buttons = try mount.accessibility.filter { $0.role == kAXButtonRole }
+            XCTAssertEqual(buttons.map(\.label), ["Unnamed content action"])
+            XCTAssertNil(buttons.first?.identifier)
+        }
+
         func testSurfaceAccessibilityRejectsAmbiguousOwnedWindows() async throws {
             let (model, suite) = try SurfaceFixtures.model()
             defer { UserDefaults.standard.removePersistentDomain(forName: suite) }

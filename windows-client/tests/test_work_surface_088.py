@@ -53,7 +53,7 @@ def frame(generation, title="Selected excerpts", **extra):
         "surface_key": "work",
         "request_generation": generation,
         "title": title,
-        "components": [{"type": "text", "content": title}],
+        "components": [{"type": "text", "content": title, "variant": "body"}],
         **extra,
     }
 
