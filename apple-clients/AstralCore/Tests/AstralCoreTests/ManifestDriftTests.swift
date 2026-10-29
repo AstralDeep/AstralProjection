@@ -106,7 +106,7 @@ final class ManifestDriftTests: XCTestCase {
             Set(manifest.componentTypes),
             Set(ClientDispositions.allComponentTypes),
             "component_types drift — update Dispositions.swift + parity matrix")
-        XCTAssertEqual(manifest.pushTypes.count, 72)
+        XCTAssertEqual(manifest.pushTypes.count, 74)
         XCTAssertEqual(manifest.componentTypes.count, 41)
         XCTAssertEqual(manifest.acceptActions.count, 164)
         XCTAssertTrue(Set(manifest.acceptActions).isSuperset(of: ["chrome_work_result_save", "chrome_job_stop"]))
@@ -277,6 +277,18 @@ final class ManifestDriftTests: XCTestCase {
 
     func testWatchHandlesNotificationForBackgroundContinuity() {
         XCTAssertEqual(ClientDispositions.watch.frames["notification"], .handled)
+    }
+
+    func testCredentialRefreshPushesAreMacOnly() {
+        for name in ["ui_auth_refresh_ready", "ui_auth_refreshed"] {
+            XCTAssertEqual(ClientDispositions.macos.frames[name], .handled)
+            guard case .ignored = ClientDispositions.ios.frames[name] else {
+                return XCTFail("iOS must ignore optional macOS credential refresh frame \(name)")
+            }
+            guard case .ignored = ClientDispositions.watch.frames[name] else {
+                return XCTFail("watch must ignore optional macOS credential refresh frame \(name)")
+            }
+        }
     }
 
     func testEvidenceInspectionPinsExistingModalFramesAndWatchHandoff() throws {

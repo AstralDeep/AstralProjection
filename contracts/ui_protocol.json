@@ -3780,6 +3780,28 @@
     }
   },
   "frame_contracts": {
+    "ui_auth_refresh_v1": {
+      "capability": "register_ui.capabilities.ui_auth_refresh_v1",
+      "client_request": {
+        "type": "refresh_ui_auth",
+        "exact_fields": ["type", "request_id", "connection_generation", "token"],
+        "request_id": "canonical_lowercase_uuid4",
+        "connection_generation": "current registered connection uuid4",
+        "token": "fresh OAuth access token; never log or return it"
+      },
+      "server_ready": {
+        "type": "ui_auth_refresh_ready",
+        "exact_fields": ["type", "connection_generation"]
+      },
+      "server_acknowledgement": {
+        "type": "ui_auth_refreshed",
+        "exact_fields": ["type", "request_id", "connection_generation", "accepted", "closed_code?"]
+      },
+      "closed_codes": ["invalid", "identity_changed", "stale_connection", "authority_changed", "session_unavailable"],
+      "binding": "Same registered WebSocket and connection generation, with exact outstanding request id; no queue, reconnect, or operation replay.",
+      "identity": "Require exact iss and sub; same-key azp or client_id and same-key sid or session_state on both tokens; preserve normalized aud, scope, realm_access.roles, resource_access roles, and groups. Missing or changed identity/authority claims refuse renewal.",
+      "scope": "Optional macOS capability. Unsupported clients and servers retain legacy behavior."
+    },
     "admission_refusal": {
       "type": "error",
       "exact_fields": [
@@ -4606,6 +4628,14 @@
       "category": "canvas"
     },
     {
+      "name": "ui_auth_refresh_ready",
+      "category": "auth"
+    },
+    {
+      "name": "ui_auth_refreshed",
+      "category": "auth"
+    },
+    {
       "name": "ui_render",
       "category": "canvas"
     },
@@ -4977,6 +5007,14 @@
       "scope": "fresh equality fence for one WebSocket connection attempt",
       "introduced_by": "060-runtime-reliability-hardening (FR-029, FR-032)",
       "contract": "specs/060-runtime-reliability-hardening/contracts/conversation-continuity.md"
+    },
+    {
+      "field": "capabilities.ui_auth_refresh_v1",
+      "shape": "string capability token",
+      "carried_on": ["register_ui.capabilities"],
+      "scope": "Optional macOS same-socket credential renewal; only usable after ui_auth_refresh_ready on the current generation.",
+      "introduced_by": "goal-run-subject-token-renewal",
+      "contract": "frame_contracts.ui_auth_refresh_v1"
     },
     {
       "field": "request_generation",

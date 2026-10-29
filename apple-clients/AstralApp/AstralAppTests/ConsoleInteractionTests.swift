@@ -403,10 +403,13 @@ final class ConsoleInteractionTests: XCTestCase {
         let model = try model()
         var sent: [JSONValue] = []
         model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
-        model.activeChatId = "c1"
+        XCTAssertTrue(model.beginConversationConnection(generation))
+        model.currentApprovalDecisionSendOverride = { _, sentConnection in sentConnection == self.generation }
+        let chat = "11111111-1111-4111-8111-111111111111"
+        model.activeChatId = chat
         model.turns = [.init(id: "u1", role: "user", text: "Type a sentence")]
         let arguments = #"{"x":10,"y":20,"hwnd":5}"#
-        model.handleFrame(ActivityFrames.step("s1", status: "in_progress", arguments: arguments))
+        model.handleFrame(ActivityFrames.step("s1", chat: chat, status: "in_progress", arguments: arguments))
         var row = try XCTUnwrap(model.activity.first)
         XCTAssertEqual([row.action, row.target], ["click", "at 10, 20"])
         XCTAssertEqual(row.state, .running)
@@ -414,7 +417,7 @@ final class ConsoleInteractionTests: XCTestCase {
         XCTAssertEqual(row.accessibilityValue, "Running")
         model.handleFrame(
             ActivityFrames.step(
-                "s1", status: "completed",
+                "s1", chat: chat, status: "completed",
                 result: #"{"_data":{"status":"confirmation_required","message":"An approval card is available."}}"#))
         row = try XCTUnwrap(model.activity.first)
         XCTAssertEqual(row.approval, .waiting)
@@ -433,12 +436,12 @@ final class ConsoleInteractionTests: XCTestCase {
         #else
             XCTAssertEqual(model.activity.first?.approval, .granted)
         #endif
-        model.handleFrame(ActivityFrames.step("s2", status: "in_progress", arguments: arguments))
+        model.handleFrame(ActivityFrames.step("s2", chat: chat, status: "in_progress", arguments: arguments))
         XCTAssertEqual(model.activity.count, 1)
         XCTAssertEqual(model.activity.first?.state, .running)
         model.handleFrame(
             ActivityFrames.step(
-                "s2", status: "completed", result: #"{"_data":{"attempted":true,"message":"Clicked"}}"#))
+                "s2", chat: chat, status: "completed", result: #"{"_data":{"attempted":true,"message":"Clicked"}}"#))
         row = try XCTUnwrap(model.activity.first)
         XCTAssertEqual(row.state, .completed)
         XCTAssertEqual(row.result, "Clicked")
@@ -450,10 +453,10 @@ final class ConsoleInteractionTests: XCTestCase {
         #endif
         model.handleFrame(
             ActivityFrames.step(
-                "s3", name: "run_command", status: "in_progress",
+                "s3", chat: chat, name: "run_command", status: "in_progress",
                 arguments: #"{"command":"wc -l notes.txt","cwd":"/Users/owner/Notes"}"#))
         model.handleFrame(
-            ActivityFrames.step("s3", name: "run_command", status: "errored", error: "Folder\nnot shared"))
+            ActivityFrames.step("s3", chat: chat, name: "run_command", status: "errored", error: "Folder\nnot shared"))
         XCTAssertEqual(model.activity[1].action, "run command")
         XCTAssertEqual(model.activity[1].target, "wc -l notes.txt")
         XCTAssertEqual(model.activity[1].state, .failed)
@@ -469,9 +472,9 @@ final class ConsoleInteractionTests: XCTestCase {
         XCTAssertEqual(model.activity.last?.state, .running)
         model.handleFrame(ActivityFrames.status("idle"))
         XCTAssertEqual(model.activity.last?.state, .completed)
-        model.activeChatId = "c2"
+        model.activeChatId = "22222222-2222-4222-8222-222222222222"
         XCTAssertTrue(model.activity.isEmpty)
-        model.activeChatId = "c1"
+        model.activeChatId = chat
         XCTAssertEqual(model.activity.count, 3)
     }
 

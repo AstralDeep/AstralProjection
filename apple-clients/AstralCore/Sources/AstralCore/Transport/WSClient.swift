@@ -363,6 +363,21 @@ public actor WSClient {
             text, using: current, connectionGeneration: connectionGeneration, isCurrent: isCurrent)
     }
 
+    @discardableResult
+    public func sendCurrentUIAuthRefresh(
+        _ request: UIAuthRefreshRequest,
+        isCurrent: @Sendable () async -> Bool
+    ) async -> Bool {
+        guard UIAuthRefreshRequest.parse(request.frameText) == request,
+            registeredConnectionGeneration == request.connectionGeneration,
+            established, let current = task, current.state == .running
+        else { return false }
+        return await sendCurrentOwnerSurfaceEvent(
+            request.frameText, using: current,
+            connectionGeneration: request.connectionGeneration,
+            isCurrent: isCurrent)
+    }
+
     private static func isApprovalDecision(_ text: String) -> Bool {
         guard text.utf8.count <= 16384,
             let value = try? JSONValue.parse(Data(text.utf8)),
