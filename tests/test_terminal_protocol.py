@@ -107,6 +107,29 @@ def test_fixture_frames_are_exact_correlated_server_builds():
         assert frame["type"] == "chrome_render" and frame["html"]
         assert frame["request_generation"] == generation
     assert FIXTURE["native_frame"] == FIXTURE["frames"]["panel"]
+    assert FIXTURE["web_frame"] == FIXTURE["web_frames"]["panel"]
+
+
+def test_fixture_frames_are_builder_goldens_for_interactive_and_read_only_builds():
+    from astralprojection.chrome import render_html
+    from astralprojection.chrome.terminal import build_terminal_view
+    from webrender.chrome import render_modal_shell
+
+    for name, state in FIXTURE["states"].items():
+        interactive = build_terminal_view(state, interactive=True)
+        frame = FIXTURE["frames"][name]
+        assert frame["title"] == interactive.title
+        assert frame["components"] == [item.to_dict() for item in interactive.components]
+        read_only = build_terminal_view(state)
+        bare = FIXTURE["read_only_frames"][name]
+        assert bare["title"] == read_only.title
+        assert bare["components"] == [item.to_dict() for item in read_only.components]
+        web = FIXTURE["web_frames"][name]
+        assert web["html"] == render_modal_shell(
+            interactive.title, render_html(interactive), "terminal"
+        )
+        assert "astral-modal-card" in web["html"]
+        assert "role=\"dialog\"" in web["html"]
 
 
 def test_interactive_operations_appear_only_in_interactive_frames():

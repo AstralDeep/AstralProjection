@@ -14,6 +14,7 @@ public struct ChatSummary: Sendable, Identifiable, Equatable {
     public let timeLabel: String?
     public let pinned: Bool
     public let archived: Bool
+    public let projectId: String?
 
     public init?(json: JSONValue) {
         guard
@@ -32,6 +33,12 @@ public struct ChatSummary: Sendable, Identifiable, Equatable {
         self.timeLabel = json["time"]?.stringValue
         self.pinned = json["pinned"]?.boolValue == true
         self.archived = json["archived"]?.boolValue == true
+        if let project = json["project_id"], project != .null {
+            guard let id = project.stringValue, ProjectIdentity.valid(id) else { return nil }
+            self.projectId = id
+        } else {
+            self.projectId = nil
+        }
     }
 
     public init?(historyItem: JSONValue) {
@@ -42,6 +49,7 @@ public struct ChatSummary: Sendable, Identifiable, Equatable {
                 "preview": historyItem["preview"] ?? .null,
                 "has_saved_components": historyItem["saved"] ?? .null,
                 "icon": historyItem["icon"] ?? .null, "time": historyItem["time"] ?? .null,
+                "project_id": historyItem["project_id"] ?? .null,
                 "pinned": historyItem["pinned"] ?? .null, "archived": historyItem["archived"] ?? .null,
             ]))
     }
@@ -168,11 +176,21 @@ public enum OperationSubmissionProjection: Sendable, Equatable {
     }
 }
 
+public struct ProjectConnection: Sendable, Equatable {
+    public let deviceId: String
+    public let generation: String
+    public init(deviceId: String, generation: String) {
+        self.deviceId = deviceId
+        self.generation = generation
+    }
+}
+
 public struct RestClient: Sendable {
     public typealias Transport = @Sendable (URLRequest) async throws -> (Int, Data)
     public typealias PresentationTransport = @Sendable (URLRequest) async throws -> (Int, Data, String?)
 
     public let serverBase: URL
+    public let projectConnection: ProjectConnection?
     private let transport: Transport
     private let workspaceTransport: Transport
     private let presentationTransport: PresentationTransport
@@ -181,12 +199,14 @@ public struct RestClient: Sendable {
 
     public init(
         serverBase: URL,
+        projectConnection: ProjectConnection? = nil,
         tokenProvider: @escaping @Sendable () async -> String?,
         transport: Transport? = nil,
         downloadSession: URLSession? = nil,
         presentationTransport: PresentationTransport? = nil
     ) {
         self.serverBase = serverBase
+        self.projectConnection = projectConnection
         self.tokenProvider = tokenProvider
         self.downloadSession = downloadSession
         self.transport =
@@ -237,14 +257,26 @@ public struct RestClient: Sendable {
         return comps.url!
     }
 
-    func request(_ method: String, _ path: String, body: JSONValue? = nil) async throws -> (Int, JSONValue) {
+    func request(
+        _ method: String, _ path: String, body: JSONValue? = nil,
+        queryItems: [URLQueryItem] = []
+    ) async throws -> (Int, JSONValue) {
+        guard var parts = URLComponents(url: serverBase.appendingPathComponent(path), resolvingAgainstBaseURL: false)
+        else { throw URLError(.badURL) }
+        parts.queryItems = queryItems.isEmpty ? nil : queryItems
+        parts.fragment = nil
+        guard let url = parts.url else { throw URLError(.badURL) }
         var request = NoStoreHTTP.request(
-            url: serverBase.appendingPathComponent(path),
+            url: url,
             method: method,
             body: try body?.encoded(),
             contentType: body == nil ? nil : "application/json")
         if let token = await tokenProvider() {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        if let projectConnection, path.hasPrefix("api/projects") || path.hasPrefix("api/chats") {
+            request.setValue(projectConnection.deviceId, forHTTPHeaderField: "X-Astral-Device-Id")
+            request.setValue(projectConnection.generation, forHTTPHeaderField: "X-Astral-Connection-Generation")
         }
         let (status, data) = try await transport(request)
         return (status, (try? JSONValue.parse(data)) ?? .object([:]))

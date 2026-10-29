@@ -18,7 +18,7 @@
     "coverage:browser": "node browser-v8-cli.mjs",
     "coverage:union": "node coverage-union-cli.mjs",
     "lint": "cd ../.. && node tooling/web-ci/node_modules/eslint/bin/eslint.js --config tooling/web-ci/eslint.config.mjs --max-warnings=0 \"backend/webrender/static/**/*.js\" \"tooling/web-ci/**/*.mjs\" \"tooling/web-ci/**/*.js\"",
-    "test:coverage-conversion": "node --test tests/coverage-conversion.test.mjs",
+    "test:coverage-conversion": "node --test tests/coverage-conversion.test.mjs tests/browser-v8-cli.test.mjs",
     "test:coverage-conversion:browser": "node --test tests/coverage-conversion.browser.test.mjs",
     "test:coverage-conversion:node": "node --test tests/node-v8-cli.test.mjs",
     "test:coverage-conversion:browser-cli": "node --test tests/browser-v8-cli.test.mjs",

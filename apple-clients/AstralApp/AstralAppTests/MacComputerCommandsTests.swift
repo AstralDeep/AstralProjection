@@ -49,6 +49,93 @@
             } catch { return (error as? ComputerHostError)?.code ?? "\(error)" }
         }
 
+        func testJobOutputAndInterruptRejectAnotherSession() async throws {
+            let root = try folder()
+            let host = commands(MacComputerFakeSpawner())
+            let context = try ComputerProjectContext(
+                chatId: "chat", projectId: "12345678-1234-1234-9234-123456789abc", grantRevision: 1,
+                manifestGeneration: 1)
+            let launch = try ComputerHostRequest(
+                json: .object([
+                    "type": .string("computer_request"),
+                    "request_id": .string("creq_" + String(repeating: "b", count: 32)),
+                    "session_id": .string(session), "project_context": context.json, "verb": .string("run_command"),
+                    "args": .object([
+                        "argv": .array([.string("echo")]), "cwd": .string(root), "background": .bool(true),
+                    ]), "deadline_ms": .number(1000),
+                ]))
+            let launched = try await host.run(launch, session: session, roots: [root], authorize: {})
+            let id = try XCTUnwrap(launched["job_id"])
+            for verb in ["read_output", "interrupt_command"] {
+                let call = try ComputerHostRequest(
+                    json: .object([
+                        "type": .string("computer_request"),
+                        "request_id": .string("creq_" + String(repeating: "a", count: 32)),
+                        "session_id": .string("22222222-2222-4222-8222-222222222222"), "project_context": context.json,
+                        "verb": .string(verb),
+                        "args": .object(
+                            verb == "read_output" ? ["job_id": id] : ["job_id": id, "signal": .string("TERM")]),
+                        "deadline_ms": .number(1000),
+                    ]))
+                let result = await code {
+                    if verb == "read_output" {
+                        _ = try await host.read(call, authorize: {})
+                    } else {
+                        _ = try await host.interrupt(call, authorize: {})
+                    }
+                }
+                XCTAssertEqual(result, "stale_project_grant")
+            }
+            host.endAll(as: "interrupted")
+        }
+
+        func testProjectOutputWaitRechecksRevocationBeforeReturningBytes() async throws {
+            let root = try folder()
+            let spawner = MacComputerFakeSpawner()
+            let clock = MacComputerFakeClock { $0 >= 20 }
+            let host = commands(spawner, clock: clock)
+            let project = "12345678-1234-1234-9234-123456789abc"
+            let context = try ComputerProjectContext(
+                chatId: "chat", projectId: project, grantRevision: 1, manifestGeneration: 1)
+            let authority = ComputerHostAuthority(now: { 1 })
+            authority.setDesktopAvailable(true)
+            authority.configureProjects(true)
+            try authority.acceptProjectManifest(
+                ComputerProjectManifest(
+                    generation: 1,
+                    projects: [
+                        ComputerProjectWorkspace(
+                            projectId: project, grantRevision: 1, roots: [.init(name: "Root", path: root)])
+                    ]))
+            try authority.begin(session, projectContext: context)
+            func call(_ verb: String, _ args: [String: JSONValue]) throws -> ComputerHostRequest {
+                counter += 1
+                return try ComputerHostRequest(
+                    json: .object([
+                        "type": .string("computer_request"),
+                        "request_id": .string("creq_" + String(format: "%032x", counter)),
+                        "session_id": .string(session), "project_context": context.json, "verb": .string(verb),
+                        "args": .object(args), "deadline_ms": .number(30000),
+                    ]))
+            }
+            let launched = try await host.run(
+                call(
+                    "run_command", ["argv": .array([.string("echo")]), "cwd": .string(root), "background": .bool(true)]),
+                session: session, roots: [root], authorize: {})
+            let id = try XCTUnwrap(launched["job_id"])
+            let read = try call("read_output", ["job_id": id, "wait_s": .number(25)])
+            let ticket = try authority.admit(read)
+            let waiting = Task {
+                await self.code { _ = try await host.read(read, authorize: { try authority.verify(ticket) }) }
+            }
+            while !clock.sleeps.contains(25) { await Task.yield() }
+            authority.revokeProject(project)
+            spawner.outputs.first?.append(.stdout, Array("private".utf8))
+            let denied = await waiting.value
+            XCTAssertEqual(denied, "stale_project_grant")
+            host.endAll(as: "interrupted")
+        }
+
         func testForegroundRunReturnsTailsExitAndTheSanitizedPlan() async throws {
             let root = try folder()
             let spawner = MacComputerFakeSpawner { _, output, process in

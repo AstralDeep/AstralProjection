@@ -1,6 +1,5 @@
-"""Pure view builders for the Work list, detail and result surfaces over host-authorized
-public snapshots; buttons only request reads via chrome_open and never submit or
-control work themselves.
+"""Builds shared Work list, detail and result surfaces from host-authorized public snapshots.
+Navigation, result-save and explicit continuity controls retain server-issued bindings for Deep to reauthorize.
 """
 
 from __future__ import annotations
@@ -15,6 +14,7 @@ from uuid import UUID
 from webrender.renderer import safe_url
 
 from astralprojection.models import ChromeViewModel, LayoutView, ThemeView
+from astralprojection.work_continuity import CONTINUITY_ACTION, validate_continuity_payload
 
 from ._components import alert, badge, build_view, button, card, key_value, text
 
@@ -356,6 +356,13 @@ def _detail(row, measurements=None):
     return components
 
 
+def _continuity(value, row):
+    payload = validate_continuity_payload(value)
+    _require(row["schema_supported"] is True and row["disposition"] == "awaiting_event")
+    _require(payload["operation_id"] == row["id"] and payload["expected_revision"] == row["revision"])
+    return [button("Recheck completion", CONTINUITY_ACTION, payload)]
+
+
 def _content(value):
     _keys(value, {"version", "scope", "disposition", "source", "passages"})
     _require(
@@ -677,6 +684,8 @@ def build_work_view(
             title = row["title"]
             if mode == "detail":
                 components = _detail(row, state.get("measurements"))
+                if state.get("continuity") is not None:
+                    components.extend(_continuity(state["continuity"], row))
             elif mode == "result":
                 components = _result(state.get("result"), row, state.get("save"))
             else:

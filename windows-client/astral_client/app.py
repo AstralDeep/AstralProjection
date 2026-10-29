@@ -3387,6 +3387,42 @@ class MainWindow(QMainWindow):
         if not sender(params, ticket[3], is_current=lambda: self._work_read_current(ticket)) and self._work_read is ticket:
             self._retire_work_read()
 
+    def _request_work_continuity(self, payload: dict) -> bool:
+        from astralprojection.work_continuity import validate_continuity_payload
+
+        dialog = self._surface_dialog
+        current = (self.client, getattr(self.client, "connection_generation", None), self._resume_store.storage_key)
+        if (self._auth_stopped or dialog is None or not dialog.isVisible() or dialog._surface != "work"
+                or dialog._mandatory or dialog._timer.isActive() or self._work_read is not None
+                or self._surface_owner != current):
+            return False
+        try:
+            command = validate_continuity_payload(payload)
+        except ValueError:
+            return False
+
+        def offered(value):
+            if isinstance(value, list):
+                return any(offered(row) for row in value)
+            return (isinstance(value, dict) and (
+                value.get("type") == "button" and value.get("action") == "chrome_work_continuity"
+                and value.get("payload") == command and value.get("disabled") is False and value.get("local") is False
+                or offered(value.get("components")) or offered(value.get("children")) or offered(value.get("content"))))
+
+        if not offered(dialog._surface_payload):
+            return False
+        sender = getattr(self.client, "send_current_work_continuity", None)
+        if not callable(sender):
+            return False
+        self._retire_work_read()
+        dialog.begin_load("work", {"mode": "detail", "operation_id": command["operation_id"]}, "Recent work")
+        ticket = (*current, str(uuid.uuid4()))
+        self._work_read = ticket
+        accepted = sender(command, ticket[3], is_current=lambda: self._work_read_current(ticket))
+        if not accepted and self._work_read is ticket:
+            self._retire_work_read()
+        return accepted
+
     def _open_local_agents(self) -> None:
         from .local_agents import LocalAgentsDialog
         dialog = getattr(self, "_local_agents_dialog", None)
@@ -3522,6 +3558,23 @@ class MainWindow(QMainWindow):
                     or msg["request_generation"] != ticket[3]
                     or not self._work_read_current(ticket) or dialog is None
                     or not dialog.isVisible() or dialog._surface != "work"):
+                return
+            from rote.work import validate_work_components
+
+            def validate_commands(value):
+                if isinstance(value, list):
+                    for child in value:
+                        validate_commands(child)
+                elif isinstance(value, dict):
+                    if value.get("action") == "chrome_work_continuity":
+                        validate_work_components([value])
+                    for child in value.values():
+                        if isinstance(child, (dict, list)):
+                            validate_commands(child)
+
+            try:
+                validate_commands(msg.get("components"))
+            except (ValueError, RecursionError):
                 return
             self._surface_owner = ticket[:3]
             self._finish_work_read()
@@ -4163,6 +4216,8 @@ class MainWindow(QMainWindow):
         self._console_open_surface("mesh", "Mesh devices", {})
 
     def _emit(self, action: str, payload: dict) -> None:
+        if action == "chrome_work_continuity":
+            return self._request_work_continuity(payload)
         if action == "load_chat":
             return False
         if action in {"chrome_mesh_create", "chrome_mesh_identity", "chrome_mesh_redeem"}:
