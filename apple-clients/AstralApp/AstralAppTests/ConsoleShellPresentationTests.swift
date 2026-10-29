@@ -725,7 +725,11 @@ private final class ConsoleTestMount {
         }
 
         func recognizedText() throws -> [(text: String, bounds: CGRect)] {
-            let image = try XCTUnwrap(snapshot().cgImage(forProposedRect: nil, context: nil, hints: nil))
+            let captured = try XCTUnwrap(snapshot().cgImage(forProposedRect: nil, context: nil, hints: nil))
+            let png = try XCTUnwrap(NSBitmapImageRep(cgImage: captured).representation(using: .png, properties: [:]))
+            let image = try XCTUnwrap(NSBitmapImageRep(data: png)?.cgImage)
+            XCTAssertEqual(image.width, captured.width)
+            XCTAssertEqual(image.height, captured.height)
             let request = VNRecognizeTextRequest()
             request.recognitionLevel = .accurate
             request.usesLanguageCorrection = false

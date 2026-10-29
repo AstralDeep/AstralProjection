@@ -116,6 +116,7 @@ public actor WSClient {
     private var continuation: AsyncStream<WSEvent>.Continuation?
     private var onConnect: (@Sendable () async -> String?)?
     private var onReplay: (@Sendable (QueuedOperationReplay) async -> Bool)?
+    private var onRegistration: (@Sendable (InboundFrame, String) async -> Bool)?
     private let liveness: LivenessPolicy?
     private var lastInbound = ContinuousClock.now
     private var keepalive: Task<Void, Never>?
@@ -139,12 +140,14 @@ public actor WSClient {
 
     public func start(
         onConnect: @escaping @Sendable () async -> String?,
-        onReplay: @escaping @Sendable (QueuedOperationReplay) async -> Bool = { _ in true }
+        onReplay: @escaping @Sendable (QueuedOperationReplay) async -> Bool = { _ in true },
+        onRegistration: (@Sendable (InboundFrame, String) async -> Bool)? = nil
     ) {
         guard !running else { return }
         running = true
         self.onConnect = onConnect
         self.onReplay = onReplay
+        self.onRegistration = onRegistration
         Task { await self.runLoop() }
     }
 
@@ -418,6 +421,30 @@ public actor WSClient {
                     let message = try await task.receive()
                     guard task.state == .running else { continue }
                     lastInbound = .now
+                    let frame: InboundFrame?
+                    switch message {
+                    case .string(let text): frame = InboundFrame.parse(text)
+                    case .data(let data):
+                        frame = String(data: data, encoding: .utf8).flatMap(InboundFrame.parse)
+                    @unknown default: frame = nil
+                    }
+                    var consumed = false
+                    if !established, let onRegistration {
+                        guard let frame, frame.name == "rote_config",
+                            frame.payload["device_profile"]?["device_type"]?.stringValue == "macos",
+                            !["chat_id", "connection_generation", "request_generation"].contains(where: {
+                                frame.payload[$0] != nil
+                            }), let generation = registeredConnectionGeneration
+                        else {
+                            if let frame, frame.name != "rote_config" { continuation?.yield(.frame(frame)) }
+                            continue
+                        }
+                        guard await onRegistration(frame, generation), running, self.task === task else {
+                            task.cancel(with: .normalClosure, reason: nil)
+                            break receive
+                        }
+                        consumed = true
+                    }
                     if !established {
                         established = true
                         backoff.reset()
@@ -434,20 +461,7 @@ public actor WSClient {
                             transmit(queued, using: task)
                         }
                     }
-                    switch message {
-                    case .string(let text):
-                        if let frame = InboundFrame.parse(text) {
-                            continuation?.yield(.frame(frame))
-                        }
-                    case .data(let data):
-                        if let text = String(data: data, encoding: .utf8),
-                            let frame = InboundFrame.parse(text)
-                        {
-                            continuation?.yield(.frame(frame))
-                        }
-                    @unknown default:
-                        break
-                    }
+                    if let frame, !consumed { continuation?.yield(.frame(frame)) }
                 } catch {
                     established = false
                     registeredConnectionGeneration = nil

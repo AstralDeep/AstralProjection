@@ -15,15 +15,17 @@
 
         var body: some View {
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundStyle(theme.palette.muted).accessibilityHidden(true)
+                Image(systemName: "magnifyingglass").font(.system(size: 16)).frame(width: 24).foregroundStyle(
+                    theme.palette.muted
+                ).accessibilityHidden(true)
                 TextField(prompt, text: $text).textFieldStyle(.plain).focused(focused)
                     .foregroundStyle(theme.palette.text)
                     .accessibilityLabel(prompt).accessibilityIdentifier(identifier)
             }
             .font(ConsoleTypography.subheadline)
-            .padding(.horizontal, 10).frame(minHeight: 32)
-            .background(theme.palette.bg.opacity(0.6), in: RoundedRectangle(cornerRadius: AstralRadius.sm))
-            .overlay(RoundedRectangle(cornerRadius: AstralRadius.sm).stroke(theme.palette.fieldBorder))
+            .padding(.horizontal, 8).frame(minHeight: 30)
+            .background(theme.palette.bg.opacity(0.6), in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(theme.palette.fieldBorder))
         }
     }
 
