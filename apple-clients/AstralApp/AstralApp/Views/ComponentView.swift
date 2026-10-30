@@ -13,6 +13,8 @@ private struct NavigationTranscriptKey: EnvironmentKey { static let defaultValue
 
 private struct NavigationSurfaceKey: EnvironmentKey { static let defaultValue = false }
 
+private struct ComponentActionOwnerKey: EnvironmentKey { static let defaultValue: AstralComponent? = nil }
+
 private struct GuidanceSurfaceKey: EnvironmentKey { static let defaultValue = false }
 
 private struct CompactSettingsKey: EnvironmentKey { static let defaultValue = false }
@@ -22,6 +24,10 @@ private struct CompactCardContentKey: EnvironmentKey { static let defaultValue =
 private struct CompactChipKey: EnvironmentKey { static let defaultValue: Bool? = nil }
 
 extension EnvironmentValues {
+    var astralComponentActionOwner: AstralComponent? {
+        get { self[ComponentActionOwnerKey.self] }
+        set { self[ComponentActionOwnerKey.self] = newValue }
+    }
     var astralNavigationTranscript: String? {
         get { self[NavigationTranscriptKey.self] }
         set { self[NavigationTranscriptKey.self] = newValue }
@@ -74,6 +80,7 @@ struct ComponentView: View {
     @Environment(ThemeStore.self) var theme
     @Environment(AppModel.self) var model
     @Environment(\.astralNavigationTranscript) private var navigationTranscript
+    @Environment(\.astralComponentActionOwner) private var componentActionOwner
     @Environment(\.astralNavigationSurface) private var navigationSurface
     @Environment(\.astralWorkReadSurface) private var workReadSurface
     @Environment(\.astralViewportWidth) private var viewportWidth
@@ -113,9 +120,13 @@ struct ComponentView: View {
     }
 
     var body: some View {
-        CanvasCompositeCapture(
+        let owner =
+            model.workspaceCanvas.contains(component)
+                && ComponentChromeModel.canonicalIdentity(of: component) != nil ? component : componentActionOwner
+        return CanvasCompositeCapture(
             component: component, node: captureNode, registry: model.canvasCapture, palette: p, layoutWidth: slotWidth
         ) { renderedContent }
+        .environment(\.astralComponentActionOwner, owner)
         .onAppear { captureLayout() }
         .onChange(of: slotWidth) { _, _ in captureLayout() }
         .onChange(of: captureNode) { _, _ in captureLayout() }
@@ -615,6 +626,7 @@ struct ComponentView: View {
     private var buttonView: some View {
         let label = component.label ?? component.title ?? "Continue"
         let variant = component.variant ?? "primary"
+        let invoke = model.componentInvocationCallback(component, owner: componentActionOwner ?? component)
         let action = component.raw["action"]?.stringValue ?? "component_action"
         let navigate = model.navigationCallback(component, surface: navigationSurface, transcript: navigationTranscript)
         let serverDisabled =
@@ -624,7 +636,13 @@ struct ComponentView: View {
         let button = Button {
             guard !chip.inert else { return }
             let payload = component.raw["payload"]?.objectValue ?? [:]
-            if action == "load_chat" { navigate(payload) } else { model.emit(action, payload: payload) }
+            if action == "load_chat" {
+                navigate(payload)
+            } else if action == "component_action" {
+                invoke(payload)
+            } else {
+                model.emit(action, payload: payload)
+            }
         } label: {
             if compactSettings {
                 CompactButtonLabel(text: label)
