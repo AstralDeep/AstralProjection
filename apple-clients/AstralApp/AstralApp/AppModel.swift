@@ -5720,6 +5720,37 @@ final class AppModel: NSObject {
         return true
     }
 
+    func componentInvocationCallback(
+        _ component: AstralComponent, owner componentOwner: AstralComponent?
+    ) -> ([String: JSONValue]) -> Void {
+        let owner = downloadOwner
+        let server = serverBase
+        let chat = activeChatId
+        let connection = continuity.connectionGeneration
+        let request = continuity.requestGeneration
+        let revision = lastCommittedRenderRevision
+        let componentId = componentOwner.flatMap { ComponentChromeModel.canonicalIdentity(of: $0) }
+        let offered = componentOwner.map { navigationComponentPresent(component.raw, in: $0.raw) } == true
+        return { [weak self] fields in
+            guard let self, offered, let componentOwner, let componentId, let chat, !chat.isEmpty,
+                self.signedIn, self.connected, self.downloadOwner.account != nil,
+                self.screen == .chat, self.workspaceStarted, !self.mandatorySurface,
+                !self.timelineReadOnly, !self.isViewingHistory,
+                self.downloadOwner == owner, self.serverBase == server, self.activeChatId == chat,
+                connection != nil, self.continuity.connectionGeneration == connection,
+                self.continuity.requestGeneration == request, self.lastCommittedRenderRevision == revision,
+                fields["component_id"] == nil || fields["component_id"] == .string(componentId),
+                fields["chat_id"] == nil || fields["chat_id"] == .string(chat)
+            else { return }
+            let matches = self.workspaceCanvas.filter { $0.raw["component_id"] == .string(componentId) }
+            guard matches.count == 1, matches.first == componentOwner else { return }
+            var payload = fields
+            payload["component_id"] = .string(componentId)
+            payload["chat_id"] = .string(chat)
+            self.emit("component_action", payload: payload)
+        }
+    }
+
     func emit(_ action: String, payload: [String: JSONValue] = [:]) {
         sendEvent(action, .object(payload))
     }
