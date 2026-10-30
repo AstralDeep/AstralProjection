@@ -16,10 +16,16 @@
                 && session["CGSSessionScreenIsLocked"] as? Bool != true
         }
         @MainActor static func localRearm() -> Bool {
-            localRearm(system: MacComputerLiveSystem.shared, appActive: NSApp.isActive)
+            localRearm(
+                system: MacComputerLiveSystem.shared, appActive: NSApp.isActive,
+                frontmostPID: NSWorkspace.shared.frontmostApplication?.processIdentifier)
         }
-        @MainActor static func localRearm(system: any MacComputerSystemIO, appActive: Bool) -> Bool {
-            appActive && MacComputerObservation.context(system: system).pid == system.hostPID && usable(system: system)
+        @MainActor static func localRearm(
+            system: any MacComputerSystemIO, appActive: Bool, frontmostPID: pid_t? = nil
+        ) -> Bool {
+            guard appActive else { return false }
+            let observedPID = MacComputerObservation.context(system: system).pid ?? frontmostPID
+            return observedPID == system.hostPID && usable(system: system)
         }
     }
 

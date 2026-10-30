@@ -106,6 +106,27 @@
             io.set(nil, attribute: kAXFocusedApplicationAttribute, of: io.system)
             XCTAssertTrue(MacComputerDesktopProbe.usable(system: io))
         }
+        @MainActor func testLocalRearmFallsBackToOwnOSFrontmostOnlyWhenAXIdentityIsUnavailable() {
+            let io = MacComputerTestSystem()
+            XCTAssertFalse(MacComputerDesktopProbe.localRearm(system: io, appActive: true, frontmostPID: 100))
+            io.set(nil, attribute: kAXFocusedApplicationAttribute, of: io.system)
+            XCTAssertTrue(MacComputerDesktopProbe.localRearm(system: io, appActive: true, frontmostPID: 100))
+            XCTAssertFalse(MacComputerDesktopProbe.localRearm(system: io, appActive: true, frontmostPID: nil))
+            XCTAssertFalse(MacComputerDesktopProbe.localRearm(system: io, appActive: true, frontmostPID: 200))
+            XCTAssertFalse(MacComputerDesktopProbe.localRearm(system: io, appActive: false, frontmostPID: 100))
+            for session: [String: Any]? in [
+                nil, [kCGSessionOnConsoleKey as String: false, kCGSessionLoginDoneKey as String: true],
+                [kCGSessionOnConsoleKey as String: true, kCGSessionLoginDoneKey as String: false],
+                [
+                    kCGSessionOnConsoleKey as String: true, kCGSessionLoginDoneKey as String: true,
+                    "CGSSessionScreenIsLocked": true,
+                ],
+            ] {
+                io.configure { $0.session = session }
+                XCTAssertFalse(MacComputerDesktopProbe.localRearm(system: io, appActive: true, frontmostPID: 100))
+            }
+        }
+
         @MainActor func testLocalDesktopRearmRequiresActualOwnForegroundAndActiveApp() {
             let io = MacComputerTestSystem()
             XCTAssertFalse(MacComputerDesktopProbe.localRearm(system: io, appActive: true))
