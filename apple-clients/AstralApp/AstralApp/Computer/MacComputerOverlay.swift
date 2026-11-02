@@ -65,7 +65,7 @@
         override var canBecomeMain: Bool { false }
     }
 
-    final class MacComputerOverlayHostingView<Content: View>: NSHostingView<Content> {
+    final class MacComputerOverlayHostingView: NSHostingView<AnyView> {
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     }
 
@@ -236,7 +236,7 @@
             panel.isExcludedFromWindowsMenu = true
             panel.animationBehavior = .none
             panel.contentView = MacComputerOverlayHostingView(
-                rootView: MacComputerOverlayBanner(host: host, model: model))
+                rootView: AnyView(MacComputerOverlayBanner(host: host, model: model)))
             return panel
         }
 
