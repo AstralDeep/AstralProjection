@@ -1,5 +1,6 @@
-// Presents explicit Mac permissions, workspace grants and the bypass-approvals switch separately from server-owned
-// product settings. The persistent session panel and the bypass confirmation sheet act on the same host authority.
+// Presents explicit Mac permissions, workspace grants with their excluded patterns, and the persisted
+// bypass-approvals switch separately from server-owned product settings. The session panel and the bypass
+// confirmation sheet act on the same host authority.
 
 #if os(macOS)
     import AppKit
@@ -75,6 +76,11 @@
                     .disabled(!host.available).accessibilityIdentifier("mac-computer-consent")
                     MacBypassToggle(host: host, origin: .controls)
                         .accessibilityIdentifier("mac-computer-bypass")
+                    if host.bypass && host.bypassSaved {
+                        Label("Approvals bypassed on this Mac (persisted)", systemImage: "exclamationmark.shield.fill")
+                            .font(ConsoleTypography.caption).foregroundStyle(palette.warning)
+                            .accessibilityIdentifier("mac-computer-bypass-persisted")
+                    }
                     if let browser = host.browser as? MacBrowserDriver {
                         Toggle(
                             "Browser pane", isOn: Binding(get: { browser.paneEnabled }, set: browser.setPaneEnabled)
@@ -97,11 +103,20 @@
                         Text("File tools reach only these folders.")
                             .font(ConsoleTypography.caption).foregroundStyle(palette.muted)
                         ForEach(host.files.roots, id: \.self) { path in
-                            HStack {
-                                Text(path).textSelection(.enabled)
-                                Spacer()
-                                Button(
-                                    "Remove", action: MacComputerControlCommand.removeWorkspace(path).action(on: host))
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack {
+                                    Text(path).textSelection(.enabled)
+                                    Spacer()
+                                    Button(
+                                        "Remove",
+                                        action: MacComputerControlCommand.removeWorkspace(path).action(on: host))
+                                }
+                                if !host.files.exclusions.patterns.isEmpty {
+                                    Text("Hidden: " + host.files.exclusions.patterns.joined(separator: ", "))
+                                        .font(ConsoleTypography.caption).foregroundStyle(palette.muted)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .accessibilityIdentifier("mac-computer-workspace-excluded")
+                                }
                             }
                         }
                         Button(

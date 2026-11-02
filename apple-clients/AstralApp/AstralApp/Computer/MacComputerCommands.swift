@@ -1,5 +1,6 @@
 // Runs approved workspace commands in their own process groups with bounded output rings and retained job records.
-// MacComputerHost calls it off the physical-effect queue; ComputerCommandPolicy decides every launch input.
+// MacComputerHost calls it off the physical-effect queue; ComputerCommandPolicy decides every launch input,
+// including the refusal of working directories and command text that reach excluded workspace paths.
 
 #if os(macOS)
     import AstralCore
@@ -404,6 +405,7 @@
 
         func run(
             _ request: ComputerHostRequest, session: String, roots: [String],
+            exclusions: ComputerWorkspaceExclusions = .defaults,
             authorize: @escaping @Sendable () throws -> Void
         ) async throws -> [String: JSONValue] {
             let args = request.args
@@ -425,6 +427,9 @@
                 }
             }
             let invocation = try ComputerCommandPolicy.invocation(command: args["command"]?.stringValue, argv: argv)
+            try ComputerCommandPolicy.refuseExcluded(
+                cwd: args["cwd"]?.stringValue ?? "", resolvedCwd: cwd, command: invocation.command,
+                argv: invocation.argv, roots: roots, exclusions: exclusions)
             let environment = try ComputerCommandPolicy.environment(
                 inherited: inherited, path: await loginPath(), additions: additions)
             let plan: MacComputerCommandPlan

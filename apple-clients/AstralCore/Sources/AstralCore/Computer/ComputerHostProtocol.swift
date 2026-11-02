@@ -68,9 +68,11 @@ public struct ComputerHostDescriptor: Sendable, Equatable {
     public let verbs: [String]
     public let workspaceRoots: [ComputerHostWorkspaceRoot]
     public let projectManifest: ComputerProjectManifest?
+    public let excluded: [String]
     public init(
         hostId: String, name: String, clientVersion: String, screens: [ComputerHostScreen], verbs: [String],
-        workspaceRoots: [ComputerHostWorkspaceRoot] = [], projectManifest: ComputerProjectManifest? = nil
+        workspaceRoots: [ComputerHostWorkspaceRoot] = [], projectManifest: ComputerProjectManifest? = nil,
+        excluded: [String] = []
     ) throws {
         guard computerUUID(hostId), !name.isEmpty, name.count <= 64,
             !name.unicodeScalars.contains(where: { $0.value < 32 }),
@@ -86,7 +88,7 @@ public struct ComputerHostDescriptor: Sendable, Equatable {
             !verbs.isEmpty, Set(verbs).count == verbs.count, Set(verbs).isSubset(of: ComputerHostRequest.verbs),
             workspaceRoots.count <= Self.maximumWorkspaceRoots, workspaceRoots.allSatisfy(\.isValid),
             Set(workspaceRoots.map(\.path)).count == workspaceRoots.count,
-            projectManifest == nil || workspaceRoots.isEmpty
+            projectManifest == nil || workspaceRoots.isEmpty, ComputerWorkspaceExclusions.valid(excluded)
         else { throw ComputerHostError("out_of_range", "The computer descriptor is invalid.") }
         self.hostId = hostId
         self.name = name
@@ -95,6 +97,7 @@ public struct ComputerHostDescriptor: Sendable, Equatable {
         self.verbs = verbs.sorted()
         self.workspaceRoots = workspaceRoots
         self.projectManifest = projectManifest
+        self.excluded = excluded
     }
     public var json: JSONValue {
         var object: [String: JSONValue] = [
@@ -104,6 +107,7 @@ public struct ComputerHostDescriptor: Sendable, Equatable {
         ]
         if !workspaceRoots.isEmpty { object["workspace_roots"] = .array(workspaceRoots.map(\.json)) }
         if let projectManifest { object["project_manifest"] = projectManifest.json }
+        if !excluded.isEmpty { object["excluded"] = .array(excluded.map(JSONValue.string)) }
         return .object(object)
     }
 }

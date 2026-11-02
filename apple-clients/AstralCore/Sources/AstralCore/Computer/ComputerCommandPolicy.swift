@@ -1,6 +1,6 @@
 // Decides the environment, working directory, timeout, program and grantable form of a host command before launch.
 // The Mac host builds every spawn from these decisions; the server keeps review and task grants.
-// A working directory is matched to the selected folders by path before anything outside them is touched.
+// Working directories must sit in a selected folder, and commands naming an excluded path there are refused.
 
 #if os(macOS)
     import Darwin
@@ -109,6 +109,126 @@
             }
             throw ComputerHostError(
                 "cwd_outside_workspace", "The working directory is outside every selected workspace folder.")
+        }
+
+        public static func refuseExcluded(
+            cwd: String, resolvedCwd: String, command: String?, argv: [String]?, roots: [String],
+            exclusions: ComputerWorkspaceExclusions
+        ) throws {
+            guard !exclusions.patterns.isEmpty else { return }
+            let anchors = Array(Set(roots.map(lexical) + roots.compactMap(canonical).map(lexical)))
+                .filter { $0 != "/" }.sorted { $0.count > $1.count }
+            for directory in [lexical(cwd), resolvedCwd] {
+                if let pattern = excludedPattern(directory, anchors: anchors, exclusions: exclusions) {
+                    throw ComputerHostError(
+                        "excluded_path",
+                        "The working directory \(String(cwd.prefix(200))) is inside a path excluded by the "
+                            + "workspace pattern \(pattern).")
+                }
+            }
+            for (fragment, shell) in contextualFragments(command: command, argv: argv) {
+                if let pattern = excludedFragment(
+                    fragment, cwd: resolvedCwd, anchors: anchors, exclusions: exclusions, expand: shell)
+                {
+                    throw ComputerHostError(
+                        "excluded_path",
+                        "The command names \(String(fragment.prefix(200))), which is excluded from Astral's tools by "
+                            + "the workspace pattern \(pattern).")
+                }
+            }
+        }
+
+        private static let fragmentSeparators = CharacterSet(charactersIn: "=,;|&<>()`${}\"'")
+
+        static func fragments(command: String?, argv: [String]?) -> [String] {
+            contextualFragments(command: command, argv: argv).map(\.0)
+        }
+
+        private static func words(_ text: String) -> [String] {
+            tokenize(text) ?? text.components(separatedBy: .whitespacesAndNewlines)
+        }
+
+        private static func contextualFragments(command: String?, argv: [String]?) -> [(String, Bool)] {
+            var seen: Set<String> = []
+            var result: [(String, Bool)] = []
+            func walk(_ list: [String], shell: Bool, depth: Int) {
+                for (index, word) in list.enumerated() {
+                    for piece in [word] + word.components(separatedBy: fragmentSeparators)
+                    where !piece.isEmpty && seen.insert(piece).inserted {
+                        result.append((piece, shell))
+                    }
+                    let previous = index > 0 ? list[index - 1] : ""
+                    let script =
+                        previous == "eval"
+                        || (computerFullMatch(previous, "^-[A-Za-z]*c$")
+                            && list[..<index].contains { shells.contains(basename($0).lowercased()) })
+                    guard depth < 4, script || word.contains("$(") || word.contains("`") else { continue }
+                    let inner = word.components(separatedBy: CharacterSet(charactersIn: "`$()")).joined(separator: " ")
+                    walk(words(script ? word : inner), shell: true, depth: depth + 1)
+                }
+            }
+            if let argv {
+                walk(argv, shell: false, depth: 0)
+            } else if let command {
+                walk(words(command), shell: true, depth: 0)
+            }
+            return result
+        }
+
+        private static func excludedFragment(
+            _ fragment: String, cwd: String, anchors: [String], exclusions: ComputerWorkspaceExclusions, expand: Bool
+        ) -> String? {
+            var path = fragment
+            if path == "~" || path.hasPrefix("~/") {
+                path = FileManager.default.homeDirectoryForCurrentUser.path + path.dropFirst()
+            }
+            if !path.hasPrefix("/"), let pattern = exclusions.pattern(matchingComponents: path.split(separator: "/")) {
+                return pattern
+            }
+            let absolute = path.hasPrefix("/") ? path : cwd + "/" + path
+            if let pattern = excludedPattern(absolute, anchors: anchors, exclusions: exclusions) { return pattern }
+            guard expand, fragment.contains(where: { "*?[".contains($0) }) else { return nil }
+            for match in expanded(absolute) {
+                if let pattern = excludedPattern(match, anchors: anchors, exclusions: exclusions) { return pattern }
+            }
+            return nil
+        }
+
+        private static func excludedPattern(
+            _ path: String, anchors: [String], exclusions: ComputerWorkspaceExclusions
+        ) -> String? {
+            let normalized = lexical(path)
+            for candidate in [normalized, resolvedPrefix(normalized)].compactMap({ $0 }) {
+                guard let anchor = anchors.first(where: { within(candidate, $0) }) else { continue }
+                let parts = candidate.dropFirst(anchor.count).split(separator: "/")
+                if let pattern = exclusions.pattern(matchingComponents: parts) { return pattern }
+            }
+            return nil
+        }
+
+        private static func resolvedPrefix(_ path: String) -> String? {
+            var head = path
+            var tail: [String] = []
+            while tail.count <= 256 {
+                if let real = canonical(head) {
+                    return lexical(([real] + tail.reversed()).joined(separator: "/"))
+                }
+                guard head != "/", !head.isEmpty else { return nil }
+                tail.append((head as NSString).lastPathComponent)
+                head = (head as NSString).deletingLastPathComponent
+            }
+            return nil
+        }
+
+        private static func expanded(_ pattern: String) -> [String] {
+            var matches = glob_t()
+            defer { globfree(&matches) }
+            guard glob(pattern, GLOB_BRACE | GLOB_TILDE | GLOB_LIMIT | GLOB_NOSORT, nil, &matches) == 0 else {
+                return []
+            }
+            return (0..<min(Int(matches.gl_pathc), 4096)).compactMap { index in
+                matches.gl_pathv[index].map { String(cString: $0) }
+            }
         }
 
         public static func timeout(_ value: Double?, background: Bool) throws -> Double {

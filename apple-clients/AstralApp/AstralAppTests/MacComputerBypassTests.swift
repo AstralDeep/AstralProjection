@@ -1,10 +1,11 @@
-// Covers the Mac bypass-approvals mode: the local-human gate and confirmation, the host's own bypass frame, the
-// frame-driven footer item and session banner, every clearing trigger, the floor that still prompts, the palette
-// command, and renders of the toggle row, sheet and footer item in Graphite, Midnight and Daylight.
+// Covers the Mac bypass-approvals mode: the local-human gate and confirmation, the saved per-account choice and its
+// restore on every registration, the host's own bypass frame, the frame-driven footer item and session banner, every
+// clearing trigger, the floor that still prompts, the palette command, and renders in each theme.
 
 #if os(macOS)
     import AppKit
     import AstralCore
+    import CryptoKit
     import SwiftUI
     import Vision
     import XCTest
@@ -27,26 +28,62 @@
             super.tearDown()
         }
 
-        private func makeHost(gate: Gate = Gate()) throws -> MacComputerHost {
-            let suite = "MacComputerBypassTests.\(UUID().uuidString)"
-            suites.append(suite)
+        private static let owner = "https://sandbox.example|account-a"
+
+        private func suite() -> String {
+            let name = "MacComputerBypassTests.\(UUID().uuidString)"
+            suites.append(name)
+            return name
+        }
+
+        private func makeHost(gate: Gate = Gate(), suite name: String? = nil) throws -> MacComputerHost {
+            let host = try unboundHost(gate: gate, suite: name ?? suite())
+            bind(host)
+            host.setEnabled(true)
+            return host
+        }
+
+        private func unboundHost(gate: Gate = Gate(), suite name: String) throws -> MacComputerHost {
             let host = MacComputerHost(
-                available: true, defaults: try XCTUnwrap(UserDefaults(suiteName: suite)),
+                available: true, defaults: try XCTUnwrap(UserDefaults(suiteName: name)),
+                projectGrants: MacProjectGrants(
+                    grants: MacComputerTestWorkspaceGrants().port,
+                    persistence: .init(read: { _ in nil }, write: { _, _ in })),
                 driver: MacComputerTaskDriver(), monitor: MacComputerTaskMonitor(),
                 permissionProvider: { MacComputerPermissions(accessibility: true, screen: true, monitoring: true) },
                 desktopProbe: { true }, desktopRearm: { gate.local }, system: MacComputerTestSystem(),
                 panelPresenter: { _ in })
             host.announcer = { [weak self] in self?.announced.append($0) }
-            bind(host)
-            host.setEnabled(true)
             addTeardownBlock { host.applicationWillTerminate() }
             return host
         }
 
-        private func bind(_ host: MacComputerHost) {
-            host.bind(owner: "bypass-owner") { [weak self] text in
+        private func bind(_ host: MacComputerHost, owner: String = owner) {
+            host.bind(owner: owner) { [weak self] text in
                 if let frame = try? JSONValue.parse(Data(text.utf8)) { self?.sent.append(frame) }
                 return true
+            }
+        }
+
+        private func register(_ host: MacComputerHost, owner: String = owner) {
+            bind(host, owner: owner)
+            host.beginWorkspaceNegotiation(server: URL(string: "https://sandbox.example")!, account: "account-a")
+            host.workspaceNegotiated(projects: false)
+        }
+
+        private static func key(_ prefix: String, _ owner: String = owner) -> String {
+            prefix + SHA256.hash(data: Data(owner.utf8)).map { String(format: "%02x", $0) }.joined()
+        }
+
+        private func saved(_ suite: String, _ owner: String = owner) -> Bool {
+            UserDefaults(suiteName: suite)?.object(forKey: Self.key("computer.bypass.", owner)) as? Bool == true
+        }
+
+        private func actions() -> [String] {
+            sent.compactMap { frame in
+                frame["action"] == .string("chrome_computer_bypass_set")
+                    ? "bypass:\(frame["payload"]?["enabled"]?.boolValue == true)"
+                    : frame["payload"]?["event"]?.stringValue
             }
         }
 
@@ -390,21 +427,29 @@
             XCTAssertEqual(bypassFrames(), [true, false])
         }
 
-        func testAccessOffDisconnectAndReRegistrationClearBypass() async throws {
-            let host = try makeHost()
+        func testAccessOffAndDisconnectEndBypassTransientlyAndARefusedRestoreStillSendsTheOwedRelease() async throws {
+            let name = suite()
+            let gate = Gate()
+            let host = try makeHost(gate: gate, suite: name)
             await enable(host)
             host.setEnabled(false)
             await flush(host)
             XCTAssertFalse(host.bypass)
+            XCTAssertTrue(saved(name))
             XCTAssertEqual(bypassFrames(), [true, false])
             host.setEnabled(true)
-            await enable(host)
+            await flush(host)
             XCTAssertTrue(host.bypass)
+            XCTAssertNil(host.bypassConfirmation)
+            XCTAssertEqual(bypassFrames(), [true, false, true])
             host.disconnect()
             XCTAssertFalse(host.bypass)
+            XCTAssertTrue(saved(name))
             XCTAssertEqual(bypassFrames(), [true, false, true])
-            bind(host)
-            host.setEnabled(true)
+            gate.local = false
+            register(host)
+            await flush(host)
+            XCTAssertTrue(host.enabled)
             XCTAssertFalse(host.bypass)
             host.consume(try session(host, UUID().uuidString.lowercased(), bypass: nil))
             await flush(host)
@@ -412,6 +457,186 @@
             host.consume(try session(host, UUID().uuidString.lowercased(), bypass: nil))
             await flush(host)
             XCTAssertEqual(bypassFrames(), [true, false, true, false])
+            XCTAssertTrue(saved(name))
+        }
+
+        func testConfirmedBypassIsSavedAndRestoredOnceOnEachRelaunchReconnectAndReRegistration() async throws {
+            let name = suite()
+            let first = try makeHost(suite: name)
+            await enable(first)
+            XCTAssertTrue(saved(name))
+            XCTAssertTrue(first.bypassSaved)
+            first.applicationWillTerminate()
+            XCTAssertFalse(first.bypass)
+            XCTAssertTrue(saved(name))
+            sent = []
+            announced = []
+            let relaunched = try unboundHost(suite: name)
+            bind(relaunched)
+            XCTAssertTrue(relaunched.enabled)
+            XCTAssertTrue(relaunched.bypassSaved)
+            XCTAssertFalse(relaunched.bypass)
+            relaunched.beginWorkspaceNegotiation(server: URL(string: "https://sandbox.example")!, account: "account-a")
+            relaunched.workspaceNegotiated(projects: false)
+            await flush(relaunched)
+            XCTAssertTrue(relaunched.bypass)
+            XCTAssertNil(relaunched.bypassConfirmation)
+            XCTAssertEqual(actions(), ["announce", "bypass:true"])
+            XCTAssertEqual(
+                sent.last?["payload"]?["host_id"], .string(try XCTUnwrap(relaunched.descriptor).hostId))
+            XCTAssertEqual(announced, ["Approvals bypassed on this Mac"])
+            relaunched.consume(try session(relaunched, UUID().uuidString.lowercased(), bypass: true))
+            relaunched.consume(
+                InboundFrame(
+                    name: "computer_host",
+                    payload: .object(["host_id": .string(try XCTUnwrap(relaunched.descriptor).hostId)])))
+            await flush(relaunched)
+            XCTAssertEqual(bypassFrames(), [true])
+            relaunched.disconnect()
+            XCTAssertFalse(relaunched.bypass)
+            XCTAssertTrue(saved(name))
+            sent = []
+            register(relaunched)
+            await flush(relaunched)
+            XCTAssertTrue(relaunched.bypass)
+            XCTAssertEqual(actions(), ["announce", "bypass:true"])
+            relaunched.workspacesChanged()
+            await flush(relaunched)
+            XCTAssertTrue(relaunched.bypass)
+            XCTAssertEqual(actions(), ["announce", "bypass:true", "announce", "bypass:true"])
+            XCTAssertEqual(announced.filter { $0 == "Approvals bypassed on this Mac" }.count, 2)
+        }
+
+        func testRestoreWaitsForRearmedAccessAndKeepsTheSavedChoiceWhenRefused() async throws {
+            let name = suite()
+            await enable(try makeHost(suite: name))
+            let gate = Gate()
+            gate.local = false
+            sent = []
+            let refused = try unboundHost(gate: gate, suite: name)
+            register(refused)
+            await flush(refused)
+            XCTAssertTrue(refused.enabled)
+            XCTAssertFalse(refused.bypass)
+            XCTAssertNil(refused.bypassConfirmation)
+            XCTAssertNil(refused.lastError)
+            XCTAssertEqual(actions(), ["announce"])
+            XCTAssertTrue(saved(name))
+            gate.local = true
+            refused.workspacesChanged()
+            await flush(refused)
+            XCTAssertTrue(refused.bypass)
+            XCTAssertEqual(actions(), ["announce", "announce", "bypass:true"])
+            UserDefaults(suiteName: name)?.removeObject(forKey: Self.key("computer.consent."))
+            sent = []
+            let accessOff = try unboundHost(suite: name)
+            register(accessOff)
+            await flush(accessOff)
+            XCTAssertFalse(accessOff.enabled)
+            XCTAssertFalse(accessOff.bypass)
+            XCTAssertTrue(actions().isEmpty)
+            XCTAssertTrue(saved(name))
+        }
+
+        func testRestoreUsesAutomatedRearmWithoutAstralFrontmostButNeverWithoutRearmEvidence() async throws {
+            for (automated, desktop) in [(true, true), (false, true), (true, false)] {
+                let name = suite()
+                let store = try XCTUnwrap(UserDefaults(suiteName: name))
+                store.set(true, forKey: Self.key("computer.consent."))
+                store.set(true, forKey: Self.key("computer.bypass."))
+                if automated { store.set(true, forKey: "computer.allowAutomatedRearm") }
+                var persistedProbes = 0
+                var frontmostProbes = 0
+                let host = MacComputerHost(
+                    available: true, defaults: store,
+                    projectGrants: MacProjectGrants(
+                        grants: MacComputerTestWorkspaceGrants().port,
+                        persistence: .init(read: { _ in nil }, write: { _, _ in })),
+                    driver: MacComputerTaskDriver(), monitor: MacComputerTaskMonitor(),
+                    permissionProvider: {
+                        MacComputerPermissions(accessibility: true, screen: true, monitoring: true)
+                    },
+                    desktopProbe: { true },
+                    localDesktopRearmProbe: {
+                        frontmostProbes += 1
+                        return false
+                    },
+                    localInputProof: { false },
+                    persistedRearmProbe: {
+                        persistedProbes += 1
+                        return desktop
+                    }, system: MacComputerTestSystem(), panelPresenter: { _ in })
+                addTeardownBlock { host.applicationWillTerminate() }
+                sent = []
+                register(host)
+                await flush(host)
+                let label = "automated=\(automated) desktop=\(desktop)"
+                XCTAssertTrue(host.enabled, label)
+                XCTAssertEqual(host.bypass, automated && desktop, label)
+                XCTAssertEqual(bypassFrames(), automated && desktop ? [true] : [], label)
+                XCTAssertEqual(persistedProbes, automated ? 1 : 0, label)
+                XCTAssertEqual(frontmostProbes, 0, label)
+                XCTAssertTrue(saved(name), label)
+                guard automated && desktop else { continue }
+                host.requestBypass(false, from: .controls)
+                host.requestBypass(true, from: .controls)
+                XCTAssertNil(host.bypassConfirmation)
+                XCTAssertEqual(host.lastError, "Turn on bypass yourself from Astral's active, unlocked local desktop.")
+                XCTAssertEqual(frontmostProbes, 1)
+                await flush(host)
+                XCTAssertEqual(bypassFrames(), [true, false])
+            }
+        }
+
+        func testOnlyTheOwnersTurnOffAndSignOutForgetTheSavedChoiceAndNoOtherAccountInheritsIt() async throws {
+            let name = suite()
+            let host = try makeHost(suite: name)
+            await enable(host)
+            let id = UUID().uuidString.lowercased()
+            host.consume(try session(host, id, bypass: true))
+            host.pause()
+            host.stop()
+            XCTAssertTrue(host.bypass)
+            host.sessionLocked()
+            XCTAssertFalse(host.bypass)
+            XCTAssertTrue(saved(name))
+            host.setEnabled(true)
+            await flush(host)
+            XCTAssertTrue(host.bypass)
+            let store = try XCTUnwrap(UserDefaults(suiteName: name))
+            for other in ["https://sandbox.example|account-b", "https://other.example|account-a"] {
+                store.set(true, forKey: Self.key("computer.consent.", other))
+                sent = []
+                let stranger = try unboundHost(suite: name)
+                register(stranger, owner: other)
+                await flush(stranger)
+                XCTAssertTrue(stranger.enabled, other)
+                XCTAssertFalse(stranger.bypassSaved, other)
+                XCTAssertFalse(stranger.bypass, other)
+                XCTAssertEqual(actions(), ["announce"], other)
+                XCTAssertFalse(saved(name, other), other)
+            }
+            XCTAssertTrue(saved(name))
+            sent = []
+            host.requestBypass(false, from: .settings)
+            await flush(host)
+            XCTAssertFalse(host.bypass)
+            XCTAssertFalse(host.bypassSaved)
+            XCTAssertFalse(saved(name))
+            XCTAssertEqual(bypassFrames(), [false])
+            host.workspacesChanged()
+            await flush(host)
+            XCTAssertFalse(host.bypass)
+            XCTAssertEqual(bypassFrames(), [false])
+            await enable(host)
+            XCTAssertTrue(saved(name))
+            host.signedOut()
+            XCTAssertFalse(saved(name))
+            XCTAssertFalse(host.bypassSaved)
+            let afterSignOut = try unboundHost(suite: name)
+            register(afterSignOut)
+            await flush(afterSignOut)
+            XCTAssertFalse(afterSignOut.bypass)
         }
 
         func testSignOutAndQuitTurnBypassOffAndSendEnabledFalse() async throws {
@@ -432,6 +657,7 @@
                     await model.signOut(revokeRemote: false)
                 }
                 XCTAssertFalse(host.bypass, "quit \(quit)")
+                XCTAssertEqual(host.bypassSaved, quit, "quit \(quit)")
                 let farewell = try XCTUnwrap(
                     outbound.last { $0["action"] == .string("chrome_computer_bypass_set") }, "quit \(quit)")
                 XCTAssertEqual(farewell["payload"]?["enabled"], .bool(false))

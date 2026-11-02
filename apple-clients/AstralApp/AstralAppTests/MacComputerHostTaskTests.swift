@@ -390,6 +390,7 @@
             var verbs = Set(try XCTUnwrap(bare.descriptor).verbs)
             XCTAssertTrue(verbs.isDisjoint(with: commandVerbs.union(browserVerbs).union(["read_file"])))
             XCTAssertNil(try XCTUnwrap(bare.descriptor).json["workspace_roots"])
+            XCTAssertNil(try XCTUnwrap(bare.descriptor).json["excluded"])
             let browser = MacComputerTaskBrowser()
             bare.browser = browser
             XCTAssertTrue(Set(try XCTUnwrap(bare.descriptor).verbs).isSuperset(of: browserVerbs))
@@ -407,6 +408,40 @@
             XCTAssertEqual(
                 descriptor.json["workspace_roots"],
                 .array([.object(["name": .string(root.lastPathComponent), "path": .string(host.files.roots[0])])]))
+            XCTAssertEqual(descriptor.excluded, ComputerWorkspaceExclusions.defaults.patterns)
+            let patterns = ComputerWorkspaceExclusions.defaults.patterns
+            XCTAssertEqual(descriptor.json["excluded"], .array(patterns.map(JSONValue.string)))
+            XCTAssertEqual(host.files.snapshot().map(\.exclusions), [.defaults])
+        }
+
+        func testExcludedWorkspacePathsAreRefusedThroughTheHostAndNothingLaunches() async throws {
+            let root = try folder()
+            try FileManager.default.createDirectory(
+                at: root.appendingPathComponent("private"), withIntermediateDirectories: true)
+            let spawner = MacComputerFakeSpawner()
+            let commands = MacComputerCommands(
+                spawner: spawner, clock: MacComputerFakeClock { $0 >= 20 }, inherited: [:],
+                loginPath: { "/usr/bin:/bin" })
+            let host = try makeHost(roots: [root], commands: commands)
+            let id = UUID().uuidString.lowercased()
+            host.consume(try session(host, id))
+            let granted = host.files.roots[0]
+            let cases: [[String: JSONValue]] = [
+                ["command": .string("cat private/notes.md"), "cwd": .string(granted)],
+                ["argv": .array([.string("cat"), .string(granted + "/.env")]), "cwd": .string(granted)],
+                ["argv": .array([.string("ls")]), "cwd": .string(granted + "/private")],
+            ]
+            for args in cases {
+                let (call, refused) = try request(id, "run_command", args, deadline: 600000)
+                host.consume(refused)
+                let answer = await response(call, host: host)
+                XCTAssertEqual(answer?["ok"], .bool(false), "\(args)")
+                XCTAssertEqual(answer?["error"]?["code"], .string("excluded_path"), "\(args)")
+                XCTAssertTrue(
+                    answer?["error"]?["message"]?.stringValue?.contains("workspace pattern") == true, "\(args)")
+            }
+            XCTAssertTrue(spawner.plans.isEmpty)
+            XCTAssertFalse(host.working)
         }
 
         func testBrowserVerbsRouteThroughTheSeamOrRefuseAsUnsupported() async throws {

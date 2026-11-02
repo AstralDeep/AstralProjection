@@ -358,7 +358,7 @@
         private func retain(_ url: URL, bookmark: Bookmark? = nil) throws -> Resource {
             let accessed = grants.startAccess(url)
             do {
-                let workspace = try ComputerWorkspace(root: url.path)
+                let workspace = try ComputerWorkspace(root: url.path, exclusions: .defaults)
                 guard
                     !workspace.root.split(separator: "/").contains(where: {
                         [".trash", ".trashes"].contains($0.lowercased())

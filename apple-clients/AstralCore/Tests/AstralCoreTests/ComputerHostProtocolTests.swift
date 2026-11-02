@@ -682,4 +682,47 @@ final class ComputerHostProtocolTests: XCTestCase {
                     verbs: ["screenshot"], workspaceRoots: value))
         }
     }
+
+    func testDescriptorReportsHostWideExcludedPatternsOnceBesideUnchangedRoots() throws {
+        let screens = [ComputerHostScreen(index: 0, width: 1000, height: 800, scale: 2, primary: true)]
+        let bare = try ComputerHostDescriptor(
+            hostId: session, name: "Test Mac", clientVersion: "1.9.0", screens: screens, verbs: ["screenshot"])
+        XCTAssertEqual(bare.excluded, [])
+        XCTAssertNil(bare.json["excluded"])
+        let patterns = ComputerWorkspaceExclusions.defaults.patterns
+        let descriptor = try ComputerHostDescriptor(
+            hostId: session, name: "Test Mac", clientVersion: "1.9.0", screens: screens,
+            verbs: ["read_file", "run_command"],
+            workspaceRoots: [ComputerHostWorkspaceRoot(name: "x", path: "/Users/sam/Projects/x")], excluded: patterns)
+        XCTAssertEqual(descriptor.json["excluded"], .array(patterns.map(JSONValue.string)))
+        XCTAssertEqual(
+            descriptor.json["workspace_roots"],
+            .array([.object(["name": .string("x"), "path": .string("/Users/sam/Projects/x")])]))
+        XCTAssertEqual(
+            Set(descriptor.json.objectValue?.keys.map { $0 } ?? []),
+            [
+                "host_id", "name", "platform", "client_version", "screens", "verbs", "protocol", "workspace_roots",
+                "excluded",
+            ])
+        let decoded = try JSONValue.parse(descriptor.json.encoded())
+        XCTAssertEqual(decoded["excluded"]?.arrayValue?.compactMap(\.stringValue), patterns)
+        XCTAssertNoThrow(
+            try ComputerHostDescriptor(
+                hostId: session, name: "Test Mac", clientVersion: "1.9.0", screens: screens, verbs: ["screenshot"],
+                excluded: (0..<32).map { "p\($0)" }))
+        let invalid: [[String]] = [
+            (0...32).map { "p\($0)" }, ["a", "a"], [""], ["   "], ["/"], ["//"], ["a\u{7f}"], ["tab\there"],
+            [String(repeating: "p", count: 129)],
+        ]
+        for value in invalid {
+            XCTAssertThrowsError(
+                try ComputerHostDescriptor(
+                    hostId: session, name: "Test Mac", clientVersion: "1.9.0", screens: screens,
+                    verbs: ["screenshot"], excluded: value), "\(value)")
+        }
+        XCTAssertNoThrow(
+            try ComputerHostDescriptor(
+                hostId: session, name: "Test Mac", clientVersion: "1.9.0", screens: screens, verbs: ["screenshot"],
+                excluded: [String(repeating: "p", count: 128), "docs/drafts/", "é*"]))
+    }
 }
