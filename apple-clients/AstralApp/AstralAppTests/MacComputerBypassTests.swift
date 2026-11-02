@@ -532,6 +532,31 @@
             XCTAssertEqual(actions(), ["announce", "bypass:true"])
         }
 
+        func testRefusedRestoreRetriesOnATimerUntilTheDesktopRearms() async throws {
+            let name = suite()
+            await enable(try makeHost(suite: name))
+            let gate = Gate()
+            gate.local = false
+            sent = []
+            let refused = try unboundHost(gate: gate, suite: name)
+            refused.bypassRetryDelays = [.milliseconds(40), .milliseconds(40), .milliseconds(40)]
+            register(refused)
+            await flush(refused)
+            XCTAssertFalse(refused.bypass)
+            XCTAssertEqual(actions(), ["announce"])
+            try await Task.sleep(for: .milliseconds(60))
+            await flush(refused)
+            XCTAssertFalse(refused.bypass)
+            gate.local = true
+            try await Task.sleep(for: .milliseconds(120))
+            await flush(refused)
+            XCTAssertTrue(refused.bypass)
+            XCTAssertEqual(actions(), ["announce", "bypass:true"])
+            try await Task.sleep(for: .milliseconds(120))
+            await flush(refused)
+            XCTAssertEqual(actions(), ["announce", "bypass:true"])
+        }
+
         func testRestoreWaitsForRearmedAccessAndKeepsTheSavedChoiceWhenRefused() async throws {
             let name = suite()
             await enable(try makeHost(suite: name))

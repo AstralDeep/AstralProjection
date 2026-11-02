@@ -119,6 +119,9 @@
         @ObservationIgnored private var desktopRearm: @MainActor () -> Bool = { false }
         @ObservationIgnored private var bypassRestoreRearm: @MainActor () -> Bool = { false }
         @ObservationIgnored private var bypassRestorePending = false
+        @ObservationIgnored private var bypassRetryTask: Task<Void, Never>?
+        @ObservationIgnored private var bypassRetryAttempt = 0
+        @ObservationIgnored var bypassRetryDelays: [Duration] = [.seconds(2), .seconds(4), .seconds(8), .seconds(16)]
         @ObservationIgnored private var localResume: @MainActor () -> Bool = { false }
         @ObservationIgnored private let system: any MacComputerSystemIO
         @ObservationIgnored private let panelPresenter: @MainActor (NSPanel) -> Void
@@ -455,6 +458,8 @@
             self.sender = sender
             bypassSaved = available && bypassKey.map { defaults.bool(forKey: $0) } == true
             bypassRestorePending = bypassSaved
+            bypassRetryTask?.cancel()
+            bypassRetryAttempt = 0
             enabled = false
             desktopAvailable = false
             authority.setDesktopAvailable(false, requiresLocalRearm: false)
@@ -534,10 +539,23 @@
                 suspendAccess()
                 lastError = "Computer permission is missing or was revoked. Grant access and resume this Mac locally."
             }
-            if enabled, bypassRestorePending, bypassSaved, !bypass, workspaceNegotiated,
+            retryBypassRestore()
+        }
+        private func retryBypassRestore() {
+            guard enabled, bypassRestorePending, bypassSaved, !bypass, workspaceNegotiated,
                 !projectMode || projectHostAnnounced
-            {
-                restoreBypass()
+            else { return }
+            restoreBypass()
+        }
+        private func scheduleBypassRetry() {
+            guard bypassRestorePending, bypassRetryAttempt < bypassRetryDelays.count else { return }
+            let delay = bypassRetryDelays[bypassRetryAttempt]
+            bypassRetryAttempt += 1
+            bypassRetryTask?.cancel()
+            bypassRetryTask = Task { [weak self] in
+                try? await Task.sleep(for: delay)
+                guard !Task.isCancelled else { return }
+                self?.retryBypassRestore()
             }
         }
         func requestAccessibility() {
@@ -653,6 +671,7 @@
         func requestBypass(_ value: Bool, from origin: MacBypassOrigin) {
             guard value else {
                 bypassRestorePending = false
+                bypassRetryTask?.cancel()
                 saveBypass(false)
                 setBypass(false)
                 return
@@ -701,10 +720,12 @@
             )
             guard allowed else {
                 turnBypassOff()
+                scheduleBypassRetry()
                 return
             }
             bypassConfirmation = nil
             bypassRestorePending = false
+            bypassRetryTask?.cancel()
             guard bypass else {
                 setBypass(true)
                 return
@@ -740,6 +761,7 @@
             }
             if reported == false {
                 bypassRestorePending = false
+                bypassRetryTask?.cancel()
                 turnBypassOff()
             }
         }
