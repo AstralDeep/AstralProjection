@@ -48,7 +48,7 @@
                     .accessibilityLabel("Console").accessibilityValue(consoleShown ? "Shown" : "Hidden")
                     .accessibilityIdentifier("mac-browser-console-toggle")
                     if driver.driving {
-                        Label("Astral is driving", systemImage: "cursorarrow.motionlines")
+                        Label("AstralDeep is driving", systemImage: "cursorarrow.motionlines")
                             .font(.caption.weight(.semibold)).padding(.horizontal, 8).padding(.vertical, 3)
                             .background(Capsule().fill(Color.accentColor.opacity(0.18)))
                             .accessibilityIdentifier("mac-browser-driving")

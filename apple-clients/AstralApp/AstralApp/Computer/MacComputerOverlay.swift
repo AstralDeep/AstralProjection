@@ -8,7 +8,7 @@
     import SwiftUI
 
     nonisolated enum MacComputerOverlayIdentity {
-        static let title = "Astral agent overlay"
+        static let title = "AstralDeep agent overlay"
     }
 
     nonisolated enum MacComputerOverlayMode: String, Equatable, Sendable {
@@ -255,7 +255,7 @@
         private var palette: AstralPalette { .graphite }
         private var headline: String {
             switch model.mode {
-            case .driving: return "Astral is controlling \(model.app ?? "this Mac")"
+            case .driving: return "AstralDeep is controlling \(model.app ?? "this Mac")"
             case .paused: return "Computer task paused"
             case .approval: return "Approval waiting"
             }

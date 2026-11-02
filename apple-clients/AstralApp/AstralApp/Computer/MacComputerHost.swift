@@ -8,6 +8,7 @@
     import CryptoKit
     import Foundation
     import Observation
+    import os
     import Security
     import SwiftUI
 
@@ -117,6 +118,7 @@
         @ObservationIgnored private let desktopProbe: @Sendable () -> Bool
         @ObservationIgnored private var desktopRearm: @MainActor () -> Bool = { false }
         @ObservationIgnored private var bypassRestoreRearm: @MainActor () -> Bool = { false }
+        @ObservationIgnored private var bypassRestorePending = false
         @ObservationIgnored private var localResume: @MainActor () -> Bool = { false }
         @ObservationIgnored private let system: any MacComputerSystemIO
         @ObservationIgnored private let panelPresenter: @MainActor (NSPanel) -> Void
@@ -452,6 +454,7 @@
             self.owner = owner
             self.sender = sender
             bypassSaved = available && bypassKey.map { defaults.bool(forKey: $0) } == true
+            bypassRestorePending = bypassSaved
             enabled = false
             desktopAvailable = false
             authority.setDesktopAvailable(false, requiresLocalRearm: false)
@@ -531,6 +534,11 @@
                 suspendAccess()
                 lastError = "Computer permission is missing or was revoked. Grant access and resume this Mac locally."
             }
+            if enabled, bypassRestorePending, bypassSaved, !bypass, workspaceNegotiated,
+                !projectMode || projectHostAnnounced
+            {
+                restoreBypass()
+            }
         }
         func requestAccessibility() {
             request(.accessibility)
@@ -598,7 +606,7 @@
                     return
                 }
                 guard desktopRearm(), desktopProbe() else {
-                    lastError = "Enable access yourself from Astral's active, unlocked local desktop."
+                    lastError = "Enable access yourself from AstralDeep's active, unlocked local desktop."
                     return
                 }
                 desktopAvailable = true
@@ -644,6 +652,7 @@
 
         func requestBypass(_ value: Bool, from origin: MacBypassOrigin) {
             guard value else {
+                bypassRestorePending = false
                 saveBypass(false)
                 setBypass(false)
                 return
@@ -673,7 +682,7 @@
                 return false
             }
             guard restoring ? bypassRestoreRearm() : desktopRearm(), desktopProbe() else {
-                if !restoring { lastError = "Turn on bypass yourself from Astral's active, unlocked local desktop." }
+                if !restoring { lastError = "Turn on bypass yourself from AstralDeep's active, unlocked local desktop." }
                 return false
             }
             return true
@@ -683,13 +692,19 @@
             if value { defaults.set(true, forKey: key) } else { defaults.removeObject(forKey: key) }
             bypassSaved = value
         }
+        private static let bypassLog = Logger(subsystem: "com.personalailabs.astraldeep", category: "computer.bypass")
         private func restoreBypass() {
             guard bypass || bypassSaved else { return }
-            guard bypassSaved, bypassAllowed(restoring: true) else {
+            let allowed = bypassSaved && bypassAllowed(restoring: true)
+            Self.bypassLog.info(
+                "restore saved=\(self.bypassSaved) enabled=\(self.enabled) bound=\(self.sender != nil) allowed=\(allowed) active=\(self.bypass) projects=\(self.projectMode)"
+            )
+            guard allowed else {
                 turnBypassOff()
                 return
             }
             bypassConfirmation = nil
+            bypassRestorePending = false
             guard bypass else {
                 setBypass(true)
                 return
@@ -723,7 +738,10 @@
             } else if reported == true && !bypass {
                 send(bypassFrame(false))
             }
-            if reported == false { turnBypassOff() }
+            if reported == false {
+                bypassRestorePending = false
+                turnBypassOff()
+            }
         }
         func applicationWillTerminate() {
             turnBypassOff()
@@ -764,7 +782,7 @@
             guard let current = session, current.state == "paused", !awaitingPauseAcknowledgment, permissionsReady
             else { return }
             guard localResume(), desktopProbe() else {
-                lastError = "Resume this task yourself using Astral's local session controls."
+                lastError = "Resume this task yourself using AstralDeep's local session controls."
                 return
             }
             localResumeSession = current.id
