@@ -13,6 +13,8 @@
             let element: AXUIElement
             var pid: pid_t?
             var attributes: [String: CFTypeRef] = [:]
+            var actions: [String] = []
+            var settable: Set<String> = []
         }
         struct State {
             var accessibility = true
@@ -35,6 +37,10 @@
             var captureDisplays = [MacComputerCaptureDisplay(id: 77, width: 640, height: 480)]
             var captureWindows: [CGWindowID] = [4, 5]
             var controls: Set<CGWindowID> = [5]
+            var overlays: Set<CGWindowID> = []
+            var performed: [(action: String, element: AXUIElement)] = []
+            var actionResults: [String: AXError] = [:]
+            var performHook: ((String, AXUIElement) -> Void)?
             var plans: [MacComputerCapturePlan] = []
             var trace: [String] = []
             var captureFailure = false
@@ -127,8 +133,51 @@
             return .success
         }
         func perform(_ action: String, on element: AXUIElement) -> AXError {
-            effect("raise")
-            return configure { $0.actionResult }
+            effect(action == kAXRaiseAction ? "raise" : "perform:" + action)
+            let (result, hook) = configure {
+                $0.performed.append((action, element))
+                return ($0.actionResults[action] ?? $0.actionResult, $0.performHook)
+            }
+            if result == .success { hook?(action, element) }
+            return result
+        }
+        func attributes(_ names: [String], of element: AXUIElement) -> [String: CFTypeRef] {
+            configure {
+                guard let node = $0.nodes.first(where: { CFEqual($0.element, element) }) else { return [:] }
+                return node.attributes.filter { names.contains($0.key) }
+            }
+        }
+        func actionNames(of element: AXUIElement) -> [String] {
+            configure { $0.nodes.first { CFEqual($0.element, element) }?.actions ?? [] }
+        }
+        func settable(_ name: String, of element: AXUIElement) -> Bool {
+            configure { $0.nodes.first { CFEqual($0.element, element) }?.settable.contains(name) == true }
+        }
+        @discardableResult func node(
+            _ id: pid_t, role: String, subrole: String? = nil, title: String? = nil, value: CFTypeRef? = nil,
+            description: String? = nil, identifier: String? = nil, frame: CGRect? = nil, enabled: Bool = true,
+            focused: Bool = false, selected: Bool? = nil, children: [AXUIElement] = [], actions: [String] = [],
+            settable: Set<String> = [], pid: pid_t = 200
+        ) -> AXUIElement {
+            let element = AXUIElementCreateApplication(id)
+            var attributes: [String: CFTypeRef] = [
+                kAXRoleAttribute: role as CFString, kAXEnabledAttribute: enabled ? kCFBooleanTrue : kCFBooleanFalse,
+                kAXFocusedAttribute: focused ? kCFBooleanTrue : kCFBooleanFalse,
+                kAXChildrenAttribute: children as CFArray,
+            ]
+            if let subrole { attributes[kAXSubroleAttribute] = subrole as CFString }
+            if let title { attributes[kAXTitleAttribute] = title as CFString }
+            if let value { attributes[kAXValueAttribute] = value }
+            if let description { attributes[kAXDescriptionAttribute] = description as CFString }
+            if let identifier { attributes[kAXIdentifierAttribute] = identifier as CFString }
+            if let selected { attributes[kAXSelectedAttribute] = selected ? kCFBooleanTrue : kCFBooleanFalse }
+            configure {
+                $0.nodes.removeAll { CFEqual($0.element, element) }
+                $0.nodes.append(
+                    Node(element: element, pid: pid, attributes: attributes, actions: actions, settable: settable))
+            }
+            if let frame { setBounds(frame, of: element) }
+            return element
         }
         func sessionDictionary() -> [String: Any]? { configure { $0.session } }
         func displayCount() -> (CGError, UInt32) {
@@ -163,6 +212,7 @@
             }
         }
         @MainActor func controlsWindows() -> Set<CGWindowID> { configure { $0.controls } }
+        @MainActor func overlayWindows() -> Set<CGWindowID> { configure { $0.overlays } }
         @MainActor func clipboardText() -> String? {
             effect("clipboardRead")
             return configure { $0.clipboard }
