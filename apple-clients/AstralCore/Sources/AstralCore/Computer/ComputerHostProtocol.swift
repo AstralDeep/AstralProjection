@@ -198,8 +198,10 @@ public struct ComputerHostRequest: Sendable, Equatable {
             "drag": ["x1", "y1", "x2", "y2", "hwnd", "ref", "ref2", "snapshot_id"],
             "scroll": ["x", "y", "dx", "dy", "hwnd"],
             "list_apps": [], "ax_tree": ["hwnd", "pid", "depth", "max_nodes", "mode"],
-            "ax_find": ["query", "role", "hwnd", "pid", "max"], "ax_action": ["ref", "snapshot_id", "action", "value"],
-            "menu": ["pid", "path", "list"], "zoom": ["x", "y", "w", "h", "scale", "hwnd"],
+            "ax_find": ["query", "role", "hwnd", "pid", "max"],
+            "ax_action": ["ref", "snapshot_id", "action", "value", "confirm_element", "permit"],
+            "menu": ["pid", "path", "list", "confirm_element", "permit"],
+            "zoom": ["x", "y", "w", "h", "scale", "hwnd"],
             "type_text": ["text", "terminal_ok", "hwnd", "terminal_app"],
             "press_keys": ["keys", "terminal_ok", "hwnd", "terminal_app"],
             "focus_window": ["hwnd", "title"], "open_app": ["app", "args"], "set_clipboard": ["text"],
@@ -479,6 +481,16 @@ public struct ComputerHostRequest: Sendable, Equatable {
             if ["set_value", "pick"].contains(args["action"]!.stringValue!), args["value"] == nil {
                 throw ComputerHostError("out_of_range", "Missing value.")
             }
+            if args["confirm_element"] != nil { try text("confirm_element", 200) }
+            if let permit = args["permit"] {
+                guard let object = permit.objectValue, Set(object.keys).isSubset(of: ["ref", "snapshot_id", "hwnd"]),
+                    Set(object.keys).isSuperset(of: ["ref", "snapshot_id"]),
+                    object["ref"]?.stringValue.map({ computerFullMatch($0, "^a[0-9]{1,9}$") }) == true,
+                    object["snapshot_id"]?.stringValue.map({ computerFullMatch($0, "^x[0-9]{1,9}$") }) == true,
+                    object["hwnd"].map({ $0.numberValue.map { $0.isFinite && $0 >= 1 && $0.rounded() == $0 } == true })
+                        ?? true
+                else { throw ComputerHostError("out_of_range", "Invalid accessibility action permit.") }
+            }
         case "menu":
             try integer("pid", 1...Double(Int32.max))
             guard let path = args["path"]?.arrayValue, (1...6).contains(path.count),
@@ -486,6 +498,14 @@ public struct ComputerHostRequest: Sendable, Equatable {
             else { throw ComputerHostError("out_of_range", "Invalid menu path.") }
             if args["list"] != nil, args["list"]?.boolValue == nil {
                 throw ComputerHostError("out_of_range", "Invalid list.")
+            }
+            if args["confirm_element"] != nil { try text("confirm_element", 200) }
+            if let permit = args["permit"] {
+                guard let object = permit.objectValue, Set(object.keys).isSubset(of: ["path", "pid"]),
+                    object["path"] == args["path"],
+                    object["pid"].map({ $0.numberValue.map { $0.isFinite && $0 >= 1 && $0.rounded() == $0 } == true })
+                        ?? true
+                else { throw ComputerHostError("out_of_range", "Invalid menu permit.") }
             }
         case "zoom":
             try integer("w", 1...16383, required: true)
