@@ -348,6 +348,8 @@
                 (nil, ["swift", "build", "--package-path", "."], nil),
                 (nil, ["cat", root.path + "/src/lib/main.swift"], nil),
                 (nil, ["echo", "*"], nil),
+                ("find state -name \"*.json\" | head", nil, nil),
+                ("grep -rn 'realm*' src/", nil, nil),
                 ("node -e \"const n=db.prepare('select count(*) from runs').get(); /* ok */\"", nil, nil),
                 (nil, ["ls"], sub),
             ]

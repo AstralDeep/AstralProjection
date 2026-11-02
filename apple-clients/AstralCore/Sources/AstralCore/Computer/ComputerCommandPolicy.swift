@@ -151,11 +151,13 @@
         private static func contextualFragments(command: String?, argv: [String]?) -> [(String, Bool, Bool)] {
             var seen: Set<String> = []
             var result: [(String, Bool, Bool)] = []
+            let quoted = quotedWords(command)
             func walk(_ list: [String], shell: Bool, depth: Int) {
                 for (index, word) in list.enumerated() {
+                    let whole = !quoted.contains(word)
                     for piece in [word] + word.components(separatedBy: fragmentSeparators)
-                    where !piece.isEmpty && seen.insert("\(piece == word)|\(piece)").inserted {
-                        result.append((piece, shell, piece == word))
+                    where !piece.isEmpty && seen.insert("\(whole && piece == word)|\(piece)").inserted {
+                        result.append((piece, shell, whole && piece == word))
                     }
                     let previous = index > 0 ? list[index - 1] : ""
                     let script =
@@ -173,6 +175,18 @@
                 walk(words(command), shell: true, depth: 0)
             }
             return result
+        }
+
+        private static func quotedWords(_ command: String?) -> Set<String> {
+            guard let command else { return [] }
+            var found: Set<String> = []
+            for quote in ["\"", "'"] {
+                let parts = command.components(separatedBy: quote)
+                for index in stride(from: 1, to: parts.count, by: 2) where !parts[index].isEmpty {
+                    found.insert(parts[index])
+                }
+            }
+            return found
         }
 
         private static func excludedFragment(
