@@ -126,9 +126,9 @@
                             + "workspace pattern \(pattern).")
                 }
             }
-            for (fragment, shell) in contextualFragments(command: command, argv: argv) {
+            for (fragment, shell, whole) in contextualFragments(command: command, argv: argv) {
                 if let pattern = excludedFragment(
-                    fragment, cwd: resolvedCwd, anchors: anchors, exclusions: exclusions, expand: shell)
+                    fragment, cwd: resolvedCwd, anchors: anchors, exclusions: exclusions, expand: shell, whole: whole)
                 {
                     throw ComputerHostError(
                         "excluded_path",
@@ -148,14 +148,14 @@
             tokenize(text) ?? text.components(separatedBy: .whitespacesAndNewlines)
         }
 
-        private static func contextualFragments(command: String?, argv: [String]?) -> [(String, Bool)] {
+        private static func contextualFragments(command: String?, argv: [String]?) -> [(String, Bool, Bool)] {
             var seen: Set<String> = []
-            var result: [(String, Bool)] = []
+            var result: [(String, Bool, Bool)] = []
             func walk(_ list: [String], shell: Bool, depth: Int) {
                 for (index, word) in list.enumerated() {
                     for piece in [word] + word.components(separatedBy: fragmentSeparators)
                     where !piece.isEmpty && seen.insert(piece).inserted {
-                        result.append((piece, shell))
+                        result.append((piece, shell, piece == word))
                     }
                     let previous = index > 0 ? list[index - 1] : ""
                     let script =
@@ -176,7 +176,8 @@
         }
 
         private static func excludedFragment(
-            _ fragment: String, cwd: String, anchors: [String], exclusions: ComputerWorkspaceExclusions, expand: Bool
+            _ fragment: String, cwd: String, anchors: [String], exclusions: ComputerWorkspaceExclusions, expand: Bool,
+            whole: Bool
         ) -> String? {
             var path = fragment
             if path == "~" || path.hasPrefix("~/") {
@@ -188,7 +189,7 @@
             let absolute = path.hasPrefix("/") ? path : cwd + "/" + path
             if let pattern = excludedPattern(absolute, anchors: anchors, exclusions: exclusions) { return pattern }
             guard expand, fragment.contains(where: { "*?[".contains($0) }),
-                fragment.contains(where: { $0.isLetter || $0.isNumber })
+                whole || fragment.contains(where: { $0.isLetter || $0.isNumber })
             else { return nil }
             for match in expanded(absolute) {
                 if let pattern = excludedPattern(match, anchors: anchors, exclusions: exclusions) { return pattern }
