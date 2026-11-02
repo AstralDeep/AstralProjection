@@ -1,7 +1,6 @@
-// Executes the ten browser verbs in the Mac browser pane for MacComputerHost, acting only on approved origins,
-// refusing stale references and secret fields, and holding consequential controls until a matching server permit
-// or, while this Mac bypasses approvals, a request the server marked bypass-approved.
-// The host routes browser_* requests here through MacBrowserVerbHandling; MacBrowserPaneView presents the pane.
+// Executes the browser verbs on the active tab of the Mac browser pane, acting only on approved origins, refusing
+// stale references and secret fields, and holding consequential controls until a matching server permit or a request
+// the server marked bypass-approved. MacComputerHost routes browser_* requests here and MacBrowserPaneView shows tabs.
 
 #if os(macOS)
     import AppKit
@@ -9,6 +8,12 @@
     import CryptoKit
     import Foundation
     import Observation
+
+    struct MacBrowserTab: Identifiable, Equatable {
+        let id: String
+        let pane: MacBrowserPane
+        static func == (lhs: MacBrowserTab, rhs: MacBrowserTab) -> Bool { lhs.id == rhs.id && lhs.pane === rhs.pane }
+    }
 
     @MainActor @Observable
     final class MacBrowserDriver: MacBrowserVerbHandling {
@@ -20,6 +25,7 @@
         }
         private struct Snapshot {
             let id: String
+            let tab: String
             let generation: Int
             let refs: Set<String>
         }
@@ -31,9 +37,18 @@
 
         static let preferencePrefix = "computer.browser_pane."
         static let maximumImageBytes = 2_900_000
+        static let maximumZoomWidth: CGFloat = 1920
+        static let maximumEvaluationBytes = 51_200
+        static let maximumTabs = 8
         static let embeddedViewRefusers: Set<String> = ["accounts.google.com"]
+        static let longVerbs: Set<String> = ["browser_navigate", "browser_wait", "browser_evaluate", "browser_tabs"]
 
-        let pane: MacBrowserPane
+        let context: MacBrowserContext
+        private(set) var tabs: [MacBrowserTab]
+        private(set) var activeTabId: String
+        private(set) var emulation: ComputerBrowserViewport?
+        private(set) var emulationPreset = "desktop"
+        private(set) var colorScheme: String?
         var isPresented = false
         private(set) var driving = false
         private(set) var paneEnabled = false
@@ -51,26 +66,37 @@
         @ObservationIgnored private var refs: [String: (token: String, local: Int)] = [:]
         @ObservationIgnored private var index: [String: String] = [:]
         @ObservationIgnored private var refGeneration = -1
+        @ObservationIgnored private var refTab = ""
+        @ObservationIgnored private var working: MacBrowserTab?
+        @ObservationIgnored private var nextTab = 2
         @ObservationIgnored private var nextRef = 1
         @ObservationIgnored private var nextSnapshot = 1
         @ObservationIgnored private var issued: Set<String> = []
         @ObservationIgnored private var granted: Set<String> = []
         @ObservationIgnored private var consumed: Set<String> = []
-        @ObservationIgnored private var active = 0
+        @ObservationIgnored private var running = 0
         @ObservationIgnored private var settleUntil = 0.0
         @ObservationIgnored private var linger: Task<Void, Never>?
 
         init(host: MacComputerHost?, defaults: UserDefaults = .standard, pane: MacBrowserPane? = nil) {
-            self.pane = pane ?? MacBrowserPane()
+            let first = pane ?? MacBrowserPane()
+            context = first.context
+            tabs = [MacBrowserTab(id: "t1", pane: first)]
+            activeTabId = "t1"
             self.defaults = defaults
             self.host = host
             takeover = { [weak host] in host?.takeover() }
             agentActive = { [weak host] in host?.session?.state == "active" }
             bypassActive = { [weak host] in host?.bypass == true }
-            self.pane.navigationRule = { [weak self] url, user in self?.allows(url, userInitiated: user) ?? false }
-            self.pane.humanInput = { [weak self] in self?.humanInput() }
+            install(first)
+            refTab = "t1"
             host?.browser = self
         }
+
+        var activeTab: MacBrowserTab { tabs.first { $0.id == activeTabId } ?? tabs[0] }
+        var pane: MacBrowserPane { activeTab.pane }
+        private var page: MacBrowserPane { (working ?? activeTab).pane }
+        private var pageTab: String { (working ?? activeTab).id }
 
         var isEnabled: Bool { paneEnabled && owner != nil && pane.unavailable == nil }
         var accountBound: Bool { owner != nil }
@@ -79,8 +105,20 @@
             guard self.owner != owner else { return }
             self.owner = owner
             paneEnabled = preferenceKey.map { defaults.bool(forKey: $0) } ?? false
+            for tab in tabs.dropFirst() { retire(tab) }
+            tabs = Array(tabs.prefix(1))
+            activeTabId = tabs[0].id
+            emulation = nil
+            emulationPreset = "desktop"
+            colorScheme = nil
+            applyViewport()
             resetSession(nil)
             if !paneEnabled { isPresented = false }
+        }
+
+        private func install(_ pane: MacBrowserPane) {
+            pane.navigationRule = { [weak self] url, user in self?.allows(url, userInitiated: user) ?? false }
+            pane.humanInput = { [weak self] in self?.humanInput() }
         }
 
         private var preferenceKey: String? {
@@ -121,7 +159,7 @@
             bypassedRequest = approvalSource == "bypass" && bypassActive()
             defer { bypassedRequest = false }
             if session != sessionId { resetSession(session) }
-            let ceiling = ["browser_navigate", "browser_wait"].contains(verb) ? 15.0 : 5.0
+            let ceiling = Self.longVerbs.contains(verb) ? 15.0 : 5.0
             let budget = min(ceiling, remaining - 0.35)
             guard budget > 0.2 else {
                 throw ComputerHostError("interrupted", "The request deadline leaves no time for the browser pane.")
@@ -129,33 +167,54 @@
             let deadline = ContinuousClock.now.advanced(by: .milliseconds(Int(budget * 1000)))
             begin()
             defer { end() }
-            try await pane.prepare()
-            _ = pane.takeNotices()
+            let previous = working
+            working = activeTab
+            defer { working = previous }
+            try await page.prepare()
+            _ = page.takeNotices()
             var result: [String: JSONValue]
             switch verb {
             case "browser_snapshot": result = try await snapshot(args, deadline)
+            case "browser_find": result = try await find(args, deadline)
             case "browser_get_text": result = try await text(args, deadline)
             case "browser_screenshot": result = try await screenshot(args, deadline)
+            case "browser_zoom": result = try await zoom(args, deadline)
             case "browser_wait": result = try await wait(args, deadline)
             case "browser_navigate": result = try await navigate(args, deadline, authorize)
             case "browser_click": result = try await click(args, deadline, authorize)
+            case "browser_hover": result = try await hover(args, deadline, authorize)
             case "browser_fill": result = try await fill(args, deadline, authorize)
             case "browser_press": result = try await press(args, deadline, authorize)
             case "browser_scroll": result = try await scroll(args, deadline, authorize)
             case "browser_dialog": result = try await dialog(args, authorize)
+            case "browser_console": result = try consoleEntries(args)
+            case "browser_network": result = try networkEntries(args)
+            case "browser_evaluate": result = try await evaluate(args, deadline, authorize)
+            case "browser_resize": result = try resize(args, authorize)
+            case "browser_tabs": result = try await tabsAction(args, deadline, authorize)
             default: throw ComputerHostError("unsupported", "That browser action is not available.")
             }
             try authorize()
-            result["url"] = .string(pane.webView.url?.absoluteString ?? "about:blank")
-            result["title"] = .string(String((pane.webView.title ?? "").prefix(300)))
-            result["pending_dialog"] = pane.dialogs.first?.json ?? .null
-            let notices = pane.takeNotices()
+            guard let current = working, tabs.contains(current) else {
+                throw ComputerHostError("interrupted", "The browser tab Astral was using closed.")
+            }
+            let shown = readable(current.pane)
+            result["tab_id"] = .string(current.id)
+            result["url"] = shown ? .string(current.pane.webView.url?.absoluteString ?? "about:blank") : .null
+            result["title"] = shown ? .string(String((current.pane.webView.title ?? "").prefix(300))) : .null
+            result["pending_dialog"] = current.pane.dialogs.first?.json ?? .null
+            let notices = current.pane.takeNotices()
             if !notices.isEmpty { result["blocked"] = .array(notices.map(\.json)) }
             return result
         }
 
+        private func readable(_ pane: MacBrowserPane) -> Bool {
+            guard let url = pane.webView.url, url.absoluteString != "about:blank" else { return true }
+            return ComputerBrowserPolicy.origin(of: url).map(approved.contains) == true
+        }
+
         private func begin() {
-            active += 1
+            running += 1
             driving = true
             isPresented = true
             linger?.cancel()
@@ -163,12 +222,12 @@
         }
 
         private func end() {
-            active = max(0, active - 1)
+            running = max(0, running - 1)
             settleUntil = ProcessInfo.processInfo.systemUptime + 2
-            guard active == 0 else { return }
+            guard running == 0 else { return }
             linger = Task { [weak self] in
                 do { try await Task.sleep(for: .milliseconds(1500)) } catch { return }
-                guard let self, self.active == 0 else { return }
+                guard let self, self.running == 0 else { return }
                 self.driving = false
             }
         }
@@ -176,7 +235,7 @@
         private func allows(_ url: URL, userInitiated: Bool) -> Bool {
             guard let origin = ComputerBrowserPolicy.origin(of: url) else { return false }
             if userInitiated || approved.contains(origin) { return true }
-            return active == 0 && ProcessInfo.processInfo.systemUptime >= settleUntil
+            return running == 0 && ProcessInfo.processInfo.systemUptime >= settleUntil
         }
 
         private func humanInput() {
@@ -191,14 +250,16 @@
             refs = [:]
             index = [:]
             refGeneration = pane.generation
+            refTab = activeTabId
             issued = []
             granted = []
             consumed = []
         }
 
         private func syncGeneration() {
-            guard refGeneration != pane.generation else { return }
-            refGeneration = pane.generation
+            guard refGeneration != page.generation || refTab != pageTab else { return }
+            refGeneration = page.generation
+            refTab = pageTab
             refs = [:]
             index = [:]
             snapshots = []
@@ -214,10 +275,10 @@
             return left
         }
 
-        private var currentOrigin: String? { pane.webView.url.flatMap(ComputerBrowserPolicy.origin(of:)) }
+        private var currentOrigin: String? { page.webView.url.flatMap(ComputerBrowserPolicy.origin(of:)) }
 
         private var blank: Bool {
-            guard let url = pane.webView.url else { return true }
+            guard let url = page.webView.url else { return true }
             return url.absoluteString == "about:blank"
         }
 
@@ -236,7 +297,7 @@
         }
 
         private func noDialog() throws {
-            guard pane.dialogs.isEmpty else {
+            guard page.dialogs.isEmpty else {
                 throw ComputerHostError(
                     "pending_dialog",
                     "A page dialog is waiting. Read it with browser_snapshot, then use browser_dialog.")
@@ -264,8 +325,8 @@
             } else {
                 record = snapshots.last { $0.refs.contains(ref) }
             }
-            guard let record, record.generation == pane.generation, record.refs.contains(ref),
-                let frame = pane.frames.first(where: { $0.token == entry.token })
+            guard let record, record.tab == pageTab, record.generation == page.generation, record.refs.contains(ref),
+                let frame = page.frames.first(where: { $0.token == entry.token })
             else { throw stale }
             return Target(token: entry.token, local: entry.local, snapshot: record.id, frame: frame)
         }
@@ -291,7 +352,7 @@
         private func describe(_ target: Target, ref: String?, _ deadline: ContinuousClock.Instant) async throws
             -> Described
         {
-            let value = try await pane.call(
+            let value = try await page.call(
                 .describe, ["snapshot": target.snapshot, "id": target.local], in: target.frame,
                 within: try remaining(deadline))
             try script(value, ref: ref)
@@ -344,49 +405,64 @@
             }
         }
 
-        private func snapshot(_ args: [String: JSONValue], _ deadline: ContinuousClock.Instant) async throws
-            -> [String: JSONValue]
-        {
-            syncGeneration()
-            let mode = args["mode"]?.stringValue ?? "interactive"
-            let maximum = Int(args["max_chars"]?.numberValue ?? 60000)
-            let generation = pane.generation
-            let id = "s\(nextSnapshot)"
-            nextSnapshot += 1
+        private struct Walk {
             var lines: [String] = []
-            var listed = Set<String>()
+            var matches: [JSONValue] = []
             var frames: [JSONValue] = []
             var truncated = false
+            var origin: String?
+        }
+
+        private func newSnapshotId() -> String {
+            defer { nextSnapshot += 1 }
+            return "s\(nextSnapshot)"
+        }
+
+        private func scopeReference(_ args: [String: JSONValue]) throws -> String? {
+            let alias = args["ref"]?.stringValue
+            let scope = args["scope_ref"]?.stringValue
+            if let alias, let scope, alias != scope {
+                throw ComputerHostError(
+                    "out_of_range", "Give ref or scope_ref for one subtree, not two different ones.")
+            }
+            return alias ?? scope
+        }
+
+        private func walk(
+            id: String, mode: String, maximum: Int, scopeRef: String?, depth: Int?, query: String?, limit: Int,
+            _ deadline: ContinuousClock.Instant
+        ) async throws -> Walk {
+            syncGeneration()
+            let generation = page.generation
+            let tab = pageTab
+            var out = Walk()
+            var listed = Set<String>()
             var used = 0
             func add(_ line: String) -> Bool {
                 guard used + line.count + 1 <= maximum else {
-                    truncated = true
+                    out.truncated = true
                     return false
                 }
-                lines.append(line)
+                out.lines.append(line)
                 used += line.count + 1
                 return true
             }
             defer {
-                snapshots.append(Snapshot(id: id, generation: generation, refs: listed))
+                snapshots.append(Snapshot(id: id, tab: tab, generation: generation, refs: listed))
                 if snapshots.count > 8 { snapshots.removeFirst(snapshots.count - 8) }
             }
-            var result: [String: JSONValue] = ["snapshot_id": .string(id), "mode": .string(mode)]
-            if !pane.dialogs.isEmpty || blank {
-                result.merge(["lines": .array([]), "frames": .array([]), "truncated": .bool(false)]) { $1 }
-                return result
-            }
+            if !page.dialogs.isEmpty || blank { return out }
             let origin = try approvedPage()
-            let scope = try args["scope_ref"]?.stringValue.map { try locate($0, snapshot: nil) }
-            guard try await pane.waitForMainFrame(within: min(.seconds(1), try remaining(deadline))) != nil else {
-                result.merge(["lines": .array([]), "frames": .array([]), "truncated": .bool(false)]) { $1 }
-                return result
+            let scope = try scopeRef.map { try locate($0, snapshot: nil) }
+            guard try await page.waitForMainFrame(within: min(.seconds(1), try remaining(deadline))) != nil else {
+                return out
             }
-            for frame in pane.frames {
-                frames.append(.object(["id": .string(frame.id), "url": .string(frame.url)]))
+            out.origin = origin
+            for frame in page.frames {
+                out.frames.append(.object(["id": .string(frame.id), "url": .string(frame.url)]))
                 if let scope, scope.token != frame.token { continue }
                 let allowed = frame.isMain || frame.origin.map { approved.contains($0) || $0 == origin } == true
-                if !frame.isMain && scope == nil {
+                if !frame.isMain && scope == nil && query == nil {
                     let header = "frame \(frame.id) " + Self.quoted(frame.url) + (allowed ? "" : " origin not approved")
                     guard add(header) else { break }
                 }
@@ -396,29 +472,77 @@
                     call["scope"] = scope.local
                     call["scope_snapshot"] = scope.snapshot
                 }
+                if let depth { call["depth"] = depth }
+                if let query {
+                    call["query"] = query
+                    call["limit"] = max(1, limit - out.matches.count)
+                }
                 let value: JSONValue
                 do {
-                    value = try await pane.call(.snapshot, call, in: frame, within: try remaining(deadline))
+                    value = try await page.call(.snapshot, call, in: frame, within: try remaining(deadline))
                 } catch let error as ComputerHostError where !frame.isMain && error.code != "timeout" {
                     continue
                 }
                 if value["error"] != nil {
-                    if scope != nil || frame.isMain { try script(value, ref: args["scope_ref"]?.stringValue) }
+                    if scope != nil || frame.isMain { try script(value, ref: scopeRef) }
                     continue
                 }
                 for node in value["nodes"]?.arrayValue ?? [] {
                     guard let local = node["id"]?.numberValue, let line = node["line"]?.stringValue else { continue }
                     let ref = refName(frame.token, Int(local))
-                    guard add("[\(ref)] " + String(line.prefix(2000))) else { break }
+                    let body = String(line.prefix(2000))
+                    if query != nil {
+                        guard out.matches.count < limit, used + body.count + 1 <= maximum else {
+                            out.truncated = true
+                            break
+                        }
+                        used += body.count + 1
+                        var match: [String: JSONValue] = ["ref": .string(ref), "line": .string(body)]
+                        if !frame.isMain { match["frame"] = .string(frame.id) }
+                        out.matches.append(.object(match))
+                    } else {
+                        guard add("[\(ref)] " + body) else { break }
+                    }
                     listed.insert(ref)
                 }
-                if value["truncated"]?.boolValue == true { truncated = true }
-                if truncated { break }
+                if value["truncated"]?.boolValue == true { out.truncated = true }
+                if out.truncated { break }
             }
-            result.merge([
-                "lines": .array(lines.map(JSONValue.string)), "frames": .array(frames), "truncated": .bool(truncated),
-                "origin": .string(origin),
-            ]) { $1 }
+            return out
+        }
+
+        private func snapshot(_ args: [String: JSONValue], _ deadline: ContinuousClock.Instant) async throws
+            -> [String: JSONValue]
+        {
+            let mode = args["mode"]?.stringValue ?? "interactive"
+            let scopeRef = try scopeReference(args)
+            let depth = args["depth"]?.numberValue.map { max(1, min(30, Int($0))) }
+            let id = newSnapshotId()
+            let out = try await walk(
+                id: id, mode: mode, maximum: max(1, min(60000, Int(args["max_chars"]?.numberValue ?? 60000))),
+                scopeRef: scopeRef, depth: depth, query: nil, limit: 0, deadline)
+            var result: [String: JSONValue] = [
+                "snapshot_id": .string(id), "mode": .string(mode), "lines": .array(out.lines.map(JSONValue.string)),
+                "frames": .array(out.frames), "truncated": .bool(out.truncated),
+            ]
+            if let origin = out.origin { result["origin"] = .string(origin) }
+            return result
+        }
+
+        private func find(_ args: [String: JSONValue], _ deadline: ContinuousClock.Instant) async throws
+            -> [String: JSONValue]
+        {
+            let query = (args["query"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !query.isEmpty else { throw ComputerHostError("out_of_range", "browser_find needs a query.") }
+            let limit = max(1, min(20, Int(args["max"]?.numberValue ?? 20)))
+            let id = newSnapshotId()
+            let out = try await walk(
+                id: id, mode: "interactive", maximum: 60000, scopeRef: nil, depth: nil,
+                query: String(query.prefix(200)).lowercased(), limit: limit, deadline)
+            var result: [String: JSONValue] = [
+                "snapshot_id": .string(id), "matches": .array(out.matches), "truncated": .bool(out.truncated),
+            ]
+            if let origin = out.origin { result["origin"] = .string(origin) }
             return result
         }
 
@@ -430,7 +554,7 @@
         }
 
         private func mainFrame(_ deadline: ContinuousClock.Instant) async throws -> MacBrowserFrame {
-            guard let frame = try await pane.waitForMainFrame(within: min(.seconds(1), try remaining(deadline))) else {
+            guard let frame = try await page.waitForMainFrame(within: min(.seconds(1), try remaining(deadline))) else {
                 throw ComputerHostError("unsupported", "This page cannot be read in the browser pane.")
             }
             return frame
@@ -450,12 +574,12 @@
                     throw ComputerHostError(
                         "secret_field", "\(ref) is a password, card or one-time-code field. Astral never reads it.")
                 }
-                value = try await pane.call(
+                value = try await page.call(
                     .text, ["snapshot": target.snapshot, "id": target.local, "max_chars": maximum], in: target.frame,
                     within: try remaining(deadline))
                 try script(value, ref: ref)
             } else {
-                value = try await pane.call(
+                value = try await page.call(
                     .text, ["max_chars": maximum], in: try await mainFrame(deadline), within: try remaining(deadline))
                 try script(value, ref: nil)
             }
@@ -465,29 +589,38 @@
             ]
         }
 
+        private func navigationTarget(_ text: String) throws -> (url: URL, origin: String) {
+            let url = try ComputerBrowserPolicy.navigableURL(text)
+            guard let origin = ComputerBrowserPolicy.origin(of: url) else {
+                throw ComputerHostError("url_rejected", "The browser pane cannot open that address.")
+            }
+            return (url, origin)
+        }
+
         private func navigate(
             _ args: [String: JSONValue], _ deadline: ContinuousClock.Instant,
             _ authorize: @escaping @Sendable () throws -> Void
         ) async throws -> [String: JSONValue] {
             try noDialog()
-            let mark = pane.mark()
+            let mark = page.mark()
             if let text = args["url"]?.stringValue {
-                let url = try ComputerBrowserPolicy.navigableURL(text)
-                guard let origin = ComputerBrowserPolicy.origin(of: url) else {
-                    throw ComputerHostError("url_rejected", "The browser pane cannot open that address.")
-                }
+                let target = try navigationTarget(text)
                 try authorize()
-                approved.insert(origin)
-                pane.load(url)
+                approved.insert(target.origin)
+                page.load(target.url)
             } else {
                 let action = args["action"]?.stringValue ?? ""
                 if action == "reload" { try approvedPage() }
                 try authorize()
-                guard pane.history(action) else {
+                guard page.history(action) else {
                     throw ComputerHostError("out_of_range", "There is no page to go \(action) to.")
                 }
             }
-            let outcome = try await pane.waitForLoad(after: mark, within: try remaining(deadline))
+            return try await loaded(after: mark, deadline)
+        }
+
+        private func loaded(after mark: Int, _ deadline: ContinuousClock.Instant) async throws -> [String: JSONValue] {
+            let outcome = try await page.waitForLoad(after: mark, within: try remaining(deadline))
             var result: [String: JSONValue] = ["loaded": .bool(outcome == .finished)]
             switch outcome {
             case .finished?, nil: break
@@ -497,7 +630,7 @@
                     "The page could not be opened in the browser pane (\(reason)). Sites that refuse embedded views "
                         + "need the user's own browser through the desktop path.")
             case .refused?:
-                let notices = pane.takeNotices()
+                let notices = page.takeNotices()
                 if case .origin(let blocked)? = notices.first(where: { if case .origin = $0 { true } else { false } }) {
                     throw ComputerHostError(
                         "origin_not_approved",
@@ -511,8 +644,8 @@
                 throw ComputerHostError("failed", "The page stopped responding. Navigate to it again.")
             case .started?: break
             }
-            if let status = pane.mainStatus { result["status"] = .number(Double(status)) }
-            if let host = pane.webView.url?.host?.lowercased(), Self.embeddedViewRefusers.contains(host) {
+            if let status = page.mainStatus { result["status"] = .number(Double(status)) }
+            if let host = page.webView.url?.host?.lowercased(), Self.embeddedViewRefusers.contains(host) {
                 result["note"] = .string(
                     "This sign-in page refuses embedded browsers. Ask the user to use their own browser through the "
                         + "desktop path.")
@@ -522,9 +655,9 @@
         }
 
         private func settleNavigation(after mark: Int, _ deadline: ContinuousClock.Instant) async throws -> Bool {
-            guard pane.events.contains(where: { $0.sequence > mark && $0.event == .started }) else { return false }
+            guard page.events.contains(where: { $0.sequence > mark && $0.event == .started }) else { return false }
             let left = (deadline - ContinuousClock.now) - .milliseconds(150)
-            if left > .milliseconds(50) { _ = try await pane.waitForLoad(after: mark, within: left) }
+            if left > .milliseconds(50) { _ = try await page.waitForLoad(after: mark, within: left) }
             return true
         }
 
@@ -546,12 +679,12 @@
             defer { if consequential { revoke([ref], snapshot: snapshot) } }
             try authorize()
             if consequential { grant([ref], snapshot: snapshot) }
-            let mark = pane.mark()
+            let mark = page.mark()
             let right = args["button"]?.stringValue == "right"
             let count = Int(args["count"]?.numberValue ?? 1)
             let value: JSONValue
             do {
-                value = try await pane.call(
+                value = try await page.call(
                     .click,
                     [
                         "snapshot": target.snapshot, "id": target.local, "button": right ? "right" : "left",
@@ -567,27 +700,55 @@
             var effect = true
             if let observation = value["observation"]?.numberValue {
                 try await Task.sleep(for: .milliseconds(300))
-                if pane.dialogs.isEmpty,
-                    let settled = try? await pane.call(
+                if page.dialogs.isEmpty,
+                    let settled = try? await page.call(
                         .settle, ["observation": Int(observation)], in: target.frame,
                         within: min(.seconds(1), try remaining(deadline)))
                 {
                     effect = settled["effect"]?.boolValue ?? true
                 }
             }
-            if pane.dialogs.first != nil {
+            if page.dialogs.first != nil {
                 return ["clicked": .string(ref), "method": .string("synthetic"), "dialog_opened": .bool(true)]
             }
             var method = "synthetic"
             if !effect, !consequential,
-                !pane.events.contains(where: { $0.sequence > mark }), let point = viewPoint(value["geometry"])
+                !page.events.contains(where: { $0.sequence > mark }), let point = viewPoint(value["geometry"])
             {
                 try authorize()
-                try pane.nativeClick(at: point, right: right, count: count)
+                try page.nativeClick(at: point, right: right, count: count)
                 method = "native"
             }
             let navigated = try await settleNavigation(after: mark, deadline)
             return ["clicked": .string(ref), "method": .string(method), "navigated": .bool(navigated)]
+        }
+
+        private func hover(
+            _ args: [String: JSONValue], _ deadline: ContinuousClock.Instant,
+            _ authorize: @escaping @Sendable () throws -> Void
+        ) async throws -> [String: JSONValue] {
+            try noDialog()
+            try approvedPage()
+            guard let ref = args["ref"]?.stringValue, let snapshot = args["snapshot_id"]?.stringValue else {
+                throw ComputerHostError("out_of_range", "A hover needs ref and snapshot_id.")
+            }
+            let target = try locate(ref, snapshot: snapshot)
+            try authorize()
+            let value: JSONValue
+            do {
+                value = try await page.call(
+                    .hover, ["snapshot": target.snapshot, "id": target.local], in: target.frame,
+                    within: try remaining(deadline))
+            } catch let error as ComputerHostError where error.code == "pending_dialog" {
+                return ["hovered": .string(ref), "method": .string("synthetic"), "dialog_opened": .bool(true)]
+            }
+            try script(value, ref: ref)
+            var method = "synthetic"
+            if page.dialogs.isEmpty, let point = viewPoint(value["geometry"]) {
+                try authorize()
+                if page.nativeMove(to: point) { method = "native" }
+            }
+            return ["hovered": .string(ref), "method": .string(method)]
         }
 
         private func viewPoint(_ geometry: JSONValue?) -> CGPoint? {
@@ -602,7 +763,7 @@
         }
 
         private func viewPoint(css: CGPoint) -> CGPoint? {
-            let view = pane.webView
+            let view = page.webView
             let zoom = view.pageZoom * view.magnification
             let point = CGPoint(x: css.x * zoom, y: view.isFlipped ? css.y * zoom : view.bounds.height - css.y * zoom)
             return view.bounds.contains(point) ? point : nil
@@ -645,7 +806,7 @@
                 try authorize()
                 let value: JSONValue
                 do {
-                    value = try await pane.call(
+                    value = try await page.call(
                         .fill, ["snapshot": item.target.snapshot, "id": item.target.local, "value": item.value],
                         in: item.target.frame, within: try remaining(deadline))
                 } catch let error as ComputerHostError where error.code == "pending_dialog" {
@@ -677,7 +838,7 @@
                 call["snapshot"] = target.snapshot
                 call["id"] = target.local
             }
-            let focus = try await pane.call(.focusTarget, call, in: frame, within: try remaining(deadline))
+            let focus = try await page.call(.focusTarget, call, in: frame, within: try remaining(deadline))
             try script(focus, ref: ref)
             guard let element = ComputerBrowserElement(json: focus) else {
                 throw ComputerHostError("stale_ref", "The focused element could not be read. Take a fresh snapshot.")
@@ -702,12 +863,12 @@
                         + (ref.map { "[\($0)] " } ?? "") + body)
             }
             try authorize()
-            let mark = pane.mark()
+            let mark = page.mark()
             call["key"] = chord.key
             for modifier in ["cmd", "ctrl", "alt", "shift"] { call[modifier] = chord.modifiers.contains(modifier) }
             let value: JSONValue
             do {
-                value = try await pane.call(.press, call, in: frame, within: try remaining(deadline))
+                value = try await page.call(.press, call, in: frame, within: try remaining(deadline))
             } catch let error as ComputerHostError where error.code == "pending_dialog" {
                 return ["keys": .string(keys), "action": .string("dialog"), "dialog_opened": .bool(true)]
             }
@@ -737,7 +898,7 @@
                 frame = try await mainFrame(deadline)
             }
             try authorize()
-            let value = try await pane.call(.scroll, call, in: frame, within: try remaining(deadline))
+            let value = try await page.call(.scroll, call, in: frame, within: try remaining(deadline))
             try script(value, ref: args["ref"]?.stringValue)
             var result: [String: JSONValue] = ["dy": .number(Double(dy))]
             for key in ["target", "scroll_top", "scroll_height", "client_height"] { result[key] = value[key] ?? .null }
@@ -749,7 +910,7 @@
             -> [String: JSONValue]
         {
             try approvedPage()
-            guard let dialog = pane.dialogs.first else {
+            guard let dialog = page.dialogs.first else {
                 throw ComputerHostError("no_dialog", "No page dialog is waiting.")
             }
             let accept = args["action"]?.stringValue == "accept"
@@ -757,7 +918,7 @@
                 throw ComputerHostError("out_of_range", "Only a prompt dialog takes text.")
             }
             try authorize()
-            _ = try pane.answer(accept: accept, text: args["text"]?.stringValue)
+            _ = try page.answer(accept: accept, text: args["text"]?.stringValue)
             try await Task.sleep(for: .milliseconds(100))
             return ["answered": .string(dialog.type), "action": .string(accept ? "accept" : "dismiss")]
         }
@@ -776,16 +937,16 @@
                 try noDialog()
                 let matched: Bool
                 switch condition {
-                case "load": matched = !pane.webView.isLoading
+                case "load": matched = !page.webView.isLoading
                 case "text":
                     let frame = try await mainFrame(deadline)
-                    let value = try await pane.call(
+                    let value = try await page.call(
                         .contains, ["text": args["text"]?.stringValue ?? ""], in: frame, within: try remaining(deadline)
                     )
                     matched = value["matched"]?.boolValue == true
                 default:
                     guard let target else { throw ComputerHostError("out_of_range", "Missing ref.") }
-                    let value = try await pane.call(
+                    let value = try await page.call(
                         .probe, ["snapshot": target.snapshot, "id": target.local], in: target.frame,
                         within: try remaining(deadline))
                     guard value["exists"]?.boolValue == true else {
@@ -802,62 +963,71 @@
             }
         }
 
+        private var viewZoom: CGFloat { max(0.05, page.webView.pageZoom * page.webView.magnification) }
+
+        private func viewRect(_ box: JSONValue?, offset: JSONValue?) -> CGRect? {
+            guard let box, let x = box["x"]?.numberValue, let y = box["y"]?.numberValue,
+                let width = box["width"]?.numberValue, let height = box["height"]?.numberValue
+            else { return nil }
+            let view = page.webView
+            let zoom = viewZoom
+            let ox = offset?["x"]?.numberValue ?? 0
+            let oy = offset?["y"]?.numberValue ?? 0
+            let top = (oy + y) * zoom
+            return CGRect(
+                x: (ox + x) * zoom, y: view.isFlipped ? top : view.bounds.height - top - height * zoom,
+                width: width * zoom, height: height * zoom)
+        }
+
+        private func secretMasks(_ deadline: ContinuousClock.Instant) async throws -> [CGRect] {
+            guard !blank else { return [] }
+            var masks: [CGRect] = []
+            var unplaced = false
+            var frameBoxes: [CGRect] = []
+            for frame in page.frames {
+                guard
+                    let value = try? await page.call(
+                        .secretRects, [:], in: frame, within: min(.seconds(1), try remaining(deadline)))
+                else { continue }
+                let rects = value["rects"]?.arrayValue ?? []
+                if frame.isMain {
+                    frameBoxes = (value["frames"]?.arrayValue ?? []).compactMap { viewRect($0, offset: nil) }
+                }
+                if value["offset"]?.objectValue == nil {
+                    if !rects.isEmpty { unplaced = true }
+                    continue
+                }
+                masks += rects.compactMap { viewRect($0, offset: value["offset"]) }
+            }
+            let crossOrigin = page.frames.contains { !$0.isMain && $0.origin != currentOrigin }
+            if unplaced || crossOrigin { masks += frameBoxes }
+            return masks
+        }
+
         private func screenshot(_ args: [String: JSONValue], _ deadline: ContinuousClock.Instant) async throws
             -> [String: JSONValue]
         {
             try noDialog()
             if !blank { try approvedPage() }
             let maximum = CGFloat(args["max_width"]?.numberValue ?? 1280)
-            let view = pane.webView
-            let zoom = view.pageZoom * view.magnification
-            func rect(_ box: JSONValue?, offset: JSONValue?) -> CGRect? {
-                guard let box, let x = box["x"]?.numberValue, let y = box["y"]?.numberValue,
-                    let width = box["width"]?.numberValue, let height = box["height"]?.numberValue
-                else { return nil }
-                let ox = offset?["x"]?.numberValue ?? 0
-                let oy = offset?["y"]?.numberValue ?? 0
-                let top = (oy + y) * zoom
-                return CGRect(
-                    x: (ox + x) * zoom, y: view.isFlipped ? top : view.bounds.height - top - height * zoom,
-                    width: width * zoom, height: height * zoom)
-            }
+            let view = page.webView
             var capture = view.bounds
             if let ref = args["ref"]?.stringValue {
                 let target = try locate(ref, snapshot: nil)
-                let value = try await pane.call(
+                let value = try await page.call(
                     .geometry, ["snapshot": target.snapshot, "id": target.local, "reveal": true], in: target.frame,
                     within: try remaining(deadline))
                 try script(value, ref: ref)
-                guard value["offset"]?.objectValue != nil, let box = rect(value, offset: value["offset"]),
+                guard value["offset"]?.objectValue != nil, let box = viewRect(value, offset: value["offset"]),
                     !box.intersection(view.bounds).isNull, !box.intersection(view.bounds).isEmpty
                 else {
                     throw ComputerHostError("out_of_range", "That element is not visible in the browser pane.")
                 }
                 capture = box.intersection(view.bounds)
             }
-            var masks: [CGRect] = []
-            if !blank {
-                var unplaced = false
-                var frameBoxes: [CGRect] = []
-                for frame in pane.frames {
-                    guard
-                        let value = try? await pane.call(
-                            .secretRects, [:], in: frame, within: min(.seconds(1), try remaining(deadline)))
-                    else { continue }
-                    let rects = value["rects"]?.arrayValue ?? []
-                    if frame.isMain {
-                        frameBoxes = (value["frames"]?.arrayValue ?? []).compactMap { rect($0, offset: nil) }
-                    }
-                    if value["offset"]?.objectValue == nil {
-                        if !rects.isEmpty { unplaced = true }
-                        continue
-                    }
-                    masks += rects.compactMap { rect($0, offset: value["offset"]) }
-                }
-                let crossOrigin = pane.frames.contains { !$0.isMain && $0.origin != currentOrigin }
-                if unplaced || crossOrigin { masks += frameBoxes }
-            }
-            let image = try await pane.image(rect: capture, width: capture.width, within: try remaining(deadline))
+            let masks = try await secretMasks(deadline)
+            let image = try await page.image(
+                rect: capture, width: capture.width / viewZoom, within: try remaining(deadline))
             guard
                 let encoded = Self.encode(
                     image, capture: capture, masks: masks, maximumWidth: maximum, flipped: view.isFlipped)
@@ -867,6 +1037,332 @@
                 "width": .number(Double(encoded.width)), "height": .number(Double(encoded.height)),
                 "masked": .number(Double(masks.count)),
             ]
+        }
+
+        private func zoom(_ args: [String: JSONValue], _ deadline: ContinuousClock.Instant) async throws
+            -> [String: JSONValue]
+        {
+            try noDialog()
+            if !blank { try approvedPage() }
+            guard let x0 = args["x0"]?.numberValue, let y0 = args["y0"]?.numberValue,
+                let x1 = args["x1"]?.numberValue, let y1 = args["y1"]?.numberValue, x1 > x0, y1 > y0
+            else {
+                throw ComputerHostError("out_of_range", "browser_zoom needs x0 < x1 and y0 < y1 in viewport pixels.")
+            }
+            let scale = CGFloat(max(1, min(4, args["scale"]?.numberValue ?? 2)))
+            let view = page.webView
+            let zoom = viewZoom
+            let viewport = CGRect(x: 0, y: 0, width: view.bounds.width / zoom, height: view.bounds.height / zoom)
+            let region = CGRect(x: x0, y: y0, width: x1 - x0, height: y1 - y0).intersection(viewport)
+            guard !region.isNull, region.width >= 1, region.height >= 1 else {
+                throw ComputerHostError(
+                    "out_of_range",
+                    "That region is outside the \(Int(viewport.width))x\(Int(viewport.height)) browser viewport.")
+            }
+            let capture = CGRect(
+                x: region.minX * zoom, y: view.isFlipped ? region.minY * zoom : view.bounds.height - region.maxY * zoom,
+                width: region.width * zoom, height: region.height * zoom)
+            let width = min(Self.maximumZoomWidth, (region.width * scale).rounded())
+            let masks = try await secretMasks(deadline)
+            let image = try await page.image(rect: capture, width: width, within: try remaining(deadline))
+            guard
+                let encoded = Self.encode(
+                    image, capture: capture, masks: masks, maximumWidth: width, flipped: view.isFlipped)
+            else { throw ComputerHostError("failed", "The browser pane image could not be encoded.") }
+            return [
+                "base64": .string(encoded.data.base64EncodedString()), "media_type": .string("image/jpeg"),
+                "width": .number(Double(encoded.width)), "height": .number(Double(encoded.height)),
+                "masked": .number(Double(masks.count)), "scale": .number(Double(scale)),
+                "region": .object([
+                    "x0": .number(Double(region.minX.rounded())), "y0": .number(Double(region.minY.rounded())),
+                    "x1": .number(Double(region.maxX.rounded())), "y1": .number(Double(region.maxY.rounded())),
+                ]),
+            ]
+        }
+
+        private func visible(_ origin: String?) -> Bool { origin.map(approved.contains) == true }
+
+        private func consoleEntries(_ args: [String: JSONValue]) throws -> [String: JSONValue] {
+            if !blank { try approvedPage() }
+            let errorsOnly = args["level"]?.stringValue == "error"
+            let limit = max(1, min(200, Int(args["limit"]?.numberValue ?? 100)))
+            let pattern = args["pattern"]?.stringValue.map { String($0.prefix(200)).lowercased() } ?? ""
+            let matching = page.console.filter { entry in
+                visible(entry.origin) && (!errorsOnly || entry.level == "error")
+                    && (pattern.isEmpty || entry.text.lowercased().contains(pattern)
+                        || entry.url.lowercased().contains(pattern))
+            }
+            let shown = matching.suffix(limit)
+            return [
+                "entries": .array(shown.map(\.json)), "total": .number(Double(matching.count)),
+                "truncated": .bool(matching.count > shown.count), "dropped": .number(Double(page.consoleDropped)),
+            ]
+        }
+
+        private func networkEntries(_ args: [String: JSONValue]) throws -> [String: JSONValue] {
+            if !blank { try approvedPage() }
+            let limit = max(1, min(100, Int(args["limit"]?.numberValue ?? 50)))
+            let pattern = args["url_pattern"]?.stringValue.map { String($0.prefix(200)).lowercased() } ?? ""
+            let matching = page.network.filter { entry in
+                visible(entry.origin) && (pattern.isEmpty || entry.url.lowercased().contains(pattern))
+            }
+            let shown = matching.suffix(limit)
+            return [
+                "entries": .array(shown.map(\.json)), "total": .number(Double(matching.count)),
+                "truncated": .bool(matching.count > shown.count), "dropped": .number(Double(page.networkDropped)),
+            ]
+        }
+
+        static func evaluationBody(_ source: String, expression: Bool) -> String {
+            var inner = source
+            if expression {
+                var trimmed = source
+                while let last = trimmed.last, last.isWhitespace || last == ";" { trimmed.removeLast() }
+                inner = "return (\n" + trimmed + "\n);"
+            }
+            return """
+                let __astralValue;
+                try {
+                __astralValue = await (async () => {
+                \(inner)
+                })();
+                } catch (error) {
+                let message;
+                try { message = error && error.name ? String(error.name) + ': ' + String(error.message) : String(error); }
+                catch (inner) { message = 'The script threw a value that cannot be printed.'; }
+                return { thrown: message.slice(0, 500) };
+                }
+                if (__astralValue === undefined) return { type: 'undefined' };
+                const __astralSeen = new WeakSet();
+                let __astralJSON;
+                try {
+                __astralJSON = JSON.stringify(__astralValue, (key, item) => {
+                if (typeof item === 'bigint') return String(item);
+                if (typeof item === 'function') return '[Function]';
+                if (typeof item === 'symbol') return String(item);
+                if (item && typeof item === 'object') {
+                if (typeof Node === 'function' && item instanceof Node) return '[' + String(item.nodeName) + ']';
+                if (item === window) return '[Window]';
+                if (__astralSeen.has(item)) return '[Circular]';
+                __astralSeen.add(item);
+                }
+                return item;
+                });
+                } catch (error) { __astralJSON = undefined; }
+                const __astralType = __astralValue === null ? 'null' : typeof __astralValue;
+                if (typeof __astralJSON === 'string') return { type: __astralType, json: __astralJSON.slice(0, \(maximumEvaluationBytes + 1)) };
+                let __astralText;
+                try { __astralText = String(__astralValue); } catch (error) { __astralText = '[unprintable]'; }
+                return { type: __astralType, text: __astralText.slice(0, \(maximumEvaluationBytes + 1)) };
+                """
+        }
+
+        private func evaluate(
+            _ args: [String: JSONValue], _ deadline: ContinuousClock.Instant,
+            _ authorize: @escaping @Sendable () throws -> Void
+        ) async throws -> [String: JSONValue] {
+            try noDialog()
+            try approvedPage()
+            guard let source = args["script"]?.stringValue, !source.isEmpty, source.unicodeScalars.count <= 8000 else {
+                throw ComputerHostError("out_of_range", "browser_evaluate needs a script of at most 8000 characters.")
+            }
+            try authorize()
+            var value: JSONValue
+            do {
+                value = try await page.evaluate(
+                    Self.evaluationBody(source, expression: true), within: try remaining(deadline))
+            } catch let error as ComputerHostError
+                where error.code == "script_error" && error.message.hasPrefix("SyntaxError")
+            {
+                try authorize()
+                value = try await page.evaluate(
+                    Self.evaluationBody(source, expression: false), within: try remaining(deadline))
+            } catch let error as ComputerHostError where error.code == "pending_dialog" {
+                return [
+                    "result": .null, "type": .string("pending"), "truncated": .bool(false),
+                    "dialog_opened": .bool(true),
+                ]
+            }
+            if let thrown = value["thrown"]?.stringValue { throw ComputerHostError("script_error", thrown) }
+            let type = value["type"]?.stringValue ?? "undefined"
+            let text = value["json"]?.stringValue ?? value["text"]?.stringValue
+            guard let text else { return ["result": .null, "type": .string(type), "truncated": .bool(false)] }
+            if text.utf8.count > Self.maximumEvaluationBytes {
+                var bytes = Array(text.utf8.prefix(Self.maximumEvaluationBytes))
+                while !bytes.isEmpty, String(bytes: bytes, encoding: .utf8) == nil { bytes.removeLast() }
+                return [
+                    "result": .string(String(decoding: bytes, as: UTF8.self)), "type": .string(type),
+                    "truncated": .bool(true),
+                ]
+            }
+            if value["json"] != nil, let parsed = try? JSONValue.parse(Data(text.utf8)) {
+                return ["result": parsed, "type": .string(type), "truncated": .bool(false)]
+            }
+            return ["result": .string(text), "type": .string(type), "truncated": .bool(false)]
+        }
+
+        private func resize(_ args: [String: JSONValue], _ authorize: @escaping @Sendable () throws -> Void) throws
+            -> [String: JSONValue]
+        {
+            var size = emulation
+            var preset = emulationPreset
+            if let name = args["preset"]?.stringValue {
+                guard name == "desktop" || ComputerBrowserViewport.presets[name] != nil else {
+                    throw ComputerHostError("out_of_range", "Use the mobile, tablet or desktop preset.")
+                }
+                size = ComputerBrowserViewport.presets[name]
+                preset = name
+            } else if args["width"] != nil || args["height"] != nil {
+                guard let width = args["width"]?.numberValue, let height = args["height"]?.numberValue,
+                    let custom = ComputerBrowserViewport(validWidth: Int(width), height: Int(height))
+                else {
+                    throw ComputerHostError(
+                        "out_of_range", "Give width 320-3840 and height 320-2160 together, or a preset.")
+                }
+                size = custom
+                preset = "custom"
+            }
+            var scheme = colorScheme
+            if let requested = args["color_scheme"]?.stringValue {
+                guard ["light", "dark"].contains(requested) else {
+                    throw ComputerHostError("out_of_range", "color_scheme is light or dark.")
+                }
+                scheme = requested
+            }
+            try authorize()
+            emulation = size
+            emulationPreset = preset
+            colorScheme = scheme
+            applyViewport()
+            let view = page.webView
+            let zoom = max(0.05, view.pageZoom)
+            let width = size?.width ?? Int((view.bounds.width / zoom).rounded())
+            let height = size?.height ?? Int((view.bounds.height / zoom).rounded())
+            return [
+                "width": .number(Double(width)), "height": .number(Double(height)), "preset": .string(preset),
+                "color_scheme": .string(scheme ?? "system"), "scale": .number((Double(zoom) * 1000).rounded() / 1000),
+            ]
+        }
+
+        func applyViewport() {
+            let appearance = colorScheme.flatMap { NSAppearance(named: $0 == "dark" ? .darkAqua : .aqua) }
+            for tab in tabs {
+                let view = tab.pane.webView
+                view.appearance = appearance
+                if let viewport = view.superview as? MacBrowserViewportView {
+                    viewport.emulation = emulation
+                    viewport.layoutSubtreeIfNeeded()
+                } else {
+                    MacBrowserViewportView.place(view, emulation: emulation, in: view.superview?.bounds)
+                }
+            }
+        }
+
+        private func invalidateReferences() {
+            snapshots = []
+            refs = [:]
+            index = [:]
+            issued = []
+            granted = []
+        }
+
+        private func tabJSON(_ tab: MacBrowserTab) -> JSONValue {
+            let shown = readable(tab.pane)
+            return .object([
+                "id": .string(tab.id), "active": .bool(tab.id == activeTabId),
+                "url": shown ? .string(tab.pane.webView.url?.absoluteString ?? "about:blank") : .null,
+                "title": shown ? .string(String((tab.pane.webView.title ?? "").prefix(300))) : .null,
+                "approved": .bool(shown),
+            ])
+        }
+
+        private func makeTab() -> MacBrowserTab {
+            let pane = MacBrowserPane(context: context)
+            install(pane)
+            let tab = MacBrowserTab(id: "t\(nextTab)", pane: pane)
+            nextTab += 1
+            tabs.append(tab)
+            applyViewport()
+            return tab
+        }
+
+        private func retire(_ tab: MacBrowserTab) {
+            tab.pane.close()
+            tab.pane.webView.removeFromSuperview()
+        }
+
+        private func select(_ id: String) {
+            guard id != activeTabId else { return }
+            activeTabId = id
+            invalidateReferences()
+        }
+
+        private func closeTab(_ id: String) throws {
+            guard let position = tabs.firstIndex(where: { $0.id == id }) else {
+                throw ComputerHostError("out_of_range", "No browser tab has id \(String(id.prefix(32))).")
+            }
+            guard tabs.count > 1 else {
+                throw ComputerHostError("out_of_range", "The browser pane keeps at least one tab open.")
+            }
+            let tab = tabs.remove(at: position)
+            if activeTabId == id { select(tabs[min(position, tabs.count - 1)].id) }
+            retire(tab)
+        }
+
+        private func tabsAction(
+            _ args: [String: JSONValue], _ deadline: ContinuousClock.Instant,
+            _ authorize: @escaping @Sendable () throws -> Void
+        ) async throws -> [String: JSONValue] {
+            let action = args["action"]?.stringValue ?? "list"
+            let id = args["tab_id"]?.stringValue
+            var result: [String: JSONValue] = [:]
+            switch action {
+            case "list": break
+            case "select":
+                guard let id, tabs.contains(where: { $0.id == id }) else {
+                    throw ComputerHostError("out_of_range", "No browser tab has id \(String((id ?? "").prefix(32))).")
+                }
+                try authorize()
+                select(id)
+            case "close":
+                guard let id else { throw ComputerHostError("out_of_range", "Missing tab_id.") }
+                try authorize()
+                try closeTab(id)
+            case "create":
+                guard tabs.count < Self.maximumTabs else {
+                    throw ComputerHostError(
+                        "out_of_range", "The browser pane holds at most \(Self.maximumTabs) tabs. Close one first.")
+                }
+                let target = try args["url"]?.stringValue.map(navigationTarget)
+                try authorize()
+                let previous = activeTabId
+                let tab = makeTab()
+                select(tab.id)
+                working = tab
+                do {
+                    try await tab.pane.prepare()
+                    if let target {
+                        let mark = page.mark()
+                        try authorize()
+                        approved.insert(target.origin)
+                        page.load(target.url)
+                        result = try await loaded(after: mark, deadline)
+                    }
+                } catch {
+                    tabs.removeAll { $0.id == tab.id }
+                    retire(tab)
+                    if tabs.contains(where: { $0.id == previous }) { select(previous) }
+                    working = activeTab
+                    throw error
+                }
+                result["tab"] = tabJSON(tab)
+            default:
+                throw ComputerHostError("out_of_range", "browser_tabs takes list, create, close or select.")
+            }
+            working = activeTab
+            result["tabs"] = .array(tabs.map(tabJSON))
+            result["active"] = .string(activeTabId)
+            return result
         }
 
         static func encode(_ image: CGImage, capture: CGRect, masks: [CGRect], maximumWidth: CGFloat, flipped: Bool)
@@ -937,6 +1433,35 @@
         func requestTakeover() {
             guard agentActive() else { return }
             takeover()
+        }
+
+        func userSelectTab(_ id: String) {
+            guard id != activeTabId, tabs.contains(where: { $0.id == id }) else { return }
+            humanInput()
+            select(id)
+        }
+
+        func userCloseTab(_ id: String) {
+            guard tabs.count > 1, tabs.contains(where: { $0.id == id }) else { return }
+            humanInput()
+            try? closeTab(id)
+        }
+
+        func userNewTab() {
+            guard tabs.count < Self.maximumTabs else { return }
+            humanInput()
+            select(makeTab().id)
+        }
+
+        func userResize(preset: String) {
+            emulation = ComputerBrowserViewport.presets[preset]
+            emulationPreset = emulation == nil ? "desktop" : preset
+            applyViewport()
+        }
+
+        func userColorScheme(_ scheme: String?) {
+            colorScheme = scheme
+            applyViewport()
         }
     }
 #endif
