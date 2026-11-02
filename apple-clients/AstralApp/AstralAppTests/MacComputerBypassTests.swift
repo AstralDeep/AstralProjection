@@ -350,7 +350,7 @@
             host.requestBypass(true, from: .controls)
             XCTAssertNil(host.bypassConfirmation)
             XCTAssertFalse(host.bypass)
-            XCTAssertEqual(host.lastError, "Turn on bypass yourself from Astral's active, unlocked local desktop.")
+            XCTAssertEqual(host.lastError, "Turn on bypass yourself from AstralDeep's active, unlocked local desktop.")
             gate.local = true
             host.requestBypass(true, from: .controls)
             XCTAssertEqual(host.bypassConfirmation, .controls)
@@ -507,6 +507,31 @@
             XCTAssertEqual(announced.filter { $0 == "Approvals bypassed on this Mac" }.count, 2)
         }
 
+        func testRefusedRestoreRetriesWhenPermissionsRefreshAfterRearm() async throws {
+            let name = suite()
+            await enable(try makeHost(suite: name))
+            let gate = Gate()
+            gate.local = false
+            sent = []
+            let refused = try unboundHost(gate: gate, suite: name)
+            register(refused)
+            await flush(refused)
+            XCTAssertFalse(refused.bypass)
+            XCTAssertEqual(actions(), ["announce"])
+            refused.refreshPermissions()
+            await flush(refused)
+            XCTAssertFalse(refused.bypass)
+            XCTAssertEqual(actions(), ["announce"])
+            gate.local = true
+            refused.refreshPermissions()
+            await flush(refused)
+            XCTAssertTrue(refused.bypass)
+            XCTAssertEqual(actions(), ["announce", "bypass:true"])
+            refused.refreshPermissions()
+            await flush(refused)
+            XCTAssertEqual(actions(), ["announce", "bypass:true"])
+        }
+
         func testRestoreWaitsForRearmedAccessAndKeepsTheSavedChoiceWhenRefused() async throws {
             let name = suite()
             await enable(try makeHost(suite: name))
@@ -581,7 +606,7 @@
                 host.requestBypass(false, from: .controls)
                 host.requestBypass(true, from: .controls)
                 XCTAssertNil(host.bypassConfirmation)
-                XCTAssertEqual(host.lastError, "Turn on bypass yourself from Astral's active, unlocked local desktop.")
+                XCTAssertEqual(host.lastError, "Turn on bypass yourself from AstralDeep's active, unlocked local desktop.")
                 XCTAssertEqual(frontmostProbes, 1)
                 await flush(host)
                 XCTAssertEqual(bypassFrames(), [true, false])

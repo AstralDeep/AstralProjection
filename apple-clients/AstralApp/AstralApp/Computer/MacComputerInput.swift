@@ -8,7 +8,7 @@
     import Foundation
 
     nonisolated enum MacComputerPanelIdentity {
-        static let title = "Astral computer session"
+        static let title = "AstralDeep computer session"
     }
 
     actor MacComputerInput {
