@@ -107,7 +107,7 @@ final class ManifestDriftTests: XCTestCase {
             Set(ClientDispositions.allComponentTypes),
             "component_types drift — update Dispositions.swift + parity matrix")
         XCTAssertEqual(manifest.pushTypes.count, 74)
-        XCTAssertEqual(manifest.componentTypes.count, 41)
+        XCTAssertEqual(manifest.componentTypes.count, 43)
         XCTAssertEqual(manifest.acceptActions.count, 164)
         XCTAssertTrue(Set(manifest.acceptActions).isSuperset(of: ["chrome_work_result_save", "chrome_job_stop"]))
         XCTAssertEqual(Set(manifest.acceptActions.filter { $0.hasPrefix("chrome_note_") }), GuidanceRequest.noteActions)
@@ -272,6 +272,40 @@ final class ManifestDriftTests: XCTestCase {
                     ClientDispositions.allComponentTypes.contains(name),
                     "\(client.client): stale component disposition \(name)")
             }
+        }
+    }
+
+    func testArtifactTypesAreNativeOnlyOnMacAndNegotiateArtifactV1() throws {
+        let document = try JSONValue.parse(Data(contentsOf: Self.manifestURL()))
+        for name in ["artifact", "html_artifact"] {
+            XCTAssertEqual(ClientDispositions.macos.components[name], .native, name)
+            for client in [ClientDispositions.ios, ClientDispositions.watch] {
+                guard case .fallback = client.components[name] else {
+                    return XCTFail("\(client.client) must not claim \(name) natively")
+                }
+            }
+            let row = try XCTUnwrap(document["component_type_dispositions"]?[name])
+            XCTAssertEqual(row["macos"], .string("supported"), name)
+            for client in ["web", "windows", "android", "ios", "watch"] {
+                XCTAssertEqual(row[client], .string("omitted_by_server"), "\(name) \(client)")
+            }
+            XCTAssertEqual(row["native_negotiation"]?["capability"], .string("artifact_v1"), name)
+        }
+        XCTAssertEqual(document["component_type_dispositions"]?["html_artifact"]?["fallback"], .string("download_card"))
+        let mac = DeviceDescriptor.macos(viewportWidth: 1200, viewportHeight: 800)
+        XCTAssertTrue(Set(mac.supportedTypes).isSuperset(of: ["artifact", "html_artifact"]))
+        let frame = try JSONValue.parse(
+            Data(Outbound.registerUI(token: "test", sessionId: nil, device: mac, resumed: false).utf8))
+        XCTAssertTrue(frame["capabilities"]?.arrayValue?.contains(.string("artifact_v1")) == true)
+        XCTAssertTrue(frame["device"]?["supported_types"]?.arrayValue?.contains(.string("html_artifact")) == true)
+        for device in [
+            DeviceDescriptor.ios(viewportWidth: 390, viewportHeight: 844),
+            DeviceDescriptor.watch(viewportWidth: 200, viewportHeight: 240),
+        ] {
+            XCTAssertTrue(Set(device.supportedTypes).isDisjoint(with: ["artifact", "html_artifact"]))
+            let plain = try JSONValue.parse(
+                Data(Outbound.registerUI(token: "test", sessionId: nil, device: device, resumed: false).utf8))
+            XCTAssertFalse(plain["capabilities"]?.arrayValue?.contains(.string("artifact_v1")) == true)
         }
     }
 

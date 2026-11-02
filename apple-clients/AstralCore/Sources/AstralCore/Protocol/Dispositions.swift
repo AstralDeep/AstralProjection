@@ -102,6 +102,8 @@ public struct ClientDispositions: Sendable {
         components: fullComponentSet(fallbacks: [
             "audio": "web-only media, server degrade ladder (044 channel decision)",
             "generative": "web-only media (044 channel decision)",
+            "artifact": artifactFallback,
+            "html_artifact": artifactFallback,
         ]),
         voiceActions: Set(allVoiceControlActions))
 
@@ -144,6 +146,10 @@ public struct ClientDispositions: Sendable {
         components: watchComponentSet(),
         voiceActions: Set(allVoiceControlActions))
 
+    static let artifactFallback =
+        "macOS-only artifact pages; without artifact_v1 the server flattens an artifact to its section children"
+        + " and substitutes a download_card for an html_artifact"
+
     private static func fullComponentSet(fallbacks: [String: String]) -> [String: ComponentDisposition] {
         var table: [String: ComponentDisposition] = [:]
         for name in allComponentTypes { table[name] = .native }
@@ -169,6 +175,7 @@ public struct ClientDispositions: Sendable {
 
     public static let allComponentTypes: [String] = [
         "action_group", "donut_chart", "gauge", "pipeline_stepper", "radar_chart", "stat_group",
+        "artifact", "html_artifact",
         "alert", "audio", "badge", "bar_chart", "button", "card",
         "chat_history", "code", "collapsible", "color_picker", "container",
         "divider", "download_card", "file_download", "file_upload",
