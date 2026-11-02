@@ -1,6 +1,6 @@
-// Builds bounded accessibility-style snapshots and runs reference-addressed actions for the Mac browser pane.
-// MacBrowserPane injects it at document start into every frame of an isolated content world with RULES from
-// ComputerBrowserPolicy; MacBrowserDriver calls globalThis.__astralBrowser and rechecks every target in Swift.
+// Builds bounded accessibility-style snapshots, finds matching controls and runs reference-addressed actions for
+// the Mac browser pane. MacBrowserPane injects it at document start into every frame of an isolated content world
+// with RULES from ComputerBrowserPolicy; MacBrowserDriver calls globalThis.__astralBrowser and rechecks in Swift.
 (() => {
   'use strict';
   if (globalThis.__astralBrowser) return;
@@ -38,6 +38,8 @@
   const KNOWN_ROLES = new Set([...INTERACTIVE, ...LANDMARKS, ...STRUCTURE, 'heading', 'list', 'row', 'group']);
   const TEXT_TYPES = new Set(['', 'text', 'search', 'email', 'url', 'tel', 'password', 'number', 'date',
     'datetime-local', 'month', 'week', 'time']);
+  const VALUED = new Set(['textbox', 'searchbox', 'combobox', 'spinbutton', 'slider', 'listbox']);
+  let hovered = null;
 
   const channel = globalThis.webkit && globalThis.webkit.messageHandlers
     && globalThis.webkit.messageHandlers.astralBrowser;
@@ -275,7 +277,7 @@
       const level = Number(el.getAttribute('aria-level')) || Number(tagOf(el).slice(1)) || 2;
       parts.push('level=' + level);
     }
-    if (['textbox', 'searchbox', 'combobox', 'spinbutton', 'slider', 'listbox'].includes(role)) {
+    if (VALUED.has(role)) {
       parts.push('value=' + (isSecret(el) ? RULES.redacted : JSON.stringify(clean(valueOf(el), 200))));
       if (tagOf(el) === 'select') {
         const options = Array.from(el.options).slice(0, 20).map((option) => clean(option.label || option.text, 40));
@@ -294,9 +296,21 @@
     return clean(text, 300);
   }
 
+  function matches(el, role, query) {
+    const fields = [role, nameOf(el, role)];
+    if (!isSecret(el) && !LANDMARKS.has(role)) {
+      if (VALUED.has(role)) fields.push(clean(valueOf(el), 200));
+      else if (!isField(el)) fields.push(clean(el.innerText, 200));
+    }
+    return fields.some((field) => String(field).toLowerCase().includes(query));
+  }
+
   function snapshot(args) {
     const mode = args.mode === 'all' ? 'all' : 'interactive';
     const budget = Math.max(1, Math.min(60000, Number(args.max_chars) || 60000));
+    const deepest = Number(args.depth) > 0 ? Math.min(30, Number(args.depth)) : Infinity;
+    const query = typeof args.query === 'string' && args.query ? args.query.toLowerCase() : null;
+    const limit = Number(args.limit) > 0 ? Number(args.limit) : Infinity;
     let root = document.body || document.documentElement;
     if (args.scope) {
       root = resolve(args.scope_snapshot, args.scope);
@@ -308,7 +322,7 @@
     let truncated = false;
     const emit = (el, line) => {
       const cost = line.length + 10;
-      if (used + cost > budget) {
+      if (used + cost > budget || nodes.length >= limit) {
         truncated = true;
         return false;
       }
@@ -318,28 +332,35 @@
       nodes.push({ id, line });
       return true;
     };
-    const visit = (node, covered, depth) => {
+    const visit = (node, covered, depth, level) => {
       if (truncated || depth > 400 || node.nodeType !== Node.ELEMENT_NODE) return;
       const el = node;
       const tag = tagOf(el);
       if (SKIP.has(tag) || !shown(el)) return;
       const role = roleOf(el);
       let inner = covered;
+      let below = level;
       const wanted = role && (INTERACTIVE.has(role) || LANDMARKS.has(role) || role === 'heading'
         || role === 'iframe' || (mode === 'all' && STRUCTURE.has(role)));
       if (wanted && (role !== 'clickable' || nameOf(el, role))) {
-        if (!emit(el, lineFor(el, role))) return;
+        if (level >= deepest) return;
+        below = level + 1;
+        if ((!query || matches(el, role, query)) && !emit(el, lineFor(el, role))) return;
         if (COVERS.has(role)) inner = true;
       } else if (mode === 'all' && !covered) {
         const text = directText(el);
-        if (text && !emit(el, 'text ' + JSON.stringify(text))) return;
+        if (text) {
+          if (level >= deepest) return;
+          below = level + 1;
+          if (!emit(el, 'text ' + JSON.stringify(text))) return;
+        }
       }
       if (isSecret(el)) return;
       if (tag === 'select' || tag === 'textarea' || tag === 'iframe' || tag === 'frame') return;
-      if (el.shadowRoot) for (const child of el.shadowRoot.children) visit(child, inner, depth + 1);
-      for (const child of el.children) visit(child, inner, depth + 1);
+      if (el.shadowRoot) for (const child of el.shadowRoot.children) visit(child, inner, depth + 1, below);
+      for (const child of el.children) visit(child, inner, depth + 1, below);
     };
-    if (root) visit(root, false, 0);
+    if (root) visit(root, false, 0, 0);
     remember(args.snapshot, listed);
     return { token, url: String(location.href), title: document.title, nodes, truncated };
   }
@@ -456,6 +477,36 @@
       observations.delete(oldest);
     }
     return { observation, geometry };
+  }
+
+  function hover(args) {
+    const el = resolve(args.snapshot, args.id);
+    if (!el) return { error: 'stale_ref' };
+    el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+    const geometry = geometryOf(el);
+    const base = {
+      bubbles: true, cancelable: true, composed: true, view: window, button: 0, buttons: 0,
+      clientX: geometry.x + geometry.width / 2, clientY: geometry.y + geometry.height / 2, isPrimary: true,
+      pointerId: 1, pointerType: 'mouse',
+    };
+    const still = Object.assign({}, base, { bubbles: false, cancelable: false });
+    const previous = hovered && hovered.deref();
+    if (previous && previous !== el && previous.isConnected) {
+      const away = Object.assign({}, base, { relatedTarget: el });
+      pointer(previous, 'pointerout', away);
+      pointer(previous, 'pointerleave', Object.assign({}, still, { relatedTarget: el }));
+      pointer(previous, 'mouseout', away);
+      pointer(previous, 'mouseleave', Object.assign({}, still, { relatedTarget: el }));
+    }
+    const toward = previous && previous !== el ? { relatedTarget: previous } : {};
+    pointer(el, 'pointerover', Object.assign({}, base, toward));
+    pointer(el, 'pointerenter', Object.assign({}, still, toward));
+    pointer(el, 'mouseover', Object.assign({}, base, toward));
+    pointer(el, 'mouseenter', Object.assign({}, still, toward));
+    pointer(el, 'pointermove', base);
+    pointer(el, 'mousemove', base);
+    hovered = new WeakRef(el);
+    return { geometry };
   }
 
   function settle(args) {
@@ -810,7 +861,7 @@
       token: () => token, snapshot, describe: (args) => {
         const el = resolve(args.snapshot, args.id);
         return el ? describe(el) : { error: 'stale_ref' };
-      }, focusTarget, click, settle, fill, press, scroll, text, geometry, probe, contains, state, secretRects,
+      }, focusTarget, click, hover, settle, fill, press, scroll, text, geometry, probe, contains, state, secretRects,
     }),
     configurable: false, enumerable: false, writable: false,
   });
