@@ -1353,6 +1353,52 @@ PRIMITIVE_RENDERERS.update({
 })
 
 
+_ARTIFACT_SECTION_CLASSES = {
+    "grid-2": "grid gap-3 md:grid-cols-2",
+    "grid-3": "grid gap-3 md:grid-cols-3",
+}
+
+
+def render_artifact(c: Dict[str, Any]) -> str:
+    header = f'<h2 class="text-xl font-semibold text-astral-text">{esc(c.get("title") or "")}</h2>'
+    kind = c.get("kind")
+    if isinstance(kind, str) and kind:
+        header += f'<span class="ml-2 text-xs uppercase tracking-wide text-astral-muted">{esc(kind)}</span>'
+    header = f'<div class="flex items-baseline">{header}</div>'
+    for key in ("subtitle", "summary"):
+        value = c.get(key)
+        if isinstance(value, str) and value:
+            tone = "text-astral-muted" if key == "subtitle" else "text-astral-text leading-relaxed"
+            header += f'<p class="text-sm {tone}">{esc(value)}</p>'
+    sections = []
+    for section in c.get("sections") or []:
+        if not isinstance(section, dict):
+            continue
+        children = [child for child in (section.get("children") or [])
+                    if isinstance(child, dict) and child.get("type") != "ref"]
+        heading = section.get("heading")
+        head = (f'<h3 class="text-lg font-medium text-astral-text">{esc(heading)}</h3>'
+                if isinstance(heading, str) and heading else "")
+        cls = _ARTIFACT_SECTION_CLASSES.get(section.get("layout"), "space-y-3")
+        sections.append(f'<section class="space-y-2">{head}<div class="{cls}">{render_children(children)}</div></section>')
+    return f'<article{_base_attrs(c)} class="astral-artifact space-y-4">{header}{"".join(sections)}</article>'
+
+
+def render_html_artifact(c: Dict[str, Any]) -> str:
+    title = esc(c.get("title") or "")
+    page = c.get("html")
+    if not isinstance(page, str) or not page:
+        return f'<div{_base_attrs(c)} class="text-sm text-astral-muted">{title}</div>'
+    return (f'<article{_base_attrs(c)} class="astral-artifact space-y-2">'
+            f'<h2 class="text-xl font-semibold text-astral-text">{title}</h2>'
+            f'<iframe sandbox="allow-scripts" referrerpolicy="no-referrer" title="{title}" '
+            f'class="w-full rounded border border-white/10" style="min-height:480px" '
+            f'srcdoc="{_attr(page)}"></iframe></article>')
+
+
+PRIMITIVE_RENDERERS.update({"artifact": render_artifact, "html_artifact": render_html_artifact})
+
+
 def render_generative(component: Dict[str, Any]) -> str:
     from webrender import generative
     if not generative.generative_enabled():
