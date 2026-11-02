@@ -233,6 +233,9 @@
             XCTAssertNil(ComputerCommandPolicy.tokenize(#"a "b"#))
             XCTAssertNil(ComputerCommandPolicy.tokenize(#"a \"#))
             XCTAssertEqual(ComputerCommandPolicy.tokenize("  "), [])
+            let flagged = ComputerCommandPolicy.tokenizeQuoted(#"a "*"* b"*" c\* d*/"?" '[x]'"#)
+            XCTAssertEqual(flagged?.map(\.0), ["a", "**", "b*", "c*", "d*/?", "[x]"])
+            XCTAssertEqual(flagged?.map(\.1), [false, false, true, true, false, true])
         }
 
         func testExecutableResolutionUsesOnlyAbsolutePathEntries() throws {
@@ -304,6 +307,10 @@
                 ("cat *", nil, nil),
                 ("cat .*", nil, nil),
                 ("echo \"*\" && cat *", nil, nil),
+                ("cat priv*/*|\"?\"", nil, nil),
+                ("cat priv*/\"*\"", nil, nil),
+                ("find . -path \"priv*/*\" -type f", nil, nil),
+                ("find . -path '*/drafts' -exec cat {} +", nil, nil),
                 ("find \"private/*\" -type f", nil, nil),
                 ("node -e \"select count(*)\" && cat *", nil, nil),
                 ("ls {src,private}", nil, nil),
@@ -354,6 +361,9 @@
                 ("find state -name \\*.pem", nil, nil),
                 (nil, ["find", ".", "-name", "*.pem"], nil),
                 ("grep -rn 'realm*' src/", nil, nil),
+                ("grep -rn 'foo.*/bar' src/", nil, nil),
+                ("sed 's/a*/b/' README.md", nil, nil),
+                ("find . -path \"src/lib/*\" -type f", nil, nil),
                 ("node -e \"const n=db.prepare('select count(*) from runs').get(); /* ok */\"", nil, nil),
                 (nil, ["ls"], sub),
             ]
