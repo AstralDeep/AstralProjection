@@ -97,6 +97,8 @@
         private(set) var working = false
         private(set) var bypass = false
         private(set) var bypassSaved = false
+        private(set) var automatedRestore = false
+        static let automatedRearmKey = "computer.allowAutomatedRearm"
         var bypassConfirmation: MacBypassOrigin?
         let files: MacComputerFiles
         let projectGrants: MacProjectGrants
@@ -118,6 +120,7 @@
         @ObservationIgnored private let desktopProbe: @Sendable () -> Bool
         @ObservationIgnored private var desktopRearm: @MainActor () -> Bool = { false }
         @ObservationIgnored private var bypassRestoreRearm: @MainActor () -> Bool = { false }
+        @ObservationIgnored private var automatedRearmAllowed: @MainActor () -> Bool = { false }
         @ObservationIgnored private var bypassRestorePending = false
         @ObservationIgnored private var bypassRetryTask: Task<Void, Never>?
         @ObservationIgnored private var bypassRetryAttempt = 0
@@ -172,6 +175,7 @@
             self.authority = authority
             self.available = available ?? Self.executionDistribution()
             self.defaults = defaults
+            self.automatedRestore = defaults.bool(forKey: Self.automatedRearmKey)
             self.files = files ?? MacComputerFiles(defaults: defaults)
             self.projectGrants = projectGrants ?? MacProjectGrants()
             self.system = system
@@ -209,7 +213,7 @@
                 localInput?.consume(current: NSApp.currentEvent?.cgEvent) == true
             }
             let automatedRearmAllowed: @MainActor () -> Bool = { [weak self] in
-                defaults.bool(forKey: "computer.allowAutomatedRearm") && self?.consentEnabled == true
+                defaults.bool(forKey: Self.automatedRearmKey) && self?.consentEnabled == true
             }
             self.desktopRearm =
                 desktopRearm ?? {
@@ -225,6 +229,7 @@
                 desktopRearm ?? {
                     (automatedRearmAllowed() || localInputProof()) && persistedRearmProbe()
                 }
+            self.automatedRearmAllowed = automatedRearmAllowed
             self.localResume =
                 desktopRearm ?? {
                     automatedRearmAllowed()
@@ -541,6 +546,11 @@
             }
             retryBypassRestore()
         }
+        func setAutomatedRestore(_ value: Bool) {
+            automatedRestore = value
+            if value { defaults.set(true, forKey: Self.automatedRearmKey) } else { defaults.removeObject(forKey: Self.automatedRearmKey) }
+            if value { retryBypassRestore() }
+        }
         private func retryBypassRestore() {
             guard enabled, bypassRestorePending, bypassSaved, !bypass, workspaceNegotiated,
                 !projectMode || projectHostAnnounced
@@ -716,7 +726,7 @@
             guard bypass || bypassSaved else { return }
             let allowed = bypassSaved && bypassAllowed(restoring: true)
             Self.bypassLog.info(
-                "restore saved=\(self.bypassSaved) enabled=\(self.enabled) bound=\(self.sender != nil) allowed=\(allowed) active=\(self.bypass) projects=\(self.projectMode)"
+                "restore saved=\(self.bypassSaved) enabled=\(self.enabled) bound=\(self.sender != nil) allowed=\(allowed) active=\(self.bypass) projects=\(self.projectMode) automated=\(self.automatedRearmAllowed())"
             )
             guard allowed else {
                 turnBypassOff()

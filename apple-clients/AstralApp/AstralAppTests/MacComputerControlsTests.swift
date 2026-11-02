@@ -233,6 +233,35 @@
             XCTAssertTrue(restored.roots.isEmpty)
             restored.bind(nil)
         }
+        func testAutomaticRestoreToggleAppearsWithConsentAndWritesTheDefault() async throws {
+            let store = defaults()
+            let host = MacComputerHost(
+                available: true, defaults: store, files: MacComputerFiles(defaults: store, grants: MacComputerTestWorkspaceGrants().port),
+                driver: MacComputerControlsTestDriver(), monitor: MacComputerControlsTestMonitor(),
+                permissionProvider: { MacComputerPermissions(accessibility: true, screen: true, monitoring: true) },
+                desktopProbe: { true }, desktopRearm: { true }, system: MacComputerTestSystem(),
+                panelPresenter: { _ in })
+            host.announcer = { _ in }
+            host.bind(owner: "controls-owner") { _ in true }
+            XCTAssertFalse(host.automatedRestore)
+            let (model, suite) = try SurfaceFixtures.model()
+            addTeardownBlock { UserDefaults().removePersistentDomain(forName: suite) }
+            let mount = SurfaceMount(
+                MacComputerControls(host: host), model: model, size: .init(width: 560, height: 820))
+            defer { mount.close() }
+            try await mount.settle()
+            XCTAssertFalse(try mount.accessibility.compactMap(\.identifier).contains("mac-computer-automated-restore"))
+            host.setEnabled(true)
+            try await mount.settle()
+            XCTAssertTrue(try mount.accessibility.compactMap(\.identifier).contains("mac-computer-automated-restore"))
+            host.setAutomatedRestore(true)
+            XCTAssertTrue(host.automatedRestore)
+            XCTAssertTrue(store.bool(forKey: MacComputerHost.automatedRearmKey))
+            host.setAutomatedRestore(false)
+            XCTAssertNil(store.object(forKey: MacComputerHost.automatedRearmKey))
+            host.signedOut()
+        }
+
         func testFoldersShowTheirHiddenPatternsAndPersistedBypassShowsItsStatusLine() async throws {
             let root = try folder()
             let store = defaults()
