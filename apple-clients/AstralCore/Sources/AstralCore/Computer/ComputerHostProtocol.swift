@@ -136,12 +136,17 @@ public struct ComputerHostRequest: Sendable, Equatable {
         "write_file", "delete_path", "run_command", "read_output", "interrupt_command", "browser_snapshot",
         "browser_get_text", "browser_screenshot", "browser_wait", "browser_navigate", "browser_click", "browser_fill",
         "browser_press", "browser_scroll", "browser_dialog",
+        "list_apps", "ax_tree", "ax_find", "ax_action", "menu", "zoom",
+        "browser_find", "browser_hover", "browser_zoom", "browser_console", "browser_network", "browser_evaluate",
+        "browser_resize", "browser_tabs",
     ]
     private static let deadlineCeilings: [String: Double] = [
         "run_command": 630000, "read_output": 30000, "interrupt_command": 5000, "browser_navigate": 15000,
         "browser_wait": 15000, "browser_snapshot": 5000, "browser_get_text": 5000, "browser_screenshot": 5000,
         "browser_click": 5000, "browser_fill": 5000, "browser_press": 5000, "browser_scroll": 5000,
-        "browser_dialog": 5000,
+        "browser_dialog": 5000, "ax_tree": 8000, "browser_find": 5000, "browser_hover": 5000, "browser_zoom": 5000,
+        "browser_console": 5000, "browser_network": 5000, "browser_evaluate": 15000, "browser_resize": 5000,
+        "browser_tabs": 15000,
     ]
     public static func maximumDeadlineMs(for verb: String) -> Double { deadlineCeilings[verb] ?? 30000 }
     public let id: String
@@ -187,21 +192,32 @@ public struct ComputerHostRequest: Sendable, Equatable {
             "screenshot": ["screen_index", "max_width"], "list_windows": [], "get_clipboard": [], "wait": ["seconds"],
             "read_file": ["path", "max_bytes"], "list_dir": ["path"], "write_file": ["path", "content", "if_exists"],
             "delete_path": ["path"],
-            "click": ["x", "y", "button", "count", "hwnd"], "double_click": ["x", "y", "hwnd"],
-            "right_click": ["x", "y", "hwnd"], "move": ["x", "y", "hwnd"],
-            "drag": ["x1", "y1", "x2", "y2", "hwnd"], "scroll": ["x", "y", "dx", "dy", "hwnd"],
+            "click": ["x", "y", "button", "count", "hwnd", "ref", "snapshot_id"],
+            "double_click": ["x", "y", "hwnd", "ref", "snapshot_id"],
+            "right_click": ["x", "y", "hwnd", "ref", "snapshot_id"], "move": ["x", "y", "hwnd", "ref", "snapshot_id"],
+            "drag": ["x1", "y1", "x2", "y2", "hwnd", "ref", "ref2", "snapshot_id"],
+            "scroll": ["x", "y", "dx", "dy", "hwnd"],
+            "list_apps": [], "ax_tree": ["hwnd", "pid", "depth", "max_nodes", "mode"],
+            "ax_find": ["query", "role", "hwnd", "pid", "max"], "ax_action": ["ref", "snapshot_id", "action", "value"],
+            "menu": ["pid", "path", "list"], "zoom": ["x", "y", "w", "h", "scale", "hwnd"],
             "type_text": ["text", "terminal_ok", "hwnd", "terminal_app"],
             "press_keys": ["keys", "terminal_ok", "hwnd", "terminal_app"],
             "focus_window": ["hwnd", "title"], "open_app": ["app", "args"], "set_clipboard": ["text"],
             "run_command": ["command", "argv", "cwd", "env", "timeout_s", "background", "stdin"],
             "read_output": ["job_id", "stream", "offset", "max_bytes", "wait_s"],
             "interrupt_command": ["job_id", "signal"],
-            "browser_snapshot": ["scope_ref", "mode", "max_chars"], "browser_get_text": ["ref", "max_chars"],
+            "browser_snapshot": ["scope_ref", "mode", "max_chars", "ref", "depth"],
+            "browser_get_text": ["ref", "max_chars"],
             "browser_screenshot": ["max_width", "ref"], "browser_wait": ["for", "text", "ref", "seconds"],
             "browser_navigate": ["url", "action"],
             "browser_click": ["ref", "button", "count", "snapshot_id", "confirm_element", "permit"],
             "browser_fill": ["fields", "snapshot_id", "confirm_element", "permit"], "browser_press": ["keys", "ref"],
             "browser_scroll": ["ref", "dy"], "browser_dialog": ["action", "text"],
+            "browser_find": ["query", "max"], "browser_hover": ["ref", "snapshot_id"],
+            "browser_zoom": ["x0", "y0", "x1", "y1", "scale"], "browser_console": ["level", "limit", "pattern"],
+            "browser_network": ["limit", "url_pattern"], "browser_evaluate": ["script"],
+            "browser_resize": ["preset", "width", "height", "color_scheme"],
+            "browser_tabs": ["action", "tab_id", "url"],
         ]
         guard Set(args.keys).isSubset(of: fields[verb] ?? []) else {
             throw ComputerHostError("out_of_range", "Unexpected computer arguments.")
@@ -240,6 +256,21 @@ public struct ComputerHostRequest: Sendable, Equatable {
                 throw ComputerHostError("out_of_range", "Invalid element reference \(key).")
             }
         }
+        func axReference(_ key: String, required: Bool = false) throws {
+            guard let value = args[key] else {
+                if required { throw ComputerHostError("out_of_range", "Missing \(key).") }
+                return
+            }
+            guard let s = value.stringValue, computerFullMatch(s, "^a[0-9]{1,9}$") else {
+                throw ComputerHostError("out_of_range", "Invalid accessibility reference \(key).")
+            }
+        }
+        func axSnapshot(_ key: String) throws {
+            guard let s = args[key]?.stringValue, computerFullMatch(s, "^x[0-9]{1,9}$") else {
+                throw ComputerHostError(
+                    "out_of_range", "Accessibility actions need the snapshot_id their reference came from.")
+            }
+        }
         func seconds(_ key: String, _ range: ClosedRange<Double>) throws {
             if let v = args[key], !(v.numberValue.map { $0.isFinite && range.contains($0) } ?? false) {
                 throw ComputerHostError("out_of_range", "Invalid \(key).")
@@ -258,8 +289,25 @@ public struct ComputerHostRequest: Sendable, Equatable {
                     "out_of_range", "A terminal-specific action needs a known application and exact window.")
             }
         }
+        let pointerVerb = ["click", "double_click", "right_click", "move", "drag"].contains(verb)
+        let elementAddressed = pointerVerb && args["ref"] != nil
         for key in ["x", "y", "x1", "y1", "x2", "y2"] where fields[verb]?.contains(key) == true {
-            try integer(key, 0...16383, required: true)
+            try integer(key, 0...16383, required: !elementAddressed && !(verb == "drag" && ["x2", "y2"].contains(key) && args["ref2"] != nil))
+        }
+        if elementAddressed {
+            try axReference("ref", required: true)
+            try axSnapshot("snapshot_id")
+            guard args["x"] == nil, args["y"] == nil, args["x1"] == nil, args["y1"] == nil else {
+                throw ComputerHostError("out_of_range", "Give either coordinates or an element reference.")
+            }
+            if verb == "drag" {
+                try axReference("ref2")
+                guard (args["ref2"] != nil) != (args["x2"] != nil && args["y2"] != nil) else {
+                    throw ComputerHostError("out_of_range", "Drag needs exactly one end target.")
+                }
+            }
+        } else if pointerVerb, args["snapshot_id"] != nil || args["ref2"] != nil {
+            throw ComputerHostError("out_of_range", "Element arguments need an element reference.")
         }
         if args["hwnd"] != nil { try integer("hwnd", 1...Double(Int32.max)) }
         switch verb {
@@ -352,8 +400,10 @@ public struct ComputerHostRequest: Sendable, Equatable {
             }
         case "browser_snapshot":
             try reference("scope_ref")
+            try reference("ref")
             try choice("mode", ["interactive", "all"])
             try integer("max_chars", 1...60000)
+            try integer("depth", 1...30)
         case "browser_get_text":
             try reference("ref")
             try integer("max_chars", 1...60000)
@@ -405,9 +455,86 @@ public struct ComputerHostRequest: Sendable, Equatable {
         case "browser_dialog":
             try choice("action", ["accept", "dismiss"], required: true)
             if args["text"] != nil { try text("text", 4000, empty: true) }
+        case "list_apps": break
+        case "ax_tree":
+            try integer("hwnd", 1...Double(Int32.max))
+            try integer("pid", 1...Double(Int32.max))
+            try integer("depth", 1...8)
+            try integer("max_nodes", 1...800)
+            try choice("mode", ["interactive", "all"])
+        case "ax_find":
+            try text("query", 200)
+            if args["role"] != nil { try text("role", 40) }
+            try integer("hwnd", 1...Double(Int32.max))
+            try integer("pid", 1...Double(Int32.max))
+            try integer("max", 1...50)
+        case "ax_action":
+            try axReference("ref", required: true)
+            try axSnapshot("snapshot_id")
+            try choice(
+                "action",
+                ["press", "focus", "raise", "show_menu", "confirm", "cancel", "increment", "decrement", "set_value", "pick"],
+                required: true)
+            if args["value"] != nil { try text("value", 4000, empty: true) }
+            if ["set_value", "pick"].contains(args["action"]!.stringValue!), args["value"] == nil {
+                throw ComputerHostError("out_of_range", "Missing value.")
+            }
+        case "menu":
+            try integer("pid", 1...Double(Int32.max))
+            guard let path = args["path"]?.arrayValue, (1...6).contains(path.count),
+                path.allSatisfy({ bounded($0, 100) && $0.stringValue?.isEmpty == false })
+            else { throw ComputerHostError("out_of_range", "Invalid menu path.") }
+            if args["list"] != nil, args["list"]?.boolValue == nil {
+                throw ComputerHostError("out_of_range", "Invalid list.")
+            }
+        case "zoom":
+            try integer("w", 1...16383, required: true)
+            try integer("h", 1...16383, required: true)
+            try integer("scale", 1...4)
+        case "browser_find":
+            try text("query", 200)
+            try integer("max", 1...20)
+        case "browser_hover":
+            try reference("ref", required: true)
+        case "browser_zoom":
+            for key in ["x0", "y0", "x1", "y1"] { try integer(key, 0...16383, required: true) }
+            try integer("scale", 1...4)
+        case "browser_console":
+            try choice("level", ["all", "error"])
+            try integer("limit", 1...200)
+            if args["pattern"] != nil { try text("pattern", 200) }
+        case "browser_network":
+            try integer("limit", 1...100)
+            if args["url_pattern"] != nil { try text("url_pattern", 200) }
+        case "browser_evaluate":
+            try text("script", 8000)
+        case "browser_resize":
+            try choice("preset", ["mobile", "tablet", "desktop"])
+            try integer("width", 320...3840)
+            try integer("height", 320...2160)
+            try choice("color_scheme", ["light", "dark"])
+            let hasPreset = args["preset"] != nil, hasWidth = args["width"] != nil, hasHeight = args["height"] != nil
+            guard hasWidth == hasHeight, !(hasPreset && hasWidth), hasPreset || hasWidth || args["color_scheme"] != nil
+            else { throw ComputerHostError("out_of_range", "Give a preset, or width and height.") }
+        case "browser_tabs":
+            try choice("action", ["list", "create", "close", "select"], required: true)
+            if args["tab_id"] != nil { try text("tab_id", 32) }
+            if args["url"] != nil {
+                try text("url", 4096)
+                guard computerWebURL(args["url"]!.stringValue!) else {
+                    throw ComputerHostError("out_of_range", "Only http and https pages can be opened.")
+                }
+            }
+            let action = args["action"]!.stringValue!
+            if ["close", "select"].contains(action), args["tab_id"] == nil {
+                throw ComputerHostError("out_of_range", "Missing tab_id.")
+            }
+            if action != "create", args["url"] != nil {
+                throw ComputerHostError("out_of_range", "url applies to create only.")
+            }
         default: break
         }
-        if ["browser_click", "browser_fill"].contains(verb) {
+        if ["browser_click", "browser_fill", "browser_hover"].contains(verb) {
             guard let snapshot = args["snapshot_id"]?.stringValue, computerFullMatch(snapshot, "^s[0-9]{1,9}$") else {
                 throw ComputerHostError(
                     "out_of_range", "Browser actions need the snapshot_id their reference came from.")

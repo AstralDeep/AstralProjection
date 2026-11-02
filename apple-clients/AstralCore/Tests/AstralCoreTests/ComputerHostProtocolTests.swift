@@ -44,10 +44,12 @@ final class ComputerHostProtocolTests: XCTestCase {
         let added: Set<String> = [
             "run_command", "read_output", "interrupt_command", "browser_snapshot", "browser_get_text",
             "browser_screenshot", "browser_wait", "browser_navigate", "browser_click", "browser_fill", "browser_press",
-            "browser_scroll", "browser_dialog",
+            "browser_scroll", "browser_dialog", "list_apps", "ax_tree", "ax_find", "ax_action", "menu", "zoom",
+            "browser_find", "browser_hover", "browser_zoom", "browser_console", "browser_network",
+            "browser_evaluate", "browser_resize", "browser_tabs",
         ]
         XCTAssertTrue(added.isSubset(of: ComputerHostRequest.verbs))
-        XCTAssertEqual(ComputerHostRequest.verbs.count, 32)
+        XCTAssertEqual(ComputerHostRequest.verbs.count, 46)
         XCTAssertFalse(ComputerHostRequest.verbs.contains("run_shell"))
         let descriptor = try ComputerHostDescriptor(
             hostId: session, name: "Test Mac", clientVersion: "1.9.0",
@@ -66,7 +68,9 @@ final class ComputerHostProtocolTests: XCTestCase {
             "run_command": 630000, "read_output": 30000, "interrupt_command": 5000, "browser_navigate": 15000,
             "browser_wait": 15000, "browser_snapshot": 5000, "browser_get_text": 5000, "browser_screenshot": 5000,
             "browser_click": 5000, "browser_fill": 5000, "browser_press": 5000, "browser_scroll": 5000,
-            "browser_dialog": 5000,
+            "browser_dialog": 5000, "ax_tree": 8000, "browser_find": 5000, "browser_hover": 5000,
+            "browser_zoom": 5000, "browser_console": 5000, "browser_network": 5000, "browser_evaluate": 15000,
+            "browser_resize": 5000, "browser_tabs": 15000,
         ]
         for verb in ComputerHostRequest.verbs {
             XCTAssertEqual(ComputerHostRequest.maximumDeadlineMs(for: verb), ceilings[verb] ?? 30000, verb)
