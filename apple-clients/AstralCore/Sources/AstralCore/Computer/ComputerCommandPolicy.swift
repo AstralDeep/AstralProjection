@@ -154,7 +154,7 @@
             func walk(_ list: [String], shell: Bool, depth: Int) {
                 for (index, word) in list.enumerated() {
                     for piece in [word] + word.components(separatedBy: fragmentSeparators)
-                    where !piece.isEmpty && seen.insert(piece).inserted {
+                    where !piece.isEmpty && seen.insert("\(piece == word)|\(piece)").inserted {
                         result.append((piece, shell, piece == word))
                     }
                     let previous = index > 0 ? list[index - 1] : ""
