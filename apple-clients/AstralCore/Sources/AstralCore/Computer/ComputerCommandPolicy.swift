@@ -126,9 +126,9 @@
                             + "workspace pattern \(pattern).")
                 }
             }
-            for (fragment, shell, whole) in contextualFragments(command: command, argv: argv) {
+            for (fragment, expand, whole) in contextualFragments(command: command, argv: argv) {
                 if let pattern = excludedFragment(
-                    fragment, cwd: resolvedCwd, anchors: anchors, exclusions: exclusions, expand: shell, whole: whole)
+                    fragment, cwd: resolvedCwd, anchors: anchors, exclusions: exclusions, expand: expand, whole: whole)
                 {
                     throw ComputerHostError(
                         "excluded_path",
@@ -144,55 +144,52 @@
             contextualFragments(command: command, argv: argv).map(\.0)
         }
 
-        private static func words(_ text: String) -> [String] {
-            tokenize(text) ?? text.components(separatedBy: .whitespacesAndNewlines)
+        private static func words(_ text: String) -> [(String, Bool)] {
+            tokenizeQuoted(text) ?? text.components(separatedBy: .whitespacesAndNewlines).map { ($0, false) }
         }
 
         private static func contextualFragments(command: String?, argv: [String]?) -> [(String, Bool, Bool)] {
             var seen: Set<String> = []
             var result: [(String, Bool, Bool)] = []
-            let quoted = quotedWords(command)
-            func walk(_ list: [String], shell: Bool, depth: Int) {
-                for (index, word) in list.enumerated() {
-                    let whole = !quoted.contains(word)
+            func walk(_ list: [(String, Bool)], shell: Bool, depth: Int) {
+                for (index, entry) in list.enumerated() {
+                    let (word, quotedGlob) = entry
+                    let expand = shell && !quotedGlob
                     for piece in [word] + word.components(separatedBy: fragmentSeparators)
-                    where !piece.isEmpty && seen.insert("\(whole && piece == word)|\(piece)").inserted {
-                        result.append((piece, shell, whole && piece == word))
+                    where !piece.isEmpty && seen.insert("\(expand)|\(piece == word)|\(piece)").inserted {
+                        result.append((piece, expand, piece == word))
                     }
-                    let previous = index > 0 ? list[index - 1] : ""
+                    let previous = index > 0 ? list[index - 1].0 : ""
                     let script =
                         previous == "eval"
                         || (computerFullMatch(previous, "^-[A-Za-z]*c$")
-                            && list[..<index].contains { shells.contains(basename($0).lowercased()) })
+                            && list[..<index].contains { shells.contains(basename($0.0).lowercased()) })
                     guard depth < 4, script || word.contains("$(") || word.contains("`") else { continue }
                     let inner = word.components(separatedBy: CharacterSet(charactersIn: "`$()")).joined(separator: " ")
                     walk(words(script ? word : inner), shell: true, depth: depth + 1)
                 }
             }
             if let argv {
-                walk(argv, shell: false, depth: 0)
+                walk(argv.map { ($0, false) }, shell: false, depth: 0)
             } else if let command {
                 walk(words(command), shell: true, depth: 0)
             }
             return result
         }
 
-        private static func quotedWords(_ command: String?) -> Set<String> {
-            guard let command else { return [] }
-            var found: Set<String> = []
-            for quote in ["\"", "'"] {
-                let parts = command.components(separatedBy: quote)
-                for index in stride(from: 1, to: parts.count, by: 2) where !parts[index].isEmpty {
-                    found.insert(parts[index])
-                }
-            }
-            return found
-        }
-
         private static func excludedFragment(
             _ fragment: String, cwd: String, anchors: [String], exclusions: ComputerWorkspaceExclusions, expand: Bool,
             whole: Bool
         ) -> String? {
+            if !expand, let globIndex = fragment.firstIndex(where: { "*?[".contains($0) }) {
+                let prefix = String(fragment[..<globIndex])
+                var components = prefix.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+                if !prefix.hasSuffix("/") { components.removeLast() }
+                let literal = components.joined(separator: "/")
+                guard !literal.isEmpty, literal != "/" else { return nil }
+                return excludedFragment(
+                    literal, cwd: cwd, anchors: anchors, exclusions: exclusions, expand: false, whole: false)
+            }
             var path = fragment
             if path == "~" || path.hasPrefix("~/") {
                 path = FileManager.default.homeDirectoryForCurrentUser.path + path.dropFirst()
@@ -309,19 +306,28 @@
         }
 
         public static func tokenize(_ command: String) -> [String]? {
-            var tokens: [String] = []
+            tokenizeQuoted(command)?.map(\.0)
+        }
+
+        static func tokenizeQuoted(_ command: String) -> [(String, Bool)]? {
+            var tokens: [(String, Bool)] = []
             var current = ""
             var active = false
+            var quotedGlob = false
             var quote: Character?
             var escaped = false
+            func append(_ character: Character, literal: Bool) {
+                current.append(character)
+                if literal, "*?[".contains(character) { quotedGlob = true }
+            }
             for character in command {
                 if escaped {
-                    current.append(character)
+                    append(character, literal: true)
                     escaped = false
                     continue
                 }
                 if quote == "'" {
-                    if character == "'" { quote = nil } else { current.append(character) }
+                    if character == "'" { quote = nil } else { append(character, literal: true) }
                     continue
                 }
                 if quote == "\"" {
@@ -330,7 +336,7 @@
                     } else if character == "\\" {
                         escaped = true
                     } else {
-                        current.append(character)
+                        append(character, literal: true)
                     }
                     continue
                 }
@@ -341,16 +347,17 @@
                     quote = character
                     active = true
                 } else if character.isWhitespace {
-                    if active { tokens.append(current) }
+                    if active { tokens.append((current, quotedGlob)) }
                     current = ""
                     active = false
+                    quotedGlob = false
                 } else {
-                    current.append(character)
+                    append(character, literal: false)
                     active = true
                 }
             }
             guard quote == nil, !escaped else { return nil }
-            if active { tokens.append(current) }
+            if active { tokens.append((current, quotedGlob)) }
             return tokens
         }
 
