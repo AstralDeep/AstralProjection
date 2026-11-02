@@ -19,47 +19,57 @@ struct ComponentActionTarget: Identifiable, Equatable {
 struct ComponentChrome: View {
     let component: AstralComponent
     var onAction: ((ComponentActionTarget) -> Void)?
-    @Environment(ThemeStore.self) var theme
-    @Environment(AppModel.self) var model
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 2) {
             ComponentView(component: component)
                 .frame(maxWidth: .infinity, alignment: .leading)
             ProvenanceBadge(kind: component.raw["provenance"]?.stringValue)
-            if onAction != nil {
+            if let onAction {
                 AstralToolbarLayout(wraps: true, spacing: 12) {
-                    ForEach(ComponentChromeModel.actions(from: component.raw["component_chrome"])) { descriptor in
-                        if let context = model.componentActionContext(for: descriptor.kind, component: component) {
-                            Button {
-                                if let current = model.componentActionContext(
-                                    for: descriptor.kind, component: component)
-                                {
-                                    onAction?(ComponentActionTarget(context: current))
-                                }
-                            } label: {
-                                HStack(spacing: 4) {
-                                    if model.componentActionInFlight(context) {
-                                        ProgressView().controlSize(.mini).accessibilityLabel(
-                                            "Submitting component action")
-                                    }
-                                    Text(descriptor.icon).accessibilityHidden(true)
-                                }
-                                .font(ConsoleTypography.sans(12, relativeTo: .caption))
-                                .foregroundStyle(theme.palette.muted)
-                                .frame(minWidth: 28, minHeight: 44)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(model.componentActionInFlight(context))
-                            .help(descriptor.label)
-                            .accessibilityLabel(descriptor.label)
-                            .accessibilityHint(descriptor.title)
-                            .accessibilityIdentifier(
-                                "component-action-\(context.componentId)-\(descriptor.kind.rawValue)")
-                        }
-                    }
+                    ComponentChromeActions(component: component, onAction: onAction)
                 }
+            }
+        }
+    }
+}
+
+struct ComponentChromeActions: View {
+    let component: AstralComponent
+    let onAction: (ComponentActionTarget) -> Void
+    var excluding: Set<ComponentActionKind> = []
+    @Environment(ThemeStore.self) var theme
+    @Environment(AppModel.self) var model
+
+    var body: some View {
+        ForEach(ComponentChromeModel.actions(from: component.raw["component_chrome"])) { descriptor in
+            if !excluding.contains(descriptor.kind),
+                let context = model.componentActionContext(for: descriptor.kind, component: component)
+            {
+                Button {
+                    if let current = model.componentActionContext(for: descriptor.kind, component: component) {
+                        onAction(ComponentActionTarget(context: current))
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        if model.componentActionInFlight(context) {
+                            ProgressView().controlSize(.mini).accessibilityLabel(
+                                "Submitting component action")
+                        }
+                        Text(descriptor.icon).accessibilityHidden(true)
+                    }
+                    .font(ConsoleTypography.sans(12, relativeTo: .caption))
+                    .foregroundStyle(theme.palette.muted)
+                    .frame(minWidth: 28, minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(model.componentActionInFlight(context))
+                .help(descriptor.label)
+                .accessibilityLabel(descriptor.label)
+                .accessibilityHint(descriptor.title)
+                .accessibilityIdentifier(
+                    "component-action-\(context.componentId)-\(descriptor.kind.rawValue)")
             }
         }
     }

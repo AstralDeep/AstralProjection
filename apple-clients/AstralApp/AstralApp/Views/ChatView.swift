@@ -333,6 +333,8 @@ struct CanvasArea: View {
                             SkeletonCanvas()
                         } else if model.workspaceCanvas.isEmpty {
                             Color.clear
+                        } else if let focus = CanvasArtifactFocus.index(in: model.workspaceCanvas) {
+                            artifactCanvas(focus: focus, height: geo.size.height)
                         } else {
                             ScrollView {
                                 LazyVStack(alignment: .leading, spacing: 12) {
@@ -369,6 +371,50 @@ struct CanvasArea: View {
             }
         }
         .background(p.bg)
+    }
+
+    @ViewBuilder
+    private func artifactCanvas(focus: Int, height: CGFloat) -> some View {
+        let canvas = model.workspaceCanvas
+        let artifact = canvas[focus]
+        let hidden = CanvasArtifactFocus.hidden(in: canvas, focus: focus)
+        let rest = canvasItems.filter {
+            $0.index != focus && !hidden.contains($0.comp.raw["component_id"]?.stringValue ?? "")
+        }
+        let inset = AstralWebStyle.canvasInset(viewportWidth)
+        if artifact.type == "html_artifact", rest.isEmpty, !model.showSkeleton {
+            focusedArtifact(artifact)
+                .environment(\.canvasCapturePath, "/components/\(focus)")
+        } else {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: ComponentSpacing.loose) {
+                    focusedArtifact(artifact)
+                        .frame(height: artifact.type == "html_artifact" ? max(240, height - 2 * inset) : nil)
+                        .environment(\.canvasCapturePath, "/components/\(focus)")
+                    ForEach(rest, id: \.key) { item in
+                        ComponentChrome(component: item.comp, onAction: { componentActionTarget = $0 })
+                            .environment(\.canvasCapturePath, "/components/\(item.index)")
+                    }
+                    if model.showSkeleton { SkeletonCanvas() }
+                }
+                .padding(inset)
+            }
+            .accessibilityIdentifier("workspace-canvas-scroll")
+            .scrollDismissesKeyboard(.immediately)
+        }
+    }
+
+    @ViewBuilder
+    private func focusedArtifact(_ component: AstralComponent) -> some View {
+        if component.type == "artifact" {
+            ArtifactView(component: component, onChromeAction: { componentActionTarget = $0 })
+        } else {
+            #if os(macOS)
+                HtmlArtifactView(component: component, fillsSlot: true)
+            #else
+                ComponentView(component: component)
+            #endif
+        }
     }
 }
 

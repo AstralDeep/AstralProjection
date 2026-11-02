@@ -1,6 +1,6 @@
-// Decides which URLs the Mac browser pane may load, the origin each belongs to, which fields are secret and
-// which controls are consequential. MacBrowserDriver applies it at action time, and browser_snapshot.js
-// receives scriptRules so snapshot redaction follows the same rules inside the page.
+// Decides which URLs the Mac browser pane may load, the origin each belongs to, which fields are secret, which
+// controls are consequential, how captured URLs are redacted and how an emulated viewport letterboxes into the pane.
+// MacBrowserDriver applies it at action time, and browser_snapshot.js receives scriptRules for in-page redaction.
 
 import Foundation
 
@@ -45,6 +45,38 @@ public struct ComputerBrowserElement: Sendable, Equatable {
             text: string("text"), inForm: object["in_form"]?.boolValue ?? false,
             formHasSecret: object["form_has_secret"]?.boolValue ?? false,
             editable: object["editable"]?.boolValue ?? false)
+    }
+}
+
+public struct ComputerBrowserViewport: Sendable, Equatable {
+    public static let widths: ClosedRange<Int> = 320...3840
+    public static let heights: ClosedRange<Int> = 320...2160
+    public static let presets: [String: ComputerBrowserViewport] = [
+        "mobile": ComputerBrowserViewport(width: 375, height: 812),
+        "tablet": ComputerBrowserViewport(width: 768, height: 1024),
+    ]
+    public let width: Int
+    public let height: Int
+
+    public init(width: Int, height: Int) {
+        self.width = width
+        self.height = height
+    }
+
+    public init?(validWidth width: Int, height: Int) {
+        guard Self.widths.contains(width), Self.heights.contains(height) else { return nil }
+        self.init(width: width, height: height)
+    }
+
+    public func letterbox(in slot: CGSize) -> (frame: CGRect, scale: CGFloat) {
+        let size = CGSize(width: CGFloat(width), height: CGFloat(height))
+        guard slot.width > 0, slot.height > 0 else { return (CGRect(origin: .zero, size: size), 1) }
+        let scale = min(1, slot.width / size.width, slot.height / size.height)
+        let fitted = CGSize(width: size.width * scale, height: size.height * scale)
+        let origin = CGPoint(
+            x: max(0, ((slot.width - fitted.width) / 2).rounded(.down)),
+            y: max(0, ((slot.height - fitted.height) / 2).rounded(.down)))
+        return (CGRect(origin: origin, size: fitted), scale)
     }
 }
 
@@ -148,6 +180,37 @@ public enum ComputerBrowserPolicy {
             return true
         }
         return [element.label, element.text].contains { matches(consequentialPattern, $0.lowercased()) }
+    }
+
+    public static let sensitiveParameterFragments = ["token", "key", "secret", "auth", "session", "password", "code"]
+
+    public static func redactedURL(_ text: String, limit: Int = 2000) -> String {
+        var url = text
+        if let scheme = url.range(of: "://") {
+            let rest = url[scheme.upperBound...]
+            let end = rest.firstIndex(where: { "/?#".contains($0) }) ?? rest.endIndex
+            if let at = rest[..<end].lastIndex(of: "@") { url.removeSubrange(scheme.upperBound...at) }
+        }
+        func parameters(_ part: Substring) -> String {
+            part.split(separator: "&", omittingEmptySubsequences: false).map { pair -> String in
+                guard let equals = pair.firstIndex(of: "=") else { return String(pair) }
+                let name = String(pair[..<equals])
+                let decoded = (name.removingPercentEncoding ?? name).lowercased()
+                guard sensitiveParameterFragments.contains(where: decoded.contains) else { return String(pair) }
+                return name + "=" + redacted
+            }.joined(separator: "&")
+        }
+        var fragment: String?
+        if let hash = url.firstIndex(of: "#") {
+            let tail = url[url.index(after: hash)...]
+            fragment = tail.contains("=") ? parameters(tail) : String(tail)
+            url = String(url[..<hash])
+        }
+        if let question = url.firstIndex(of: "?") {
+            url = String(url[...question]) + parameters(url[url.index(after: question)...])
+        }
+        if let fragment { url += "#" + fragment }
+        return String(url.prefix(limit))
     }
 
     public static func displayValue(_ value: String, for element: ComputerBrowserElement) -> String {

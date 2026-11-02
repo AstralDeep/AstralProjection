@@ -73,6 +73,8 @@ struct ComponentAlertMessage: View {
 
 #if os(macOS)
     import AppKit
+#else
+    import UIKit
 #endif
 
 struct ComponentView: View {
@@ -141,6 +143,8 @@ struct ComponentView: View {
             CollapsibleComponent(component: component)
         } else if compactSettings, CompactSettingsLayout.rendered.contains(component.type) {
             compactContent
+        } else if ArtifactDocument.types.contains(component.type) {
+            artifactContent
         } else {
             switch component.type {
             case "text":
@@ -174,7 +178,7 @@ struct ComponentView: View {
             case "hero":
                 heroView
             case "list":
-                listView
+                listView.font(ComponentTypeScale.body)
             case "keyvalue":
                 keyValueView
             case "timeline":
@@ -222,6 +226,19 @@ struct ComponentView: View {
     }
 
     @ViewBuilder
+    private var artifactContent: some View {
+        if component.type == "artifact" {
+            ArtifactView(component: component)
+        } else {
+            #if os(macOS)
+                HtmlArtifactView(component: component)
+            #else
+                fallbackView
+            #endif
+        }
+    }
+
+    @ViewBuilder
     private var textView: some View {
         let text = component.textContent ?? component.fallbackText
         if component.variant == "markdown" && !workReadSurface {
@@ -240,11 +257,11 @@ struct ComponentView: View {
 
     private func fontForVariant(_ v: String?) -> Font {
         switch v {
-        case "h1": return ConsoleTypography.largeTitle.bold()
-        case "h2": return ConsoleTypography.title.bold()
-        case "h3": return ConsoleTypography.title3.bold()
-        case "caption": return ConsoleTypography.caption
-        default: return ConsoleTypography.body
+        case "h1": return ComponentTypeScale.title
+        case "h2": return ComponentTypeScale.heading
+        case "h3": return ComponentTypeScale.body.weight(.semibold)
+        case "caption": return ComponentTypeScale.caption
+        default: return ComponentTypeScale.body
         }
     }
 
@@ -255,15 +272,16 @@ struct ComponentView: View {
             Image(systemName: alertIcon).foregroundStyle(color)
             VStack(alignment: .leading, spacing: 2) {
                 if let title = component.title, !title.isEmpty {
-                    markdown(title).font(ConsoleTypography.subheadline.bold())
+                    markdown(title).font(ComponentTypeScale.body.weight(.semibold))
                         .foregroundStyle(p.textVariant(component.variant))
                 }
                 ComponentAlertMessage(text: component.message ?? component.fallbackText, literal: workReadSurface)
+                    .font(ComponentTypeScale.body)
                     .foregroundStyle(p.text)
             }
             Spacer(minLength: 0)
         }
-        .padding(12)
+        .padding(ComponentSpacing.tight)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: AstralRadius.sm))
     }
@@ -278,11 +296,11 @@ struct ComponentView: View {
     }
 
     private var cardView: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: ComponentSpacing.tight) {
             if let title = component.title, !title.isEmpty {
                 HStack(spacing: 8) {
                     Capsule().fill(p.primary).frame(width: 4, height: 16)
-                    markdown(title).font(ConsoleTypography.headline)
+                    markdown(title).font(ComponentTypeScale.heading)
                         .foregroundStyle(p.text).frame(minHeight: 24)
                         .accessibilityAddTraits(.isHeader)
                 }
@@ -291,7 +309,7 @@ struct ComponentView: View {
         }
         .padding(AstralWebStyle.canvasInset(viewportWidth) + 1)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .astralWebSurface(p)
+        .componentCardSurface(p)
     }
 
     @ViewBuilder
@@ -352,15 +370,28 @@ struct ComponentView: View {
         let color = AstralWebStyle.metricAccent(component.variant, palette: p)
         let title = component.title ?? ""
         let value = component.value ?? ""
+        let trend = MetricTrend(component.raw)
         return VStack(alignment: .leading, spacing: 0) {
             markdown(title)
-                .font(ConsoleTypography.caption.weight(.medium))
+                .font(ComponentTypeScale.caption.weight(.medium))
                 .tracking(0.6).textCase(.uppercase).foregroundStyle(p.muted)
                 .frame(minHeight: 16).padding(.bottom, 4)
-            Text(value).font(ConsoleTypography.title.weight(.bold))
-                .tracking(-0.56).foregroundStyle(p.text).frame(minHeight: 33.6)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(value).font(ComponentTypeScale.title)
+                    .tracking(-0.3).foregroundStyle(p.text).frame(minHeight: 33.6)
+                if let trend {
+                    HStack(spacing: 3) {
+                        Image(systemName: trend.symbol).accessibilityHidden(true)
+                        markdown(trend.delta)
+                    }
+                    .font(ComponentTypeScale.caption.weight(.semibold))
+                    .foregroundStyle(trend.direction == .up ? p.success : trend.direction == .down ? p.error : p.muted)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityValue(trend.direction.rawValue)
+                }
+            }
             if let sub = component.raw["subtitle"]?.stringValue, !sub.isEmpty {
-                markdown(sub).font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                markdown(sub).font(ComponentTypeScale.caption).foregroundStyle(p.muted)
                     .frame(minHeight: 16).padding(.top, 4)
             }
             if let progress = component.raw["progress"]?.numberValue, progress.isFinite {
@@ -428,15 +459,22 @@ struct ComponentView: View {
             if variant == "gradient" {
                 Rectangle().fill(p.gradient).frame(height: 3)
             }
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 if let eyebrow = component.raw["eyebrow"]?.stringValue, !eyebrow.isEmpty {
-                    Text(eyebrow).font(ConsoleTypography.caption.bold()).foregroundStyle(p.readablePrimary)
-                        .textCase(.uppercase)
+                    Text(eyebrow).font(ComponentTypeScale.caption.bold()).foregroundStyle(p.readablePrimary)
+                        .tracking(0.6).textCase(.uppercase)
                 }
                 markdown(component.raw["heading"]?.stringValue ?? component.title ?? "")
-                    .font(ConsoleTypography.title.bold()).foregroundStyle(p.text)
+                    .font(ComponentTypeScale.title).foregroundStyle(p.text)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
                 if let sub = component.raw["subtitle"]?.stringValue ?? component.raw["subheading"]?.stringValue {
-                    markdown(sub).foregroundStyle(p.muted)
+                    markdown(sub).font(ComponentTypeScale.heading.weight(.regular)).foregroundStyle(p.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let summary = component.raw["summary"]?.stringValue, !summary.isEmpty {
+                    markdown(summary).font(ComponentTypeScale.body).foregroundStyle(p.text)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 let badges = component.raw["badges"]?.arrayValue ?? []
                 if !badges.isEmpty {
@@ -451,12 +489,12 @@ struct ComponentView: View {
                     }
                 }
             }
-            .padding(18)
+            .padding(ComponentSpacing.loose)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(heroBackground(variant), in: RoundedRectangle(cornerRadius: AstralRadius.lg))
-        .overlay(RoundedRectangle(cornerRadius: AstralRadius.lg).stroke(p.border))
-        .clipShape(RoundedRectangle(cornerRadius: AstralRadius.lg))
+        .background(heroBackground(variant), in: RoundedRectangle(cornerRadius: AstralRadius.md))
+        .overlay(RoundedRectangle(cornerRadius: AstralRadius.md).strokeBorder(p.border, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: AstralRadius.md))
     }
 
     private func heroBackground(_ variant: String) -> AnyShapeStyle {
@@ -476,15 +514,25 @@ struct ComponentView: View {
     private var listView: some View {
         let ordered = component.raw["ordered"]?.boolValue ?? false
         let items = component.listItems
-        return VStack(alignment: .leading, spacing: 4) {
+        let glyphs = (component.raw["items"]?.arrayValue ?? []).map(ListItemGlyph.init)
+        return VStack(alignment: .leading, spacing: 6) {
             titleLine
             if items.isEmpty {
                 childViews
             } else {
                 ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                    HStack(alignment: .top, spacing: 6) {
-                        Text(ordered ? "\(index + 1)." : "•").foregroundStyle(p.muted)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        if let glyph = glyphs[safe: index] ?? nil {
+                            Image(systemName: glyph.symbol)
+                                .foregroundStyle(glyph.tone.map { p.variant($0) } ?? p.muted)
+                                .frame(minWidth: 16)
+                                .accessibilityLabel(glyph.label)
+                        } else {
+                            Text(ordered ? "\(index + 1)." : "•").foregroundStyle(p.muted)
+                                .frame(minWidth: 16, alignment: .leading)
+                        }
                         markdown(item).foregroundStyle(p.text)
+                            .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 0)
                     }
                 }
@@ -498,15 +546,17 @@ struct ComponentView: View {
             ForEach(Array(component.keyValuePairs.enumerated()), id: \.offset) { _, pair in
                 HStack(alignment: .top) {
                     Text(pair.0).foregroundStyle(p.muted)
-                    Spacer(minLength: 12)
-                    Text(pair.1).foregroundStyle(p.text)
+                    Spacer(minLength: ComponentSpacing.tight)
+                    Text(pair.1).foregroundStyle(p.text).multilineTextAlignment(.trailing)
+                        .textSelection(.enabled)
                 }
-                .font(ConsoleTypography.callout)
+                .font(ComponentTypeScale.body)
             }
         }
-        .padding(12)
+        .padding(ComponentSpacing.tight)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(p.surface.opacity(0.4), in: RoundedRectangle(cornerRadius: AstralRadius.md))
+        .overlay(RoundedRectangle(cornerRadius: AstralRadius.md).strokeBorder(p.border, lineWidth: 1))
     }
 
     private var timelineView: some View {
@@ -519,12 +569,12 @@ struct ComponentView: View {
                         .frame(width: 8, height: 8).padding(.top, 5)
                     VStack(alignment: .leading, spacing: 1) {
                         if let time = item["time"]?.stringValue, !time.isEmpty {
-                            Text(time).font(ConsoleTypography.caption2).foregroundStyle(p.muted)
+                            Text(time).font(ComponentTypeScale.caption).foregroundStyle(p.muted)
                         }
                         markdown(item["title"]?.stringValue ?? item["label"]?.stringValue ?? item.displayText)
-                            .font(ConsoleTypography.callout).foregroundStyle(p.text)
+                            .font(ComponentTypeScale.body).foregroundStyle(p.text)
                         if let desc = item["description"]?.stringValue, !desc.isEmpty {
-                            markdown(desc).font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                            markdown(desc).font(ComponentTypeScale.caption).foregroundStyle(p.muted)
                         }
                     }
                     Spacer(minLength: 0)
@@ -559,15 +609,30 @@ struct ComponentView: View {
     }
 
     private var codeView: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            Text(component.textContent ?? component.raw["code"]?.stringValue ?? "")
-                .font(ConsoleTypography.mono(16))
-                .textSelection(.enabled)
-                .padding(12)
+        let code = component.textContent ?? component.raw["code"]?.stringValue ?? ""
+        let language = (component.raw["language"]?.stringValue ?? "").trimmingCharacters(in: .whitespaces)
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                if !language.isEmpty, language.lowercased() != "text" {
+                    Text(verbatim: language).font(ComponentTypeScale.caption.weight(.medium))
+                        .foregroundStyle(p.muted).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                ComponentCopyButton(text: code, palette: p)
+            }
+            .padding(.horizontal, ComponentSpacing.tight).padding(.top, 6)
+            ScrollView(.horizontal, showsIndicators: false) {
+                Text(verbatim: code)
+                    .font(ConsoleTypography.mono(13))
+                    .foregroundStyle(p.success)
+                    .textSelection(.enabled)
+                    .padding(.horizontal, ComponentSpacing.tight).padding(.bottom, ComponentSpacing.tight)
+                    .padding(.top, 4)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(p.surface2, in: RoundedRectangle(cornerRadius: AstralRadius.sm))
-        .foregroundStyle(p.success)
+        .background(p.surface2, in: RoundedRectangle(cornerRadius: AstralRadius.md))
+        .overlay(RoundedRectangle(cornerRadius: AstralRadius.md).strokeBorder(p.border, lineWidth: 1))
     }
 
     @ViewBuilder
@@ -923,7 +988,9 @@ struct ComponentView: View {
         if let title = component.title, !title.isEmpty {
             HStack(spacing: 6) {
                 Rectangle().fill(p.gradient).frame(width: 3, height: 16)
-                markdown(title).font(ConsoleTypography.headline).foregroundStyle(p.text)
+                markdown(title).font(compactSettings ? ConsoleTypography.headline : ComponentTypeScale.heading)
+                    .foregroundStyle(p.text)
+                    .accessibilityAddTraits(.isHeader)
             }
         }
     }
@@ -959,6 +1026,139 @@ struct ComponentView: View {
 
 enum ComponentAccessibility {
     static func buttonValue(pending: Bool) -> String { pending ? "Submitting" : "" }
+}
+
+enum ComponentTypeScale {
+    static var title: Font { ConsoleTypography.sans(22, relativeTo: .title2).weight(.semibold) }
+    static var heading: Font { ConsoleTypography.sans(17, relativeTo: .headline).weight(.semibold) }
+    static var body: Font { ConsoleTypography.sans(14, relativeTo: .body) }
+    static var caption: Font { ConsoleTypography.sans(12, relativeTo: .caption) }
+}
+
+enum ComponentSpacing {
+    static let tight: CGFloat = 12
+    static let regular: CGFloat = 16
+    static let loose: CGFloat = 24
+}
+
+struct MetricTrend: Equatable {
+    enum Direction: String { case up, down, flat }
+
+    let delta: String
+    let direction: Direction
+
+    init?(_ raw: JSONValue) {
+        let delta = CompositeValue.text(raw["delta"]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !delta.isEmpty else { return nil }
+        self.delta = delta
+        let stated = raw["trend"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if let stated, let direction = Direction(rawValue: stated) {
+            self.direction = direction
+        } else if delta.hasPrefix("-") || delta.hasPrefix("−") {
+            direction = .down
+        } else if delta.hasPrefix("+") || (Double(delta.filter { "0123456789.".contains($0) }) ?? 0) > 0 {
+            direction = .up
+        } else {
+            direction = .flat
+        }
+    }
+
+    var symbol: String {
+        switch direction {
+        case .up: return "arrow.up.right"
+        case .down: return "arrow.down.right"
+        case .flat: return "arrow.right"
+        }
+    }
+}
+
+struct ListItemGlyph: Equatable {
+    let symbol: String
+    let tone: String?
+    let label: String
+
+    init?(_ item: JSONValue) {
+        guard item.objectValue != nil else { return nil }
+        let status = item["status"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        switch status {
+        case "done", "complete", "completed", "success", "passed", "ok":
+            (symbol, tone) = ("checkmark.circle.fill", "success")
+        case "warning", "warn", "attention":
+            (symbol, tone) = ("exclamationmark.triangle.fill", "warning")
+        case "error", "failed", "failure", "blocked", "danger":
+            (symbol, tone) = ("xmark.octagon.fill", "error")
+        case "active", "running", "in_progress", "current":
+            (symbol, tone) = ("circle.dotted.circle", "info")
+        case "pending", "todo", "queued", "skipped":
+            (symbol, tone) = ("circle", nil)
+        default:
+            guard let icon = item["icon"]?.stringValue, Self.isSymbol(icon) else { return nil }
+            (symbol, tone) = (icon, nil)
+        }
+        label = status.isEmpty ? "" : status.replacingOccurrences(of: "_", with: " ")
+    }
+
+    static func isSymbol(_ name: String) -> Bool {
+        guard !name.isEmpty, name.count <= 64, name.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "." }) else {
+            return false
+        }
+        #if os(macOS)
+            return NSImage(systemSymbolName: name, accessibilityDescription: nil) != nil
+        #else
+            return UIImage(systemName: name) != nil
+        #endif
+    }
+}
+
+struct ComponentCopyButton: View {
+    let text: String
+    let palette: AstralPalette
+    var label = "Copy"
+    @State private var copied = false
+
+    var body: some View {
+        Button {
+            copied = ComponentPasteboard.copy(text)
+        } label: {
+            Label(copied ? "Copied" : label, systemImage: copied ? "checkmark" : "doc.on.doc")
+                .font(ComponentTypeScale.caption.weight(.medium))
+                .foregroundStyle(palette.muted)
+                .frame(minHeight: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(text.isEmpty)
+        .help(label)
+        .accessibilityLabel(copied ? "Copied" : label)
+        .task(id: copied) {
+            guard copied else { return }
+            try? await Task.sleep(for: .seconds(2))
+            copied = false
+        }
+    }
+}
+
+enum ComponentPasteboard {
+    @discardableResult
+    static func copy(_ text: String) -> Bool {
+        guard !text.isEmpty else { return false }
+        #if os(macOS)
+            NSPasteboard.general.clearContents()
+            return NSPasteboard.general.setString(text, forType: .string)
+        #else
+            UIPasteboard.general.string = text
+            return true
+        #endif
+    }
+}
+
+extension View {
+    func componentCardSurface(_ palette: AstralPalette) -> some View {
+        background(palette.surface.opacity(0.45), in: RoundedRectangle(cornerRadius: AstralRadius.md))
+            .overlay(RoundedRectangle(cornerRadius: AstralRadius.md).strokeBorder(palette.border, lineWidth: 1))
+            .astralWebShadow(radius: AstralRadius.md)
+            .astralChartBackdrop(palette, color: palette.surface, opacity: 0.45)
+    }
 }
 
 enum CompactSettingsLayout {
@@ -1688,11 +1888,31 @@ final class NativeDownloadSaveLease {
     #endif
 }
 
+enum TableColumnLayout {
+    static let stickyRowLimit = 10
+    static let rowHeight: CGFloat = 32
+    static let minimumWidth: CGFloat = 64
+    static let maximumWidth: CGFloat = 320
+
+    static func widths(headers: [String], rows: [[String]], columns: Int, available: CGFloat) -> [CGFloat] {
+        guard columns > 0 else { return [] }
+        let natural = (0..<columns).map { column -> CGFloat in
+            let header = column < headers.count ? headers[column].count : 0
+            let cells = rows.prefix(200).map { column < $0.count ? $0[column].count : 0 }.max() ?? 0
+            return min(maximumWidth, max(minimumWidth, CGFloat(max(header, cells)) * 7.6 + 20))
+        }
+        let total = natural.reduce(0, +)
+        guard available.isFinite, available > total, total > 0 else { return natural }
+        return natural.map { ($0 * available / total).rounded(.down) }
+    }
+}
+
 struct TableComponent: View {
     let component: AstralComponent
     @Environment(ThemeStore.self) var theme
     @Environment(AppModel.self) var model
     @Environment(\.astralCompactSettings) private var compactSettings
+    @State private var tableWidth: CGFloat = 0
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
@@ -1760,34 +1980,80 @@ struct TableComponent: View {
     }
 
     private var standardTable: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        let headers = component.tableHeaders
+        let rows = component.tableRows
+        let columns = max(headers.count, rows.map(\.count).max() ?? 0)
+        let numeric = (0..<columns).map { column in
+            CompactSettingsLayout.isNumeric(rows.compactMap { column < $0.count ? $0[column] : nil })
+        }
+        let widths = TableColumnLayout.widths(headers: headers, rows: rows, columns: columns, available: tableWidth)
+        return VStack(alignment: .leading, spacing: 8) {
             if let title = component.title, !title.isEmpty {
-                Text(InlineMarkdown.attributed(title)).font(ConsoleTypography.headline).foregroundStyle(p.text)
+                Text(InlineMarkdown.attributed(title)).font(ComponentTypeScale.heading).foregroundStyle(p.text)
+                    .accessibilityAddTraits(.isHeader)
             }
             ScrollView(.horizontal, showsIndicators: false) {
-                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
-                    if !component.tableHeaders.isEmpty {
-                        GridRow {
-                            ForEach(Array(component.tableHeaders.enumerated()), id: \.offset) { _, header in
-                                Text(header).font(ConsoleTypography.caption.bold()).foregroundStyle(p.muted)
-                            }
-                        }
-                        Divider().overlay(p.border)
+                VStack(alignment: .leading, spacing: 0) {
+                    if !headers.isEmpty {
+                        tableRow(headers, columns: columns, widths: widths, numeric: numeric, header: true)
+                            .background(p.surface2)
+                            .overlay(alignment: .bottom) { p.border.frame(height: 1) }
+                            .accessibilityAddTraits(.isHeader)
                     }
-                    ForEach(Array(component.tableRows.enumerated()), id: \.offset) { _, row in
-                        GridRow {
-                            ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                                Text(cell).font(ConsoleTypography.callout).foregroundStyle(p.text)
-                            }
-                        }
+                    if rows.count > TableColumnLayout.stickyRowLimit {
+                        ScrollView(.vertical) { tableBody(rows, columns: columns, widths: widths, numeric: numeric) }
+                            .frame(height: CGFloat(TableColumnLayout.stickyRowLimit) * TableColumnLayout.rowHeight)
+                    } else {
+                        tableBody(rows, columns: columns, widths: widths, numeric: numeric)
                     }
                 }
+                .frame(width: widths.reduce(0, +), alignment: .leading)
             }
+            .clipShape(RoundedRectangle(cornerRadius: AstralRadius.sm))
             pager
         }
-        .padding(12)
+        .padding(ComponentSpacing.tight)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(p.surface.opacity(0.4), in: RoundedRectangle(cornerRadius: AstralRadius.md))
+        .overlay(RoundedRectangle(cornerRadius: AstralRadius.md).strokeBorder(p.border, lineWidth: 1))
+        .background {
+            GeometryReader { geometry in
+                Color.clear.onAppear { tableWidth = max(0, geometry.size.width - 2 * ComponentSpacing.tight) }
+                    .onChange(of: geometry.size.width) { _, width in
+                        tableWidth = max(0, width - 2 * ComponentSpacing.tight)
+                    }
+            }
+        }
+    }
+
+    private func tableBody(_ rows: [[String]], columns: Int, widths: [CGFloat], numeric: [Bool]) -> some View {
+        LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                tableRow(row, columns: columns, widths: widths, numeric: numeric, header: false)
+                    .background(index.isMultiple(of: 2) ? Color.clear : p.text.opacity(0.035))
+            }
+        }
+        .textSelection(.enabled)
+    }
+
+    private func tableRow(
+        _ cells: [String], columns: Int, widths: [CGFloat], numeric: [Bool], header: Bool
+    ) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(0..<columns, id: \.self) { column in
+                Text(column < cells.count ? cells[column] : "")
+                    .font(header ? ComponentTypeScale.caption.weight(.semibold) : ComponentTypeScale.body)
+                    .monospacedDigit()
+                    .tracking(header ? 0.4 : 0)
+                    .textCase(header ? .uppercase : nil)
+                    .foregroundStyle(header ? p.muted : p.text)
+                    .multilineTextAlignment(numeric[column] ? .trailing : .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 10).padding(.vertical, header ? 6 : 7)
+                    .frame(width: widths[column], alignment: numeric[column] ? .trailing : .leading)
+            }
+        }
+        .frame(minHeight: header ? 28 : TableColumnLayout.rowHeight, alignment: .leading)
     }
 
     @ViewBuilder

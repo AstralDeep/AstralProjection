@@ -711,6 +711,7 @@
     private struct MacWorkbenchCanvasSlot: View {
         @Environment(AppModel.self) private var model
         let browserPresented: Bool
+        @State private var arrival = ArtifactArrival()
 
         var body: some View {
             ZStack {
@@ -718,8 +719,11 @@
                     .opacity(browserPresented ? 0 : 1)
                     .allowsHitTesting(!browserPresented).accessibilityHidden(browserPresented)
                 if browserPresented {
-                    MacWorkbenchBrowserSlot(driver: model.macBrowser)
+                    MacWorkbenchBrowserSlot(driver: model.macBrowser, newArtifact: arrival.unseen)
                 }
+            }
+            .artifactArrivalTracking($arrival, model: model, browserPresented: browserPresented) {
+                model.macBrowser.isPresented = false
             }
         }
     }
@@ -727,12 +731,16 @@
     private struct MacWorkbenchBrowserSlot: View {
         @Environment(ThemeStore.self) private var theme
         @Bindable var driver: MacBrowserDriver
+        var newArtifact = false
 
         var body: some View {
             VStack(spacing: 0) {
                 HStack(spacing: 4) {
                     Text(driver.pane.title).font(ConsoleTypography.caption.weight(.semibold)).lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    if newArtifact {
+                        ArtifactArrivalChip(palette: theme.palette) { driver.isPresented = false }
+                    }
                     Button {
                         driver.isPresented = false
                     } label: {

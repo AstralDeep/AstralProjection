@@ -5325,6 +5325,7 @@
   "component_types": [
     "action_group",
     "alert",
+    "artifact",
     "audio",
     "badge",
     "bar_chart",
@@ -5344,6 +5345,7 @@
     "generative",
     "grid",
     "hero",
+    "html_artifact",
     "image",
     "input",
     "keyvalue",
@@ -5381,6 +5383,21 @@
         "supported_types": "Exact component type must also be advertised; otherwise use the named ROTE fallback."
       }
     },
+    "artifact": {
+      "source_feature": "104-mac-harness-parity-2",
+      "web": "omitted_by_server",
+      "windows": "omitted_by_server",
+      "android": "omitted_by_server",
+      "ios": "omitted_by_server",
+      "macos": "supported",
+      "watch": "omitted_by_server",
+      "fallback": "flattened_children",
+      "reason": "Only the macOS client renders the native artifact page. For every client that does not advertise the artifact_v1 capability and the exact type, the server flattens the artifact into its sections' children in order, so no artifact node reaches that client.",
+      "native_negotiation": {
+        "capability": "artifact_v1",
+        "supported_types": "The exact component type must also be advertised; otherwise the server sends the flattened children."
+      }
+    },
     "donut_chart": {
       "source_feature": "089-typesafe-a8p-integration",
       "web": "supported",
@@ -5409,6 +5426,21 @@
       "native_negotiation": {
         "console_contract": "console/v2",
         "supported_types": "Exact component type must also be advertised; otherwise use the named ROTE fallback."
+      }
+    },
+    "html_artifact": {
+      "source_feature": "104-mac-harness-parity-2",
+      "web": "omitted_by_server",
+      "windows": "omitted_by_server",
+      "android": "omitted_by_server",
+      "ios": "omitted_by_server",
+      "macos": "supported",
+      "watch": "omitted_by_server",
+      "fallback": "download_card",
+      "reason": "Only the macOS client renders the sandboxed HTML artifact. For every client that does not advertise the artifact_v1 capability and the exact type, the server substitutes a download_card of the same HTML, so no html_artifact node reaches that client.",
+      "native_negotiation": {
+        "capability": "artifact_v1",
+        "supported_types": "The exact component type must also be advertised; otherwise the server substitutes a download_card."
       }
     },
     "pipeline_stepper": {

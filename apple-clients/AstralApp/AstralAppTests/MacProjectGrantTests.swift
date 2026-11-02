@@ -530,7 +530,7 @@
             let context = try ComputerProjectContext(
                 chatId: "legacy", projectId: project, grantRevision: old.grantRevision,
                 manifestGeneration: store.manifest!.generation)
-            XCTAssertEqual(try store.snapshot(context: context).count, 1)
+            XCTAssertEqual(try store.snapshot(context: context).map(\.exclusions), [.defaults])
             try store.reconcile(projectIds: [])
             XCTAssertTrue(store.manifest!.projects.isEmpty)
             XCTAssertThrowsError(try store.snapshot(context: context))

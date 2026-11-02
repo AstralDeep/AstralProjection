@@ -1,5 +1,5 @@
-// Holds owner/server-scoped directory grants selected in the native computer controls.
-// Physical operations use AstralCore's descriptor-relative workspace boundary on the driver actor.
+// Holds owner/server-scoped directory grants selected in the native computer controls and their excluded patterns.
+// Physical operations use AstralCore's descriptor-relative workspace boundary, which refuses excluded paths.
 
 #if os(macOS)
     import AppKit
@@ -29,14 +29,19 @@
         }
         private(set) var roots: [String] = []
         private(set) var errorMessage: String?
+        let exclusions: ComputerWorkspaceExclusions
         @ObservationIgnored private var resources: [Resource] = []
         @ObservationIgnored private var scope: String?
         @ObservationIgnored private var scopeEpoch = UUID()
         @ObservationIgnored private let defaults: UserDefaults
         @ObservationIgnored private let grants: MacComputerWorkspaceGrantIO
-        init(defaults: UserDefaults = .standard, grants: MacComputerWorkspaceGrantIO? = nil) {
+        init(
+            defaults: UserDefaults = .standard, grants: MacComputerWorkspaceGrantIO? = nil,
+            exclusions: ComputerWorkspaceExclusions = .defaults
+        ) {
             self.defaults = defaults
             self.grants = grants ?? .live
+            self.exclusions = exclusions
         }
         func bind(_ owner: String?) {
             guard scope != owner else { return }
@@ -100,7 +105,7 @@
             let accessed = grants.startAccess(url)
             do {
                 try verifyScope(epoch: epoch, key: key)
-                let workspace = try ComputerWorkspace(root: url.path)
+                let workspace = try ComputerWorkspace(root: url.path, exclusions: exclusions)
                 if let record, workspace.rootIdentity != record.identity {
                     throw ComputerHostError(
                         "permission_denied", "The saved workspace identity changed. Choose it again.")

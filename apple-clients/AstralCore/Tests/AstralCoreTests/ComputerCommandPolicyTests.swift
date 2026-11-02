@@ -258,5 +258,120 @@
             XCTAssertNil(ComputerCommandPolicy.loginPath("bin:/usr/bin"))
             XCTAssertNil(ComputerCommandPolicy.loginPath(String(repeating: "/a:", count: 3000)))
         }
+
+        func testCommandsNamingExcludedPathsOrRunningInsideThemAreRefused() throws {
+            let root = try folder()
+            let manager = FileManager.default
+            for directory in ["private/drafts", "src/private", "src/lib"] {
+                try manager.createDirectory(
+                    at: root.appendingPathComponent(directory), withIntermediateDirectories: true)
+            }
+            for file in ["README.md", "server.pem", ".env", "src/lib/main.swift"] {
+                try Data().write(to: root.appendingPathComponent(file))
+            }
+            try manager.createSymbolicLink(
+                at: root.appendingPathComponent("shortcut"), withDestinationURL: root.appendingPathComponent("private"))
+            let sub = root.appendingPathComponent("src/lib").path
+            func refusal(
+                _ command: String? = nil, argv: [String]? = nil, cwd: String? = nil, roots: [String]? = nil
+            ) -> String? {
+                let directory = cwd ?? root.path
+                let resolved = (try? ComputerCommandPolicy.workingDirectory(directory, roots: roots ?? [root.path]))
+                do {
+                    try ComputerCommandPolicy.refuseExcluded(
+                        cwd: directory, resolvedCwd: resolved ?? directory,
+                        command: command, argv: argv, roots: roots ?? [root.path], exclusions: .defaults)
+                    return nil
+                } catch let error as ComputerHostError {
+                    XCTAssertEqual(error.code, "excluded_path")
+                    return error.message
+                } catch { return "\(error)" }
+            }
+            let refused: [(String?, [String]?, String?)] = [
+                ("cat private/x", nil, nil),
+                ("cat ../private/drafts/a.md", nil, sub),
+                ("cat ../../private", nil, sub),
+                ("cat \(root.path)/private/drafts/a.md", nil, nil),
+                ("cat '\(root.path)/src/private'", nil, nil),
+                ("cat \"$(pwd)\"/.env", nil, nil),
+                ("source .env && npm start", nil, nil),
+                ("grep -r token . > out.txt 2>.env.log", nil, nil),
+                ("docker run --env-file .env app", nil, nil),
+                ("docker run --env-file=.env.local app", nil, nil),
+                ("openssl x509 -in server.pem", nil, nil),
+                ("cat *.pem", nil, nil),
+                ("cat *", nil, nil),
+                ("ls {src,private}", nil, nil),
+                ("cat shortcut/drafts/a.md", nil, nil),
+                ("ssh -i id_ed25519 host", nil, nil),
+                ("bash -lc 'cat .env'", nil, nil),
+                ("echo \"$(cat private/x)\"", nil, nil),
+                ("eval 'cat server.pem'", nil, nil),
+                (nil, ["/bin/zsh", "-c", "cat src/private/plan.md"], nil),
+                ("gcloud auth activate --key-file credentials.json", nil, nil),
+                ("python3 -c \"print(open('.env').read())\"", nil, nil),
+                (nil, ["cat", "private/x"], nil),
+                (nil, ["cat", "../private"], sub),
+                (nil, ["docker", "run", "--env-file", ".env", "app"], nil),
+                (nil, ["docker", "run", "--env-file=.env", "app"], nil),
+                (nil, ["cat", root.path + "/src/lib/../private/plan.md"], nil),
+                (nil, ["cat", root.path + "/shortcut/notes"], nil),
+                (nil, ["security", "unlock-keychain", "login.keychain-db"], nil),
+                (nil, ["./private/run.sh"], nil),
+                (nil, ["git", "status"], root.appendingPathComponent("private").path),
+                (nil, ["ls"], root.appendingPathComponent("private/drafts").path),
+                (nil, ["ls"], root.appendingPathComponent("shortcut").path),
+            ]
+            for (command, argv, cwd) in refused {
+                XCTAssertNotNil(refusal(command, argv: argv, cwd: cwd), "\(command ?? argv!.joined(separator: " "))")
+            }
+            XCTAssertEqual(
+                refusal("cat private/x"),
+                "The command names private/x, which is excluded from Astral's tools by the workspace pattern private/.")
+            XCTAssertEqual(
+                refusal(argv: ["ls"], cwd: root.appendingPathComponent("private").path),
+                "The working directory \(root.path)/private is inside a path excluded by the workspace pattern "
+                    + "private/.")
+            let allowed: [(String?, [String]?, String?)] = [
+                ("git status", nil, nil),
+                ("ls -la", nil, nil),
+                ("cat README.md src/lib/main.swift", nil, nil),
+                ("cat src/*.swift", nil, nil),
+                ("git commit -m 'Keep private notes out of the repo'", nil, nil),
+                ("npm run build:env", nil, nil),
+                ("cat /private/etc/hosts", nil, nil),
+                ("cat \(root.path)/README.md", nil, nil),
+                ("cat ../main.swift", nil, sub),
+                (nil, ["swift", "build", "--package-path", "."], nil),
+                (nil, ["cat", root.path + "/src/lib/main.swift"], nil),
+                (nil, ["echo", "*"], nil),
+                (nil, ["ls"], sub),
+            ]
+            for (command, argv, cwd) in allowed {
+                XCTAssertNil(refusal(command, argv: argv, cwd: cwd), "\(command ?? argv!.joined(separator: " "))")
+            }
+            XCTAssertNoThrow(
+                try ComputerCommandPolicy.refuseExcluded(
+                    cwd: root.path, resolvedCwd: root.path, command: "cat private/x", argv: nil, roots: [root.path],
+                    exclusions: .none))
+            let nested = root.appendingPathComponent("private/drafts").path
+            XCTAssertNil(refusal(argv: ["ls"], cwd: nested, roots: [root.path, nested]))
+        }
+
+        func testCommandFragmentsSplitShellSyntaxButKeepQuotedWordsWhole() {
+            XCTAssertEqual(
+                ComputerCommandPolicy.fragments(command: "a=private|b>c 'two words'", argv: nil),
+                ["a=private|b>c", "a", "private", "b", "c", "two words"])
+            XCTAssertEqual(
+                ComputerCommandPolicy.fragments(command: "sh -c 'cat .env'", argv: nil),
+                ["sh", "-c", "cat .env", "cat", ".env"])
+            XCTAssertEqual(
+                ComputerCommandPolicy.fragments(command: "echo \"$(cat a b)\"", argv: nil),
+                ["echo", "$(cat a b)", "cat a b", "cat", "a", "b"])
+            XCTAssertEqual(
+                ComputerCommandPolicy.fragments(command: nil, argv: ["--env-file=.env", "x"]),
+                ["--env-file=.env", "--env-file", ".env", "x"])
+            XCTAssertEqual(ComputerCommandPolicy.fragments(command: "cat 'open", argv: nil), ["cat", "'open", "open"])
+        }
     }
 #endif

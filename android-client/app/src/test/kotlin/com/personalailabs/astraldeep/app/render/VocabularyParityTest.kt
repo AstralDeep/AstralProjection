@@ -14,7 +14,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class VocabularyParityTest {
-    private val excluded = setOf("audio", "generative")
+    private val excluded = setOf("artifact", "audio", "generative", "html_artifact")
 
     private fun manifestComponentTypes(): Set<String> {
         var dir: File? = File(".").absoluteFile
