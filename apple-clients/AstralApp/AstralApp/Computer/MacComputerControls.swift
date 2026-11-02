@@ -81,6 +81,13 @@
                             .font(ConsoleTypography.caption).foregroundStyle(palette.warning)
                             .accessibilityIdentifier("mac-computer-bypass-persisted")
                     }
+                    if host.consentEnabled {
+                        Toggle(
+                            "Restore access and bypass automatically after relaunch",
+                            isOn: Binding(get: { host.automatedRestore }, set: host.setAutomatedRestore)
+                        )
+                        .disabled(!host.available).accessibilityIdentifier("mac-computer-automated-restore")
+                    }
                     if let browser = host.browser as? MacBrowserDriver {
                         Toggle(
                             "Browser pane", isOn: Binding(get: { browser.paneEnabled }, set: browser.setPaneEnabled)
