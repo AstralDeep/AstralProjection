@@ -901,6 +901,9 @@ public enum Outbound {
             (macWorkbenchSupported || device.macWorkbenchSupported) && device.deviceType == "macos"
             && device.consoleContract == ConsoleModel.contract
         if workbench { capabilities.append("mac_workbench_v1") }
+        if device.deviceType == "macos", device.supportedTypes.contains("html_artifact") {
+            capabilities.append("artifact_v1")
+        }
         if device.json["project_workspaces_v1"] == .bool(true) { capabilities.append("project_workspaces_v1") }
         var devicePayload = device.json.objectValue ?? [:]
         if workbench { devicePayload["mac_workbench_v1"] = .bool(true) }
