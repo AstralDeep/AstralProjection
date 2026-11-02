@@ -303,6 +303,7 @@
                 ("cat server*", nil, nil),
                 ("cat *", nil, nil),
                 ("cat .*", nil, nil),
+                ("node -e \"select count(*)\" && cat *", nil, nil),
                 ("ls {src,private}", nil, nil),
                 ("cat shortcut/drafts/a.md", nil, nil),
                 ("ssh -i id_ed25519 host", nil, nil),
