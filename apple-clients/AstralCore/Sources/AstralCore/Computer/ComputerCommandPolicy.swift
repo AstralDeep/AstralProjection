@@ -187,7 +187,9 @@
             }
             let absolute = path.hasPrefix("/") ? path : cwd + "/" + path
             if let pattern = excludedPattern(absolute, anchors: anchors, exclusions: exclusions) { return pattern }
-            guard expand, fragment.contains(where: { "*?[".contains($0) }) else { return nil }
+            guard expand, fragment.contains(where: { "*?[".contains($0) }),
+                fragment.contains(where: { $0.isLetter || $0.isNumber })
+            else { return nil }
             for match in expanded(absolute) {
                 if let pattern = excludedPattern(match, anchors: anchors, exclusions: exclusions) { return pattern }
             }

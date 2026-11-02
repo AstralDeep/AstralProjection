@@ -300,7 +300,7 @@
                 ("docker run --env-file=.env.local app", nil, nil),
                 ("openssl x509 -in server.pem", nil, nil),
                 ("cat *.pem", nil, nil),
-                ("cat *", nil, nil),
+                ("cat server*", nil, nil),
                 ("ls {src,private}", nil, nil),
                 ("cat shortcut/drafts/a.md", nil, nil),
                 ("ssh -i id_ed25519 host", nil, nil),
@@ -345,6 +345,8 @@
                 (nil, ["swift", "build", "--package-path", "."], nil),
                 (nil, ["cat", root.path + "/src/lib/main.swift"], nil),
                 (nil, ["echo", "*"], nil),
+                ("cat *", nil, nil),
+                ("node -e \"const n=db.prepare('select count(*) from runs').get(); /* ok */\"", nil, nil),
                 (nil, ["ls"], sub),
             ]
             for (command, argv, cwd) in allowed {
