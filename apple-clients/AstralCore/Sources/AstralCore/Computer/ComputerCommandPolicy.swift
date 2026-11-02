@@ -181,27 +181,34 @@
             _ fragment: String, cwd: String, anchors: [String], exclusions: ComputerWorkspaceExclusions, expand: Bool,
             whole: Bool
         ) -> String? {
-            if !expand, let globIndex = fragment.firstIndex(where: { "*?[".contains($0) }) {
-                let prefix = String(fragment[..<globIndex])
-                var components = prefix.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
-                if !prefix.hasSuffix("/") { components.removeLast() }
-                let literal = components.joined(separator: "/")
-                guard !literal.isEmpty, literal != "/" else { return nil }
-                return excludedFragment(
-                    literal, cwd: cwd, anchors: anchors, exclusions: exclusions, expand: false, whole: false)
-            }
             var path = fragment
             if path == "~" || path.hasPrefix("~/") {
                 path = FileManager.default.homeDirectoryForCurrentUser.path + path.dropFirst()
             }
-            if !path.hasPrefix("/"), let pattern = exclusions.pattern(matchingComponents: path.split(separator: "/")) {
-                return pattern
-            }
             let absolute = path.hasPrefix("/") ? path : cwd + "/" + path
-            if let pattern = excludedPattern(absolute, anchors: anchors, exclusions: exclusions) { return pattern }
-            guard expand, fragment.contains(where: { "*?[".contains($0) }),
-                whole || fragment.contains(where: { $0.isLetter || $0.isNumber })
-            else { return nil }
+            let globIndex = fragment.firstIndex(where: { "*?[".contains($0) })
+            if let globIndex, !expand {
+                let prefix = String(fragment[..<globIndex])
+                var components = prefix.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+                if !prefix.hasSuffix("/") { components.removeLast() }
+                let literal = components.joined(separator: "/")
+                if !literal.isEmpty, literal != "/",
+                    let pattern = excludedFragment(
+                        literal, cwd: cwd, anchors: anchors, exclusions: exclusions, expand: false, whole: false)
+                {
+                    return pattern
+                }
+                guard fragment[globIndex...].contains("/") else { return nil }
+            } else {
+                if !path.hasPrefix("/"),
+                    let pattern = exclusions.pattern(matchingComponents: path.split(separator: "/"))
+                {
+                    return pattern
+                }
+                if let pattern = excludedPattern(absolute, anchors: anchors, exclusions: exclusions) { return pattern }
+                guard expand, globIndex != nil, whole || fragment.contains(where: { $0.isLetter || $0.isNumber })
+                else { return nil }
+            }
             for match in expanded(absolute) {
                 if let pattern = excludedPattern(match, anchors: anchors, exclusions: exclusions) { return pattern }
             }
@@ -314,11 +321,13 @@
             var current = ""
             var active = false
             var quotedGlob = false
+            var unquotedGlob = false
             var quote: Character?
             var escaped = false
             func append(_ character: Character, literal: Bool) {
                 current.append(character)
-                if literal, "*?[".contains(character) { quotedGlob = true }
+                guard "*?[".contains(character) else { return }
+                if literal { quotedGlob = true } else { unquotedGlob = true }
             }
             for character in command {
                 if escaped {
@@ -347,17 +356,18 @@
                     quote = character
                     active = true
                 } else if character.isWhitespace {
-                    if active { tokens.append((current, quotedGlob)) }
+                    if active { tokens.append((current, quotedGlob && !unquotedGlob)) }
                     current = ""
                     active = false
                     quotedGlob = false
+                    unquotedGlob = false
                 } else {
                     append(character, literal: false)
                     active = true
                 }
             }
             guard quote == nil, !escaped else { return nil }
-            if active { tokens.append((current, quotedGlob)) }
+            if active { tokens.append((current, quotedGlob && !unquotedGlob)) }
             return tokens
         }
 
