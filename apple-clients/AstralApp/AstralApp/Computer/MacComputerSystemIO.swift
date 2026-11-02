@@ -29,6 +29,9 @@
         let pid: pid_t
         let bundleIdentifier: String?
         var regular = true
+        var name: String? = nil
+        var active = false
+        var hidden = false
     }
 
     nonisolated struct MacComputerCaptureDisplay: Sendable {
@@ -42,10 +45,12 @@
         let excludedWindows: Set<CGWindowID>
         let width: Int
         let height: Int
+        var sourceRect: CGRect? = nil
         func configuration() -> SCStreamConfiguration {
             let configuration = SCStreamConfiguration()
             configuration.width = width
             configuration.height = height
+            if let sourceRect { configuration.sourceRect = sourceRect }
             configuration.showsCursor = true
             configuration.capturesAudio = false
             return configuration
@@ -61,6 +66,9 @@
     nonisolated protocol MacComputerSystemIO: MacComputerSystemReading {
         func setAttribute(_ name: String, of element: AXUIElement, to value: CFTypeRef) -> AXError
         func perform(_ action: String, on element: AXUIElement) -> AXError
+        func attributes(_ names: [String], of element: AXUIElement) -> [String: CFTypeRef]
+        func actionNames(of element: AXUIElement) -> [String]
+        func settable(_ name: String, of element: AXUIElement) -> Bool
         func sessionDictionary() -> [String: Any]?
         func displayCount() -> (CGError, UInt32)
         func displayIDs(capacity: UInt32) -> (CGError, [CGDirectDisplayID])
@@ -75,6 +83,7 @@
         @MainActor func applicationURL(bundleIdentifier: String) -> URL?
         @MainActor func openApplication(at url: URL) async throws -> MacComputerApplication
         @MainActor func controlsWindows() -> Set<CGWindowID>
+        @MainActor func overlayWindows() -> Set<CGWindowID>
         @MainActor func clipboardText() -> String?
         @MainActor func clearClipboard()
         @MainActor func setClipboard(_ text: String) -> Bool
@@ -115,6 +124,35 @@
         func perform(_ action: String, on element: AXUIElement) -> AXError {
             AXUIElementPerformAction(element, action as CFString)
         }
+        func attributes(_ names: [String], of element: AXUIElement) -> [String: CFTypeRef] {
+            var values: CFArray?
+            guard !names.isEmpty,
+                AXUIElementCopyMultipleAttributeValues(
+                    element, names as CFArray, AXCopyMultipleAttributeOptions(rawValue: 0), &values) == .success,
+                let array = values as? [AnyObject], array.count == names.count
+            else { return [:] }
+            var result: [String: CFTypeRef] = [:]
+            for (name, item) in zip(names, array) {
+                let value = item as CFTypeRef
+                if CFGetTypeID(value) == CFNullGetTypeID() { continue }
+                if CFGetTypeID(value) == AXValueGetTypeID(),
+                    AXValueGetType(unsafeBitCast(value, to: AXValue.self)) == .axError
+                {
+                    continue
+                }
+                result[name] = value
+            }
+            return result
+        }
+        func actionNames(of element: AXUIElement) -> [String] {
+            var names: CFArray?
+            guard AXUIElementCopyActionNames(element, &names) == .success else { return [] }
+            return names as? [String] ?? []
+        }
+        func settable(_ name: String, of element: AXUIElement) -> Bool {
+            var value: DarwinBoolean = false
+            return AXUIElementIsAttributeSettable(element, name as CFString, &value) == .success && value.boolValue
+        }
         func sessionDictionary() -> [String: Any]? { CGSessionCopyCurrentDictionary() as? [String: Any] }
         func displayCount() -> (CGError, UInt32) {
             var count: UInt32 = 0
@@ -140,7 +178,8 @@
             NSWorkspace.shared.runningApplications.map {
                 MacComputerApplication(
                     pid: $0.processIdentifier, bundleIdentifier: $0.bundleIdentifier,
-                    regular: $0.activationPolicy == .regular)
+                    regular: $0.activationPolicy == .regular, name: $0.localizedName, active: $0.isActive,
+                    hidden: $0.isHidden)
             }
         }
         @MainActor func activate(_ pid: pid_t) -> Bool {
@@ -171,6 +210,12 @@
                 NSApplication.shared.windows.filter { $0.title == MacComputerPanelIdentity.title }.map {
                     CGWindowID($0.windowNumber)
                 })
+        }
+        @MainActor func overlayWindows() -> Set<CGWindowID> {
+            Set(
+                NSApplication.shared.windows.filter {
+                    $0.title == MacComputerOverlayIdentity.title && $0.windowNumber > 0
+                }.map { CGWindowID($0.windowNumber) })
         }
         @MainActor func clipboardText() -> String? { NSPasteboard.general.string(forType: .string) }
         @MainActor func clearClipboard() { NSPasteboard.general.clearContents() }

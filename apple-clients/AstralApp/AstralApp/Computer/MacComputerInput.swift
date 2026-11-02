@@ -132,11 +132,10 @@
                     let raw = row[kCGWindowBounds as String] as? [String: Any],
                     let bounds = CGRect(dictionaryRepresentation: raw as CFDictionary)
                 else { return nil }
-                return (
-                    ComputerHostTargetWindow(
-                        pid: (row[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value, bounds: bounds),
-                    row[kCGWindowName as String] as? String
-                )
+                let pid = (row[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value
+                let name = row[kCGWindowName as String] as? String
+                if pid == system.hostPID, name == MacComputerOverlayIdentity.title { return nil }
+                return (ComputerHostTargetWindow(pid: pid, bounds: bounds), name)
             }
             if let top = visible.first(where: { $0.window.bounds.contains(point) }), top.window.pid == system.hostPID,
                 top.name == MacComputerPanelIdentity.title
@@ -236,7 +235,7 @@
             hostBundle: String? = Bundle.main.bundleIdentifier,
             pointerOverHost: @escaping @MainActor () -> Bool = {
                 let number = NSWindow.windowNumber(at: NSEvent.mouseLocation, belowWindowWithWindowNumber: 0)
-                return NSApp.windows.contains { $0.isVisible && $0.windowNumber == number }
+                return NSApp.windows.contains { $0.isVisible && !$0.ignoresMouseEvents && $0.windowNumber == number }
             },
             schedule: @escaping @MainActor (TimeInterval, @escaping @MainActor () -> Void) -> Void = { delay, body in
                 Task { @MainActor in

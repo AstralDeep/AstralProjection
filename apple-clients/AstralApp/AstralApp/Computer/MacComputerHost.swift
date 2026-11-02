@@ -120,6 +120,7 @@
         @ObservationIgnored private var localResume: @MainActor () -> Bool = { false }
         @ObservationIgnored private let system: any MacComputerSystemIO
         @ObservationIgnored private let panelPresenter: @MainActor (NSPanel) -> Void
+        @ObservationIgnored private let overlay: (any MacComputerOverlayPresenting)?
         @ObservationIgnored private let localInput: MacComputerLocalInput?
         @ObservationIgnored private let hostId: String
         @ObservationIgnored private var owner: String?
@@ -160,6 +161,7 @@
             panelPresenter: (@MainActor (NSPanel) -> Void)? = nil,
             commands: MacComputerCommands? = nil,
             appActivator: (@MainActor () -> Void)? = nil,
+            overlay: (any MacComputerOverlayPresenting)? = nil,
             authority: ComputerHostAuthority = ComputerHostAuthority()
         ) {
             self.authority = authority
@@ -179,7 +181,15 @@
             self.desktopProbe = desktopProbe
             let localInput = self.available && desktopRearm == nil ? MacComputerLocalInput(marker: marker) : nil
             self.localInput = localInput
-            self.driver = driver ?? MacComputerDriver(marker: marker, system: system)
+            let presenter = overlay ?? (panelPresenter == nil && self.available ? MacComputerOverlay() : nil)
+            self.overlay = presenter
+            let link = MacComputerHostLink()
+            var cues: (@Sendable (MacComputerOverlayCue) async -> Void)?
+            if let presenter { cues = { cue in await presenter.cue(cue) } }
+            self.driver =
+                driver
+                ?? MacComputerDriver(
+                    marker: marker, system: system, overlay: cues, bypass: { await link.bypass() })
             if let stored = defaults.string(forKey: "computer.host.id"),
                 UUID(uuidString: stored)?.uuidString.lowercased() == stored
             {
@@ -254,6 +264,8 @@
                 if self.session?.projectContext?.projectId == project { self.cancelWork() }
             }
             self.projectGrants.onManifestChange = { [weak self] in self?.publishProjectManifest() }
+            link.host = self
+            presenter?.attach(self)
             refreshPermissions()
         }
         private static func executionDistribution() -> Bool {
@@ -725,7 +737,11 @@
         func takeover() { pause(reason: "local_input") }
         func approvalWaiting(_ waiting: Bool) {
             awaitingApproval = waiting && session != nil
-            if awaitingApproval { showPanel() }
+            if awaitingApproval {
+                showPanel()
+            } else if session != nil {
+                _ = overlay?.show(overlayMode)
+            }
         }
         func bringAstralForward() { appActivator() }
         private func pause(reason: String, retainingPermits: Bool = false) {
@@ -841,6 +857,7 @@
             awaitingApproval = false
             panel?.orderOut(nil)
             panel = nil
+            overlay?.hide()
         }
         @discardableResult
         func consume(_ frame: InboundFrame) -> Bool {
@@ -1116,8 +1133,15 @@
                 }
             }
         }
+        private var overlayMode: MacComputerOverlayMode {
+            awaitingApproval ? .approval : session?.state == "paused" ? .paused : .driving
+        }
         private func showPanel() {
             guard session != nil else { return }
+            if overlay?.show(overlayMode) == true {
+                panel?.orderOut(nil)
+                return
+            }
             if panel == nil {
                 let value = NSPanel(
                     contentRect: NSRect(x: 80, y: 80, width: 380, height: 110),
