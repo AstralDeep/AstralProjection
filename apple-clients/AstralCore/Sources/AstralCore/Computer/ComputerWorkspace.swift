@@ -1,5 +1,5 @@
 // Performs bounded file operations relative to one explicitly selected directory descriptor.
-// Every traversal rejects symlinks and every mutation rechecks the host's current effect authority.
+// Every traversal rejects symlinks and excluded names, and every mutation rechecks the host's effect authority.
 
 #if os(macOS)
     import Darwin
@@ -20,8 +20,9 @@
     public final class ComputerWorkspace: @unchecked Sendable {
         public let root: String
         public let rootIdentity: ComputerWorkspaceIdentity
+        public let exclusions: ComputerWorkspaceExclusions
         private let descriptor: Int32
-        public init(root: String) throws {
+        public init(root: String, exclusions: ComputerWorkspaceExclusions = .defaults) throws {
             let canonical = URL(fileURLWithPath: root).resolvingSymlinksInPath().standardizedFileURL.path
             let forbidden = [
                 "/", "/System", "/Library", "/Applications", "/usr", "/bin", "/sbin", "/private", "/Users",
@@ -46,6 +47,7 @@
                 throw ComputerHostError("permission_denied", "The selected workspace identity cannot be established.")
             }
             self.root = canonical
+            self.exclusions = exclusions
             rootIdentity = ComputerWorkspaceIdentity(info)
             descriptor = fd
         }
@@ -76,7 +78,16 @@
             guard !parts.contains(where: { protected.contains($0.lowercased()) }) else {
                 throw ComputerHostError("permission_denied", "Credential directories are unavailable to file tools.")
             }
+            if let pattern = exclusions.pattern(matchingComponents: parts) {
+                throw Self.excluded(parts.joined(separator: "/"), pattern: pattern)
+            }
             return parts
+        }
+        public static func excluded(_ path: String, pattern: String) -> ComputerHostError {
+            ComputerHostError(
+                "excluded_path",
+                "\(String(path.prefix(200))) is excluded from Astral's file and command tools by the workspace "
+                    + "pattern \(pattern).")
         }
         private func directory(_ parts: [String]) throws -> Int32 {
             var fd = Darwin.openat(descriptor, ".", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
@@ -223,11 +234,16 @@
             }
             defer { closedir(stream) }
             var entries: [JSONValue] = []
+            var hidden = 0
             while let entry = readdir(stream), entries.count < 500 {
                 let name = withUnsafePointer(to: &entry.pointee.d_name) {
                     $0.withMemoryRebound(to: CChar.self, capacity: 1024) { String(cString: $0) }
                 }
                 if name == "." || name == ".." { continue }
+                if exclusions.pattern(matchingName: name) != nil {
+                    hidden += 1
+                    continue
+                }
                 var info = stat()
                 guard fstatat(fd, name, &info, AT_SYMLINK_NOFOLLOW) == 0,
                     [mode_t(S_IFREG), mode_t(S_IFDIR)].contains(info.st_mode & S_IFMT)
@@ -238,7 +254,10 @@
                         "size": .number(Double(info.st_size)), "modified": .number(Double(info.st_mtimespec.tv_sec)),
                     ]))
             }
-            return ["path": .string(path), "entries": .array(entries), "count": .number(Double(entries.count))]
+            return [
+                "path": .string(path), "entries": .array(entries), "count": .number(Double(entries.count)),
+                "excluded": .number(Double(hidden)),
+            ]
         }
         public func write(_ path: String, content: String, overwrite: Bool, authorize: () throws -> Void) throws {
             try preEffect { begin in

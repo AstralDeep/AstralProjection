@@ -233,6 +233,47 @@
             XCTAssertTrue(restored.roots.isEmpty)
             restored.bind(nil)
         }
+        func testFoldersShowTheirHiddenPatternsAndPersistedBypassShowsItsStatusLine() async throws {
+            let root = try folder()
+            let store = defaults()
+            let grants = MacComputerTestWorkspaceGrants()
+            grants.selection = [root]
+            let files = MacComputerFiles(defaults: store, grants: grants.port)
+            let host = MacComputerHost(
+                available: true, defaults: store, files: files,
+                driver: MacComputerControlsTestDriver(), monitor: MacComputerControlsTestMonitor(),
+                permissionProvider: { MacComputerPermissions(accessibility: true, screen: true, monitoring: true) },
+                desktopProbe: { true }, desktopRearm: { true }, system: MacComputerTestSystem(),
+                panelPresenter: { _ in })
+            host.announcer = { _ in }
+            host.bind(owner: "controls-owner") { _ in true }
+            host.setEnabled(true)
+            MacComputerControlCommand.chooseWorkspaces.perform(on: host)
+            let (model, suite) = try SurfaceFixtures.model()
+            addTeardownBlock { UserDefaults().removePersistentDomain(forName: suite) }
+            let mount = SurfaceMount(
+                MacComputerControls(host: host), model: model, size: .init(width: 560, height: 820))
+            defer { mount.close() }
+            try await mount.settle()
+            var identifiers = try mount.accessibility.compactMap(\.identifier)
+            XCTAssertTrue(identifiers.contains("mac-computer-workspace-excluded"))
+            XCTAssertFalse(identifiers.contains("mac-computer-bypass-persisted"))
+            let caption = try mount.accessibility.first { $0.identifier == "mac-computer-workspace-excluded" }
+            let shown = [caption?.label, caption?.value].compactMap { $0 }.joined()
+            XCTAssertTrue(shown.contains("Hidden: private/, .env*, *.pem"), shown)
+            host.requestBypass(true, from: .controls)
+            host.confirmBypass()
+            XCTAssertTrue(host.bypass && host.bypassSaved)
+            try await mount.settle()
+            identifiers = try mount.accessibility.compactMap(\.identifier)
+            XCTAssertTrue(identifiers.contains("mac-computer-bypass-persisted"))
+            XCTAssertTrue(try mount.text().contains("Approvals bypassed on this Mac (persisted)"))
+            try mount.snapshot(self, name: "computer_controls_exclusions_persisted_bypass")
+            host.requestBypass(false, from: .controls)
+            try await mount.settle()
+            XCTAssertFalse(try mount.accessibility.compactMap(\.identifier).contains("mac-computer-bypass-persisted"))
+            host.signedOut()
+        }
         func testOffscreenSessionControlsFollowAcknowledgmentAndKeepLocalResumeGuard() async throws {
             var hardware = true
             var presentations = 0
