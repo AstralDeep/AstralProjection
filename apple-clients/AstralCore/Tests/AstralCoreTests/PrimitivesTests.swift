@@ -470,7 +470,7 @@ final class PrimitivesTests: XCTestCase {
             "authored types missing from ui_protocol.json: \(AstralPrims.allTypes.subtracting(manifestTypes))")
         XCTAssertEqual(
             manifestTypes.subtracting(AstralPrims.allTypes),
-            ["download_card", "generative", "skeleton"],
+            ["artifact", "download_card", "generative", "html_artifact", "skeleton"],
             "renderer-origin delta changed — astralprims gained/lost a type; update the mirror")
     }
 }

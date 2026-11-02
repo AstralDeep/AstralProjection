@@ -95,6 +95,7 @@
         private(set) var awaitingApproval = false
         private(set) var working = false
         private(set) var bypass = false
+        private(set) var bypassSaved = false
         var bypassConfirmation: MacBypassOrigin?
         let files: MacComputerFiles
         let projectGrants: MacProjectGrants
@@ -115,9 +116,11 @@
         @ObservationIgnored private let settingsOpener: @MainActor (URL) -> Bool
         @ObservationIgnored private let desktopProbe: @Sendable () -> Bool
         @ObservationIgnored private var desktopRearm: @MainActor () -> Bool = { false }
+        @ObservationIgnored private var bypassRestoreRearm: @MainActor () -> Bool = { false }
         @ObservationIgnored private var localResume: @MainActor () -> Bool = { false }
         @ObservationIgnored private let system: any MacComputerSystemIO
         @ObservationIgnored private let panelPresenter: @MainActor (NSPanel) -> Void
+        @ObservationIgnored private let overlay: (any MacComputerOverlayPresenting)?
         @ObservationIgnored private let localInput: MacComputerLocalInput?
         @ObservationIgnored private let hostId: String
         @ObservationIgnored private var owner: String?
@@ -153,10 +156,12 @@
             desktopRearm: (@MainActor () -> Bool)? = nil,
             localDesktopRearmProbe: (@MainActor () -> Bool)? = nil,
             localInputProof: (@MainActor () -> Bool)? = nil,
+            persistedRearmProbe: (@MainActor () -> Bool)? = nil,
             system: any MacComputerSystemIO = MacComputerLiveSystem.shared,
             panelPresenter: (@MainActor (NSPanel) -> Void)? = nil,
             commands: MacComputerCommands? = nil,
             appActivator: (@MainActor () -> Void)? = nil,
+            overlay: (any MacComputerOverlayPresenting)? = nil,
             authority: ComputerHostAuthority = ComputerHostAuthority()
         ) {
             self.authority = authority
@@ -176,7 +181,15 @@
             self.desktopProbe = desktopProbe
             let localInput = self.available && desktopRearm == nil ? MacComputerLocalInput(marker: marker) : nil
             self.localInput = localInput
-            self.driver = driver ?? MacComputerDriver(marker: marker, system: system)
+            let presenter = overlay ?? (panelPresenter == nil && self.available ? MacComputerOverlay() : nil)
+            self.overlay = presenter
+            let link = MacComputerHostLink()
+            var cues: (@Sendable (MacComputerOverlayCue) async -> Void)?
+            if let presenter { cues = { cue in await presenter.cue(cue) } }
+            self.driver =
+                driver
+                ?? MacComputerDriver(
+                    marker: marker, system: system, overlay: cues, bypass: { await link.bypass() })
             if let stored = defaults.string(forKey: "computer.host.id"),
                 UUID(uuidString: stored)?.uuidString.lowercased() == stored
             {
@@ -196,6 +209,16 @@
             self.desktopRearm =
                 desktopRearm ?? {
                     (automatedRearmAllowed() || localInputProof()) && localDesktopRearmProbe()
+                }
+            let persistedRearmProbe =
+                persistedRearmProbe ?? {
+                    (MacComputerObservation.context(system: system).pid
+                        ?? NSWorkspace.shared.frontmostApplication?.processIdentifier) != nil
+                        && MacComputerDesktopProbe.usable(system: system)
+                }
+            self.bypassRestoreRearm =
+                desktopRearm ?? {
+                    (automatedRearmAllowed() || localInputProof()) && persistedRearmProbe()
                 }
             self.localResume =
                 desktopRearm ?? {
@@ -241,6 +264,8 @@
                 if self.session?.projectContext?.projectId == project { self.cancelWork() }
             }
             self.projectGrants.onManifestChange = { [weak self] in self?.publishProjectManifest() }
+            link.host = self
+            presenter?.attach(self)
             refreshPermissions()
         }
         private static func executionDistribution() -> Bool {
@@ -266,10 +291,10 @@
                 identityMatches: info[kSecCodeInfoIdentifier as String] as? String == Bundle.main.bundleIdentifier,
                 debuggerAllowed: entitlements["com.apple.security.get-task-allow"] as? Bool == true)
         }
-        private var consentKey: String? {
-            owner.map {
-                "computer.consent." + SHA256.hash(data: Data($0.utf8)).map { String(format: "%02x", $0) }.joined()
-            }
+        private var consentKey: String? { ownerKey("computer.consent.") }
+        private var bypassKey: String? { ownerKey("computer.bypass.") }
+        private func ownerKey(_ prefix: String) -> String? {
+            owner.map { prefix + SHA256.hash(data: Data($0.utf8)).map { String(format: "%02x", $0) }.joined() }
         }
         var statusLabel: String {
             if !available { return "This build is a computer controller" }
@@ -347,7 +372,8 @@
                 hostId: hostId, name: Self.computerName, clientVersion: version, screens: screens,
                 verbs: verbs.sorted(),
                 workspaceRoots: projectMode ? [] : Array(roots.prefix(ComputerHostDescriptor.maximumWorkspaceRoots)),
-                projectManifest: projectMode ? projectGrants.manifest : nil)
+                projectManifest: projectMode ? projectGrants.manifest : nil,
+                excluded: verbs.contains("read_file") ? files.exclusions.patterns : [])
         }
         private func announceDescriptor(_ descriptor: ComputerHostDescriptor) {
             if projectMode {
@@ -355,6 +381,7 @@
                 projectHostAnnounced = true
             }
             sendEvent("announce", additional: ["host": descriptor.json])
+            restoreBypass()
         }
         func beginWorkspaceNegotiation(server: URL, account: String?) {
             workspaceNegotiated = false
@@ -424,6 +451,7 @@
             guard channelEpoch == epoch else { return }
             self.owner = owner
             self.sender = sender
+            bypassSaved = available && bypassKey.map { defaults.bool(forKey: $0) } == true
             enabled = false
             desktopAvailable = false
             authority.setDesktopAvailable(false, requiresLocalRearm: false)
@@ -466,6 +494,7 @@
             disconnect(epoch: epoch)
             guard channelEpoch == epoch else { return }
             bypassReleaseOwed = false
+            saveBypass(false)
             desktopAvailable = false
             authority.setDesktopAvailable(false, requiresLocalRearm: false)
             owner = nil
@@ -615,6 +644,7 @@
 
         func requestBypass(_ value: Bool, from origin: MacBypassOrigin) {
             guard value else {
+                saveBypass(false)
                 setBypass(false)
                 return
             }
@@ -626,6 +656,7 @@
             guard bypassConfirmation != nil else { return }
             bypassConfirmation = nil
             guard bypassAllowed() else { return }
+            saveBypass(true)
             setBypass(true)
         }
         func cancelBypass() { bypassConfirmation = nil }
@@ -636,16 +667,35 @@
             turnBypassOff()
             return owed ? bypassFrame(false) : nil
         }
-        private func bypassAllowed() -> Bool {
+        private func bypassAllowed(restoring: Bool = false) -> Bool {
             guard available, enabled, owner != nil, sender != nil else {
-                lastError = "Allow computer tasks on this Mac before bypassing approvals."
+                if !restoring { lastError = "Allow computer tasks on this Mac before bypassing approvals." }
                 return false
             }
-            guard desktopRearm(), desktopProbe() else {
-                lastError = "Turn on bypass yourself from Astral's active, unlocked local desktop."
+            guard restoring ? bypassRestoreRearm() : desktopRearm(), desktopProbe() else {
+                if !restoring { lastError = "Turn on bypass yourself from Astral's active, unlocked local desktop." }
                 return false
             }
             return true
+        }
+        private func saveBypass(_ value: Bool) {
+            guard let key = bypassKey else { return }
+            if value { defaults.set(true, forKey: key) } else { defaults.removeObject(forKey: key) }
+            bypassSaved = value
+        }
+        private func restoreBypass() {
+            guard bypass || bypassSaved else { return }
+            guard bypassSaved, bypassAllowed(restoring: true) else {
+                turnBypassOff()
+                return
+            }
+            bypassConfirmation = nil
+            guard bypass else {
+                setBypass(true)
+                return
+            }
+            bypassReleaseOwed = false
+            send(bypassFrame(true))
         }
         private func setBypass(_ value: Bool) {
             bypassConfirmation = nil
@@ -687,7 +737,11 @@
         func takeover() { pause(reason: "local_input") }
         func approvalWaiting(_ waiting: Bool) {
             awaitingApproval = waiting && session != nil
-            if awaitingApproval { showPanel() }
+            if awaitingApproval {
+                showPanel()
+            } else if session != nil {
+                _ = overlay?.show(overlayMode)
+            }
         }
         func bringAstralForward() { appActivator() }
         private func pause(reason: String, retainingPermits: Bool = false) {
@@ -803,6 +857,7 @@
             awaitingApproval = false
             panel?.orderOut(nil)
             panel = nil
+            overlay?.hide()
         }
         @discardableResult
         func consume(_ frame: InboundFrame) -> Bool {
@@ -1001,7 +1056,9 @@
         ) async throws -> [String: JSONValue] {
             switch request.verb {
             case "run_command":
-                return try await commands.run(request, session: ticket.sessionId, roots: roots, authorize: authorize)
+                return try await commands.run(
+                    request, session: ticket.sessionId, roots: roots, exclusions: files.exclusions,
+                    authorize: authorize)
             case "read_output": return try await commands.read(request, authorize: authorize)
             case "interrupt_command": return try await commands.interrupt(request, authorize: authorize)
             default: break
@@ -1076,8 +1133,15 @@
                 }
             }
         }
+        private var overlayMode: MacComputerOverlayMode {
+            awaitingApproval ? .approval : session?.state == "paused" ? .paused : .driving
+        }
         private func showPanel() {
             guard session != nil else { return }
+            if overlay?.show(overlayMode) == true {
+                panel?.orderOut(nil)
+                return
+            }
             if panel == nil {
                 let value = NSPanel(
                     contentRect: NSRect(x: 80, y: 80, width: 380, height: 110),

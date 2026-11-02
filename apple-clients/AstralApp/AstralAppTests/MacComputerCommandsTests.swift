@@ -218,6 +218,51 @@
             XCTAssertTrue(host.registry.all.isEmpty)
         }
 
+        func testExcludedWorkspacePathsAreRefusedBeforeAnythingLaunches() async throws {
+            let root = try folder()
+            for directory in ["private", "src"] {
+                try FileManager.default.createDirectory(
+                    atPath: root + "/" + directory, withIntermediateDirectories: true)
+            }
+            try Data().write(to: URL(fileURLWithPath: root + "/.env"))
+            let spawner = MacComputerFakeSpawner { _, output, process in
+                output.finish(.stdout)
+                output.finish(.stderr)
+                process.exit(.exited(0))
+            }
+            let host = commands(spawner)
+            let cases: [[String: JSONValue]] = [
+                ["command": .string("cat private/x"), "cwd": .string(root)],
+                ["command": .string("cat ../private/notes.md"), "cwd": .string(root + "/src")],
+                ["command": .string("cat " + root + "/private/notes.md"), "cwd": .string(root)],
+                ["argv": .array([.string("docker"), .string("run"), .string("--env-file"), .string(".env")])],
+                ["argv": .array([.string("cat"), .string("server.pem")]), "cwd": .string(root)],
+                ["argv": .array([.string("echo"), .string("hi")]), "cwd": .string(root + "/private")],
+            ]
+            for args in cases {
+                var call = args
+                if call["cwd"] == nil { call["cwd"] = .string(root) }
+                let found = await code {
+                    _ = try await host.run(
+                        self.request("run_command", call, deadline: 600000), session: self.session, roots: [root],
+                        authorize: {})
+                }
+                XCTAssertEqual(found, "excluded_path", "\(args)")
+            }
+            XCTAssertTrue(spawner.plans.isEmpty)
+            let open = await code {
+                _ = try await host.run(
+                    self.request("run_command", ["command": .string("cat private/x"), "cwd": .string(root)]),
+                    session: self.session, roots: [root], exclusions: .none, authorize: {})
+            }
+            XCTAssertNil(open)
+            let allowed = await code {
+                _ = try await host.run(self.run(root), session: self.session, roots: [root], authorize: {})
+            }
+            XCTAssertNil(allowed)
+            XCTAssertEqual(spawner.plans.count, 2)
+        }
+
         func testForegroundTimeoutTermsTheGroupThenKillsAfterTwoSeconds() async throws {
             let root = try folder()
             let spawner = MacComputerFakeSpawner(exits: [SIGKILL: .signaled(SIGKILL)])

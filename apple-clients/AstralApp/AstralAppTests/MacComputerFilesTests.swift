@@ -42,6 +42,45 @@
             files.bind(nil)
             XCTAssertEqual(io.stopped, [root])
         }
+        func testSelectedFoldersHideExcludedPathsFromEveryFileVerb() throws {
+            let root = try folder()
+            try FileManager.default.createDirectory(
+                at: root.appendingPathComponent("private"), withIntermediateDirectories: true)
+            for path in ["private/notes.md", ".env", "id_rsa", "README.md"] {
+                try Data("x".utf8).write(to: root.appendingPathComponent(path))
+            }
+            let io = MacComputerTestWorkspaceGrants()
+            io.selection = [root]
+            let files = MacComputerFiles(defaults: defaults(), grants: io.port)
+            XCTAssertEqual(files.exclusions, .defaults)
+            files.bind("owner-a|server-a")
+            files.choose()
+            let workspace = try XCTUnwrap(files.snapshot().first)
+            XCTAssertEqual(workspace.exclusions, .defaults)
+            for path in ["private/notes.md", ".env", "id_rsa", "private"] {
+                XCTAssertThrowsError(try workspace.read(root.path + "/" + path, maximum: 10)) { error in
+                    XCTAssertEqual((error as? ComputerHostError)?.code, "excluded_path", path)
+                }
+                XCTAssertThrowsError(
+                    try workspace.write(root.path + "/" + path, content: "y", overwrite: true, authorize: {})
+                ) { error in XCTAssertEqual((error as? ComputerHostError)?.code, "excluded_path", path) }
+                XCTAssertThrowsError(try workspace.delete(root.path + "/" + path, authorize: {})) { error in
+                    XCTAssertEqual((error as? ComputerHostError)?.code, "excluded_path", path)
+                }
+            }
+            let listing = try workspace.list(root.path)
+            XCTAssertEqual(listing["entries"]?.arrayValue?.compactMap { $0["name"]?.stringValue }, ["README.md"])
+            XCTAssertEqual(listing["excluded"], .number(3))
+            let custom = MacComputerFiles(
+                defaults: defaults(), grants: io.port, exclusions: try ComputerWorkspaceExclusions(patterns: ["*.md"]))
+            custom.bind("owner-b|server-a")
+            custom.choose()
+            let open = try XCTUnwrap(custom.snapshot().first)
+            XCTAssertEqual(try open.read(root.path + "/.env", maximum: 10)["text"], .string("x"))
+            XCTAssertEqual((try open.list(root.path))["excluded"], .number(1))
+            files.bind(nil)
+            custom.bind(nil)
+        }
         func testLiveBookmarkRoundTripUsesOnlyTheSelectedTemporaryDirectory() throws {
             let root = try folder()
             let port = MacComputerWorkspaceGrantIO.live

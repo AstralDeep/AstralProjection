@@ -417,8 +417,10 @@ BACKEND_TYPES = frozenset(_json.loads(_MANIFEST.read_text(encoding="utf-8"))["co
 
 KNOWN_DEGRADED = frozenset(
     {
+        "artifact",
         "audio",
         "generative",
+        "html_artifact",
     }
 )
 

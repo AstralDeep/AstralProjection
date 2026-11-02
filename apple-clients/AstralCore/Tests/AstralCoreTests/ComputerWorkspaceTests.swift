@@ -298,6 +298,100 @@
             XCTAssertFalse(FileManager.default.fileExists(atPath: root.path + "/cancelled"))
             XCTAssertFalse(FileManager.default.fileExists(atPath: outside.path + "/secret"))
         }
+
+        func testDefaultExclusionsRefuseEveryFileVerbAndListingsOmitAndCountThem() throws {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let manager = FileManager.default
+            for directory in ["private", "src/private", "src/lib"] {
+                try manager.createDirectory(
+                    at: root.appendingPathComponent(directory), withIntermediateDirectories: true)
+            }
+            let hidden = [
+                "private/notes.md", "src/private/plan.md", ".env", "src/.env.local", "server.pem", "deploy.key",
+                "AuthKey.p8", "cert.p12", "credentials-prod.json", "realm-export.json", "id_rsa", "id_ed25519.pub",
+                "login.keychain-db",
+            ]
+            for path in hidden + ["README.md", "src/lib/main.swift", "environment.txt", "keys.txt"] {
+                try Data("secret".utf8).write(to: root.appendingPathComponent(path))
+            }
+            let workspace = try ComputerWorkspace(root: root.path)
+            XCTAssertEqual(workspace.exclusions, .defaults)
+            func code(_ work: () throws -> Any) -> ComputerHostError? {
+                do {
+                    _ = try work()
+                    return nil
+                } catch { return error as? ComputerHostError }
+            }
+            for path in hidden + ["private", "PRIVATE/notes.md", ".ENV", "src/Private/x.md"] {
+                let full = workspace.root + "/" + path
+                for refusal in [
+                    code { try workspace.read(full, maximum: 100) },
+                    code { try workspace.write(full, content: "x", overwrite: true, authorize: {}) },
+                    code { try workspace.delete(full, authorize: {}) },
+                ] {
+                    XCTAssertEqual(refusal?.code, "excluded_path", path)
+                    XCTAssertEqual(refusal?.effectState, "not_started", path)
+                }
+            }
+            let message = code { try workspace.read(workspace.root + "/src/private/plan.md", maximum: 10) }?.message
+            XCTAssertEqual(
+                message,
+                "src/private/plan.md is excluded from Astral's file and command tools by the workspace pattern "
+                    + "private/.")
+            XCTAssertEqual(
+                code { try workspace.list(workspace.root + "/private") }?.code, "excluded_path")
+            XCTAssertEqual(
+                code {
+                    try workspace.write(
+                        workspace.root + "/private/new/file.txt", content: "x", overwrite: false, authorize: {})
+                }?.code, "excluded_path")
+            XCTAssertFalse(manager.fileExists(atPath: root.appendingPathComponent("private/new").path))
+            for path in hidden { XCTAssertTrue(manager.fileExists(atPath: root.appendingPathComponent(path).path)) }
+            let listing = try workspace.list(workspace.root)
+            let names = Set(listing["entries"]?.arrayValue?.compactMap { $0["name"]?.stringValue } ?? [])
+            XCTAssertEqual(names, ["README.md", "src", "environment.txt", "keys.txt"])
+            XCTAssertEqual(listing["count"], .number(4))
+            XCTAssertEqual(listing["excluded"], .number(11))
+            let nested = try workspace.list(workspace.root + "/src")
+            XCTAssertEqual(nested["entries"]?.arrayValue?.compactMap { $0["name"]?.stringValue }, ["lib"])
+            XCTAssertEqual(nested["excluded"], .number(2))
+            XCTAssertEqual(try workspace.list(workspace.root + "/src/lib")["excluded"], .number(0))
+            XCTAssertEqual(try workspace.read(workspace.root + "/keys.txt", maximum: 100)["text"], .string("secret"))
+            try workspace.write(workspace.root + "/src/lib/new.swift", content: "ok", overwrite: false, authorize: {})
+            try workspace.delete(workspace.root + "/src/lib/new.swift", authorize: {})
+            let open = try ComputerWorkspace(root: root.path, exclusions: .none)
+            XCTAssertEqual(try open.read(open.root + "/private/notes.md", maximum: 100)["text"], .string("secret"))
+            XCTAssertEqual(try open.list(open.root)["excluded"], .number(0))
+        }
+
+        func testExclusionPatternsValidateLikeTheServerAndMatchNamesCaseInsensitively() throws {
+            let defaults = ComputerWorkspaceExclusions.defaults
+            XCTAssertEqual(
+                defaults.patterns,
+                [
+                    "private/", ".env*", "*.pem", "*.key", "*.p8", "*.p12", "credentials*.json", "realm-export.json",
+                    "id_rsa*", "id_ed25519*", "*.keychain*",
+                ])
+            XCTAssertEqual(defaults.pattern(matchingName: "Private"), "private/")
+            XCTAssertEqual(defaults.pattern(matchingName: ".env.production"), ".env*")
+            XCTAssertEqual(defaults.pattern(matchingName: "credentials.json"), "credentials*.json")
+            XCTAssertEqual(defaults.pattern(matchingComponents: ["a", "b", "id_rsa.pub"]), "id_rsa*")
+            for name in ["privately", "env", "pem", "keys", "credentials.yaml", "realm.json", ".", "..", ""] {
+                XCTAssertNil(defaults.pattern(matchingName: name), name)
+            }
+            XCTAssertEqual(
+                try ComputerWorkspaceExclusions(patterns: ["build/", "*.log"]).patterns, ["build/", "*.log"])
+            let invalid: [[String]] = [
+                ["a/b"], ["/"], ["  "], ["a", "a"], ["x\n"], [String(repeating: "p", count: 129)],
+                (0...32).map { "p\($0)" },
+            ]
+            for patterns in invalid {
+                XCTAssertThrowsError(try ComputerWorkspaceExclusions(patterns: patterns), "\(patterns)")
+            }
+            XCTAssertTrue(ComputerWorkspaceExclusions.valid((0..<32).map { "p\($0)" }))
+            XCTAssertFalse(ComputerWorkspaceExclusions.valid(["///"]))
+        }
     }
 
 #endif

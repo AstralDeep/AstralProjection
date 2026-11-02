@@ -1,5 +1,6 @@
 // Serves fixture pages from a loopback HTTP listener and wires a MacBrowserDriver to a real windowed pane so the
-// browser pane tests exercise WebKit, the injected browser_snapshot.js and the driver's policy end to end.
+// browser pane tests exercise WebKit, the injected browser_snapshot.js and browser_capture.js, and the driver's
+// policy end to end.
 
 #if os(macOS)
     import AppKit
@@ -171,7 +172,56 @@
             "/download": .init(
                 contentType: "application/octet-stream", headers: ["Content-Disposition": "attachment; filename=x.bin"],
                 body: "binary"),
+            "/console": .init(body: console),
+            "/flood": .init(body: flood),
+            "/hover": .init(body: hover),
         ]
+
+        static let console = """
+            <!doctype html><title>Console</title><p id="out">Console page</p>
+            <script>
+            console.log('hello', 42, {a: 1});
+            console.info('info line');
+            console.warn('careful');
+            console.error('broken');
+            console.debug('y'.repeat(5000));
+            setTimeout(() => { throw new Error('boom'); }, 0);
+            Promise.reject(new Error('nope'));
+            fetch('/next?session=zzz&page=2').then(() => { document.getElementById('out').dataset.done = 'yes'; });
+            </script>
+            """
+
+        static let flood = """
+            <!doctype html><title>Flood</title>
+            <script>
+            const realPush = Array.prototype.push;
+            Array.prototype.push = function (...items) { window.pushed = (window.pushed || 0) + 1; return realPush.apply(this, items); };
+            Math.min = () => 1e9;
+            JSON.stringify = () => 'tampered';
+            console.log({b: 2});
+            for (let i = 0; i < 3000; i++) console.log('flood ' + i);
+            window.forgeFailed = 0;
+            for (const name of ['astralBrowser', 'astralCapture', 'astralConsole']) {
+              try { window.webkit.messageHandlers[name].postMessage({ v: 1, e: [{ k: 'c', l: 'error', t: 'forged' }] }); }
+              catch (error) { window.forgeFailed += 1; }
+            }
+            document.title = 'Flooded';
+            </script>
+            """
+
+        static let hover = """
+            <!doctype html><title>Hover</title>
+            <button id="menu">Menu</button><div id="panel" hidden>Panel open</div><button id="other">Other</button>
+            <script>
+            window.hovers = [];
+            const menu = document.getElementById('menu');
+            for (const type of ['pointerover', 'pointerenter', 'mouseover', 'mouseenter', 'pointermove', 'mousemove']) {
+              menu.addEventListener(type, () => window.hovers.push(type));
+            }
+            menu.addEventListener('mouseleave', () => window.hovers.push('mouseleave'));
+            menu.addEventListener('mouseenter', () => { document.getElementById('panel').hidden = false; });
+            </script>
+            """
     }
 
     @MainActor
@@ -220,6 +270,24 @@
             window.close()
             server.stop()
             defaults.removePersistentDomain(forName: suite)
+        }
+
+        static func closedLoopbackPort() -> Int {
+            let descriptor = socket(AF_INET, SOCK_STREAM, 0)
+            XCTAssertGreaterThanOrEqual(descriptor, 0)
+            defer { Darwin.close(descriptor) }
+            var address = sockaddr_in()
+            address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+            address.sin_family = sa_family_t(AF_INET)
+            address.sin_addr.s_addr = inet_addr("127.0.0.1")
+            var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+            let bound = withUnsafeMutablePointer(to: &address) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    Darwin.bind(descriptor, $0, length) == 0 && getsockname(descriptor, $0, &length) == 0
+                }
+            }
+            XCTAssertTrue(bound)
+            return Int(UInt16(bigEndian: address.sin_port))
         }
 
         var origin: String { "http://127.0.0.1:\(server.port)" }
@@ -297,6 +365,14 @@
 
         func page(_ script: String) async throws -> Any? {
             try await pane.webView.evaluateJavaScript(script)
+        }
+
+        func active(_ script: String) async throws -> Any? {
+            try await driver.pane.webView.evaluateJavaScript(script)
+        }
+
+        func entries(_ verb: String, _ args: [String: JSONValue] = [:]) async throws -> [JSONValue] {
+            try await run(verb, args)["entries"]?.arrayValue ?? []
         }
 
         func eventually(_ condition: () async throws -> Bool, timeout: Double = 5) async throws -> Bool {
