@@ -129,8 +129,8 @@ class ProtocolManifestTest {
             assertEquals("modal", frame.getValue("region").jsonPrimitive.content)
             assertEquals("replace", frame.getValue("mode").jsonPrimitive.content)
         }
-        assertEquals(164, root.getValue("accept_actions").jsonArray.size)
-        assertEquals(74, manifestPushTypes().size)
+        assertEquals(170, root.getValue("accept_actions").jsonArray.size)
+        assertEquals(78, manifestPushTypes().size)
         assertTrue(ProtocolManifest.isHandled("chrome_surface"))
         assertTrue(manifestPushTypes().none { it.startsWith("evidence") })
         val watch = fixture.getValue("watch_components").jsonArray

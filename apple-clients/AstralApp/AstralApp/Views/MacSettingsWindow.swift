@@ -51,6 +51,7 @@
     }
 
     struct MacSettingsThisMac: View {
+        @Environment(AppModel.self) private var model
         @Environment(ThemeStore.self) private var theme
         @Environment(\.dismiss) private var dismiss
         @Bindable var host: MacComputerHost
@@ -70,6 +71,19 @@
                     }
                     .disabled(!host.available)
                     .accessibilityIdentifier("settings-computer-controls")
+                }
+                Section("Composer keys") {
+                    Picker("While a task runs, Return", selection: Binding(
+                        get: { model.composerReturnBinding },
+                        set: { model.composerReturnBinding = $0 }
+                    )) {
+                        Text("Sends a steer").tag(AppModel.ComposerReturnBinding.steer)
+                        Text("Queues a follow-up").tag(AppModel.ComposerReturnBinding.queue)
+                    }
+                    .pickerStyle(.radioGroup)
+                    .accessibilityIdentifier("settings-composer-binding")
+                    Text("Option-Return does the other action while the server offers steering.")
+                        .font(ConsoleTypography.caption).foregroundStyle(theme.palette.muted)
                 }
             }
             .formStyle(.grouped).scrollContentBackground(.hidden)

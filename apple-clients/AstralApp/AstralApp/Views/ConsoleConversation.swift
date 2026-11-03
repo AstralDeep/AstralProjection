@@ -103,11 +103,18 @@ import SwiftUI
                     ReasoningSnippet(text: turn.text)
                 } else {
                     let isUser = turn.role == "user"
+                    let isSteer = turn.role == "steer"
+                    let isOwner = isUser || isSteer
                     HStack {
-                        if isUser { Spacer(minLength: 24) }
+                        if isOwner { Spacer(minLength: 24) }
                         VStack(alignment: .leading, spacing: 10) {
+                            if isSteer {
+                                Text("Steer").font(ConsoleTypography.caption2.weight(.semibold))
+                                    .foregroundStyle(p.primary)
+                                    .accessibilityIdentifier("transcript-steer-label")
+                            }
                             if !turn.text.isEmpty {
-                                if isUser {
+                                if isOwner {
                                     Text(turn.text).textSelection(.enabled)
                                 } else {
                                     MarkdownBlockView(source: turn.text).textSelection(.enabled)
@@ -121,20 +128,20 @@ import SwiftUI
                         .font(ConsoleTypography.body).foregroundStyle(p.text)
                         .padding(.horizontal, 16).padding(.vertical, 14)
                         .background(
-                            isUser ? p.primary.opacity(0.17) : p.surface.opacity(0.55),
+                            isOwner ? p.primary.opacity(0.17) : p.surface.opacity(0.55),
                             in: RoundedRectangle(cornerRadius: 12)
                         )
                         .astralChartBackdrop(
-                            p, color: isUser ? p.primary : p.surface, opacity: isUser ? 0.17 : 0.55
+                            p, color: isOwner ? p.primary : p.surface, opacity: isOwner ? 0.17 : 0.55
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 12).stroke(
-                                isUser ? p.primary.opacity(0.35) : p.border))
-                        if !isUser { Spacer(minLength: 24) }
+                                isOwner ? p.primary.opacity(0.35) : p.border))
+                        if !isOwner { Spacer(minLength: 24) }
                     }
-                    .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
+                    .frame(maxWidth: .infinity, alignment: isOwner ? .trailing : .leading)
                     .accessibilityElement(children: .contain)
-                    .accessibilityLabel(isUser ? "You" : "AstralDeep")
+                    .accessibilityLabel(isSteer ? "Steer" : isUser ? "You" : "AstralDeep")
                     .accessibilityIdentifier("conversation-turn-\(turn.id)")
                     .id(turn.id)
                 }
@@ -286,10 +293,16 @@ struct ConsoleConversation: View {
                         if turn.role == "reasoning" {
                             ReasoningSnippet(text: turn.text)
                         } else {
+                            let isOwner = turn.role == "user" || turn.role == "steer"
                             HStack {
-                                if turn.role == "user" { Spacer(minLength: 24) }
+                                if isOwner { Spacer(minLength: 24) }
                                 VStack(alignment: .leading, spacing: 10) {
-                                    if turn.role == "user" {
+                                    if turn.role == "steer" {
+                                        Text("Steer").font(ConsoleTypography.caption2.weight(.semibold))
+                                            .foregroundStyle(p.primary)
+                                            .accessibilityIdentifier("transcript-steer-label")
+                                    }
+                                    if turn.role == "user" || turn.role == "steer" {
                                         Text(turn.text)
                                     } else if !turn.text.isEmpty {
                                         MarkdownBlockView(source: turn.text)
@@ -302,13 +315,13 @@ struct ConsoleConversation: View {
                                 .font(ConsoleTypography.subheadline).foregroundStyle(p.text)
                                 .padding(.horizontal, 16).padding(.vertical, 14)
                                 .background(
-                                    turn.role == "user" ? p.primary.opacity(0.17) : p.surface.opacity(0.55),
+                                    isOwner ? p.primary.opacity(0.17) : p.surface.opacity(0.55),
                                     in: RoundedRectangle(cornerRadius: 12)
                                 )
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 12).stroke(
-                                        turn.role == "user" ? p.primary.opacity(0.35) : p.border))
-                                if turn.role != "user" { Spacer(minLength: 0) }
+                                        isOwner ? p.primary.opacity(0.35) : p.border))
+                                if !isOwner { Spacer(minLength: 0) }
                             }
                         }
                     }

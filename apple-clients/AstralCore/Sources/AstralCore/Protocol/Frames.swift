@@ -749,6 +749,7 @@ public struct DeviceDescriptor: Equatable, Sendable {
     public var consoleContract: String?
     public var macWorkbenchSupported: Bool
     public var projectWorkspacesSupported: Bool = false
+    public var turnSteerSupported: Bool = false
 
     public init(
         deviceType: String, viewportWidth: Int, viewportHeight: Int,
@@ -841,6 +842,7 @@ public struct DeviceDescriptor: Equatable, Sendable {
             fields["console_contract"] = .string(ConsoleModel.contract)
             if deviceType == "macos", macWorkbenchSupported { fields["mac_workbench_v1"] = .bool(true) }
             if deviceType == "macos", projectWorkspacesSupported { fields["project_workspaces_v1"] = .bool(true) }
+            if deviceType == "macos", turnSteerSupported { fields["turn_steer_v1"] = .bool(true) }
         }
         return .object(fields)
     }
@@ -884,7 +886,8 @@ public enum Outbound {
         computerHost: ComputerHostDescriptor? = nil,
         computerHostCapable: Bool = false,
         macWorkbenchSupported: Bool = false,
-        uiAuthRefreshSupported: Bool = false
+        uiAuthRefreshSupported: Bool = false,
+        turnSteerSupported: Bool = false
     ) -> String {
         guard continuityUUID4(connectionGeneration) != nil else { return "{}" }
         let voiceCapable =
@@ -905,6 +908,7 @@ public enum Outbound {
             capabilities.append("artifact_v1")
         }
         if device.json["project_workspaces_v1"] == .bool(true) { capabilities.append("project_workspaces_v1") }
+        if turnSteerSupported, device.json["turn_steer_v1"] == .bool(true) { capabilities.append("turn_steer_v1") }
         var devicePayload = device.json.objectValue ?? [:]
         if workbench { devicePayload["mac_workbench_v1"] = .bool(true) }
         var frame: [String: JSONValue] = [
