@@ -23,6 +23,12 @@ private func turnSteerExactKeys(_ object: [String: JSONValue], _ keys: Set<Strin
 public struct TurnSteerAcknowledgement: Sendable, Equatable {
     public let queueCapable: Bool
 
+    public static func fromRoteConfig(_ payload: JSONValue) -> TurnSteerAcknowledgement? {
+        TurnSteerAcknowledgement(json: payload["device_profile"]?["console"]?["turn_steer"])
+    }
+}
+
+extension TurnSteerAcknowledgement {
     public init?(json: JSONValue?) {
         guard let object = json?.objectValue,
             turnSteerExactKeys(object, ["version", "queue_capable"]),
@@ -30,10 +36,6 @@ public struct TurnSteerAcknowledgement: Sendable, Equatable {
             let queueCapable = object["queue_capable"]?.boolValue
         else { return nil }
         self.queueCapable = queueCapable
-    }
-
-    public static func fromRoteConfig(_ payload: JSONValue) -> TurnSteerAcknowledgement? {
-        TurnSteerAcknowledgement(json: payload["device_profile"]?["console"]?["turn_steer"])
     }
 }
 
@@ -94,7 +96,9 @@ public struct SkippedToolCall: Sendable, Equatable {
 
     public let name: String
     public let reason: String
+}
 
+extension SkippedToolCall {
     public init?(json: JSONValue) {
         guard let object = json.objectValue,
             turnSteerExactKeys(object, ["name", "reason"]),
