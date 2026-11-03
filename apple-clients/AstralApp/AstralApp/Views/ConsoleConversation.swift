@@ -208,6 +208,7 @@ import SwiftUI
             HStack(spacing: 6) {
                 if let approval = row.approvalLabel {
                     Text(approval).font(ConsoleTypography.caption2.weight(.semibold))
+                        .lineLimit(1).fixedSize()
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(tint.opacity(0.16), in: Capsule())
                 }

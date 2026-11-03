@@ -4104,10 +4104,14 @@ final class AppModel: NSObject {
             flagged || summary != source
             || source.unicodeScalars.contains { [.control, .format].contains($0.properties.generalCategory) }
             || card.children.contains { !["text", "button"].contains($0.type) } || !hidden.isEmpty
+        var approve = allow.choice.payload
+        if let digest = card.raw["display_digest"], ComputerHostOutbound.isDisplayDigest(digest) {
+            approve["display_digest"] = digest
+        }
         return ApprovalPrompt(
             requestId: approval.requestId, site: approvalSite(summary), summary: summary, title: card.title,
             details: approvalDetails(card.children), hiddenCharacters: flagged, requiresReview: requiresReview,
-            allow: allow.choice, deny: deny.choice)
+            allow: ApprovalPrompt.Choice(action: allow.choice.action, payload: approve), deny: deny.choice)
     }
 
     static func approvalDetails(_ components: [AstralComponent]) -> [String] {

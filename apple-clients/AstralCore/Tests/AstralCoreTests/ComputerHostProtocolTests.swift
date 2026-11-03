@@ -525,6 +525,26 @@ final class ComputerHostProtocolTests: XCTestCase {
         XCTAssertEqual(identities.count, frames.count * 2)
     }
 
+    func testReviewDecisionAcceptsOnlyAWellFormedDisplayDigest() throws {
+        func frame(_ extra: [String: JSONValue]) throws -> String {
+            let payload: [String: JSONValue] = [
+                "proposal_id": .string(String(repeating: "ab", count: 16)), "decision": .string("approve_and_resume"),
+            ]
+            let value = JSONValue.object([
+                "type": .string("ui_event"), "action": .string("remote_op_decision"),
+                "payload": .object(payload.merging(extra) { $1 }),
+            ])
+            return String(decoding: try value.encoded(), as: UTF8.self)
+        }
+        XCTAssertTrue(ComputerHostOutbound.isReviewDecision(try frame([:])))
+        XCTAssertTrue(
+            ComputerHostOutbound.isReviewDecision(try frame(["display_digest": .string(String(repeating: "0f", count: 32))])))
+        for bad: JSONValue in [.string(String(repeating: "0F", count: 32)), .string("0f"), .number(1), .null] {
+            XCTAssertFalse(ComputerHostOutbound.isReviewDecision(try frame(["display_digest": bad])))
+        }
+        XCTAssertFalse(ComputerHostOutbound.isReviewDecision(try frame(["display_note": .string("x")])))
+    }
+
     func testHostEnvelopeRejectsPartialMalformedConflictingAndForeignMetadata() throws {
         let frame = ComputerHostOutbound.frame(
             action: "computer_event", payload: ["event": .string("withdraw"), "host_id": .string(session)])
