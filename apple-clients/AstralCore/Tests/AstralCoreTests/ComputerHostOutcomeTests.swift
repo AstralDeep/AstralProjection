@@ -6,22 +6,26 @@ import XCTest
 
 @testable import AstralCore
 
-final class ComputerHostOutcomeTests: XCTestCase {
-    let host = "88888888-8888-4888-8888-888888888888"
-    let incarnation = "99999999-9999-4999-8999-999999999999"
-    let job = "abcdef01-2345-4678-9abc-def012345678"
+private let outcomeHost = "88888888-8888-4888-8888-888888888888"
+private let outcomeIncarnation = "99999999-9999-4999-8999-999999999999"
+private let outcomeJob = "abcdef01-2345-4678-9abc-def012345678"
 
-    func descriptor(incarnation: String? = incarnation, jobs: [ComputerHostRetainedJob] = []) throws
+final class ComputerHostOutcomeTests: XCTestCase {
+    let host = outcomeHost
+    let incarnation = outcomeIncarnation
+    let job = outcomeJob
+
+    func descriptor(incarnation: String? = outcomeIncarnation, jobs: [ComputerHostRetainedJob] = []) throws
         -> ComputerHostDescriptor
     {
         try ComputerHostDescriptor(
-            hostId: host, name: "Test Mac", clientVersion: "1.9.0",
+            hostId: outcomeHost, name: "Test Mac", clientVersion: "1.9.0",
             screens: [ComputerHostScreen(index: 0, width: 1000, height: 800, scale: 2, primary: true)],
             verbs: ["run_command"], incarnationId: incarnation, retainedJobs: jobs)
     }
 
     func retained(
-        id: String = job, state: String = "running", exitCode: JSONValue = .null, signal: JSONValue = .null,
+        id: String = outcomeJob, state: String = "running", exitCode: JSONValue = .null, signal: JSONValue = .null,
         outputBytes: Int = 0
     ) throws -> ComputerHostRetainedJob {
         try ComputerHostRetainedJob(

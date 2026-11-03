@@ -1,9 +1,10 @@
 // Exercises nested renderer controls through their actual button actions and current workspace-bound event path.
 
 import AstralCore
-@testable import AstralDeep
 import SwiftUI
 import XCTest
+
+@testable import AstralDeep
 
 #if os(macOS)
     import AppKit

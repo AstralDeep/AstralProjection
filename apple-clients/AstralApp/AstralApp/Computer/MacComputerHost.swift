@@ -211,9 +211,10 @@
                 hostId = fresh
             }
             let localDesktopRearmProbe = localDesktopRearmProbe ?? MacComputerDesktopProbe.localRearm
-            let localInputProof = localInputProof ?? {
-                localInput?.consume(current: NSApp.currentEvent?.cgEvent) == true
-            }
+            let localInputProof =
+                localInputProof ?? {
+                    localInput?.consume(current: NSApp.currentEvent?.cgEvent) == true
+                }
             let automatedRearmAllowed: @MainActor () -> Bool = { [weak self] in
                 defaults.bool(forKey: Self.automatedRearmKey) && self?.consentEnabled == true
             }
@@ -578,7 +579,11 @@
         }
         func setAutomatedRestore(_ value: Bool) {
             automatedRestore = value
-            if value { defaults.set(true, forKey: Self.automatedRearmKey) } else { defaults.removeObject(forKey: Self.automatedRearmKey) }
+            if value {
+                defaults.set(true, forKey: Self.automatedRearmKey)
+            } else {
+                defaults.removeObject(forKey: Self.automatedRearmKey)
+            }
             if value { retryBypassRestore() }
         }
         private func retryBypassRestore() {
@@ -741,7 +746,9 @@
                 return false
             }
             guard restoring ? bypassRestoreRearm() : desktopRearm(), desktopProbe() else {
-                if !restoring { lastError = "Turn on bypass yourself from AstralDeep's active, unlocked local desktop." }
+                if !restoring {
+                    lastError = "Turn on bypass yourself from AstralDeep's active, unlocked local desktop."
+                }
                 return false
             }
             return true

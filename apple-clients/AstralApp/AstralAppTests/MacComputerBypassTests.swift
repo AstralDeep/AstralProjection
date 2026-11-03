@@ -631,7 +631,9 @@
                 host.requestBypass(false, from: .controls)
                 host.requestBypass(true, from: .controls)
                 XCTAssertNil(host.bypassConfirmation)
-                XCTAssertEqual(host.lastError, "Turn on bypass yourself from AstralDeep's active, unlocked local desktop.")
+                XCTAssertEqual(
+                    host.lastError,
+                    "Turn on bypass yourself from AstralDeep's active, unlocked local desktop.")
                 XCTAssertEqual(frontmostProbes, 1)
                 await flush(host)
                 XCTAssertEqual(bypassFrames(), [true, false])

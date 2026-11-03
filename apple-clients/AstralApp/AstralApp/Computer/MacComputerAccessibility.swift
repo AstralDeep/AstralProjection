@@ -361,8 +361,8 @@
         }
 
         func secure(_ target: MacComputerAXTarget) -> Bool {
-            target.entry.secure || (system.attribute(kAXSubroleAttribute, of: target.element) as? String)
-                == "AXSecureTextField"
+            target.entry.secure
+                || (system.attribute(kAXSubroleAttribute, of: target.element) as? String) == "AXSecureTextField"
         }
 
         static func line(_ ref: String, _ node: MacComputerAXNode, mapping: MacComputerAXMapping, window: CGRect?)

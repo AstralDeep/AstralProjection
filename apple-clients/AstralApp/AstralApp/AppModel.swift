@@ -4154,13 +4154,23 @@ final class AppModel: NSObject {
             return serverBase.absoluteString + "|" + account.locatorStorageKey
         }
 
+        private static func outcomeExitCode(_ value: JSONValue) -> Int? {
+            guard case .number(let code) = value else { return nil }
+            return Int(code)
+        }
+
+        private static func outcomeSignal(_ value: JSONValue) -> String? {
+            guard case .string(let name) = value else { return nil }
+            return name
+        }
+
         private func recordOutcomeUnknownAfterDisconnect() {
             guard signedIn, let scope = outcomeOwnerScope(), !macComputerHost.uncertainJobs.isEmpty else { return }
             let jobs = macComputerHost.uncertainJobs.map { job in
                 OutcomeUnknownRecordJob(
                     id: job.id, state: job.state,
-                    exitCode: { if case .number(let code) = job.exitCode { return Int(code) } return nil }(),
-                    signal: { if case .string(let name) = job.signal { return name } return nil }(),
+                    exitCode: Self.outcomeExitCode(job.exitCode),
+                    signal: Self.outcomeSignal(job.signal),
                     outputBytes: job.outputBytes)
             }
             guard let existing = outcomeUnknownCard, !existing.restored,

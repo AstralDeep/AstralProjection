@@ -67,22 +67,28 @@ public struct ComputerHostRetainedJob: Sendable, Equatable {
     public let exitCode: JSONValue
     public let signal: JSONValue
     public let outputBytes: Int
+    static func validExit(_ value: JSONValue) -> Bool {
+        if case .number(let code) = value {
+            return code.isFinite && code.rounded() == code && code >= 0 && code <= 9_007_199_254_740_991
+        }
+        return false
+    }
+
+    static func validSignal(_ value: JSONValue) -> Bool {
+        if case .string(let name) = value {
+            return computerFullMatch(name, Self.signalPattern)
+        }
+        return false
+    }
+
     public init(id: String, state: String, exitCode: JSONValue, signal: JSONValue, outputBytes: Int) throws {
-        func validExit(_ value: JSONValue) -> Bool {
-            if case .number(let code) = value {
-                return code.isFinite && code.rounded() == code && code >= 0 && code <= 9_007_199_254_740_991
-            }
-            return false
+        func bounded(_ value: Double) -> Bool {
+            value.isFinite && value >= 0 && value <= 9_007_199_254_740_991
         }
         guard computerFullMatch(id, "^[0-9a-f-]{36}$"), UUID(uuidString: id) != nil,
-            Self.states.contains(state), outputBytes >= 0, outputBytes <= 9_007_199_254_740_991,
-            exitCode == .null || validExit(exitCode),
-            signal == .null || {
-                if case .string(let name) = signal {
-                    return computerFullMatch(name, Self.signalPattern)
-                }
-                return false
-            }(),
+            Self.states.contains(state), outputBytes >= 0, bounded(Double(outputBytes)),
+            exitCode == .null || Self.validExit(exitCode),
+            signal == .null || Self.validSignal(signal),
             state == "running" ? exitCode == .null && signal == .null : true
         else { throw ComputerHostError("out_of_range", "The retained command job is invalid.") }
         self.id = id
@@ -349,7 +355,8 @@ public struct ComputerHostRequest: Sendable, Equatable {
         let pointerVerb = ["click", "double_click", "right_click", "move", "drag"].contains(verb)
         let elementAddressed = pointerVerb && args["ref"] != nil
         for key in ["x", "y", "x1", "y1", "x2", "y2"] where fields[verb]?.contains(key) == true {
-            try integer(key, 0...16383, required: !elementAddressed && !(verb == "drag" && ["x2", "y2"].contains(key) && args["ref2"] != nil))
+            let optional = !elementAddressed && !(verb == "drag" && ["x2", "y2"].contains(key) && args["ref2"] != nil)
+            try integer(key, 0...16383, required: optional)
         }
         if elementAddressed {
             try axReference("ref", required: true)
@@ -530,10 +537,14 @@ public struct ComputerHostRequest: Sendable, Equatable {
             try axSnapshot("snapshot_id")
             try choice(
                 "action",
-                ["press", "focus", "raise", "show_menu", "confirm", "cancel", "increment", "decrement", "set_value", "pick"],
+                [
+                    "press", "focus", "raise", "show_menu", "confirm", "cancel", "increment", "decrement",
+                    "set_value", "pick",
+                ],
                 required: true)
             if args["value"] != nil { try text("value", 4000, empty: true) }
-            if ["set_value", "pick"].contains(args["action"]!.stringValue!), args["value"] == nil {
+            if let action = args["action"]?.stringValue,
+                ["set_value", "pick"].contains(action), args["value"] == nil {
                 throw ComputerHostError("out_of_range", "Missing value.")
             }
             if args["confirm_element"] != nil { try text("confirm_element", 200) }
@@ -588,7 +599,9 @@ public struct ComputerHostRequest: Sendable, Equatable {
             try integer("width", 320...3840)
             try integer("height", 320...2160)
             try choice("color_scheme", ["light", "dark"])
-            let hasPreset = args["preset"] != nil, hasWidth = args["width"] != nil, hasHeight = args["height"] != nil
+            let hasPreset = args["preset"] != nil
+            let hasWidth = args["width"] != nil
+            let hasHeight = args["height"] != nil
             guard hasWidth == hasHeight, !(hasPreset && hasWidth), hasPreset || hasWidth || args["color_scheme"] != nil
             else { throw ComputerHostError("out_of_range", "Give a preset, or width and height.") }
         case "browser_tabs":

@@ -413,7 +413,9 @@
                 let console = try XCTUnwrap(model.console)
                 let presentation = try XCTUnwrap(model.consolePresentation)
                 model.macBrowser.isPresented = false
-                model.canvas = [reviewed ? reviewCard([text(commandSummary()), text(caption, "caption")]) : originCard()]
+                model.canvas = [
+                    reviewed ? reviewCard([text(commandSummary()), text(caption, "caption")]) : originCard()
+                ]
                 let mount = SurfaceMount(
                     MacWorkbenchView(
                         console: console, presentation: presentation,
