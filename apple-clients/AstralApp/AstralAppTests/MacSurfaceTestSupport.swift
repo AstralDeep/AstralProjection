@@ -207,12 +207,13 @@
     }
 
     enum SurfaceKey {
-        case returnKey, escape, down, up, delete
+        case returnKey, commandReturn, escape, down, up, delete
 
         func event(windowNumber: Int) throws -> NSEvent {
             let (code, characters, flags): (UInt16, String, NSEvent.ModifierFlags) =
                 switch self {
                 case .returnKey: (36, "\r", [])
+                case .commandReturn: (36, "\r", [.command])
                 case .escape: (53, "\u{1b}", [])
                 case .down: (125, "\u{F701}", [.numericPad, .function])
                 case .up: (126, "\u{F700}", [.numericPad, .function])

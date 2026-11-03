@@ -110,7 +110,9 @@
                                     .accessibilityValue(model.activeChatId == chat.id ? "Active conversation" : "")
                                     .help(chat.displayTitle)
                                     .contextMenu {
-                                        Button("Delete conversation", role: .destructive) { model.deleteChat(chat.id) }
+                                        Button("Delete conversation", role: .destructive) {
+                                            model.requestChatDeletion(chat)
+                                        }
                                     }
                                 }
                                 if search.isEmpty {
