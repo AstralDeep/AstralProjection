@@ -18,7 +18,7 @@
                 let owner = "automated-rearm-owner"
                 let consentKey =
                     "computer.consent."
-                        + SHA256.hash(data: Data(owner.utf8)).map { String(format: "%02x", $0) }.joined()
+                    + SHA256.hash(data: Data(owner.utf8)).map { String(format: "%02x", $0) }.joined()
                 if savedConsent { defaults.set(true, forKey: consentKey) }
                 if automatedRearm { defaults.set(true, forKey: "computer.allowAutomatedRearm") }
                 var localProbes = 0
@@ -40,7 +40,7 @@
                 XCTAssertEqual(
                     host.enabled, shouldEnable,
                     "automatedRearm=\(automatedRearm), savedConsent=\(savedConsent): automated rearm requires "
-                        + "both the opt-in and saved owner consent; otherwise local input is required.")
+                    + "both the opt-in and saved owner consent; otherwise local input is required.")
                 if shouldEnable {
                     let id = UUID().uuidString.lowercased()
                     host.consume(try session(host, id: id))
