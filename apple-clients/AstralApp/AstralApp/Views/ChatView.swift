@@ -907,14 +907,6 @@ struct InputBar: View {
         submit(submittedInput)
     }
 
-    private func send() {
-        guard canSend else { return }
-        let submittedInput = input
-        focused = false
-        input = ""
-        model.sendChat(submittedInput)
-    }
-
     private var optionReturnQueueBinding: Bool {
         #if os(macOS)
             return model.composerReturnBinding == .queue
@@ -1029,7 +1021,6 @@ struct InputBar: View {
             .accessibilityIdentifier("composer-steer-notice")
         }
     #endif
-}
 
     private var canSend: Bool {
         !model.mutationsLocked

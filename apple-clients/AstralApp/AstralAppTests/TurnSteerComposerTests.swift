@@ -47,7 +47,8 @@
             model.handleFrame(
                 InboundFrame.parse(
                     """
-                    {"type":"rote_config","device_profile":{"console":{"turn_steer":{"version":1,"queue_capable":\(queueCapable)}}}}
+                    {"type":"rote_config","device_profile":{"console":
+                        {"turn_steer":{"version":1,"queue_capable":\(queueCapable)}}}}
                     """)!)
         }
 
@@ -164,11 +165,9 @@
             let (model, sent) = try makeModel()
             negotiate(model)
             armTurn(model)
-            model.handleFrame(
-                queueSnapshot(
-                    3,
-                    #"{"queue_id":"\#(queueId)","message":"update the changelog","revision":1},"#
-                        + #"{"queue_id":"88888888-8888-4888-8888-888888888888","message":"ping the cluster","revision":1}"#))
+            let items = #"{"queue_id":"\#(queueId)","message":"update the changelog","revision":1},"#
+                + #"{"queue_id":"88888888-8888-4888-8888-888888888888","message":"ping the cluster","revision":1}"#
+            model.handleFrame(queueSnapshot(3, items))
             XCTAssertTrue(model.cancelTurnRestoringQueue())
             XCTAssertEqual(model.composerDraft, "update the changelog\n\nping the cluster")
             XCTAssertTrue(actions(sent()).contains("cancel_task"))
@@ -185,7 +184,8 @@
                 InboundFrame.parse(
                     """
                     {"type":"ui_upsert","ops":[{"op":"upsert","component_id":"approval",
-                     "component":{"type":"card","id":"au_approval_\(proposal)","title":"Confirm an action",
+                     "component":{"type":"card","id":"au_approval_\(proposal)",
+                      "title":"Confirm an action",
                       "content":[{"type":"text","variant":"body","content":"Open a site"},
                        {"type":"button","label":"Approve","action":"remote_op_decision",
                         "payload":{"proposal_id":"\(proposal)","decision":"approve"}},

@@ -414,7 +414,8 @@ final class AppModel: NSObject {
 
     #if os(macOS)
         enum ComposerReturnBinding: String, CaseIterable {
-            case steer, queue
+            case steer
+            case queue
         }
         static let composerReturnBindingKey = "astraldeep.composer.return-binding.v1"
         @ObservationIgnored private var turnSteerAck: TurnSteerAcknowledgement?

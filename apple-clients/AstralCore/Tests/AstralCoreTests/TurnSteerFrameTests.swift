@@ -30,8 +30,12 @@ final class TurnSteerFrameTests: XCTestCase {
     }
 
     func testAcknowledgementAcceptsTheExactContractShape() {
-        XCTAssertEqual(acknowledgement(#"{"version":1,"queue_capable":true}"#), TurnSteerAcknowledgement(queueCapable: true))
-        XCTAssertEqual(acknowledgement(#"{"version":1,"queue_capable":false}"#), TurnSteerAcknowledgement(queueCapable: false))
+        XCTAssertEqual(
+            acknowledgement(#"{"version":1,"queue_capable":true}"#),
+            TurnSteerAcknowledgement(queueCapable: true))
+        XCTAssertEqual(
+            acknowledgement(#"{"version":1,"queue_capable":false}"#),
+            TurnSteerAcknowledgement(queueCapable: false))
     }
 
     func testAcknowledgementRefusesUnknownShapesAndVersions() {
@@ -43,7 +47,12 @@ final class TurnSteerFrameTests: XCTestCase {
     }
 
     func testAcknowledgementIsAbsentWithoutTheDeviceProfileKey() {
-        let payload = try! JSONValue.parse(Data(#"{"device_profile":{"console":{"project_workspaces":{"version":1,"mode":"projects_only"}}}}"#.utf8))
+        let payload = try! JSONValue.parse(
+            Data(
+                """
+                {"device_profile":{"console":{"project_workspaces":
+                    {"version":1,"mode":"projects_only"}}}}
+                """.utf8))
         XCTAssertNil(TurnSteerAcknowledgement.fromRoteConfig(payload))
     }
 
@@ -57,7 +66,9 @@ final class TurnSteerFrameTests: XCTestCase {
                     """)))
         XCTAssertEqual(recorded.chatId, chatId)
         XCTAssertEqual(recorded.clientMessageId, messageId)
-        XCTAssertEqual(recorded.skippedCalls, [SkippedToolCall(name: "read_file", reason: "superseded by the steer")])
+        XCTAssertEqual(
+            recorded.skippedCalls,
+            [SkippedToolCall(name: "read_file", reason: "superseded by the steer")])
 
         XCTAssertNil(
             ChatSteerRecorded(
@@ -157,7 +168,8 @@ final class TurnSteerFrameTests: XCTestCase {
             SideQuestionResult(
                 frame: try frame(
                     """
-                    {"type":"side_question_result","client_message_id":"\(messageId)","answer":"x","chat_id":"\(chatId)"}
+                    {"type":"side_question_result","client_message_id":"\(messageId)",
+                     "answer":"x","chat_id":"\(chatId)"}
                     """)))
         XCTAssertNil(
             SideQuestionResult(

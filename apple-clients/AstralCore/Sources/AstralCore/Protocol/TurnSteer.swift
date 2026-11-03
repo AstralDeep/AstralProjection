@@ -23,10 +23,6 @@ private func turnSteerExactKeys(_ object: [String: JSONValue], _ keys: Set<Strin
 public struct TurnSteerAcknowledgement: Sendable, Equatable {
     public let queueCapable: Bool
 
-    public init(queueCapable: Bool) {
-        self.queueCapable = queueCapable
-    }
-
     public init?(json: JSONValue?) {
         guard let object = json?.objectValue,
             turnSteerExactKeys(object, ["version", "queue_capable"]),
@@ -98,11 +94,6 @@ public struct SkippedToolCall: Sendable, Equatable {
 
     public let name: String
     public let reason: String
-
-    public init(name: String, reason: String) {
-        self.name = name
-        self.reason = reason
-    }
 
     public init?(json: JSONValue) {
         guard let object = json.objectValue,
