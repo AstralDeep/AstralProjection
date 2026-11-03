@@ -283,6 +283,7 @@
             if case .exited(let code) = result { return .number(Double(code)) }
             return .null
         }
+        var outputByteCount: Int { output.bytes(.stdout) + output.bytes(.stderr) }
         var signalName: JSONValue {
             guard case .signaled(let value) = result else { return .null }
             let names: [Int32: String] = [
@@ -339,6 +340,7 @@
 
     actor MacComputerCommands {
         static let tailBytes = 32768
+        static let previewBytes = 16384
         nonisolated let registry = MacComputerCommandRegistry()
         nonisolated let clock: any MacComputerCommandClock
         private let spawner: any MacComputerCommandSpawning
@@ -562,6 +564,30 @@
                     "stale_project_grant", "This command belongs to another session or project grant.")
             }
             return job
+        }
+
+        nonisolated func inventory() -> [ComputerHostRetainedJob] {
+            registry.all.compactMap { job in
+                try? ComputerHostRetainedJob(
+                    id: job.id, state: job.state, exitCode: job.exitCode, signal: job.signalName,
+                    outputBytes: job.outputByteCount)
+            }
+        }
+
+        nonisolated func preview(_ id: String) -> (job: ComputerHostRetainedJob, output: String)? {
+            guard let job = registry.job(id),
+                let record = try? ComputerHostRetainedJob(
+                    id: job.id, state: job.state, exitCode: job.exitCode, signal: job.signalName,
+                    outputBytes: job.outputByteCount)
+            else { return nil }
+            let stdout = job.output.tail(.stdout, limit: Self.previewBytes)
+            let stderr = job.output.tail(.stderr, limit: Self.previewBytes)
+            var text = stdout.text
+            if !stderr.text.isEmpty {
+                if !text.isEmpty { text += "\n" }
+                text += stderr.text
+            }
+            return (record, text)
         }
 
         nonisolated func end(_ job: MacComputerCommandJob, as state: String) {

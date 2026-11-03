@@ -548,6 +548,7 @@ final class AppModel: NSObject {
     @ObservationIgnored private var sessionGeneration = 0
     @ObservationIgnored private var conversationNavigationGeneration = 0
     @ObservationIgnored private var conversationResumeStore: ConversationResumeStore
+    @ObservationIgnored private var outcomeUnknownStore: OutcomeUnknownStore
     @ObservationIgnored private var conversationAccount: ConversationAccount?
     @ObservationIgnored private var continuity = ConversationContinuityReducer()
     private(set) var viewportRefreshFailed = false
@@ -619,6 +620,7 @@ final class AppModel: NSObject {
 
     init(
         conversationResumeStore: ConversationResumeStore = ConversationResumeStore(),
+        outcomeUnknownStore: OutcomeUnknownStore = OutcomeUnknownStore(),
         tokenStore: TokenStorage,
         defaults: UserDefaults = .standard,
         webSocket: WSClient? = nil,
@@ -643,6 +645,7 @@ final class AppModel: NSObject {
         self.ws = webSocket
         self.initialWebSocket = webSocket
         self.conversationResumeStore = conversationResumeStore
+        self.outcomeUnknownStore = outcomeUnknownStore
         self.defaults = defaults
         let voiceDeviceKey = "astraldeep.voice.device-id.v1"
         if let stored = defaults.string(forKey: voiceDeviceKey),
@@ -791,6 +794,7 @@ final class AppModel: NSObject {
                 releaseComputerBypass()
                 macComputerHost.signedOut()
                 macBrowser.bind(owner: nil)
+                clearOutcomeUnknownCard()
             #endif
             clearActivity()
             #if os(iOS)
@@ -822,6 +826,9 @@ final class AppModel: NSObject {
         }
         conversationAccount = account
         activeChatId = conversationResumeStore.load(for: account)?.chatId
+        #if os(macOS)
+            restoreOutcomeUnknownCard()
+        #endif
     }
 
     struct DownloadOwner: Equatable, Sendable {
@@ -2106,6 +2113,7 @@ final class AppModel: NSObject {
             macComputerHost.signedOut()
             macBrowser.bind(owner: nil)
             llmUsage = LLMUsageTally()
+            clearOutcomeUnknownCard()
         #endif
         clearActivity()
         #if os(iOS)
@@ -2182,6 +2190,7 @@ final class AppModel: NSObject {
         #if os(macOS)
             macComputerHost.signedOut()
             macBrowser.bind(owner: nil)
+            clearOutcomeUnknownCard()
         #endif
         clearActivity()
         retireMeshCustody()
@@ -2612,6 +2621,7 @@ final class AppModel: NSObject {
                 macComputerHost.disconnect()
                 projects.awaitNegotiation()
                 cancelProjectChoice()
+                recordOutcomeUnknownAfterDisconnect()
             #endif
             resetViewportRefresh()
             invalidateWorkRead()
@@ -4017,6 +4027,8 @@ final class AppModel: NSObject {
     #if os(macOS)
         func computerApplicationWillTerminate() {
             releaseComputerBypass()
+            macComputerHost.recordRunningJobsAsUncertain()
+            recordOutcomeUnknownAfterDisconnect()
             macComputerHost.applicationWillTerminate()
         }
 
@@ -4054,6 +4066,149 @@ final class AppModel: NSObject {
 
     private(set) var approvalPrompts: [ApprovalPrompt] = []
     var waitingApprovals: Int { max(activity.filter { $0.approval == .waiting }.count, approvalPrompts.count) }
+
+    #if os(macOS)
+        struct OutcomeUnknownCard: Equatable, Identifiable {
+            enum Delivery: Equatable {
+                case pending, failed
+            }
+            let hostId: String
+            let incarnationId: String
+            let ownerScope: String
+            let jobs: [OutcomeUnknownRecordJob]
+            var decision: String?
+            var delivery: Delivery = .pending
+            let restored: Bool
+            var id: String { hostId + "/" + incarnationId }
+        }
+
+        private(set) var outcomeUnknownCard: OutcomeUnknownCard?
+        var outcomeUnknownCardActionable: Bool {
+            guard let card = outcomeUnknownCard, !card.restored, signedIn, let scope = outcomeOwnerScope(),
+                card.ownerScope == scope, card.incarnationId == macComputerHost.incarnationId,
+                card.hostId == macComputerHost.hostIdentifier
+            else { return false }
+            return card.decision == nil || card.delivery == .failed
+        }
+
+        func decideOutcomeUnknown(_ decision: String) {
+            guard ["acknowledge", "discard"].contains(decision), outcomeUnknownCardActionable,
+                outcomeUnknownCard?.decision == nil
+            else { return }
+            outcomeUnknownCard?.decision = decision
+            macComputerHost.sendOutcomeDecision(decision)
+            let owner = downloadOwner
+            let connection = continuity.connectionGeneration
+            let incarnation = outcomeUnknownCard?.incarnationId
+            Task { [weak self] in
+                guard let self else { return }
+                let delivered = await self.macComputerHost.flushCurrentSends()
+                await MainActor.run {
+                    guard self.downloadOwner == owner, self.continuity.connectionGeneration == connection,
+                        self.outcomeUnknownCard?.incarnationId == incarnation,
+                        self.outcomeUnknownCard?.decision == decision
+                    else { return }
+                    if delivered, self.connected {
+                        self.clearOutcomeUnknownCard()
+                    } else {
+                        self.outcomeUnknownCard?.delivery = .failed
+                    }
+                }
+            }
+        }
+
+        func retryOutcomeUnknown() {
+            guard let decision = outcomeUnknownCard?.decision,
+                outcomeUnknownCard?.delivery == .failed, outcomeUnknownCardActionable
+            else { return }
+            macComputerHost.sendOutcomeDecision(decision)
+            let owner = downloadOwner
+            let connection = continuity.connectionGeneration
+            let incarnation = outcomeUnknownCard?.incarnationId
+            Task { [weak self] in
+                guard let self else { return }
+                let delivered = await self.macComputerHost.flushCurrentSends()
+                await MainActor.run {
+                    guard self.downloadOwner == owner, self.continuity.connectionGeneration == connection,
+                        self.outcomeUnknownCard?.incarnationId == incarnation
+                    else { return }
+                    if delivered, self.connected {
+                        self.clearOutcomeUnknownCard()
+                    } else {
+                        self.outcomeUnknownCard?.delivery = .failed
+                    }
+                }
+            }
+        }
+
+        func clearOutcomeUnknownCard() {
+            if let scope = outcomeUnknownCard?.ownerScope {
+                _ = outcomeUnknownStore.clear(key: OutcomeUnknownStore.key(scope: scope))
+            }
+            outcomeUnknownCard = nil
+            macComputerHost.clearUncertainJobs()
+        }
+
+        private func outcomeOwnerScope() -> String? {
+            guard let account = conversationAccount else { return nil }
+            return serverBase.absoluteString + "|" + account.locatorStorageKey
+        }
+
+        private func recordOutcomeUnknownAfterDisconnect() {
+            guard signedIn, let scope = outcomeOwnerScope(), !macComputerHost.uncertainJobs.isEmpty else { return }
+            let jobs = macComputerHost.uncertainJobs.map { job in
+                OutcomeUnknownRecordJob(
+                    id: job.id, state: job.state,
+                    exitCode: { if case .number(let code) = job.exitCode { return Int(code) } return nil }(),
+                    signal: { if case .string(let name) = job.signal { return name } return nil }(),
+                    outputBytes: job.outputBytes)
+            }
+            guard let existing = outcomeUnknownCard, !existing.restored,
+                existing.incarnationId == macComputerHost.incarnationId, existing.ownerScope == scope
+            else {
+                setOutcomeUnknownCard(
+                    OutcomeUnknownCard(
+                        hostId: macComputerHost.hostIdentifier, incarnationId: macComputerHost.incarnationId,
+                        ownerScope: scope, jobs: jobs, restored: false), scope: scope)
+                return
+            }
+            var merged = existing.jobs
+            for job in jobs where !merged.contains(job) { merged.append(job) }
+            setOutcomeUnknownCard(
+                OutcomeUnknownCard(
+                    hostId: existing.hostId, incarnationId: existing.incarnationId, ownerScope: existing.ownerScope,
+                    jobs: Array(merged.prefix(OutcomeUnknownRecord.maximumJobs)), decision: existing.decision,
+                    delivery: existing.delivery, restored: false), scope: scope)
+        }
+
+        private func setOutcomeUnknownCard(_ card: OutcomeUnknownCard, scope: String) {
+            outcomeUnknownCard = card
+            let jobs = card.jobs.map { job in
+                OutcomeUnknownRecordJob(
+                    id: job.id, state: job.state, exitCode: job.exitCode, signal: job.signal,
+                    outputBytes: job.outputBytes)
+            }
+            _ = outcomeUnknownStore.save(
+                OutcomeUnknownRecord(hostId: card.hostId, incarnationId: card.incarnationId, jobs: jobs),
+                key: OutcomeUnknownStore.key(scope: scope))
+        }
+
+        private func restoreOutcomeUnknownCard() {
+            guard outcomeUnknownCard == nil, signedIn, let scope = outcomeOwnerScope(),
+                let record = outcomeUnknownStore.load(key: OutcomeUnknownStore.key(scope: scope))
+            else { return }
+            outcomeUnknownCard = OutcomeUnknownCard(
+                hostId: record.hostId, incarnationId: record.incarnationId, ownerScope: scope,
+                jobs: record.jobs, restored: true)
+        }
+
+        func outcomeJobPreview(_ jobId: String) -> (state: String, output: String)? {
+            guard outcomeUnknownCardActionable, let preview = macComputerHost.outcomePreview(jobId) else {
+                return nil
+            }
+            return (preview.job.state, preview.output)
+        }
+    #endif
 
     func decideApproval(_ prompt: ApprovalPrompt, allow: Bool) {
         guard approvalPrompts.contains(prompt) else { return }

@@ -59,8 +59,49 @@ public struct ComputerHostWorkspaceRoot: Sendable, Equatable {
     public var json: JSONValue { .object(["name": .string(name), "path": .string(path)]) }
 }
 
+public struct ComputerHostRetainedJob: Sendable, Equatable {
+    public static let states: Set<String> = ["running", "exited", "interrupted", "timed_out", "uncertain"]
+    public static let signalPattern = "^[A-Z][A-Z0-9]{0,7}$"
+    public let id: String
+    public let state: String
+    public let exitCode: JSONValue
+    public let signal: JSONValue
+    public let outputBytes: Int
+    public init(id: String, state: String, exitCode: JSONValue, signal: JSONValue, outputBytes: Int) throws {
+        func validExit(_ value: JSONValue) -> Bool {
+            if case .number(let code) = value {
+                return code.isFinite && code.rounded() == code && code >= 0 && code <= 9_007_199_254_740_991
+            }
+            return false
+        }
+        guard computerFullMatch(id, "^[0-9a-f-]{36}$"), UUID(uuidString: id) != nil,
+            Self.states.contains(state), outputBytes >= 0, outputBytes <= 9_007_199_254_740_991,
+            exitCode == .null || validExit(exitCode),
+            signal == .null || {
+                if case .string(let name) = signal {
+                    return computerFullMatch(name, Self.signalPattern)
+                }
+                return false
+            }(),
+            state == "running" ? exitCode == .null && signal == .null : true
+        else { throw ComputerHostError("out_of_range", "The retained command job is invalid.") }
+        self.id = id
+        self.state = state
+        self.exitCode = exitCode
+        self.signal = signal
+        self.outputBytes = outputBytes
+    }
+    public var json: JSONValue {
+        .object([
+            "job_id": .string(id), "state": .string(state), "exit_code": exitCode, "signal": signal,
+            "output_bytes": .number(Double(outputBytes)),
+        ])
+    }
+}
+
 public struct ComputerHostDescriptor: Sendable, Equatable {
     public static let maximumWorkspaceRoots = 32
+    public static let maximumRetainedJobs = 64
     public let hostId: String
     public let name: String
     public let clientVersion: String
@@ -69,10 +110,13 @@ public struct ComputerHostDescriptor: Sendable, Equatable {
     public let workspaceRoots: [ComputerHostWorkspaceRoot]
     public let projectManifest: ComputerProjectManifest?
     public let excluded: [String]
+    public let incarnationId: String?
+    public let retainedJobs: [ComputerHostRetainedJob]
     public init(
         hostId: String, name: String, clientVersion: String, screens: [ComputerHostScreen], verbs: [String],
         workspaceRoots: [ComputerHostWorkspaceRoot] = [], projectManifest: ComputerProjectManifest? = nil,
-        excluded: [String] = []
+        excluded: [String] = [], incarnationId: String? = nil,
+        retainedJobs: [ComputerHostRetainedJob] = []
     ) throws {
         guard computerUUID(hostId), !name.isEmpty, name.count <= 64,
             !name.unicodeScalars.contains(where: { $0.value < 32 }),
@@ -88,7 +132,10 @@ public struct ComputerHostDescriptor: Sendable, Equatable {
             !verbs.isEmpty, Set(verbs).count == verbs.count, Set(verbs).isSubset(of: ComputerHostRequest.verbs),
             workspaceRoots.count <= Self.maximumWorkspaceRoots, workspaceRoots.allSatisfy(\.isValid),
             Set(workspaceRoots.map(\.path)).count == workspaceRoots.count,
-            projectManifest == nil || workspaceRoots.isEmpty, ComputerWorkspaceExclusions.valid(excluded)
+            projectManifest == nil || workspaceRoots.isEmpty, ComputerWorkspaceExclusions.valid(excluded),
+            incarnationId.map { computerUUID($0) && $0 == $0.lowercased() } ?? true,
+            retainedJobs.count <= Self.maximumRetainedJobs,
+            Set(retainedJobs.map(\.id)).count == retainedJobs.count
         else { throw ComputerHostError("out_of_range", "The computer descriptor is invalid.") }
         self.hostId = hostId
         self.name = name
@@ -98,6 +145,8 @@ public struct ComputerHostDescriptor: Sendable, Equatable {
         self.workspaceRoots = workspaceRoots
         self.projectManifest = projectManifest
         self.excluded = excluded
+        self.incarnationId = incarnationId
+        self.retainedJobs = retainedJobs
     }
     public var json: JSONValue {
         var object: [String: JSONValue] = [
@@ -108,6 +157,8 @@ public struct ComputerHostDescriptor: Sendable, Equatable {
         if !workspaceRoots.isEmpty { object["workspace_roots"] = .array(workspaceRoots.map(\.json)) }
         if let projectManifest { object["project_manifest"] = projectManifest.json }
         if !excluded.isEmpty { object["excluded"] = .array(excluded.map(JSONValue.string)) }
+        if let incarnationId { object["incarnation_id"] = .string(incarnationId) }
+        if !retainedJobs.isEmpty { object["retained_jobs"] = .array(retainedJobs.map(\.json)) }
         return .object(object)
     }
 }
@@ -702,6 +753,13 @@ public enum ComputerHostOutbound {
                 && payload["project_manifest"].flatMap { try? ComputerProjectManifest(json: $0) } != nil
         }
         if event == "withdraw" { return Set(payload.keys) == ["host_id", "event"] }
+        if event == "outcome_ack" {
+            guard let decision = payload["decision"]?.stringValue,
+                ["acknowledge", "discard"].contains(decision),
+                let incarnation = payload["incarnation_id"]?.stringValue, computerUUID(incarnation)
+            else { return false }
+            return Set(payload.keys) == ["host_id", "event", "decision", "incarnation_id"]
+        }
         return ["paused", "resumed", "stopped", "heartbeat"].contains(event)
             && payload["session_id"]?.stringValue.map(computerUUID) == true
             && Set(payload.keys).isSubset(of: ["host_id", "event", "session_id", "reason"])

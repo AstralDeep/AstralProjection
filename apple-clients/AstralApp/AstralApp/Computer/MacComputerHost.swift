@@ -148,8 +148,10 @@
         @ObservationIgnored private var localResumeSession: String?
         @ObservationIgnored private let commands: MacComputerCommands
         @ObservationIgnored private let appActivator: @MainActor () -> Void
+        nonisolated let incarnationId = UUID().uuidString.lowercased()
+        private(set) var uncertainJobs: [ComputerHostRetainedJob] = []
         @ObservationIgnored weak var browser: (any MacBrowserVerbHandling)?
-        @ObservationIgnored private var auxiliary: [UUID: Task<Void, Never>] = [:]
+        @ObservationIgnored private var auxiliary: [UUID: (task: Task<Void, Never>, command: Bool)] = [:]
         @ObservationIgnored private var browserTail: Task<Void, Never>?
 
         init(
@@ -316,6 +318,7 @@
             return "Computer access is off"
         }
         var ownerBound: Bool { owner != nil }
+        var hostIdentifier: String { hostId }
         var taskActive: Bool { session != nil }
         private static let commandVerbs: Set<String> = ["run_command", "read_output", "interrupt_command"]
         private static let computerName: String = {
@@ -383,7 +386,8 @@
                 verbs: verbs.sorted(),
                 workspaceRoots: projectMode ? [] : Array(roots.prefix(ComputerHostDescriptor.maximumWorkspaceRoots)),
                 projectManifest: projectMode ? projectGrants.manifest : nil,
-                excluded: verbs.contains("read_file") ? files.exclusions.patterns : [])
+                excluded: verbs.contains("read_file") ? files.exclusions.patterns : [],
+                incarnationId: incarnationId, retainedJobs: commands.inventory())
         }
         private func announceDescriptor(_ descriptor: ComputerHostDescriptor) {
             if projectMode {
@@ -497,10 +501,35 @@
             channelEpoch = epoch
             outboundTail?.cancel()
             outboundTail = nil
-            retire(commands: "uncertain")
+            recordUncertainJobs()
+            retire(commands: nil)
             guard channelEpoch == epoch else { return }
             sender = nil
             monitor.stop()
+        }
+        private func recordUncertainJobs() {
+            let running = Set(commands.inventory().filter { $0.state == "running" }.map(\.id))
+            guard !running.isEmpty else { return }
+            var merged = uncertainJobs
+            for job in commands.inventory() where running.contains(job.id) {
+                if let index = merged.firstIndex(where: { $0.id == job.id }) {
+                    merged[index] = job
+                } else {
+                    merged.append(job)
+                }
+            }
+            uncertainJobs = Array(merged.prefix(ComputerHostDescriptor.maximumRetainedJobs))
+        }
+        func recordRunningJobsAsUncertain() { recordUncertainJobs() }
+        func clearUncertainJobs() { uncertainJobs = [] }
+        func outcomePreview(_ jobId: String) -> (job: ComputerHostRetainedJob, output: String)? {
+            commands.preview(jobId)
+        }
+        func sendOutcomeDecision(_ decision: String) {
+            guard ["acknowledge", "discard"].contains(decision) else { return }
+            sendEvent(
+                "outcome_ack",
+                additional: ["decision": .string(decision), "incarnation_id": .string(incarnationId)])
         }
         func signedOut() {
             let epoch = UUID()
@@ -519,6 +548,7 @@
             projectMode = false
             authority.configureProjects(false)
             commands.forget()
+            uncertainJobs = []
         }
         func showControls() {
             refreshPermissions()
@@ -877,14 +907,17 @@
             }
             retire()
         }
-        private func cancelWork(resetDriver: Bool = true, commands state: String = "interrupted") {
+        private func cancelWork(resetDriver: Bool = true, commands state: String? = "interrupted") {
             workerId = UUID()
             worker?.cancel()
             worker = nil
             queue = []
-            commands.endAll(as: state)
-            for task in auxiliary.values { task.cancel() }
-            auxiliary = [:]
+            if let state { commands.endAll(as: state) }
+            for id in Array(auxiliary.keys) {
+                let preserved = state == nil && auxiliary[id]?.command == true
+                if !preserved { auxiliary[id]?.task.cancel() }
+                auxiliary.removeValue(forKey: id)
+            }
             browserTail = nil
             refreshWorking()
             if resetDriver { Task { await driver.reset() } }
@@ -893,7 +926,7 @@
             let busy = worker != nil || !queue.isEmpty || !auxiliary.isEmpty
             if working != busy { working = busy }
         }
-        private func retire(commands state: String = "interrupted") {
+        private func retire(commands state: String? = "interrupted") {
             resolvePauseWaiters(accepted: false)
             authority.invalidate()
             cancelWork(commands: state)
@@ -934,7 +967,7 @@
                 do {
                     if incoming.id != session?.id {
                         resolvePauseWaiters(accepted: false)
-                        cancelWork()
+                        cancelWork(commands: nil)
                     }
                     if incoming.state == "active" {
                         if awaitingPauseAcknowledgment && incoming.id == session?.id { return true }
@@ -1097,7 +1130,7 @@
                 self.refreshWorking()
                 self.answer(request, ticket: ticket, with: result)
             }
-            auxiliary[id] = task
+            auxiliary[id] = (task, Self.commandVerbs.contains(request.verb))
             if serial { browserTail = task }
         }
         private func performAuxiliary(
