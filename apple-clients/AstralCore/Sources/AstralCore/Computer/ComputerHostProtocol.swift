@@ -652,7 +652,12 @@ public enum ComputerHostOutbound {
         else { return false }
         let key = action == "authorize_action" ? "hitl_request_id" : "proposal_id"
         return payload[key]?.stringValue.map { !$0.isEmpty && $0.count <= 200 } == true
-            && Set(payload.keys).isSubset(of: [key, "decision", "submission_id", "request_generation"])
+            && Set(payload.keys).isSubset(of: [key, "decision", "submission_id", "request_generation", "display_digest"])
+            && payload["display_digest"].map(isDisplayDigest) != false
+    }
+    public static func isDisplayDigest(_ value: JSONValue) -> Bool {
+        guard let digest = value.stringValue else { return false }
+        return digest.utf8.count == 64 && digest.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
     }
     public static func frame(action: String, payload: [String: JSONValue]) -> String {
         let value = JSONValue.object([

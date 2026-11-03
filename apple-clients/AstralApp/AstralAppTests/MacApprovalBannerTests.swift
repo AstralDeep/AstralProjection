@@ -66,11 +66,10 @@
 
         private func reviewCard(_ content: [JSONValue], flags: [String] = [], digest: String? = nil) -> AstralComponent
         {
-            func button(_ label: String, _ decision: String, _ extra: [String: JSONValue] = [:]) -> JSONValue {
+            func button(_ label: String, _ decision: String) -> JSONValue {
                 .object([
                     "type": .string("button"), "label": .string(label), "action": .string("remote_op_decision"),
-                    "payload": .object(
-                        ["proposal_id": .string(proposal), "decision": .string(decision)].merging(extra) { $1 }),
+                    "payload": .object(["proposal_id": .string(proposal), "decision": .string(decision)]),
                 ])
             }
             var raw: [String: JSONValue] = [
@@ -78,11 +77,12 @@
                 "title": .string("Confirm an action on Studio Mac"),
                 "content": .array(
                     content + [
-                        button("Approve", "approve", digest.map { ["display_digest": .string($0)] } ?? [:]),
+                        button("Approve", "approve"),
                         button("Decline", "decline"),
                     ]),
             ]
             if !flags.isEmpty { raw["review_flags"] = .array(flags.map { .string($0) }) }
+            if let digest { raw["display_digest"] = .string(digest) }
             return AstralComponent(type: "card", raw: .object(raw))
         }
 
@@ -106,7 +106,7 @@
             model.activeChatId = "33333333-3333-4333-8333-333333333333"
             var sent: [JSONValue] = []
             model.outboundTap = { text in if let frame = try? JSONValue.parse(Data(text.utf8)) { sent.append(frame) } }
-            model.currentApprovalDecisionSendOverride = { _, _ in true }
+            model.currentApprovalDecisionSendOverride = { text, _ in WSClient.isApprovalDecision(text) }
             return (model, { sent })
         }
 
@@ -534,23 +534,31 @@
             XCTAssertEqual(prompt.site, "https://example.com")
         }
 
-        func testDecisionsEchoTheButtonPayloadIncludingItsDisplayDigest() throws {
-            for allow in [true, false] {
+        func testApprovalEchoesTheCardDigestInAFrameTheSocketAccepts() throws {
+            let cases: [(digest: String?, allow: Bool, echoed: JSONValue?)] = [
+                (digest, true, .string(digest)), (digest, false, nil), (nil, true, nil),
+                (digest.uppercased(), true, nil), (String(digest.dropLast()), true, nil),
+            ]
+            for item in cases {
                 let (model, sent) = try model()
-                let card = reviewCard([text(commandSummary())], digest: digest)
+                let card = reviewCard([text(commandSummary())], digest: item.digest)
                 model.canvas = [card]
                 let prompt = try XCTUnwrap(model.approvalPrompts.first)
                 let button = try XCTUnwrap(
-                    card.children.first { $0.raw["payload"]?["decision"] == .string(allow ? "approve" : "decline") })
-                let expected = try XCTUnwrap(button.raw["payload"]?.objectValue)
-                XCTAssertEqual((allow ? prompt.allow : prompt.deny).payload, expected)
-                model.decideApproval(prompt, allow: allow)
-                let echoed = try XCTUnwrap(decisions(sent()).last?.objectValue)
-                for (key, value) in expected { XCTAssertEqual(echoed[key], value, key) }
+                    card.children.first { $0.raw["payload"]?["decision"] == .string(item.allow ? "approve" : "decline") })
+                let offered = try XCTUnwrap(button.raw["payload"]?.objectValue)
+                model.decideApproval(prompt, allow: item.allow)
+                let frame = try XCTUnwrap(sent().last { $0["action"] == .string("remote_op_decision") })
+                let text = String(decoding: try frame.encoded(), as: UTF8.self)
+                XCTAssertTrue(WSClient.isApprovalDecision(text), text)
+                XCTAssertNil(model.errorBanner)
+                let echoed = try XCTUnwrap(frame["payload"]?.objectValue)
+                for (key, value) in offered { XCTAssertEqual(echoed[key], value, key) }
+                XCTAssertEqual(echoed["display_digest"], item.echoed)
                 XCTAssertTrue(
-                    Set(echoed.keys).subtracting(expected.keys).isSubset(of: ["submission_id", "request_generation"]),
+                    Set(echoed.keys).subtracting(offered.keys).isSubset(
+                        of: ["submission_id", "request_generation", "display_digest"]),
                     "\(echoed.keys.sorted())")
-                XCTAssertEqual(echoed["display_digest"], allow ? .string(digest) : nil)
             }
         }
 

@@ -109,6 +109,24 @@ final class WorkReadTransport088Tests: XCTestCase {
         }
     }
 
+    func testApprovalDecisionAcceptsOnlyAWellFormedDisplayDigest() {
+        func frame(_ extra: [String: JSONValue]) -> String {
+            Outbound.uiEvent(
+                action: "remote_op_decision", sessionId: "11111111-1111-4111-8111-111111111111",
+                payload: .object(
+                    ["proposal_id": .string(String(repeating: "ab", count: 16)), "decision": .string("approve")]
+                        .merging(extra) { $1 }),
+                submissionId: "44444444-4444-4444-8444-444444444444",
+                requestGeneration: "55555555-5555-4555-8555-555555555555")
+        }
+        XCTAssertTrue(WSClient.isApprovalDecision(frame([:])))
+        XCTAssertTrue(WSClient.isApprovalDecision(frame(["display_digest": .string(String(repeating: "0f", count: 32))])))
+        for bad: JSONValue in [.string(String(repeating: "0F", count: 32)), .string("0f"), .number(1), .null] {
+            XCTAssertFalse(WSClient.isApprovalDecision(frame(["display_digest": bad])))
+        }
+        XCTAssertFalse(WSClient.isApprovalDecision(frame(["display_note": .string("x")])))
+    }
+
     private func viewportFrame() -> String {
         let generation = "33333333-3333-4333-8333-333333333333"
         let submission = "44444444-4444-4444-8444-444444444444"

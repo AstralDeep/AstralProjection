@@ -378,7 +378,7 @@ public actor WSClient {
             isCurrent: isCurrent)
     }
 
-    private static func isApprovalDecision(_ text: String) -> Bool {
+    public static func isApprovalDecision(_ text: String) -> Bool {
         guard text.utf8.count <= 16384,
             let value = try? JSONValue.parse(Data(text.utf8)),
             let frame = value.objectValue,
@@ -396,7 +396,8 @@ public actor WSClient {
         else { return false }
         let idKey = action == "authorize_action" ? "hitl_request_id" : "proposal_id"
         return payload[idKey]?.stringValue.map { !$0.isEmpty && $0.count <= 200 } == true
-            && Set(payload.keys).isSubset(of: [idKey, "decision", "submission_id", "request_generation"])
+            && Set(payload.keys).isSubset(of: [idKey, "decision", "submission_id", "request_generation", "display_digest"])
+            && payload["display_digest"].map(ComputerHostOutbound.isDisplayDigest) != false
     }
 
     private func sendCurrentOwnerSurfaceEvent(
