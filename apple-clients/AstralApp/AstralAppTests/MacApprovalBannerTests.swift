@@ -1,5 +1,6 @@
-// Covers the main-window approval banner: a pending review card, including a browser-pane origin, is named, counted
-// in the footer and answerable with Allow or Deny even while the browser pane is collapsed, in the three themes.
+// Covers the main-window approval banner and its review sheet: pending cards are named, counted and answerable with
+// Deny plus one-click Allow for short single-line cards or Review for anything the banner would cut, in three themes.
+// The sheet shows every text and code entry, approves only on Command-Return or its button, and echoes the payload.
 
 #if os(macOS)
     import AppKit
@@ -49,6 +50,53 @@
                         button("Decline", "decline"),
                     ]),
                 ]))
+        }
+
+        private let caption = "This runs on your computer exactly as shown and I can't undo it."
+        private let shortSummary = "Open https://example.com/ in the Astral browser pane on MacBook"
+        private let digest = String(repeating: "0f", count: 32)
+
+        private func text(_ content: String, _ variant: String = "body") -> JSONValue {
+            .object(["type": .string("text"), "variant": .string(variant), "content": .string(content)])
+        }
+
+        private func code(_ content: String) -> JSONValue {
+            .object(["type": .string("code"), "language": .string("json"), "code": .string(content)])
+        }
+
+        private func reviewCard(_ content: [JSONValue], flags: [String] = [], digest: String? = nil) -> AstralComponent
+        {
+            func button(_ label: String, _ decision: String, _ extra: [String: JSONValue] = [:]) -> JSONValue {
+                .object([
+                    "type": .string("button"), "label": .string(label), "action": .string("remote_op_decision"),
+                    "payload": .object(
+                        ["proposal_id": .string(proposal), "decision": .string(decision)].merging(extra) { $1 }),
+                ])
+            }
+            var raw: [String: JSONValue] = [
+                "type": .string("card"), "id": .string("au_approval_\(proposal)"),
+                "title": .string("Confirm an action on Studio Mac"),
+                "content": .array(
+                    content + [
+                        button("Approve", "approve", digest.map { ["display_digest": .string($0)] } ?? [:]),
+                        button("Decline", "decline"),
+                    ]),
+            ]
+            if !flags.isEmpty { raw["review_flags"] = .array(flags.map { .string($0) }) }
+            return AstralComponent(type: "card", raw: .object(raw))
+        }
+
+        private func commandSummary() -> String {
+            [
+                "Run a command on Studio Mac", "Command: rm -rf build", "Folder: /Users/me/project",
+                "Timeout: 60 s", "Environment: none", "Background: no",
+            ].joined(separator: "\n")
+        }
+
+        private func reviewPrompt(_ card: AstralComponent) throws -> AppModel.ApprovalPrompt {
+            let (model, _) = try model()
+            model.canvas = [card]
+            return try XCTUnwrap(model.approvalPrompts.first)
         }
 
         private func model() throws -> (AppModel, () -> [JSONValue]) {
@@ -324,72 +372,300 @@
 
         func testBannerRendersInEachThemeAndItsButtonsDecide() async throws {
             for preset in SurfaceFixtures.presets {
-                let (model, sent) = try model()
-                model.canvas = [originCard()]
-                let prompt = try XCTUnwrap(model.approvalPrompts.first)
-                let mount = SurfaceMount(
-                    MacApprovalBanner(prompt: prompt), model: model, size: CGSize(width: 820, height: 76),
-                    preset: preset)
-                defer { mount.close() }
-                try await mount.settle()
-                let text = try mount.text()
-                for kept in ["https://docs.example.com", "Allow", "Deny"] {
-                    XCTAssertTrue(text.contains(kept), "\(preset) missing \(kept): \(text)")
+                for (card, primary, missing) in [
+                    (reviewCard([text(commandSummary()), text(caption, "caption")]), "Review", "Allow"),
+                    (originCard(), "Allow", "Review"),
+                ] {
+                    let (model, sent) = try model()
+                    model.canvas = [card]
+                    let prompt = try XCTUnwrap(model.approvalPrompts.first)
+                    let mount = SurfaceMount(
+                        MacApprovalBanner(prompt: prompt), model: model, size: CGSize(width: 820, height: 76),
+                        preset: preset)
+                    defer { mount.close() }
+                    try await mount.settle()
+                    let text = try mount.text()
+                    for kept in [prompt.site, primary, "Deny"].compactMap({ $0 }) {
+                        XCTAssertTrue(text.contains(kept), "\(preset) missing \(kept): \(text)")
+                    }
+                    XCTAssertFalse(text.contains(missing), "\(preset) shows \(missing): \(text)")
+                    try mount.snapshot(self, name: "approval_banner-\(primary.lowercased())-\(preset)")
+                    try mount.click(text: "Deny")
+                    try await mount.settle()
+                    XCTAssertEqual(decisions(sent()).last?["decision"], .string("decline"), preset)
                 }
-                try mount.snapshot(self, name: "approval_banner-\(preset)")
-                try mount.click(text: "Deny")
-                try await mount.settle()
-                XCTAssertEqual(decisions(sent()).last?["decision"], .string("decline"), preset)
             }
         }
 
         func testWorkbenchShowsTheBannerWithTheBrowserPaneCollapsed() async throws {
-            let (model, sent) = try model()
-            let fixture = try SurfaceFixtures.json("mac-workbench")
-            let row = try XCTUnwrap(
-                fixture["cases"]?.arrayValue?.first { $0["viewport"]?.arrayValue?.first?.numberValue == 1440 })
-            model.handleFrame(
-                InboundFrame(
-                    name: "rote_config",
-                    payload: .object([
-                        "type": .string("rote_config"),
-                        "device_profile": .object(["console": try XCTUnwrap(row["presentation"])]),
-                    ])))
-            let console = try XCTUnwrap(model.console)
-            let presentation = try XCTUnwrap(model.consolePresentation)
-            model.macBrowser.isPresented = false
-            model.canvas = [originCard()]
-            let mount = SurfaceMount(
-                MacWorkbenchView(
-                    console: console, presentation: presentation, workbench: try XCTUnwrap(presentation.workbench)),
-                model: model, size: CGSize(width: 1440, height: 900))
-            defer { mount.close() }
-            try await mount.settle()
-            let text = try mount.text()
-            XCTAssertTrue(text.contains("https://docs.example.com"), text)
-            XCTAssertTrue(text.contains("1 approval waiting"), text)
-            try mount.snapshot(self, name: "workbench_approval_banner-graphite")
-            try mount.click(text: "Allow")
-            try await mount.settle()
-            XCTAssertEqual(decisions(sent()).last?["decision"], .string("approve"))
+            for reviewed in [false, true] {
+                let (model, sent) = try model()
+                let fixture = try SurfaceFixtures.json("mac-workbench")
+                let row = try XCTUnwrap(
+                    fixture["cases"]?.arrayValue?.first { $0["viewport"]?.arrayValue?.first?.numberValue == 1440 })
+                model.handleFrame(
+                    InboundFrame(
+                        name: "rote_config",
+                        payload: .object([
+                            "type": .string("rote_config"),
+                            "device_profile": .object(["console": try XCTUnwrap(row["presentation"])]),
+                        ])))
+                let console = try XCTUnwrap(model.console)
+                let presentation = try XCTUnwrap(model.consolePresentation)
+                model.macBrowser.isPresented = false
+                model.canvas = [reviewed ? reviewCard([text(commandSummary()), text(caption, "caption")]) : originCard()]
+                let mount = SurfaceMount(
+                    MacWorkbenchView(
+                        console: console, presentation: presentation,
+                        workbench: try XCTUnwrap(presentation.workbench)),
+                    model: model, size: CGSize(width: 1440, height: 900))
+                defer { mount.close() }
+                try await mount.settle()
+                let text = try mount.text()
+                XCTAssertTrue(text.contains("1 approval waiting"), text)
+                if reviewed {
+                    XCTAssertNil(try mount.textFrame("Allow", exact: true))
+                    try mount.click(text: "Review")
+                    let sheet = try await attachedSheet(mount)
+                    XCTAssertTrue(
+                        sheet.performKeyEquivalent(
+                            with: try SurfaceKey.commandReturn.event(windowNumber: sheet.windowNumber)))
+                } else {
+                    XCTAssertTrue(text.contains("https://docs.example.com"), text)
+                    let summary = try XCTUnwrap(
+                        try mount.accessibility.first { $0.identifier == "approval-banner-summary" })
+                    XCTAssertEqual(summary.value ?? summary.label, try XCTUnwrap(model.approvalPrompts.first).summary)
+                    XCTAssertTrue((summary.value ?? summary.label ?? "").hasSuffix("are never filled."))
+                    try mount.snapshot(self, name: "workbench_approval_banner-graphite")
+                    XCTAssertNil(try mount.textFrame("Review", exact: true))
+                    try mount.click(text: "Allow")
+                }
+                try await mount.settle()
+                XCTAssertEqual(decisions(sent()).last?["decision"], .string("approve"))
+                XCTAssertNil(mount.window.attachedSheet)
+            }
         }
 
         func testBannerExposesItsNameSiteAndButtonsInReadingOrder() async throws {
-            let (model, _) = try model()
-            model.canvas = [originCard()]
+            for (card, site, primary) in [
+                (reviewCard([text(commandSummary()), text(caption, "caption")]), nil, "review"),
+                (originCard(), "https://docs.example.com", "allow"),
+            ] {
+                let (model, _) = try model()
+                model.canvas = [card]
+                let prompt = try XCTUnwrap(model.approvalPrompts.first)
+                let mount = SurfaceMount(
+                    MacApprovalBanner(prompt: prompt), model: model, size: CGSize(width: 820, height: 76))
+                defer { mount.close() }
+                try await mount.settle()
+                let tree = try mount.accessibility
+                let banner = try XCTUnwrap(tree.first { $0.identifier == "approval-banner" })
+                XCTAssertEqual(banner.label, "Approval waiting")
+                let buttons = tree.filter { $0.role == kAXButtonRole }
+                XCTAssertEqual(buttons.map(\.identifier), ["approval-banner-deny", "approval-banner-\(primary)"])
+                XCTAssertEqual(buttons.map(\.label), ["Deny", primary.capitalized])
+                if let site { XCTAssertTrue(tree.contains { $0.value == site || $0.label == site }) }
+            }
+        }
+
+        func testMultiLineCommandCardNeedsReviewAndKeepsEveryLine() throws {
+            let prompt = try reviewPrompt(reviewCard([text(commandSummary()), text(caption, "caption")]))
+            XCTAssertTrue(prompt.requiresReview)
+            XCTAssertFalse(prompt.hiddenCharacters)
+            XCTAssertEqual(prompt.title, "Confirm an action on Studio Mac")
+            XCTAssertEqual(prompt.details, [commandSummary(), caption])
+        }
+
+        func testFlaggedCardNeedsReviewEvenWhenItsSummaryIsShort() throws {
+            let escaped = "Open https://example.com/\\u{202E}fdp.exe in the Astral browser pane on MacBook"
+            let flagged = try reviewPrompt(reviewCard([text(escaped)], flags: ["hidden_characters"]))
+            XCTAssertTrue(flagged.requiresReview)
+            XCTAssertTrue(flagged.hiddenCharacters)
+            XCTAssertEqual(flagged.details, [escaped])
+            let unflagged = try reviewPrompt(reviewCard([text(escaped)], flags: ["other_flag"]))
+            XCTAssertFalse(unflagged.requiresReview)
+            XCTAssertFalse(unflagged.hiddenCharacters)
+        }
+
+        func testInvisibleCharactersInTheSummaryNeedReviewWithoutAServerFlag() throws {
+            for hidden in ["\u{202E}", "\u{200B}", "\u{2066}", "\u{FEFF}", "\u{0007}", "\u{2028}", "\r"] {
+                let summary = "Open https://example.com/\(hidden)fdp.exe in the Astral browser pane on MacBook"
+                let prompt = try reviewPrompt(reviewCard([text(summary)]))
+                XCTAssertTrue(
+                    prompt.requiresReview, summary.unicodeScalars.map { String($0.value, radix: 16) }.joined())
+                XCTAssertFalse(prompt.hiddenCharacters)
+            }
+        }
+
+        func testCodeChildrenAndLongLinesNeedReview() throws {
+            XCTAssertTrue(
+                try reviewPrompt(reviewCard([text(shortSummary), code("{\"path\": \"/tmp/a\"}")])).requiresReview)
+            XCTAssertTrue(
+                try reviewPrompt(
+                    reviewCard([
+                        text(shortSummary),
+                        .object(["type": .string("table"), "headers": .array([.string("Key")]), "rows": .array([])]),
+                    ])
+                ).requiresReview)
+            let edge = "Open https://example.com/ in the Astral browser pane on MacBook "
+            let limit = edge + String(repeating: "a", count: 300 - edge.count)
+            XCTAssertEqual(limit.count, 300)
+            XCTAssertFalse(try reviewPrompt(reviewCard([text(limit)])).requiresReview)
+            XCTAssertTrue(try reviewPrompt(reviewCard([text(limit + "b")])).requiresReview)
+            XCTAssertTrue(try reviewPrompt(reviewCard([text(edge + " two  spaces")])).requiresReview)
+            XCTAssertFalse(try reviewPrompt(originCard()).requiresReview)
+        }
+
+        func testOnlyCaptionsMayStayHiddenBehindOneClick() throws {
+            let captioned = try reviewPrompt(
+                reviewCard([text(shortSummary), text(caption, "caption"), text("Second caption", "caption")]))
+            XCTAssertFalse(captioned.requiresReview)
+            XCTAssertEqual(captioned.details, [shortSummary, caption, "Second caption"])
+            let extra = try reviewPrompt(reviewCard([text(shortSummary), text("Folder: /Users/me/private")]))
+            XCTAssertTrue(extra.requiresReview)
+            XCTAssertEqual(extra.details, [shortSummary, "Folder: /Users/me/private"])
+        }
+
+        func testShortSingleLineCardStaysOneClick() throws {
+            let prompt = try reviewPrompt(reviewCard([text(shortSummary), text(caption, "caption")]))
+            XCTAssertFalse(prompt.requiresReview)
+            XCTAssertFalse(prompt.hiddenCharacters)
+            XCTAssertEqual(prompt.summary, shortSummary)
+            XCTAssertEqual(prompt.site, "https://example.com")
+        }
+
+        func testDecisionsEchoTheButtonPayloadIncludingItsDisplayDigest() throws {
+            for allow in [true, false] {
+                let (model, sent) = try model()
+                let card = reviewCard([text(commandSummary())], digest: digest)
+                model.canvas = [card]
+                let prompt = try XCTUnwrap(model.approvalPrompts.first)
+                let button = try XCTUnwrap(
+                    card.children.first { $0.raw["payload"]?["decision"] == .string(allow ? "approve" : "decline") })
+                let expected = try XCTUnwrap(button.raw["payload"]?.objectValue)
+                XCTAssertEqual((allow ? prompt.allow : prompt.deny).payload, expected)
+                model.decideApproval(prompt, allow: allow)
+                let echoed = try XCTUnwrap(decisions(sent()).last?.objectValue)
+                for (key, value) in expected { XCTAssertEqual(echoed[key], value, key) }
+                XCTAssertTrue(
+                    Set(echoed.keys).subtracting(expected.keys).isSubset(of: ["submission_id", "request_generation"]),
+                    "\(echoed.keys.sorted())")
+                XCTAssertEqual(echoed["display_digest"], allow ? .string(digest) : nil)
+            }
+        }
+
+        func testDetailsKeepEveryTextAndCodeInOrderWithoutTruncation() throws {
+            let long = "Write file on Studio Mac (overwrite): " + String(repeating: "/very/long/path", count: 40)
+            let script = (0..<200).map { "line \($0): document.body.dataset.k\($0) = 'v'" }.joined(separator: "\n")
+            let card = reviewCard([
+                text(long), text("Risks: writes_files. Source: model."), code(script), text(caption, "caption"),
+                .object([
+                    "type": .string("container"),
+                    "children": .array([text("Nested note"), code("--- a\n+++ b\n-old\n+new")]),
+                ]),
+            ])
+            let prompt = try reviewPrompt(card)
+            XCTAssertTrue(prompt.requiresReview)
+            XCTAssertEqual(
+                prompt.details,
+                [
+                    long, "Risks: writes_files. Source: model.", script, caption, "Nested note",
+                    "--- a\n+++ b\n-old\n+new",
+                ])
+            XCTAssertTrue(prompt.summary.hasSuffix("…"))
+            XCTAssertFalse(prompt.details.contains { ["Approve", "Decline"].contains($0) })
+        }
+
+        private func attachedSheet(_ mount: SurfaceMount) async throws -> NSWindow {
+            for _ in 0..<40 where mount.window.attachedSheet == nil { try await mount.settle() }
+            return try XCTUnwrap(mount.window.attachedSheet, "The review sheet did not open")
+        }
+
+        private func reviewMount(_ card: AstralComponent) async throws -> (
+            AppModel, () -> [JSONValue], SurfaceMount, NSWindow
+        ) {
+            let (model, sent) = try model()
+            model.canvas = [card]
             let prompt = try XCTUnwrap(model.approvalPrompts.first)
             let mount = SurfaceMount(
-                MacApprovalBanner(prompt: prompt), model: model, size: CGSize(width: 820, height: 76))
-            defer { mount.close() }
+                MacApprovalBanner(prompt: prompt), model: model, size: CGSize(width: 820, height: 640))
             try await mount.settle()
-            let tree = try mount.accessibility
-            let banner = try XCTUnwrap(tree.first { $0.identifier == "approval-banner" })
-            XCTAssertEqual(banner.label, "Approval waiting")
-            let buttons = tree.filter { $0.role == kAXButtonRole }
-            XCTAssertEqual(buttons.map(\.identifier), ["approval-banner-deny", "approval-banner-allow"])
-            XCTAssertEqual(buttons.map(\.label), ["Deny", "Allow"])
+            try mount.click(text: "Review")
+            return (model, sent, mount, try await attachedSheet(mount))
+        }
+
+        func testReturnAloneNeverApprovesFromTheReviewSheet() async throws {
+            let (_, sent, mount, sheet) = try await reviewMount(
+                reviewCard([text(commandSummary()), text(caption, "caption")], digest: digest))
+            defer { mount.close() }
+            XCTAssertFalse(
+                sheet.performKeyEquivalent(with: try SurfaceKey.returnKey.event(windowNumber: sheet.windowNumber)))
+            sheet.sendEvent(try SurfaceKey.returnKey.event(windowNumber: sheet.windowNumber))
+            try await mount.settle()
+            XCTAssertTrue(decisions(sent()).isEmpty)
+            XCTAssertNotNil(mount.window.attachedSheet)
             XCTAssertTrue(
-                tree.contains { $0.value == "https://docs.example.com" || $0.label == "https://docs.example.com" })
+                sheet.performKeyEquivalent(with: try SurfaceKey.commandReturn.event(windowNumber: sheet.windowNumber)))
+            try await mount.settle()
+            let approved = try XCTUnwrap(decisions(sent()).last)
+            XCTAssertEqual(approved["decision"], .string("approve"))
+            XCTAssertEqual(approved["display_digest"], .string(digest))
+            XCTAssertEqual(decisions(sent()).count, 1)
+            XCTAssertNil(mount.window.attachedSheet)
+        }
+
+        func testEscapeDeniesFromTheReviewSheet() async throws {
+            let (_, sent, mount, sheet) = try await reviewMount(reviewCard([text(commandSummary())]))
+            defer { mount.close() }
+            XCTAssertTrue(
+                sheet.performKeyEquivalent(with: try SurfaceKey.escape.event(windowNumber: sheet.windowNumber)))
+            try await mount.settle()
+            XCTAssertEqual(decisions(sent()).map { $0["decision"] }, [.string("decline")])
+            XCTAssertNil(mount.window.attachedSheet)
+        }
+
+        func testReviewSheetClosesWithoutDecidingWhenTheCardIsWithdrawn() async throws {
+            let (model, sent, mount, _) = try await reviewMount(reviewCard([text(commandSummary())]))
+            defer { mount.close() }
+            model.canvas = []
+            for _ in 0..<40 where mount.window.attachedSheet != nil { try await mount.settle() }
+            XCTAssertNil(mount.window.attachedSheet)
+            XCTAssertTrue(decisions(sent()).isEmpty)
+        }
+
+        func testReviewSheetShowsTheTitleWarningAndEveryDetailInEachTheme() async throws {
+            let escaped =
+                "Contains hidden or direction-changing characters, shown as \\u{…} escapes.\n"
+                + "Run a command on Studio Mac\nCommand: echo \\u{202E}txt.exe"
+            let card = reviewCard(
+                [text(escaped), text(caption, "caption"), code("{\"argv\": [\"echo\"]}")], flags: ["hidden_characters"])
+            for preset in SurfaceFixtures.presets {
+                let (model, sent) = try model()
+                model.canvas = [card]
+                let prompt = try XCTUnwrap(model.approvalPrompts.first)
+                let mount = SurfaceMount(
+                    MacApprovalReviewSheet(prompt: prompt), model: model, size: CGSize(width: 620, height: 520),
+                    preset: preset)
+                defer { mount.close() }
+                try await mount.settle()
+                let tree = try mount.accessibility
+                XCTAssertTrue(tree.contains { $0.identifier == "approval-review-sheet" }, preset)
+                XCTAssertTrue(tree.contains { $0.identifier == "approval-review-warning" }, preset)
+                for index in prompt.details.indices {
+                    XCTAssertTrue(
+                        tree.contains { $0.identifier == "approval-review-detail-\(index)" }, "\(preset) \(index)")
+                }
+                let buttons = tree.filter { $0.role == kAXButtonRole }
+                XCTAssertEqual(buttons.map(\.identifier), ["approval-review-deny", "approval-review-allow"], preset)
+                let text = try mount.text()
+                for kept in ["Confirm an action on Studio Mac", "Command: echo", "Deny", "Allow"] {
+                    XCTAssertTrue(text.contains(kept), "\(preset) missing \(kept): \(text)")
+                }
+                try mount.snapshot(self, name: "approval_review_sheet-\(preset)")
+                try mount.click(text: "Allow", exact: true)
+                try await mount.settle()
+                XCTAssertEqual(decisions(sent()).last?["decision"], .string("approve"), preset)
+            }
         }
     }
 #endif

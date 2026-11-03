@@ -242,6 +242,7 @@ final class AppModel: NSObject {
 
     var signedIn = false {
         didSet {
+            if oldValue && !signedIn { cancelChatDeletion() }
             #if os(macOS)
                 if oldValue && !signedIn {
                     retireProjectCatalog()
@@ -297,6 +298,7 @@ final class AppModel: NSObject {
         @ObservationIgnored private var projectDeletionAction: (() async -> Void)?
     #endif
     var activeChatId: String?
+    private(set) var chatPendingDeletion: ChatDeletionRequest?
 
     var composerDraft = ""
     var composerAccessoryPresented = false
@@ -590,6 +592,7 @@ final class AppModel: NSObject {
 
     @ObservationIgnored var currentConnectionVoiceSendOverride: ((String) -> Void)?
     @ObservationIgnored var currentApprovalDecisionSendOverride: (@Sendable (String, String) -> Bool)?
+    @ObservationIgnored var restTransportOverride: RestClient.Transport?
 
     var serverBase: URL {
         URL(string: serverBaseText) ?? URL(string: AstralConfig.serverBaseURL)!
@@ -601,9 +604,9 @@ final class AppModel: NSObject {
     }
 
     var rest: RestClient {
-        RestClient(serverBase: serverBase) { [weak self] in
-            await self?.freshAccessToken()
-        }
+        RestClient(
+            serverBase: serverBase, tokenProvider: { [weak self] in await self?.freshAccessToken() },
+            transport: restTransportOverride)
     }
 
     override convenience init() {
@@ -4040,6 +4043,10 @@ final class AppModel: NSObject {
         let requestId: String
         let site: String?
         let summary: String
+        let title: String?
+        let details: [String]
+        let hiddenCharacters: Bool
+        let requiresReview: Bool
         let allow: Choice
         let deny: Choice
         var id: String { requestId }
@@ -4087,11 +4094,31 @@ final class AppModel: NSObject {
                 ?? choices.first(where: { $0.decision == "approve_and_resume" }),
             let deny = choices.first(where: { $0.decision == "decline" })
         else { return nil }
-        let texts = card.children.filter { $0.type == "text" }.compactMap(\.textContent)
-        let summary = activityLine(texts.first { !$0.hasPrefix("Tool: ") } ?? approval.summary, limit: 300)
+        let texts = card.children.filter { $0.type == "text" }
+        let source = texts.compactMap(\.textContent).first { !$0.hasPrefix("Tool: ") } ?? approval.summary
+        let summary = activityLine(source, limit: 300)
+        var hidden = texts.filter { $0.variant != "caption" }.compactMap(\.textContent)
+        if let shown = hidden.firstIndex(of: source) { hidden.remove(at: shown) }
+        let flagged = card.raw["review_flags"]?.arrayValue?.contains(.string("hidden_characters")) == true
+        let requiresReview =
+            flagged || summary != source
+            || source.unicodeScalars.contains { [.control, .format].contains($0.properties.generalCategory) }
+            || card.children.contains { !["text", "button"].contains($0.type) } || !hidden.isEmpty
         return ApprovalPrompt(
-            requestId: approval.requestId, site: approvalSite(summary), summary: summary, allow: allow.choice,
-            deny: deny.choice)
+            requestId: approval.requestId, site: approvalSite(summary), summary: summary, title: card.title,
+            details: approvalDetails(card.children), hiddenCharacters: flagged, requiresReview: requiresReview,
+            allow: allow.choice, deny: deny.choice)
+    }
+
+    static func approvalDetails(_ components: [AstralComponent]) -> [String] {
+        components.flatMap { component -> [String] in
+            switch component.type {
+            case "button": []
+            case "text": component.textContent.map { [$0] } ?? []
+            case "code": component.raw["code"]?.stringValue.map { [$0] } ?? []
+            default: approvalDetails(component.children)
+            }
+        }
     }
 
     private static func bypassApproved(_ card: AstralComponent) -> Bool {
@@ -6365,11 +6392,35 @@ final class AppModel: NSObject {
 
     func deleteChat(_ chatId: String) {
         Task {
-            guard (try? await rest.deleteChat(id: chatId)) == true else { return }
+            guard (try? await rest.deleteChat(id: chatId)) == true else {
+                bannerIsError = true
+                errorBanner = "Couldn't delete this conversation. It is still in your chats."
+                return
+            }
             history.removeAll { $0.id == chatId }
             clearConfirmedDeletion(chatId)
             sendEvent("get_history")
         }
+    }
+
+    struct ChatDeletionRequest: Equatable, Identifiable {
+        let chat: ChatSummary
+        let owner: DownloadOwner
+        let server: URL
+        var id: String { chat.id }
+    }
+
+    func requestChatDeletion(_ chat: ChatSummary) {
+        guard !mandatorySurface else { return }
+        chatPendingDeletion = ChatDeletionRequest(chat: chat, owner: downloadOwner, server: serverBase)
+    }
+
+    func cancelChatDeletion() { chatPendingDeletion = nil }
+
+    func confirmChatDeletion(_ request: ChatDeletionRequest) {
+        cancelChatDeletion()
+        guard request.owner == downloadOwner, request.server == serverBase else { return }
+        deleteChat(request.chat.id)
     }
 
     func goTo(_ target: Screen) {

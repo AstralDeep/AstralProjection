@@ -418,7 +418,7 @@ public struct RestClient: Sendable {
         var body = Data()
         let mime = mimeType ?? "application/octet-stream"
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+        body.append(Data("Content-Disposition: form-data; name=\"file\"; \(Self.formDataFilename(filename))\r\n".utf8))
         body.append("Content-Type: \(mime)\r\n\r\n".data(using: .utf8)!)
         body.append(fileData)
         body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
@@ -433,6 +433,19 @@ public struct RestClient: Sendable {
             filename: json["filename"]?.stringValue ?? filename,
             category: json["category"]?.stringValue ?? "file",
             parserStatus: json["parser_status"]?.stringValue)
+    }
+
+    static func formDataFilename(_ filename: String) -> String {
+        var quoted = ""
+        for scalar in filename.unicodeScalars {
+            switch scalar {
+            case "\"": quoted += "%22"
+            case "\r": quoted += "%0D"
+            case "\n": quoted += "%0A"
+            default: quoted.unicodeScalars.append(scalar)
+            }
+        }
+        return "filename=\"\(quoted)\""
     }
 
     public func downloadFile(

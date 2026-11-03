@@ -242,6 +242,20 @@
                 MacProjectChoiceSheet()
             }
             .sheet(item: $renamingChat) { chat in MacRenameChatSheet(chat: chat) }
+            .confirmationDialog(
+                Text(verbatim: "Delete “\(model.chatPendingDeletion?.chat.displayTitle ?? "")”?"),
+                isPresented: Binding(
+                    get: { model.chatPendingDeletion != nil },
+                    set: { if !$0 { model.cancelChatDeletion() } }),
+                titleVisibility: .visible, presenting: model.chatPendingDeletion
+            ) { request in
+                Button("Delete", role: .destructive) { model.confirmChatDeletion(request) }
+                    .accessibilityIdentifier("workbench-delete-chat-confirm")
+                Button("Cancel", role: .cancel) { model.cancelChatDeletion() }.keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("workbench-delete-chat-cancel")
+            } message: { _ in
+                Text(verbatim: "This conversation will be deleted.")
+            }
             .bypassConfirmation(host: model.macComputerHost, origin: .palette)
             .onChange(of: model.composerDraft) { old, new in
                 if restoringDraft {
@@ -516,7 +530,9 @@
                                         separator: ", ")
                                 )
                                 .contextMenu {
-                                    Button("Delete conversation", role: .destructive) { model.deleteChat(chat.id) }
+                                    Button("Delete conversation", role: .destructive) {
+                                        model.requestChatDeletion(chat)
+                                    }
                                 }
                             }
                         }
