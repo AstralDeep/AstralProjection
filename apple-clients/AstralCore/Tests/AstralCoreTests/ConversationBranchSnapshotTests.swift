@@ -39,12 +39,15 @@ final class ConversationBranchSnapshotTests: XCTestCase {
         return ConversationMessage(json: value)
     }
 
-    private func branch(from json: String) throws -> ConversationMessageBranch {
-        try XCTUnwrap(decoded(json)?.branch)
+    private func branch(from json: String) -> ConversationMessageBranch? {
+        decoded(json)?.branch
     }
 
-    func testBranchDecodesExactShapeAndNeighbors() throws {
-        let value = try branch(from: messageJSON(branch: branchJSON()))
+    func testBranchDecodesExactShapeAndNeighbors() {
+        guard let value = branch(from: messageJSON(branch: branchJSON())) else {
+            XCTFail("A well-formed branch snapshot should decode")
+            return
+        }
 
         XCTAssertEqual(value.groupId, group)
         XCTAssertEqual(value.index, 2)
@@ -57,23 +60,29 @@ final class ConversationBranchSnapshotTests: XCTestCase {
         XCTAssertNil(value.neighbor(of: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", step: 1))
     }
 
-    func testMessageWithoutBranchKeepsLegacyShapeAndNilBranch() throws {
-        let value = try XCTUnwrap(decoded(messageJSON(branch: nil)))
+    func testMessageWithoutBranchKeepsLegacyShapeAndNilBranch() {
+        guard let value = decoded(messageJSON(branch: nil)) else {
+            XCTFail("A message without branch fields should decode")
+            return
+        }
 
         XCTAssertEqual(value.visibleText, "Question")
         XCTAssertNil(value.branch)
     }
 
-    func testSingleSiblingBranchIsAccepted() throws {
-        let value = try branch(from: messageJSON(branch: branchJSON(index: 1, siblings: [turn])))
+    func testSingleSiblingBranchIsAccepted() {
+        guard let value = branch(from: messageJSON(branch: branchJSON(index: 1, siblings: [turn]))),
+            value.count == 1, value.index == 1
+        else {
+            XCTFail("A single-sibling branch should decode with index 1")
+            return
+        }
 
-        XCTAssertEqual(value.count, 1)
-        XCTAssertEqual(value.index, 1)
         XCTAssertNil(value.neighbor(of: turn, step: -1))
         XCTAssertNil(value.neighbor(of: turn, step: 1))
     }
 
-    func testMaximumSiblingCountIsAcceptedAndBeyondIsRejected() throws {
+    func testMaximumSiblingCountIsAcceptedAndBeyondIsRejected() {
         let members = (0..<50).map { String(format: "%08x-a111-4111-8111-111111111111", $0) }
         XCTAssertNotNil(decoded(messageJSON(branch: branchJSON(index: 17, siblings: members))))
         let overflow = members + ["ffffffff-ffff-4fff-8fff-ffffffffffff"]
@@ -94,25 +103,33 @@ final class ConversationBranchSnapshotTests: XCTestCase {
             branchJSON(siblings: [older, turn, turn]),
             branchJSON(siblings: [older, "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"]),
             branchJSON(siblings: [older, turn, newer], extraField: true),
-            "{\"group_id\":\"\(group)\",\"index\":2,\"siblings\":[\"\(older)\",\"\(turn)\",\"\(newer)\"]}",
+            """
+            {"group_id":"\(group)","index":2,"siblings":["\(older)","\(turn)","\(newer)"]}
+            """,
             "null",
             "[1,2,3]",
-            "{\"group_id\":\"\(group)\",\"index\":2.5,\"count\":3,\"siblings\":[\"\(older)\",\"\(turn)\",\"\(newer)\"]}",
-            "{\"message_id\":\"\(turn)\",\"role\":\"user\",\"created_at\":\"2026-11-03T10:00:00Z\",\"parts\":[{\"type\":\"text\",\"text\":\"Question\"}],\"attachments\":[],\"branch\":\(branchJSON()),\"extra\":true}",
+            """
+            {"group_id":"\(group)","index":2.5,"count":3,"siblings":["\(older)","\(turn)","\(newer)"]}
+            """,
+            """
+            {"message_id":"\(turn)","role":"user","created_at":"2026-11-03T10:00:00Z",
+             "parts":[{"type":"text","text":"Question"}],"attachments":[],
+             "branch":\(branchJSON()),"extra":true}
+            """,
         ]
         for candidate in invalid {
             XCTAssertNil(decoded(messageJSON(branch: candidate)), candidate)
         }
     }
 
-    func testSnapshotTranscriptCarriesBranchesIntoMessages() throws {
+    func testSnapshotTranscriptCarriesBranchesIntoMessages() {
         let transcript = """
         [
           {"message_id":"\(older)","role":"user","created_at":"2026-11-03T09:59:00Z","parts":[{"type":"text","text":"Older"}],"attachments":[]},
           {"message_id":"\(turn)","role":"user","created_at":"2026-11-03T10:00:00Z","parts":[{"type":"text","text":"Question"}],"attachments":[],"branch":\(branchJSON())}
         ]
         """
-        let frame = try XCTUnwrap(InboundFrame.parse(
+        guard let frame = InboundFrame.parse(
             """
             {"type":"conversation_snapshot","schema_version":1,
              "snapshot_id":"55555555-5555-4555-8555-555555555555",
@@ -123,8 +140,12 @@ final class ConversationBranchSnapshotTests: XCTestCase {
              "committed_at":"2026-11-03T10:01:00Z",
              "transcript":\(transcript),
              "canvas":{"target":"canvas","components":[]}}
-            """))
-        let snapshot = try XCTUnwrap(ConversationSnapshot(frame: frame))
+            """),
+            let snapshot = ConversationSnapshot(frame: frame)
+        else {
+            XCTFail("A snapshot carrying branch fields should parse")
+            return
+        }
 
         XCTAssertNil(snapshot.messages[0].branch)
         XCTAssertEqual(snapshot.messages[1].branch?.groupId, group)

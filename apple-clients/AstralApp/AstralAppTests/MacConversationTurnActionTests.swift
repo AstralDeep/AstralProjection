@@ -26,9 +26,14 @@
             super.tearDown()
         }
 
-        private func model() throws -> AppModel {
+        private func model() -> AppModel {
             let suite = "MacConversationTurnActionTests.\(UUID().uuidString)"
-            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            guard let defaults = UserDefaults(suiteName: suite) else {
+                XCTFail("No defaults suite")
+                return AppModel(
+                    conversationResumeStore: ConversationResumeStore(),
+                    tokenStore: InMemoryTokenStore(), defaults: .standard)
+            }
             addTeardownBlock { UserDefaults().removePersistentDomain(forName: suite) }
             let model = AppModel(
                 conversationResumeStore: ConversationResumeStore(defaults: defaults),
@@ -110,14 +115,17 @@
             try? JSONValue.parse(Data(text.utf8))
         }
 
-        func testForkFromUserTurnDispatchesExactChatForkIntent() throws {
-            let model = try model()
+        func testForkFromUserTurnDispatchesExactChatForkIntent() {
+            let model = model()
             model.turns = [turn(mine, role: "user", text: "Question")]
             let sent = capture(model)
 
             model.forkFromTurn(turn(mine, role: "user", text: "Question"))
 
-            let frame = try XCTUnwrap(sent().last)
+            guard let frame = sent().last else {
+                XCTFail("No outbound frame was captured")
+                return
+            }
             XCTAssertEqual(frame["action"], .string("chat_fork"))
             XCTAssertEqual(frame["session_id"], .string(chat))
             XCTAssertEqual(frame["payload"]?["chat_id"], .string(chat))
@@ -126,8 +134,8 @@
             XCTAssertNil(model.pendingTurnDeparture)
         }
 
-        func testForkWithBranchStructureWaitsForTheOptionalSummaryChoice() throws {
-            let model = try model()
+        func testForkWithBranchStructureWaitsForTheOptionalSummaryChoice() {
+            let model = model()
             model.turns = [
                 turn(older, role: "user", text: "First wording"),
                 turn(mine, role: "user", text: "Revised wording", branch: siblingBranch(
@@ -145,14 +153,17 @@
 
             model.forkFromTurn(turn(mine, role: "user", text: "Revised wording"))
             model.confirmTurnDeparture(summarizeDeparted: true)
-            let frame = try XCTUnwrap(sent().last)
+            guard let frame = sent().last else {
+                XCTFail("No outbound frame was captured")
+                return
+            }
             XCTAssertEqual(frame["action"], .string("chat_fork"))
             XCTAssertEqual(frame["payload"]?["summarize_departed"], .bool(true))
             XCTAssertNil(model.pendingTurnDeparture)
         }
 
-        func testRegenerateDispatchesChatRegenerateForAssistantTurns() throws {
-            let model = try model()
+        func testRegenerateDispatchesChatRegenerateForAssistantTurns() {
+            let model = model()
             model.turns = [
                 turn(mine, role: "user", text: "Question"),
                 turn(reply, role: "assistant", text: "Answer"),
@@ -160,7 +171,10 @@
             let sent = capture(model)
 
             model.regenerateTurn(turn(reply, role: "assistant", text: "Answer"))
-            let frame = try XCTUnwrap(sent().last)
+            guard let frame = sent().last else {
+                XCTFail("No outbound frame was captured")
+                return
+            }
             XCTAssertEqual(frame["action"], .string("chat_regenerate"))
             XCTAssertEqual(frame["payload"]?["chat_id"], .string(chat))
             XCTAssertEqual(frame["payload"]?["turn_id"], .string(reply))
@@ -170,8 +184,8 @@
             XCTAssertEqual(sent().count, 1)
         }
 
-        func testBranchSelectDispatchesTheExactTargetSibling() throws {
-            let model = try model()
+        func testBranchSelectDispatchesTheExactTargetSibling() {
+            let model = model()
             let branched = turn(
                 mine, role: "user", text: "Revised wording",
                 branch: siblingBranch(index: 2, siblings: [older, mine, newer], messageId: mine))
@@ -183,7 +197,10 @@
             XCTAssertEqual(sent().count, 0)
             model.confirmTurnDeparture(summarizeDeparted: false)
             XCTAssertNil(model.pendingTurnDeparture)
-            let frame = try XCTUnwrap(sent().last)
+            guard let frame = sent().last else {
+                XCTFail("No outbound frame was captured")
+                return
+            }
             XCTAssertEqual(frame["action"], .string("chat_branch_select"))
             XCTAssertEqual(frame["payload"]?["turn_id"], .string(mine))
             XCTAssertEqual(frame["payload"]?["target_turn_id"], .string(newer))
@@ -196,8 +213,8 @@
             XCTAssertEqual(sent().count, 1)
         }
 
-        func testRunningTurnDisablesEveryTurnAction() throws {
-            let model = try model()
+        func testRunningTurnDisablesEveryTurnAction() {
+            let model = model()
             model.turns = [
                 turn(mine, role: "user", text: "Question"),
                 turn(reply, role: "assistant", text: "Answer"),
@@ -219,9 +236,9 @@
             XCTAssertNil(model.pendingTurnDeparture)
         }
 
-        func testReadOnlySignedOutAndMandatoryStatesDisableTurnActions() throws {
+        func testReadOnlySignedOutAndMandatoryStatesDisableTurnActions() {
             for state in ["read_only", "signed_out", "disconnected", "mandatory", "no_chat"] {
-                let model = try model()
+                let model = model()
                 model.turns = [turn(mine, role: "user", text: "Question")]
                 if state == "read_only" { model.timelineReadOnly = true }
                 if state == "signed_out" { model.signedIn = false }
@@ -239,14 +256,20 @@
             }
         }
 
-        func testRefusedForkShowsRefusalAndKeepsTheCurrentBranch() throws {
-            let model = try model()
+        func testRefusedForkShowsRefusalAndKeepsTheCurrentBranch() {
+            let model = model()
             model.turns = [turn(mine, role: "user", text: "Question")]
             let sent = capture(model)
 
             model.forkFromTurn(turn(mine, role: "user", text: "Question"))
-            let frame = try XCTUnwrap(sent().last)
-            let submission = try XCTUnwrap(submissionId(of: frame))
+            guard let frame = sent().last else {
+                XCTFail("No outbound frame was captured")
+                return
+            }
+            guard let submission = submissionId(of: frame) else {
+                XCTFail("The captured frame carried no submission identifier")
+                return
+            }
             XCTAssertEqual(model.activeChatId, chat)
 
             model.handleFrame(refusal(submission))
@@ -259,8 +282,8 @@
             XCTAssertNil(model.pendingTurnDeparture)
         }
 
-        func testRefusedEditResendDiscardsTheOptimisticTurnAndKeepsTheBranch() throws {
-            let model = try model()
+        func testRefusedEditResendDiscardsTheOptimisticTurnAndKeepsTheBranch() {
+            let model = model()
             model.turns = [turn(mine, role: "user", text: "Question")]
             let sent = capture(model)
 
@@ -268,13 +291,19 @@
             model.turnEditor?.draft = "Take two"
             model.sendEditedTurn()
 
-            XCTAssertEqual(model.turnEditor, nil)
+            XCTAssertNil(model.turnEditor)
             XCTAssertEqual(model.transientTurns.count, 1)
-            let frame = try XCTUnwrap(sent().last)
+            guard let frame = sent().last else {
+                XCTFail("No outbound frame was captured")
+                return
+            }
             XCTAssertEqual(frame["action"], .string("chat_message"))
             XCTAssertEqual(frame["payload"]?["revised_turn_id"], .string(mine))
             XCTAssertEqual(frame["payload"]?["message"], .string("Take two"))
-            let submission = try XCTUnwrap(submissionId(of: frame))
+            guard let submission = submissionId(of: frame) else {
+                XCTFail("The captured frame carried no submission identifier")
+                return
+            }
 
             model.handleFrame(refusal(submission))
 
@@ -285,7 +314,7 @@
         }
 
         func testEditedTurnClearedByBranchSwitchingSnapshotLeavesNoStaleEditor() throws {
-            let model = try model()
+            let model = model()
             model.turns = [turn(mine, role: "user", text: "Question")]
             model.beginTurnEdit(turn(mine, role: "user", text: "Question"))
             XCTAssertNotNil(model.turnEditor)
@@ -300,8 +329,8 @@
             XCTAssertEqual(model.turns[1].branch?.count, 3)
         }
 
-        func testSnapshotWithoutBranchesKeepsTheConversationUnbranched() throws {
-            let model = try model()
+        func testSnapshotWithoutBranchesKeepsTheConversationUnbranched() {
+            let model = model()
             let generation = UUID().uuidString.lowercased()
             XCTAssertTrue(
                 model.openConversationRequest(chatId: chat, requestGeneration: generation, purpose: .hydration))
@@ -326,8 +355,8 @@
             XCTAssertNil(model.turns.first?.branch)
         }
 
-        func testCopyTurnTextPlacesPlainTextOnThePasteboard() throws {
-            let model = try model()
+        func testCopyTurnTextPlacesPlainTextOnThePasteboard() {
+            let model = model()
             model.copyTurnText(turn(mine, role: "assistant", text: "Answer body"))
 
             XCTAssertEqual(NSPasteboard.general.string(forType: .string), "Answer body")
@@ -338,8 +367,8 @@
             XCTAssertEqual(NSPasteboard.general.string(forType: .string), "Answer body")
         }
 
-        func testEditFlowPrefillsCancelsAndRefusesEmptySends() throws {
-            let model = try model()
+        func testEditFlowPrefillsCancelsAndRefusesEmptySends() {
+            let model = model()
             model.turns = [turn(mine, role: "user", text: "Question")]
             let sent = capture(model)
 
@@ -358,7 +387,10 @@
             model.turnEditor?.draft = "Take two"
             model.sendEditedTurn()
             XCTAssertEqual(sent().count, 1)
-            let frame = try XCTUnwrap(sent().last)
+            guard let frame = sent().last else {
+                XCTFail("No outbound frame was captured")
+                return
+            }
             XCTAssertEqual(frame["payload"]?["message"], .string("Take two"))
             XCTAssertEqual(frame["payload"]?["revised_turn_id"], .string(mine))
             XCTAssertNil(frame["payload"]?["summarize_departed"])
@@ -367,8 +399,8 @@
             XCTAssertNil(model.turnEditor)
         }
 
-        func testEditOfferedOnlyForUserTurnsAndRegenerateOnlyForOtherRoles() throws {
-            let model = try model()
+        func testEditOfferedOnlyForUserTurnsAndRegenerateOnlyForOtherRoles() {
+            let model = model()
             model.turns = [
                 turn(mine, role: "user", text: "Question"),
                 turn(reply, role: "assistant", text: "Answer"),
@@ -387,7 +419,7 @@
         }
 
         func testTranscriptExposesNamedActionsAndTheSwitcherToAccessibility() async throws {
-            let model = try model()
+            let model = model()
             model.turns = [
                 turn(older, role: "user", text: "First wording"),
                 turn(mine, role: "user", text: "Revised wording", branch: siblingBranch(
