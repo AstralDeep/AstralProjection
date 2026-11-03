@@ -4709,8 +4709,11 @@
     "authorize_action",
     "cancel_task",
     "chat_archive",
+    "chat_branch_select",
+    "chat_fork",
     "chat_message",
     "chat_pin",
+    "chat_regenerate",
     "chat_rename",
     "chat_unarchive",
     "chat_unpin",
@@ -5320,6 +5323,36 @@
       ],
       "scope": "Negotiated Mac explicit decision acknowledgment only; connection_generation and chat_id bind the receipt. Never emitted for standing consent or other clients.",
       "contract": "presentation_contracts.project_workspaces_v1"
+    },
+    {
+      "field": "revised_turn_id",
+      "shape": "canonical lowercase UUID4",
+      "carried_on": [
+        "ui_event.chat_message"
+      ],
+      "scope": "Optional Mac edit-and-resend intent naming the transcript turn the message revises; absent keeps an ordinary appended message. The server re-runs identity, permission, PHI, policy and review for the resulting turn and owns the sibling branch it creates. Clients that do not advertise chat_branches_v1 never send it, and a host that does not implement conversation branches refuses the dispatch without changing the transcript.",
+      "contract": "additive turn-intent fields gated by the register_ui chat_branches_v1 capability"
+    },
+    {
+      "field": "summarize_departed",
+      "shape": "boolean",
+      "carried_on": [
+        "ui_event.chat_message",
+        "ui_event.chat_fork",
+        "ui_event.chat_regenerate",
+        "ui_event.chat_branch_select"
+      ],
+      "scope": "Optional owner consent, offered before an action leaves the displayed branch, asking the host to summarize the departed path into the resulting turn. Absent or false requests no summary; the client never invents one.",
+      "contract": "additive turn-intent fields gated by the register_ui chat_branches_v1 capability"
+    },
+    {
+      "field": "branch",
+      "shape": "object {group_id: canonical lowercase UUID4, index: integer 1..count, count: integer 1..50, siblings: array of canonical lowercase UUID4, count == siblings.length, message_id in siblings}",
+      "carried_on": [
+        "conversation_snapshot.transcript[]"
+      ],
+      "scope": "Optional per-transcript-message sibling disclosure for the active branch path; absent on every message of an unbranched chat and on legacy snapshots. Sibling identifiers let the Mac offer branch switching, and the server keeps branch state across relaunch and reconnect — the client persists none of it.",
+      "contract": "additive turn-intent fields gated by the register_ui chat_branches_v1 capability"
     }
   ],
   "component_types": [

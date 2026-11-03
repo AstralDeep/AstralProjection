@@ -884,7 +884,8 @@ public enum Outbound {
         computerHost: ComputerHostDescriptor? = nil,
         computerHostCapable: Bool = false,
         macWorkbenchSupported: Bool = false,
-        uiAuthRefreshSupported: Bool = false
+        uiAuthRefreshSupported: Bool = false,
+        chatBranchesSupported: Bool = false
     ) -> String {
         guard continuityUUID4(connectionGeneration) != nil else { return "{}" }
         let voiceCapable =
@@ -897,6 +898,7 @@ public enum Outbound {
         if voiceCapable { capabilities.append("voice") }
         if computerHostCapable { capabilities.append("computer_host_capable") }
         if uiAuthRefreshSupported { capabilities.append("ui_auth_refresh_v1") }
+        if chatBranchesSupported { capabilities.append("chat_branches_v1") }
         let workbench =
             (macWorkbenchSupported || device.macWorkbenchSupported) && device.deviceType == "macos"
             && device.consoleContract == ConsoleModel.contract
