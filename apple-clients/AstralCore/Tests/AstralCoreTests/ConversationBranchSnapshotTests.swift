@@ -35,7 +35,8 @@ final class ConversationBranchSnapshotTests: XCTestCase {
     }
 
     private func decoded(_ json: String) -> ConversationMessage? {
-        ConversationMessage(json: .parse(json))
+        guard let value = parsedJSON(json) else { return nil }
+        return ConversationMessage(json: value)
     }
 
     private func branch(from json: String) throws -> ConversationMessageBranch {
@@ -132,8 +133,6 @@ final class ConversationBranchSnapshotTests: XCTestCase {
     }
 }
 
-private extension JSONValue {
-    static func parse(_ text: String) -> JSONValue? {
-        try? JSONValue.parse(Data(text.utf8))
-    }
+private func parsedJSON(_ text: String) -> JSONValue? {
+    try? JSONValue.parse(Data(text.utf8))
 }

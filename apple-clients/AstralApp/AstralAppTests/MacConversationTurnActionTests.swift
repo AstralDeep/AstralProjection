@@ -3,8 +3,10 @@
 // fork failures.
 
 #if os(macOS)
+    import AppKit
     import AstralCore
     import Foundation
+    import SwiftUI
     import XCTest
 
     @testable import AstralDeep
