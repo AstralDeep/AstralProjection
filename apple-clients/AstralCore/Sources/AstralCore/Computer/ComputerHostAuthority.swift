@@ -132,8 +132,10 @@ public final class ComputerHostAuthority: @unchecked Sendable {
         guard desktopAvailable else { throw ComputerHostError("screen_locked", "This desktop is unavailable.") }
         try verifyProjectContext(request.projectContext)
         if projectMode,
-            ["read_file", "list_dir", "write_file", "delete_path", "run_command", "read_output", "interrupt_command"]
-                .contains(request.verb)
+            [
+                "read_file", "list_dir", "write_file", "delete_path", "run_command", "read_output",
+                "interrupt_command", "list_checkpoints", "diff_checkpoint", "restore_checkpoint",
+            ].contains(request.verb)
         {
             guard let context = request.projectContext, context.grantRevision != nil,
                 projectManifest?.projects.first(where: { $0.projectId == context.projectId })?.roots.isEmpty == false
