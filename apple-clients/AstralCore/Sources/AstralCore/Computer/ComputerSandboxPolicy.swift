@@ -120,7 +120,7 @@ public struct ComputerSandboxConfiguration: Sendable, Equatable, Codable {
     public let domains: [ComputerEgressDomain]
     public let bindings: [ComputerEgressBinding]
 
-    public static let fallback = ComputerSandboxConfiguration(mode: .shadow, domains: [], bindings: [])
+    public static let fallback = ComputerSandboxConfiguration(mode: .shadow, domains: [], bindings: [])!
 
     public init?(mode: ComputerSandboxMode, domains: [ComputerEgressDomain], bindings: [ComputerEgressBinding]) {
         guard domains.count <= ComputerEgressDomain.maximumCount,
@@ -285,7 +285,7 @@ public enum ComputerIPAddress: Sendable, Equatable, Hashable {
             case 0xFF: return .multicast
             case 0xFE where (0x80...0xBF).contains(Int(b[1])): return .linkLocal
             case 0xFC, 0xFD: return .privateNetwork
-            case 0x20: return .publicNetwork
+            case 0x20...0x3F: return .publicNetwork
             default: return .reserved
             }
         }

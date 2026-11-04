@@ -104,7 +104,7 @@
         }
 
         private func untrack(_ connection: NWConnection) {
-            lock.withLock { tracked.removeValue(forKey: ObjectIdentifier(connection)) }
+            _ = lock.withLock { tracked.removeValue(forKey: ObjectIdentifier(connection)) }
         }
 
         private func readHead(_ connection: NWConnection, buffer: Data) {
@@ -131,10 +131,10 @@
         private func route(_ connection: NWConnection, head: String, body: Data) {
             let parsed = ComputerEgressRequest.parse(head)
             guard let parsed, let target = parsed.target else {
-                record(ComputerEgressDecision(
-                    target: ComputerEgressTarget(host: "unknown", port: 0), verdict: .refuse(.malformedRequest),
-                    forwarded: false, placeholders: []))
                 reply(connection, status: "400 Bad Request")
+                guard let unknown = ComputerEgressTarget(host: "unknown", port: 0) else { return }
+                record(ComputerEgressDecision(
+                    target: unknown, verdict: .refuse(.malformedRequest), forwarded: false, placeholders: []))
                 return
             }
             let resolved = ComputerIPAddress.parse(target.host).map { [$0] } ?? Self.resolve(target.host)

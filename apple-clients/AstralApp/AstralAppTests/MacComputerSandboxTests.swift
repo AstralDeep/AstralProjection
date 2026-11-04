@@ -305,7 +305,7 @@
                 try request(
                     "run_command",
                     ["argv": .array([.string("sleep"), .string("1")]), "cwd": .string(root),
-                     "background": .bool(true)], deadline: 600000), session: session, roots: [root], authorize: {})
+                     "background": .bool(true),], deadline: 600000), session: session, roots: [root], authorize: {})
             let jobId = try XCTUnwrap(started["job_id"]?.stringValue)
             let read = try await commands.read(
                 try request("read_output", ["job_id": .string(jobId)], deadline: 30000), authorize: {})

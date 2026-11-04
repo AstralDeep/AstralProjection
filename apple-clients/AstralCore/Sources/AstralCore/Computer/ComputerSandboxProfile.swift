@@ -111,7 +111,7 @@ public enum ComputerSandboxProfile {
     }
 
     static func readDenials(root: String, patterns: [String]) -> [String] {
-        let anchored = "^(?i)" + escapedRegex(root) + "(/[^/]+)*/"
+        let anchored = "(?i)^" + escapedRegex(root) + "(/[^/]+)*/"
         var rules: [String] = []
         for pattern in patterns {
             let name = String(pattern.dropLast(pattern.hasSuffix("/") ? 1 : 0))
@@ -129,11 +129,11 @@ public enum ComputerSandboxProfile {
 
     static func protectedWriteDenials(root: String) -> [String] {
         [
-            "(deny file-write* file-set-mode file-set-times file-set-flags file-set-owner (subpath "
+            "(deny file-write* file-set* (subpath "
                 + quote(root + "/.git/hooks") + "))",
-            "(deny file-write* file-set-mode file-set-times file-set-flags file-set-owner (literal "
+            "(deny file-write* file-set* (literal "
                 + quote(root + "/.git/config") + "))",
-            "(deny file-write* file-set-mode file-set-times file-set-flags file-set-owner (literal "
+            "(deny file-write* file-set* (literal "
                 + quote(root + "/.git/config.lock") + "))",
         ]
     }
@@ -142,26 +142,26 @@ public enum ComputerSandboxProfile {
         var rules: [String] = []
         for file in shellStartupFiles {
             rules.append(
-                "(deny file-write* file-set-mode file-set-times file-set-flags file-set-owner (literal "
+                "(deny file-write* file-set* (literal "
                     + quote(home + "/" + file) + "))")
         }
         for directory in launchAgentPaths + [home + "/Library/LaunchAgents"] {
             rules.append(
-                "(deny file-write* file-set-mode file-set-times file-set-flags file-set-owner (subpath "
+                "(deny file-write* file-set* (subpath "
                     + quote(directory) + "))")
         }
         if let bundlePath, !bundlePath.isEmpty {
             rules.append(
-                "(deny file-write* file-set-mode file-set-times file-set-flags file-set-owner (subpath "
+                "(deny file-write* file-set* (subpath "
                     + quote(bundlePath) + "))")
         }
         let support = home + "/Library/Application Support/" + supportIdentifier
         rules.append(
-            "(deny file-write* file-set-mode file-set-times file-set-flags file-set-owner (subpath "
+            "(deny file-write* file-set* (subpath "
                 + quote(support) + "))")
         let preferences = home + "/Library/Preferences/" + supportIdentifier + ".plist"
         rules.append(
-            "(deny file-write* file-set-mode file-set-times file-set-flags file-set-owner (literal "
+            "(deny file-write* file-set* (literal "
                 + quote(preferences) + "))")
         return rules
     }
@@ -178,8 +178,7 @@ public enum ComputerSandboxProfile {
             "(deny default)",
             "(import \"system.sb\")",
             "",
-            "(allow process-exec (subpath \"/\"))",
-            "(allow process-exec-meta)",
+            "(allow process-exec*)",
             "(allow process-info*)",
             "(allow signal)",
             "(allow mach-lookup)",
@@ -187,7 +186,7 @@ public enum ComputerSandboxProfile {
             "(allow ipc-sysv*)",
             "(allow sysctl-read)",
             "(allow file-read* (subpath \"/\"))",
-            "(allow file-ioctl (subpath \"/\"))",
+            "(allow file-ioctl*)",
         ]
         if let port = input.proxyPort {
             lines.append("(allow network-outbound (remote ip \"127.0.0.1:\(port)\"))")
@@ -198,7 +197,7 @@ public enum ComputerSandboxProfile {
         lines.append("")
         for root in input.writeRoots where !root.isEmpty {
             lines.append(
-                "(allow file-write* file-set-mode file-set-times file-set-flags file-set-owner (subpath "
+                "(allow file-write* file-set* (subpath "
                     + quote(root) + "))")
         }
         lines.append("")

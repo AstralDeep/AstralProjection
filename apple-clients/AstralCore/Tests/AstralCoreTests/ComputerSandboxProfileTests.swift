@@ -23,9 +23,9 @@
             XCTAssertTrue(profile.contains("(version 1)"))
             XCTAssertTrue(profile.contains("(deny default)"))
             XCTAssertTrue(profile.contains("(import \"system.sb\")"))
-            XCTAssertTrue(profile.contains("(allow process-exec (subpath \"/\"))"))
+            XCTAssertTrue(profile.contains("(allow process-exec*)"))
             XCTAssertTrue(profile.contains("(allow file-read* (subpath \"/\"))"))
-            let writeRule = "(allow file-write* file-set-mode file-set-times file-set-flags file-set-owner "
+            let writeRule = "(allow file-write* file-set* "
             XCTAssertTrue(profile.contains(writeRule + "(subpath \"/Users/sam/Work/Pi-Agent\"))"))
             XCTAssertTrue(profile.contains(writeRule + "(subpath \"/private/var/folders/job-temp\"))"))
             XCTAssertFalse(profile.contains("(allow file-write* (subpath \"/Users/sam\"))"))
@@ -67,7 +67,7 @@
             XCTAssertTrue(
                 profile.contains(
                     "(deny file-read* (regex #\"(?i)^/Users/sam/Work/Pi-Agent(/[^/]+)*/[^/]*[.]pem(/|$)\"))"))
-            XCTAssertTrue(profile.contains("[^/]*[.]env"))
+            XCTAssertTrue(profile.contains("[.]env[^/]*"))
         }
 
         func testExclusionRegexesAnchorUnderTheRootAndMatchAnyDepth() throws {
