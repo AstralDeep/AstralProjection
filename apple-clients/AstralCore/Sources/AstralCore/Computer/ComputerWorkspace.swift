@@ -2,6 +2,7 @@
 // Every traversal rejects symlinks and excluded names, and every mutation rechecks the host's effect authority.
 
 #if os(macOS)
+    import CryptoKit
     import Darwin
     import Foundation
 
@@ -15,9 +16,35 @@
             inode = info.st_ino
             generation = info.st_gen
         }
+        public var digest: String {
+            let value = "\(device):\(inode):\(generation)"
+            return SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+        }
+    }
+
+    public struct ComputerWorkspaceTreeEntry: Sendable, Equatable {
+        public enum Kind: Sendable, Equatable {
+            case directory, regular, symlink, other, excluded, protected, repository
+        }
+        public let parts: [String]
+        public let kind: Kind
+        public let mode: mode_t
+        public let size: Int
+        public let linked: Bool
+
+        public var path: String { parts.joined(separator: "/") }
+        fileprivate init(parts: [String], kind: Kind, info: stat?, linked: Bool = false) {
+            self.parts = parts
+            self.kind = kind
+            mode = info.map { $0.st_mode & 0o7777 } ?? 0
+            size = info.map { Int($0.st_size) } ?? 0
+            self.linked = linked
+        }
     }
 
     public final class ComputerWorkspace: @unchecked Sendable {
+        static let protectedComponents: Set<String> = [".ssh", ".aws", ".gnupg", ".azure", ".config", "keychains"]
+        static let repositoryComponent = ".git"
         public let root: String
         public let rootIdentity: ComputerWorkspaceIdentity
         public let exclusions: ComputerWorkspaceExclusions
@@ -28,10 +55,9 @@
                 "/", "/System", "/Library", "/Applications", "/usr", "/bin", "/sbin", "/private", "/Users",
                 FileManager.default.homeDirectoryForCurrentUser.path,
             ]
-            let protected: Set<String> = [".ssh", ".aws", ".gnupg", ".azure", ".config", "keychains"]
             let folded = canonical.lowercased()
             guard !forbidden.map({ $0.lowercased() }).contains(folded), !canonical.contains("\0"),
-                !folded.split(separator: "/").contains(where: { protected.contains(String($0)) }),
+                !folded.split(separator: "/").contains(where: { Self.protectedComponents.contains(String($0)) }),
                 !["/system/", "/library/", "/applications/", "/usr/", "/bin/", "/sbin/", "/private/etc/"].contains(
                     where: folded.hasPrefix)
             else {
@@ -74,8 +100,7 @@
                 throw ComputerHostError("permission_denied", "The path is outside the selected workspace.")
             }
             let parts = normalized.dropFirst(root.count).split(separator: "/").map(String.init)
-            let protected: Set<String> = [".ssh", ".aws", ".gnupg", ".azure", ".config", "keychains"]
-            guard !parts.contains(where: { protected.contains($0.lowercased()) }) else {
+            guard !parts.contains(where: { Self.protectedComponents.contains($0.lowercased()) }) else {
                 throw ComputerHostError("permission_denied", "Credential directories are unavailable to file tools.")
             }
             if let pattern = exclusions.pattern(matchingComponents: parts) {
@@ -164,6 +189,89 @@
         }
         public func read(_ path: String, maximum: Int) throws -> [String: JSONValue] {
             return try preEffect { _ in try readFile(path, maximum: maximum) }
+        }
+        func captureBytes(_ path: String, maximum: Int) throws -> (bytes: [UInt8], mode: mode_t) {
+            return try preEffect { _ in try captureFile(path, maximum: maximum) }
+        }
+        private func captureFile(_ path: String, maximum: Int) throws -> (bytes: [UInt8], mode: mode_t) {
+            guard (1...64_000_000).contains(maximum) else {
+                throw ComputerHostError("out_of_range", "The capture limit is invalid.")
+            }
+            let (parent, name) = try parent(path)
+            defer { Darwin.close(parent) }
+            let fd = Darwin.openat(parent, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+            guard fd >= 0 else { throw failure() }
+            defer { Darwin.close(fd) }
+            let info = try regular(fd)
+            guard Int(info.st_size) <= maximum else {
+                throw ComputerHostError("out_of_range", "The file exceeds the capture limit.")
+            }
+            var bytes = [UInt8](repeating: 0, count: maximum)
+            var used = 0
+            while used < bytes.count {
+                let n = bytes.withUnsafeMutableBytes {
+                    Darwin.read(fd, $0.baseAddress!.advanced(by: used), $0.count - used)
+                }
+                if n < 0 {
+                    if errno == EINTR { continue }
+                    throw failure()
+                }
+                if n == 0 { break }
+                used += n
+            }
+            return (Array(bytes.prefix(used)), info.st_mode & 0o7777)
+        }
+        func walkTree(limit: Int, visitor: (ComputerWorkspaceTreeEntry) throws -> Void) throws {
+            var pending: [[String]] = [[]]
+            var visited = 0
+            while let parts = pending.popLast() {
+                let fd = try directory(parts)
+                guard let stream = fdopendir(fd) else {
+                    Darwin.close(fd)
+                    throw failure()
+                }
+                defer { closedir(stream) }
+                while let entry = readdir(stream) {
+                    let name = withUnsafePointer(to: &entry.pointee.d_name) {
+                        $0.withMemoryRebound(to: CChar.self, capacity: 1024) { String(cString: $0) }
+                    }
+                    if name == "." || name == ".." { continue }
+                    visited += 1
+                    guard visited <= limit else {
+                        throw ComputerHostError(
+                            "capacity_exceeded", "The workspace tree exceeds the snapshot entry bound.",
+                            effectState: "not_started")
+                    }
+                    var info = stat()
+                    guard fstatat(fd, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else { continue }
+                    let child = parts + [name]
+                    if name == Self.repositoryComponent {
+                        try visitor(ComputerWorkspaceTreeEntry(parts: child, kind: .repository, info: nil))
+                        continue
+                    }
+                    if exclusions.pattern(matchingName: name) != nil {
+                        try visitor(ComputerWorkspaceTreeEntry(parts: child, kind: .excluded, info: nil))
+                        continue
+                    }
+                    if Self.protectedComponents.contains(name.lowercased()) {
+                        try visitor(ComputerWorkspaceTreeEntry(parts: child, kind: .protected, info: nil))
+                        continue
+                    }
+                    switch info.st_mode & S_IFMT {
+                    case S_IFDIR:
+                        try visitor(ComputerWorkspaceTreeEntry(parts: child, kind: .directory, info: info))
+                        pending.append(child)
+                    case S_IFREG:
+                        try visitor(
+                            ComputerWorkspaceTreeEntry(
+                                parts: child, kind: .regular, info: info, linked: info.st_nlink > 1))
+                    case S_IFLNK:
+                        try visitor(ComputerWorkspaceTreeEntry(parts: child, kind: .symlink, info: nil))
+                    default:
+                        try visitor(ComputerWorkspaceTreeEntry(parts: child, kind: .other, info: nil))
+                    }
+                }
+            }
         }
         private func readFile(_ path: String, maximum: Int) throws -> [String: JSONValue] {
             guard (1...262144).contains(maximum) else {
@@ -264,11 +372,26 @@
                 try writeFile(path, content: content, overwrite: overwrite, begin: begin, authorize: authorize)
             }
         }
+        func restoreBytes(_ path: String, bytes: [UInt8], mode: mode_t, authorize: () throws -> Void) throws {
+            try preEffect { begin in
+                try writeData(
+                    path, data: bytes, limit: 64_000_000, overwrite: true, mode: mode, begin: begin,
+                    authorize: authorize)
+            }
+        }
         private func writeFile(
             _ path: String, content: String, overwrite: Bool, begin: () -> Void, authorize: () throws -> Void
         ) throws {
-            let bytes = Array(content.utf8)
-            guard bytes.count <= 262144 else { throw ComputerHostError("out_of_range", "The write exceeds 256 KiB.") }
+            try writeData(
+                path, data: Array(content.utf8), limit: 262_144, overwrite: overwrite, mode: nil, begin: begin,
+                authorize: authorize)
+        }
+        private func writeData(
+            _ path: String, data: [UInt8], limit: Int, overwrite: Bool, mode: mode_t?, begin: () -> Void,
+            authorize: () throws -> Void
+        ) throws {
+            let bytes = data
+            guard bytes.count <= limit else { throw ComputerHostError("out_of_range", "The write exceeds 256 KiB.") }
             let (parent, name) = try parentForWrite(path, begin: begin, authorize: authorize)
             defer { Darwin.close(parent) }
             var existing = stat()
@@ -278,7 +401,7 @@
                     throw ComputerHostError("permission_denied", "Only regular files can be replaced.")
                 }
                 guard overwrite else { throw alreadyExists() }
-                if overwrite {
+                if overwrite, mode == nil {
                     original = Darwin.openat(parent, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
                     guard original >= 0 else { throw failure() }
                     guard fstat(original, &existing) == 0, existing.st_mode & S_IFMT == S_IFREG else {
@@ -313,7 +436,11 @@
                 guard n > 0 else { throw failure() }
                 offset += n
             }
-            if original >= 0 { try preserve(from: original, to: fd, mode: existing.st_mode) }
+            if let mode {
+                guard fchmod(fd, mode & 0o1777) == 0 else { throw failure() }
+            } else if original >= 0 {
+                try preserve(from: original, to: fd, mode: existing.st_mode)
+            }
             guard fsync(fd) == 0 else { throw failure() }
             try authorize()
             if renameatx_np(parent, temporary, parent, name, overwrite ? 0 : UInt32(RENAME_EXCL)) != 0 {

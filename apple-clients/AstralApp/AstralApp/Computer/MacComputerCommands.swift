@@ -1,6 +1,7 @@
 // Runs approved workspace commands in their own process groups with bounded output rings and retained job records.
-// MacComputerHost calls it off the physical-effect queue; ComputerCommandPolicy decides every launch input,
-// including the refusal of working directories and command text that reach excluded workspace paths.
+// MacComputerHost calls it off the physical-effect queue; ComputerCommandPolicy decides every launch input and the
+// sandbox controller wraps each spawn in a probed Seatbelt profile behind a loopback egress proxy, refusing the
+// job before it starts when that boundary cannot be readied.
 
 #if os(macOS)
     import AstralCore
@@ -239,6 +240,7 @@
         let started: Double
         let output: MacComputerCommandOutput
         let process: any MacComputerCommandProcess
+        let sandbox: MacComputerJobSandbox?
         private let lock = NSLock()
         private var ending: String?
         private var termination: MacComputerCommandTermination?
@@ -248,7 +250,7 @@
         init(
             id: String, session: String, argv0: String, cwd: String, startedAt: Date, started: Double,
             output: MacComputerCommandOutput, process: any MacComputerCommandProcess,
-            projectContext: ComputerProjectContext? = nil
+            projectContext: ComputerProjectContext? = nil, sandbox: MacComputerJobSandbox? = nil
         ) {
             self.id = id
             self.session = session
@@ -259,6 +261,7 @@
             self.started = started
             self.output = output
             self.process = process
+            self.sandbox = sandbox
         }
         var running: Bool { lock.withLock { termination == nil } }
         var state: String { lock.withLock { termination == nil ? "running" : ending ?? "exited" } }
@@ -272,6 +275,10 @@
             }
         }
         func finish(_ value: MacComputerCommandTermination, at time: Double) {
+            let settled = lock.withLock { termination != nil }
+            guard !settled else { return }
+            scanViolations()
+            sandbox?.close()
             lock.withLock {
                 guard termination == nil else { return }
                 termination = value
@@ -279,10 +286,18 @@
             }
             output.touch()
         }
+        func scanViolations() {
+            guard let sandbox else { return }
+            let text = output.tail(.stderr, limit: MacComputerCommandOutput.ringBytes).text
+            for violation in ComputerSandboxViolation.parse(text) {
+                sandbox.recordViolation(violation)
+            }
+        }
         var exitCode: JSONValue {
             if case .exited(let code) = result { return .number(Double(code)) }
             return .null
         }
+        var outputByteCount: Int { output.bytes(.stdout) + output.bytes(.stderr) }
         var signalName: JSONValue {
             guard case .signaled(let value) = result else { return .null }
             let names: [Int32: String] = [
@@ -339,9 +354,11 @@
 
     actor MacComputerCommands {
         static let tailBytes = 32768
+        static let previewBytes = 16384
         nonisolated let registry = MacComputerCommandRegistry()
         nonisolated let clock: any MacComputerCommandClock
         private let spawner: any MacComputerCommandSpawning
+        private let sandbox: (any MacComputerCommandSandboxing)?
         private let inherited: [String: String]
         private let resolver: (@Sendable () async -> String)?
         private var path: String?
@@ -356,11 +373,13 @@
             spawner: any MacComputerCommandSpawning = MacComputerPosixSpawner(),
             clock: any MacComputerCommandClock = MacComputerLiveCommandClock(),
             inherited: [String: String] = ProcessInfo.processInfo.environment,
-            loginPath: (@Sendable () async -> String)? = nil
+            loginPath: (@Sendable () async -> String)? = nil,
+            sandbox: (any MacComputerCommandSandboxing)? = nil
         ) {
             self.spawner = spawner
             self.clock = clock
             self.inherited = inherited
+            self.sandbox = sandbox
             resolver = loginPath
         }
 
@@ -457,12 +476,34 @@
             let generation = registry.generation
             try authorize()
             try Task.checkCancellation()
+            let jobId = UUID().uuidString.lowercased()
+            var spawnPlan = plan
+            var sandboxSession: MacComputerJobSandbox?
+            if let sandbox {
+                do {
+                    let launch = try await sandbox.prepare(
+                        jobId: jobId, plan: plan, environment: environment, roots: roots, exclusions: exclusions)
+                    spawnPlan = launch.plan
+                    sandboxSession = launch.session
+                } catch {
+                    let message = (error as? ComputerHostError)?.message ?? String(describing: error)
+                    throw ComputerHostError("sandbox_refused", message)
+                }
+            }
+            try authorize()
+            try Task.checkCancellation()
             let output = MacComputerCommandOutput()
-            let process = try spawner.spawn(plan, output: output)
+            let process: any MacComputerCommandProcess
+            do {
+                process = try spawner.spawn(spawnPlan, output: output)
+            } catch {
+                sandboxSession?.close()
+                throw error
+            }
             let job = MacComputerCommandJob(
-                id: UUID().uuidString.lowercased(), session: session, argv0: invocation.argv0, cwd: cwd,
+                id: jobId, session: session, argv0: invocation.argv0, cwd: cwd,
                 startedAt: clock.date(), started: clock.now(), output: output, process: process,
-                projectContext: request.projectContext)
+                projectContext: request.projectContext, sandbox: sandboxSession)
             let clock = clock
             Task { job.finish(await process.wait(), at: clock.now()) }
             guard registry.register(job, generation: generation) else {
@@ -473,7 +514,11 @@
                 Task {
                     if await !self.finished(job, within: timeout) { self.end(job, as: "timed_out") }
                 }
-                return ["job_id": .string(job.id), "started_at": .string(Self.timestamp.string(from: job.startedAt))]
+                var started: [String: JSONValue] = [
+                    "job_id": .string(job.id), "started_at": .string(Self.timestamp.string(from: job.startedAt)),
+                ]
+                if let sandboxSession { started["sandbox"] = .object(sandboxSession.json()) }
+                return started
             }
             let completed = await withTaskCancellationHandler {
                 await finished(job, within: timeout)
@@ -483,17 +528,22 @@
             if !completed { end(job, as: Task.isCancelled ? "interrupted" : "timed_out") }
             if job.running { _ = await finished(job, within: 10) }
             try Task.checkCancellation()
+            let placeholders = sandboxSession?.placeholders ?? []
             let stdout = output.tail(.stdout, limit: Self.tailBytes)
             let stderr = output.tail(.stderr, limit: Self.tailBytes)
-            return [
+            var result: [String: JSONValue] = [
+                "job_id": .string(job.id),
                 "exit_code": job.exitCode, "signal": job.signalName, "timed_out": .bool(job.requested == "timed_out"),
                 "duration_ms": .number(((job.duration ?? max(0, clock.now() - job.started)) * 1000).rounded()),
-                "stdout": .string(stdout.text), "stderr": .string(stderr.text),
+                "stdout": .string(ComputerSandboxPolicy.scrub(stdout.text, placeholders: placeholders)),
+                "stderr": .string(ComputerSandboxPolicy.scrub(stderr.text, placeholders: placeholders)),
                 "stdout_bytes": .number(Double(output.bytes(.stdout))),
                 "stderr_bytes": .number(Double(output.bytes(.stderr))),
                 "truncated": .bool(!stdout.complete || !stderr.complete), "cwd": .string(cwd),
                 "started_at": .string(Self.timestamp.string(from: job.startedAt)),
             ]
+            if let sandboxSession { result["sandbox"] = .object(sandboxSession.json()) }
+            return result
         }
 
         func read(_ request: ComputerHostRequest, authorize: @escaping @Sendable () throws -> Void) async throws
@@ -517,17 +567,21 @@
             }
             try authorize()
             _ = try record(request)
+            job.scanViolations()
             let read = job.output.read(from: offset, streams: streams, maximum: maximum)
-            return [
+            let placeholders = job.sandbox?.placeholders ?? []
+            var result: [String: JSONValue] = [
                 "job_id": .string(job.id), "state": .string(job.state), "exit_code": job.exitCode,
                 "chunks": .array(
                     read.slices.map {
                         .object([
                             "stream": .string($0.stream.rawValue), "offset": .number(Double($0.offset)),
-                            "data": .string($0.data),
+                            "data": .string(ComputerSandboxPolicy.scrub($0.data, placeholders: placeholders)),
                         ])
                     }), "next_offset": .number(Double(read.next)), "truncated": .bool(read.truncated),
             ]
+            if let sandbox = job.sandbox { result["sandbox"] = .object(sandbox.json()) }
+            return result
         }
 
         func interrupt(_ request: ComputerHostRequest, authorize: @escaping @Sendable () throws -> Void) async throws
@@ -562,6 +616,30 @@
                     "stale_project_grant", "This command belongs to another session or project grant.")
             }
             return job
+        }
+
+        nonisolated func inventory() -> [ComputerHostRetainedJob] {
+            registry.all.compactMap { job in
+                try? ComputerHostRetainedJob(
+                    id: job.id, state: job.state, exitCode: job.exitCode, signal: job.signalName,
+                    outputBytes: job.outputByteCount)
+            }
+        }
+
+        nonisolated func preview(_ id: String) -> (job: ComputerHostRetainedJob, output: String)? {
+            guard let job = registry.job(id),
+                let record = try? ComputerHostRetainedJob(
+                    id: job.id, state: job.state, exitCode: job.exitCode, signal: job.signalName,
+                    outputBytes: job.outputByteCount)
+            else { return nil }
+            let stdout = job.output.tail(.stdout, limit: Self.previewBytes)
+            let stderr = job.output.tail(.stderr, limit: Self.previewBytes)
+            var text = stdout.text
+            if !stderr.text.isEmpty {
+                if !text.isEmpty { text += "\n" }
+                text += stderr.text
+            }
+            return (record, text)
         }
 
         nonisolated func end(_ job: MacComputerCommandJob, as state: String) {

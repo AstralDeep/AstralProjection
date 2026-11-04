@@ -137,7 +137,32 @@
                         }
                     }
                 }
+                if !host.checkpointRoots.isEmpty {
+                    Divider().overlay(palette.border)
+                    MacCheckpointFilesSection(host: host)
+                }
                 if host.session != nil { MacComputerSessionControls(host: host) }
+                if host.available {
+                    Divider().overlay(palette.border)
+                    VStack(alignment: .leading, spacing: 10) {
+                        SettingsSectionTitle("Command sandbox")
+                        Text(
+                            "Approved commands run inside a generated macOS sandbox profile and reach the network "
+                                + "only through a local egress proxy for this Mac's allowed domains. Shadow mode "
+                                + "records violations without blocking; enforce mode blocks them."
+                        )
+                        .font(ConsoleTypography.caption).foregroundStyle(palette.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        Toggle(
+                            "Block sandbox violations",
+                            isOn: Binding(get: { host.sandboxEnforce }, set: host.setSandboxEnforce)
+                        )
+                        .disabled(!host.available).accessibilityIdentifier("mac-computer-sandbox-enforce")
+                        Text(host.sandboxSummary)
+                            .font(ConsoleTypography.caption).foregroundStyle(palette.muted)
+                            .accessibilityIdentifier("mac-computer-sandbox-summary")
+                    }
+                }
             }
             .frame(minWidth: 480, idealWidth: 560, minHeight: 460, idealHeight: 620)
             .bypassConfirmation(host: host, origin: .controls)

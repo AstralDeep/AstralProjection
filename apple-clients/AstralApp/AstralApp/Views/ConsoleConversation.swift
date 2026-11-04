@@ -35,6 +35,7 @@ import SwiftUI
         let maximumWidth: Double
         let contentPadding: EdgeInsets
         @State private var followsLatest = true
+        @State private var hoveredTurnId: String?
         private var p: AstralPalette { theme.palette }
         private var turns: [AppModel.ChatTurn] {
             model.visibleTurns.filter { !$0.text.isEmpty || !$0.components.isEmpty }
@@ -101,44 +102,222 @@ import SwiftUI
             Group {
                 if turn.role == "reasoning" {
                     ReasoningSnippet(text: turn.text)
+                } else if model.turnEditor?.turnId == turn.id {
+                    turnEditorCard(turn)
                 } else {
-                    let isUser = turn.role == "user"
-                    HStack {
-                        if isUser { Spacer(minLength: 24) }
-                        VStack(alignment: .leading, spacing: 10) {
-                            if !turn.text.isEmpty {
-                                if isUser {
-                                    Text(turn.text).textSelection(.enabled)
-                                } else {
-                                    MarkdownBlockView(source: turn.text).textSelection(.enabled)
-                                }
-                            }
-                            ForEach(Array(turn.components.enumerated()), id: \.offset) { _, component in
-                                ComponentView(component: component)
-                                    .environment(\.astralNavigationTranscript, turn.id)
-                            }
-                        }
-                        .font(ConsoleTypography.body).foregroundStyle(p.text)
-                        .padding(.horizontal, 16).padding(.vertical, 14)
-                        .background(
-                            isUser ? p.primary.opacity(0.17) : p.surface.opacity(0.55),
-                            in: RoundedRectangle(cornerRadius: 12)
-                        )
-                        .astralChartBackdrop(
-                            p, color: isUser ? p.primary : p.surface, opacity: isUser ? 0.17 : 0.55
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12).stroke(
-                                isUser ? p.primary.opacity(0.35) : p.border))
-                        if !isUser { Spacer(minLength: 24) }
-                    }
-                    .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
-                    .accessibilityElement(children: .contain)
-                    .accessibilityLabel(isUser ? "You" : "AstralDeep")
-                    .accessibilityIdentifier("conversation-turn-\(turn.id)")
-                    .id(turn.id)
+                    turnRow(turn)
                 }
             }
+            .id(turn.id)
+        }
+
+        private func turnRow(_ turn: AppModel.ChatTurn) -> some View {
+            let isUser = turn.role == "user"
+            let isSteer = turn.role == "steer"
+            let isOwner = isUser || isSteer
+            let actionsVisible = hoveredTurnId == turn.id
+            return VStack(alignment: isOwner ? .trailing : .leading, spacing: 6) {
+                HStack(alignment: .center, spacing: 8) {
+                    if isOwner { Spacer(minLength: 24) }
+                    if isOwner {
+                        turnActions(turn, isUser: isUser, visible: actionsVisible)
+                    }
+                    VStack(alignment: .leading, spacing: 10) {
+                        if isSteer {
+                            Text("Steer").font(ConsoleTypography.caption2.weight(.semibold))
+                                .foregroundStyle(p.primary)
+                                .accessibilityIdentifier("transcript-steer-label")
+                        }
+                        if !turn.text.isEmpty {
+                            if isOwner {
+                                Text(turn.text).textSelection(.enabled)
+                            } else {
+                                MarkdownBlockView(source: turn.text).textSelection(.enabled)
+                            }
+                        }
+                        ForEach(Array(turn.components.enumerated()), id: \.offset) { _, component in
+                            ComponentView(component: component)
+                                .environment(\.astralNavigationTranscript, turn.id)
+                        }
+                    }
+                    .font(ConsoleTypography.body).foregroundStyle(p.text)
+                    .padding(.horizontal, 16).padding(.vertical, 14)
+                    .background(
+                        isOwner ? p.primary.opacity(0.17) : p.surface.opacity(0.55),
+                        in: RoundedRectangle(cornerRadius: 12)
+                    )
+                    .astralChartBackdrop(
+                        p, color: isOwner ? p.primary : p.surface, opacity: isOwner ? 0.17 : 0.55
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12).stroke(
+                            isOwner ? p.primary.opacity(0.35) : p.border)
+                    )
+                    .contextMenu { turnContextMenu(turn) }
+                    if !isOwner {
+                        turnActions(turn, isUser: false, visible: actionsVisible)
+                    }
+                    if !isOwner { Spacer(minLength: 24) }
+                }
+                if let branch = turn.branch, branch.count > 1 {
+                    branchSwitcher(turn, branch: branch)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: isOwner ? .trailing : .leading)
+            .onHover { hovering in
+                guard hovering || hoveredTurnId == turn.id else { return }
+                hoveredTurnId = hovering ? turn.id : nil
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(isSteer ? "Steer" : isUser ? "You" : "AstralDeep")
+            .accessibilityIdentifier("conversation-turn-\(turn.id)")
+        }
+
+        private func turnEditorCard(_ turn: AppModel.ChatTurn) -> some View {
+            VStack(alignment: .leading, spacing: 10) {
+                TextEditor(
+                    text: Binding(
+                        get: { model.turnEditor?.draft ?? "" },
+                        set: { model.turnEditor?.draft = $0 })
+                )
+                .font(ConsoleTypography.body).foregroundStyle(p.text)
+                .frame(minHeight: 72, alignment: .topLeading)
+                .scrollContentBackground(.hidden)
+                .accessibilityLabel("Edit your message")
+                .accessibilityIdentifier("conversation-edit-field-\(turn.id)")
+                if model.conversationShowsBranches {
+                    Toggle(
+                        "Summarize what I'm leaving",
+                        isOn: Binding(
+                            get: { model.turnEditor?.summarizesDeparted ?? false },
+                            set: { model.turnEditor?.summarizesDeparted = $0 })
+                    )
+                    .font(ConsoleTypography.caption)
+                    .accessibilityIdentifier("conversation-edit-summarize-\(turn.id)")
+                }
+                HStack(spacing: 10) {
+                    Spacer(minLength: 0)
+                    Button("Cancel") {
+                        model.cancelTurnEdit()
+                    }
+                    .buttonStyle(.plain).foregroundStyle(p.muted)
+                    .accessibilityIdentifier("conversation-edit-cancel-\(turn.id)")
+                    Button("Send") {
+                        model.sendEditedTurn()
+                    }
+                    .buttonStyle(.plain).foregroundStyle(p.primary)
+                    .disabled(
+                        (model.turnEditor?.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+                            || model.turnBusy
+                    )
+                    .accessibilityIdentifier("conversation-edit-send-\(turn.id)")
+                }
+            }
+            .padding(.horizontal, 16).padding(.vertical, 14)
+            .background(p.primary.opacity(0.17), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(p.primary.opacity(0.35)))
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.leading, 24)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Editing your message")
+            .accessibilityIdentifier("conversation-turn-\(turn.id)")
+        }
+
+        @ViewBuilder private func turnActions(_ turn: AppModel.ChatTurn, isUser: Bool, visible: Bool) -> some View {
+            HStack(spacing: 2) {
+                if isUser {
+                    turnActionButton(
+                        symbol: "pencil", label: "Edit and resend",
+                        identifier: "conversation-edit-\(turn.id)"
+                    ) {
+                        model.beginTurnEdit(turn)
+                    }
+                } else {
+                    turnActionButton(
+                        symbol: "arrow.clockwise", label: "Regenerate reply",
+                        identifier: "conversation-regenerate-\(turn.id)"
+                    ) {
+                        model.regenerateTurn(turn)
+                    }
+                }
+                turnActionButton(
+                    symbol: "doc.on.doc", label: "Copy",
+                    identifier: "conversation-copy-\(turn.id)"
+                ) {
+                    model.copyTurnText(turn)
+                }
+                turnActionButton(
+                    symbol: "arrow.turn.up.right", label: isUser ? "Fork to new chat" : "Fork from here",
+                    identifier: "conversation-fork-\(turn.id)"
+                ) {
+                    model.forkFromTurn(turn)
+                }
+            }
+            .font(ConsoleTypography.caption).foregroundStyle(visible ? p.text : p.muted)
+        }
+
+        private func turnActionButton(
+            symbol: String, label: String, identifier: String, action: @escaping () -> Void
+        ) -> some View {
+            Button {
+                action()
+            } label: {
+                Image(systemName: symbol).frame(width: 26, height: 24).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(model.turnBusy)
+            .help(label)
+            .accessibilityLabel(label)
+            .accessibilityIdentifier(identifier)
+        }
+
+        @ViewBuilder private func turnContextMenu(_ turn: AppModel.ChatTurn) -> some View {
+            if turn.role == "user" {
+                Button("Edit and resend") { model.beginTurnEdit(turn) }
+                    .disabled(model.turnBusy)
+            } else {
+                Button("Regenerate reply") { model.regenerateTurn(turn) }
+                    .disabled(model.turnBusy)
+            }
+            Button("Copy") { model.copyTurnText(turn) }
+            Button(turn.role == "user" ? "Fork to new chat" : "Fork from here") {
+                model.forkFromTurn(turn)
+            }
+            .disabled(model.turnBusy)
+        }
+
+        private func branchSwitcher(_ turn: AppModel.ChatTurn, branch: ConversationMessageBranch) -> some View {
+            HStack(spacing: 4) {
+                Button {
+                    if let target = branch.neighbor(of: turn.id, step: -1) {
+                        model.selectBranch(of: turn, targetTurnId: target)
+                    }
+                } label: {
+                    Image(systemName: "chevron.left").frame(width: 22, height: 22).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(branch.index <= 1 || model.turnBusy)
+                .accessibilityLabel("Previous branch")
+                .accessibilityIdentifier("conversation-branch-previous-\(turn.id)")
+                Text("\(branch.index) of \(branch.count)")
+                    .font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                    .accessibilityIdentifier("conversation-branch-position-\(turn.id)")
+                Button {
+                    if let target = branch.neighbor(of: turn.id, step: 1) {
+                        model.selectBranch(of: turn, targetTurnId: target)
+                    }
+                } label: {
+                    Image(systemName: "chevron.right").frame(width: 22, height: 22).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(branch.index >= branch.count || model.turnBusy)
+                .accessibilityLabel("Next branch")
+                .accessibilityIdentifier("conversation-branch-next-\(turn.id)")
+            }
+            .help("Switch between saved versions of this turn")
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Branch \(branch.index) of \(branch.count)")
+            .accessibilityIdentifier("conversation-branch-\(turn.id)")
         }
 
         private func scrollToLatest(_ proxy: ScrollViewProxy) {
@@ -146,6 +325,58 @@ import SwiftUI
                 await Task.yield()
                 proxy.scrollTo("workbench-latest", anchor: .bottom)
             }
+        }
+    }
+
+    struct MacTurnDepartureSheet: View {
+        @Environment(AppModel.self) private var model
+        @Environment(ThemeStore.self) private var theme
+        let departure: AppModel.TurnDeparture
+        @State private var summarizesDeparted = false
+        private var p: AstralPalette { theme.palette }
+
+        private var title: String {
+            switch departure.kind {
+            case .fork: return "Fork from this turn?"
+            case .regenerate: return "Regenerate this reply?"
+            case .branchSelect: return "Switch branch?"
+            }
+        }
+
+        private var confirmationLabel: String {
+            switch departure.kind {
+            case .fork: return "Fork"
+            case .regenerate: return "Regenerate"
+            case .branchSelect: return "Switch"
+            }
+        }
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 16) {
+                Text(title).font(.headline)
+                Text(
+                    "This leaves the branch you are on. You can return to it with the turn's branch controls."
+                )
+                .font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                .accessibilityIdentifier("conversation-departure-explanation")
+                Toggle("Summarize what I'm leaving", isOn: $summarizesDeparted)
+                    .accessibilityIdentifier("conversation-departure-summarize")
+                HStack {
+                    Spacer(minLength: 0)
+                    Button("Stay") {
+                        model.cancelTurnDeparture()
+                    }
+                    .keyboardShortcut(.cancelAction)
+                    .accessibilityIdentifier("conversation-departure-cancel")
+                    Button(confirmationLabel) {
+                        model.confirmTurnDeparture(summarizeDeparted: summarizesDeparted)
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("conversation-departure-confirm")
+                }
+            }
+            .padding(24).frame(width: 400)
+            .accessibilityIdentifier("conversation-departure-sheet")
         }
     }
 
@@ -287,10 +518,16 @@ struct ConsoleConversation: View {
                         if turn.role == "reasoning" {
                             ReasoningSnippet(text: turn.text)
                         } else {
+                            let isOwner = turn.role == "user" || turn.role == "steer"
                             HStack {
-                                if turn.role == "user" { Spacer(minLength: 24) }
+                                if isOwner { Spacer(minLength: 24) }
                                 VStack(alignment: .leading, spacing: 10) {
-                                    if turn.role == "user" {
+                                    if turn.role == "steer" {
+                                        Text("Steer").font(ConsoleTypography.caption2.weight(.semibold))
+                                            .foregroundStyle(p.primary)
+                                            .accessibilityIdentifier("transcript-steer-label")
+                                    }
+                                    if turn.role == "user" || turn.role == "steer" {
                                         Text(turn.text)
                                     } else if !turn.text.isEmpty {
                                         MarkdownBlockView(source: turn.text)
@@ -303,13 +540,13 @@ struct ConsoleConversation: View {
                                 .font(ConsoleTypography.subheadline).foregroundStyle(p.text)
                                 .padding(.horizontal, 16).padding(.vertical, 14)
                                 .background(
-                                    turn.role == "user" ? p.primary.opacity(0.17) : p.surface.opacity(0.55),
+                                    isOwner ? p.primary.opacity(0.17) : p.surface.opacity(0.55),
                                     in: RoundedRectangle(cornerRadius: 12)
                                 )
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 12).stroke(
-                                        turn.role == "user" ? p.primary.opacity(0.35) : p.border))
-                                if turn.role != "user" { Spacer(minLength: 0) }
+                                        isOwner ? p.primary.opacity(0.35) : p.border))
+                                if !isOwner { Spacer(minLength: 0) }
                             }
                         }
                     }

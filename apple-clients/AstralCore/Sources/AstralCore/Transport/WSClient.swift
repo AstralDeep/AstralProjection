@@ -396,7 +396,9 @@ public actor WSClient {
         else { return false }
         let idKey = action == "authorize_action" ? "hitl_request_id" : "proposal_id"
         return payload[idKey]?.stringValue.map { !$0.isEmpty && $0.count <= 200 } == true
-            && Set(payload.keys).isSubset(of: [idKey, "decision", "submission_id", "request_generation", "display_digest"])
+            && Set(payload.keys).isSubset(of: [
+                idKey, "decision", "submission_id", "request_generation", "display_digest",
+            ])
             && payload["display_digest"].map(ComputerHostOutbound.isDisplayDigest) != false
     }
 

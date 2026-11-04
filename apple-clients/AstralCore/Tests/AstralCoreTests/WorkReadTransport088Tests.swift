@@ -120,7 +120,8 @@ final class WorkReadTransport088Tests: XCTestCase {
                 requestGeneration: "55555555-5555-4555-8555-555555555555")
         }
         XCTAssertTrue(WSClient.isApprovalDecision(frame([:])))
-        XCTAssertTrue(WSClient.isApprovalDecision(frame(["display_digest": .string(String(repeating: "0f", count: 32))])))
+        XCTAssertTrue(
+            WSClient.isApprovalDecision(frame(["display_digest": .string(String(repeating: "0f", count: 32))])))
         for bad: JSONValue in [.string(String(repeating: "0F", count: 32)), .string("0f"), .number(1), .null] {
             XCTAssertFalse(WSClient.isApprovalDecision(frame(["display_digest": bad])))
         }

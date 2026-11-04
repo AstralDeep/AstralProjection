@@ -81,19 +81,42 @@ final class AppModel: NSObject {
         let role: String
         let text: String
         let components: [AstralComponent]
+        let branch: ConversationMessageBranch?
 
         init(
             id: String,
             role: String,
             text: String,
-            components: [AstralComponent] = []
+            components: [AstralComponent] = [],
+            branch: ConversationMessageBranch? = nil
         ) {
             self.id = id
             self.role = role
             self.text = text
             self.components = components
+            self.branch = branch
         }
     }
+
+    #if os(macOS)
+        struct TurnEditor: Equatable {
+            let turnId: String
+            var draft: String
+            var summarizesDeparted: Bool
+        }
+
+        struct TurnDeparture: Identifiable, Equatable {
+            enum Kind: Equatable {
+                case fork(turnId: String)
+                case regenerate(turnId: String)
+                case branchSelect(turnId: String, targetTurnId: String)
+            }
+
+            let id = UUID()
+            let kind: Kind
+            let offersSummary: Bool
+        }
+    #endif
 
     struct StagedAttachment: Identifiable, Equatable {
         let uid: Int
@@ -392,6 +415,7 @@ final class AppModel: NSObject {
     var activity: [ActivityRow] { activityLog[activityKey(activeChatId)] ?? [] }
     var canCancelTurn: Bool { signedIn && connected && turnBusy }
     private static let turnOperations: Set<String> = ["chat_message", "authorize_action", "remote_op_decision"]
+    private static let turnIntents: Set<String> = ["chat_fork", "chat_regenerate", "chat_branch_select"]
     var turnBusy: Bool {
         if turnActive || activity.contains(where: { $0.state == .running && $0.approval != .waiting }) { return true }
         if operationStatuses.values.contains(where: {
@@ -411,6 +435,48 @@ final class AppModel: NSObject {
     var operationStatuses: [String: OperationStatus] = [:]
     var agentLifecycles: [String: AgentLifecycle] = [:]
     var localOperationSubmissions: [String: LocalOperationSubmission] = [:]
+
+    #if os(macOS)
+        enum ComposerReturnBinding: String, CaseIterable {
+            case steer
+            case queue
+        }
+        static let composerReturnBindingKey = "astraldeep.composer.return-binding.v1"
+        @ObservationIgnored private var turnSteerAck: TurnSteerAcknowledgement?
+        @ObservationIgnored private var queueByChat: [String: QueueSnapshot] = [:]
+        @ObservationIgnored private var pendingSteerTexts: [String: String] = [:]
+        var steerNotice: String?
+        var queueConflictNotice: String?
+        var sideQuestionSheetVisible = false
+        var sideQuestionDraft = ""
+        var sideQuestionAnswer: String?
+        @ObservationIgnored private var sideQuestionRequestId: String?
+        @ObservationIgnored private var composerReturnBindingStored: ComposerReturnBinding
+        struct QueueSnapshot: Equatable {
+            let revision: Int
+            var items: [QueuedFollowUpItem]
+        }
+        var turnSteerNegotiated: Bool { turnSteerAck != nil }
+        var turnQueueCapable: Bool { turnSteerAck?.queueCapable ?? false }
+        var queuedFollowUps: [QueuedFollowUpItem] {
+            guard let chat = activeChatId, let snapshot = queueByChat[chat] else { return [] }
+            return snapshot.items
+        }
+        var composerSteeringApplies: Bool {
+            turnSteerNegotiated && turnActive && signedIn && connected && !mutationsLocked
+                && !timelineReadOnly
+        }
+        var composerQueueApplies: Bool {
+            turnQueueCapable && composerSteeringApplies
+        }
+        var composerReturnBinding: ComposerReturnBinding {
+            get { composerReturnBindingStored }
+            set {
+                composerReturnBindingStored = newValue
+                defaults.set(newValue.rawValue, forKey: Self.composerReturnBindingKey)
+            }
+        }
+    #endif
 
     var pendingSurfaceRequestGenerations: Set<String> {
         Set(
@@ -548,6 +614,7 @@ final class AppModel: NSObject {
     @ObservationIgnored private var sessionGeneration = 0
     @ObservationIgnored private var conversationNavigationGeneration = 0
     @ObservationIgnored private var conversationResumeStore: ConversationResumeStore
+    @ObservationIgnored private var outcomeUnknownStore: OutcomeUnknownStore
     @ObservationIgnored private var conversationAccount: ConversationAccount?
     @ObservationIgnored private var continuity = ConversationContinuityReducer()
     private(set) var viewportRefreshFailed = false
@@ -619,6 +686,7 @@ final class AppModel: NSObject {
 
     init(
         conversationResumeStore: ConversationResumeStore = ConversationResumeStore(),
+        outcomeUnknownStore: OutcomeUnknownStore = OutcomeUnknownStore(),
         tokenStore: TokenStorage,
         defaults: UserDefaults = .standard,
         webSocket: WSClient? = nil,
@@ -643,7 +711,17 @@ final class AppModel: NSObject {
         self.ws = webSocket
         self.initialWebSocket = webSocket
         self.conversationResumeStore = conversationResumeStore
+        self.outcomeUnknownStore = outcomeUnknownStore
         self.defaults = defaults
+        #if os(macOS)
+            if let stored = defaults.string(forKey: Self.composerReturnBindingKey),
+                let binding = ComposerReturnBinding(rawValue: stored)
+            {
+                composerReturnBindingStored = binding
+            } else {
+                composerReturnBindingStored = .steer
+            }
+        #endif
         let voiceDeviceKey = "astraldeep.voice.device-id.v1"
         if let stored = defaults.string(forKey: voiceDeviceKey),
             let parsed = UUID(uuidString: stored), parsed.uuidString.lowercased() == stored,
@@ -791,6 +869,7 @@ final class AppModel: NSObject {
                 releaseComputerBypass()
                 macComputerHost.signedOut()
                 macBrowser.bind(owner: nil)
+                clearOutcomeUnknownCard()
             #endif
             clearActivity()
             #if os(iOS)
@@ -822,6 +901,9 @@ final class AppModel: NSObject {
         }
         conversationAccount = account
         activeChatId = conversationResumeStore.load(for: account)?.chatId
+        #if os(macOS)
+            restoreOutcomeUnknownCard()
+        #endif
     }
 
     struct DownloadOwner: Equatable, Sendable {
@@ -1397,6 +1479,20 @@ final class AppModel: NSObject {
             resume: resume, workReadSupported: true, guidanceNotesSupported: true,
             computerHost: hostDescriptor, computerHostCapable: hostCapable, macWorkbenchSupported: macWorkbench,
             uiAuthRefreshSupported: {
+                #if os(macOS)
+                    return true
+                #else
+                    return false
+                #endif
+            }(),
+            chatBranchesSupported: {
+                #if os(macOS)
+                    return true
+                #else
+                    return false
+                #endif
+            }(),
+            turnSteerSupported: {
                 #if os(macOS)
                     return true
                 #else
@@ -2106,6 +2202,7 @@ final class AppModel: NSObject {
             macComputerHost.signedOut()
             macBrowser.bind(owner: nil)
             llmUsage = LLMUsageTally()
+            clearOutcomeUnknownCard()
         #endif
         clearActivity()
         #if os(iOS)
@@ -2182,6 +2279,7 @@ final class AppModel: NSObject {
         #if os(macOS)
             macComputerHost.signedOut()
             macBrowser.bind(owner: nil)
+            clearOutcomeUnknownCard()
         #endif
         clearActivity()
         retireMeshCustody()
@@ -2221,6 +2319,7 @@ final class AppModel: NSObject {
             var descriptor = DeviceDescriptor.macos(viewportWidth: w, viewportHeight: h)
             descriptor.macWorkbenchSupported = true
             descriptor.projectWorkspacesSupported = true
+            descriptor.turnSteerSupported = true
         #else
             let size = UIScreen.main.bounds.size
             let (w, h) = lastReportedViewport ?? (Int(size.width), Int(size.height))
@@ -2316,6 +2415,11 @@ final class AppModel: NSObject {
             projects.negotiate(accepted)
             macComputerHost.workspaceNegotiated(projects: accepted)
             if accepted, connected { Task { await projects.refresh() } }
+            turnSteerAck = TurnSteerAcknowledgement.fromRoteConfig(frame.payload)
+            if !turnSteerNegotiated {
+                queueByChat.removeAll()
+                pendingSteerTexts.removeAll()
+            }
         #endif
         viewportSnapshotSupported = frame.payload["viewport_snapshot_supported"]?.boolValue == true
     }
@@ -2612,6 +2716,7 @@ final class AppModel: NSObject {
                 macComputerHost.disconnect()
                 projects.awaitNegotiation()
                 cancelProjectChoice()
+                recordOutcomeUnknownAfterDisconnect()
             #endif
             resetViewportRefresh()
             invalidateWorkRead()
@@ -2862,6 +2967,10 @@ final class AppModel: NSObject {
             themeStore.apply(spec: frame.payload["theme"] ?? frame.payload)
         case "workspace_timeline_mode":
             timelineReadOnly = frame.payload["active"]?.boolValue ?? frame.payload["on"]?.boolValue ?? false
+        #if os(macOS)
+            case "chat_steer_recorded", "chat_steer_refused", "chat_queue_updated", "side_question_result":
+                reduceTurnSteer(frame)
+        #endif
         case "error":
             let admissionRefused = reduceAdmissionRefusal(frame)
             let llmAdmissionRefused = reduceLLMAdmissionRefusal(frame)
@@ -3369,7 +3478,9 @@ final class AppModel: NSObject {
             canvas = snapshot.canvasComponents
             turns = turns.map { turn in
                 guard let message = snapshot.messages.first(where: { $0.messageId == turn.id }) else { return turn }
-                return ChatTurn(id: turn.id, role: turn.role, text: turn.text, components: message.components)
+                return ChatTurn(
+                    id: turn.id, role: turn.role, text: turn.text, components: message.components,
+                    branch: message.branch)
             }
             return
         }
@@ -3389,10 +3500,15 @@ final class AppModel: NSObject {
                 id: message.messageId,
                 role: message.role,
                 text: text,
-                components: message.components)
+                components: message.components,
+                branch: message.branch)
         }
         activeChatId = snapshot.chatId
         turns = restoredTurns
+        #if os(macOS)
+            turnEditor = nil
+            pendingTurnDeparture = nil
+        #endif
         canvas = snapshot.canvasComponents
         transientTurns = []
         transientCanvas = nil
@@ -4015,8 +4131,185 @@ final class AppModel: NSObject {
     }
 
     #if os(macOS)
+        func sendComposerText(_ text: String) {
+            guard composerSteeringApplies else {
+                sendChat(text)
+                return
+            }
+            switch composerReturnBinding {
+            case .steer: sendSteer(text)
+            case .queue:
+                if turnQueueCapable {
+                    queueFollowUp(text)
+                } else {
+                    sendSteer(text)
+                }
+            }
+        }
+
+        func composerOptionReturn(_ text: String) {
+            guard composerSteeringApplies else {
+                sendChat(text)
+                return
+            }
+            switch composerReturnBinding {
+            case .steer: queueFollowUp(text)
+            case .queue: sendSteer(text)
+            }
+        }
+
+        func sendSteer(_ text: String) {
+            guard composerSteeringApplies, let frame = TurnSteerOutbound.chatSteer(text, sessionId: activeChatId)
+            else { return }
+            let clientMessageId = clientMessageId(of: frame)
+            pendingSteerTexts[clientMessageId] = text
+            steerNotice = nil
+            queueConflictNotice = nil
+            transientTurns.append(
+                ChatTurn(id: "pending-steer-\(clientMessageId)", role: "steer", text: text))
+            rawSend(frame)
+        }
+
+        func queueFollowUp(_ text: String) {
+            guard composerQueueApplies, let frame = TurnSteerOutbound.chatQueuePut(text, sessionId: activeChatId)
+            else { return }
+            steerNotice = nil
+            queueConflictNotice = nil
+            rawSend(frame)
+        }
+
+        func editQueuedFollowUp(_ item: QueuedFollowUpItem, text: String) {
+            guard turnQueueCapable,
+                let frame = TurnSteerOutbound.chatQueueEdit(
+                    text, queueId: item.id, expectedRevision: item.revision, sessionId: activeChatId)
+            else { return }
+            queueConflictNotice = nil
+            rawSend(frame)
+        }
+
+        func removeQueuedFollowUp(_ item: QueuedFollowUpItem) {
+            guard let chat = activeChatId else { return }
+            queueByChat[chat]?.items.removeAll { $0.id == item.id }
+            guard turnQueueCapable,
+                let frame = TurnSteerOutbound.chatQueueRemove(queueId: item.id, sessionId: activeChatId)
+            else { return }
+            rawSend(frame)
+        }
+
+        func moveQueuedFollowUp(_ item: QueuedFollowUpItem, before: QueuedFollowUpItem?) {
+            guard let chat = activeChatId, var snapshot = queueByChat[chat],
+                snapshot.items.contains(where: { $0.id == item.id })
+            else { return }
+            snapshot.items.removeAll { $0.id == item.id }
+            let target = before.flatMap { moving in snapshot.items.firstIndex { $0.id == moving.id } }
+            snapshot.items.insert(item, at: target ?? snapshot.items.count)
+            queueByChat[chat] = snapshot
+            guard turnQueueCapable,
+                let frame = TurnSteerOutbound.chatQueueMove(
+                    queueId: item.id, beforeQueueId: before?.id, sessionId: activeChatId)
+            else { return }
+            rawSend(frame)
+        }
+
+        @discardableResult
+        func cancelTurnRestoringQueue() -> Bool {
+            guard turnSteerNegotiated, canCancelTurn || !queuedFollowUps.isEmpty else { return false }
+            let restored = queuedFollowUps.map { $0.message }
+            for item in queuedFollowUps {
+                removeQueuedFollowUp(item)
+            }
+            if canCancelTurn {
+                _ = cancelCurrentTurn()
+            }
+            steerNotice = nil
+            queueConflictNotice = nil
+            if !restored.isEmpty {
+                composerDraft = restored.joined(separator: "\n\n")
+            }
+            return true
+        }
+
+        func askSideQuestion(_ question: String) {
+            guard turnSteerNegotiated, signedIn, connected,
+                let frame = TurnSteerOutbound.sideQuestion(question, sessionId: activeChatId)
+            else { return }
+            sideQuestionRequestId = clientMessageId(of: frame)
+            sideQuestionAnswer = nil
+            rawSend(frame)
+        }
+
+        var sideQuestionPending: Bool { sideQuestionRequestId != nil && sideQuestionAnswer == nil }
+
+        private func clientMessageId(of frameText: String) -> String {
+            let frame = (try? JSONValue.parse(Data(frameText.utf8))) ?? .null
+            return frame["payload"]?["client_message_id"]?.stringValue ?? ""
+        }
+
+        private func reduceTurnSteer(_ frame: InboundFrame) {
+            switch frame.name {
+            case "chat_steer_recorded":
+                guard let recorded = ChatSteerRecorded(frame: frame) else { return }
+                pendingSteerTexts.removeValue(forKey: recorded.clientMessageId)
+                for skipped in recorded.skippedCalls {
+                    stepTrail = trailUpsert(stepTrail, "\u{21b7} \(skipped.name) \u{2014} \(skipped.reason)")
+                }
+            case "chat_steer_refused":
+                guard let refused = ChatSteerRefused(frame: frame) else { return }
+                let text = pendingSteerTexts.removeValue(forKey: refused.clientMessageId)
+                transientTurns.removeAll { $0.id == "pending-steer-\(refused.clientMessageId)" }
+                if let text {
+                    composerDraft = text
+                }
+                steerNotice = steerRefusalNotice(refused)
+            case "chat_queue_updated":
+                guard let updated = ChatQueueUpdated(frame: frame) else { return }
+                let chat = updated.chatId
+                if let existing = queueByChat[chat], updated.revision < existing.revision { return }
+                if composerQueueApplies, let snapshot = queueByChat[chat] {
+                    for item in updated.items {
+                        if let before = snapshot.items.first(where: { $0.id == item.id }),
+                            before.revision < item.revision, before.message != item.message
+                        {
+                            queueConflictNotice = "This follow-up changed on another device."
+                        }
+                    }
+                }
+                queueByChat[chat] = QueueSnapshot(revision: updated.revision, items: updated.items)
+            case "side_question_result":
+                guard let result = SideQuestionResult(frame: frame),
+                    result.clientMessageId == sideQuestionRequestId
+                else { return }
+                sideQuestionAnswer = result.answer
+                sideQuestionRequestId = nil
+            default:
+                break
+            }
+        }
+
+        private func steerRefusalNotice(_ refused: ChatSteerRefused) -> String {
+            switch refused.code {
+            case .staleTurn: return "The task moved on, so this steer was not applied."
+            case .notRunning: return "No task is running, so this steer was not applied."
+            case .approvalPending: return "Decide the approval first; steers cannot answer approvals."
+            case .capacityExceeded: return "Too many steers are waiting; try again shortly."
+            case .invalidInput: return "This steer text was not accepted."
+            }
+        }
+
+        func openSideQuestionSheet() {
+            guard turnSteerNegotiated, !mutationsLocked else { return }
+            sideQuestionDraft = ""
+            sideQuestionAnswer = nil
+            sideQuestionRequestId = nil
+            sideQuestionSheetVisible = true
+        }
+    #endif
+
+    #if os(macOS)
         func computerApplicationWillTerminate() {
             releaseComputerBypass()
+            macComputerHost.recordRunningJobsAsUncertain()
+            recordOutcomeUnknownAfterDisconnect()
             macComputerHost.applicationWillTerminate()
         }
 
@@ -4054,6 +4347,159 @@ final class AppModel: NSObject {
 
     private(set) var approvalPrompts: [ApprovalPrompt] = []
     var waitingApprovals: Int { max(activity.filter { $0.approval == .waiting }.count, approvalPrompts.count) }
+
+    #if os(macOS)
+        struct OutcomeUnknownCard: Equatable, Identifiable {
+            enum Delivery: Equatable {
+                case pending, failed
+            }
+            let hostId: String
+            let incarnationId: String
+            let ownerScope: String
+            let jobs: [OutcomeUnknownRecordJob]
+            var decision: String?
+            var delivery: Delivery = .pending
+            let restored: Bool
+            var id: String { hostId + "/" + incarnationId }
+        }
+
+        private(set) var outcomeUnknownCard: OutcomeUnknownCard?
+        var outcomeUnknownCardActionable: Bool {
+            guard let card = outcomeUnknownCard, !card.restored, signedIn, let scope = outcomeOwnerScope(),
+                card.ownerScope == scope, card.incarnationId == macComputerHost.incarnationId,
+                card.hostId == macComputerHost.hostIdentifier
+            else { return false }
+            return card.decision == nil || card.delivery == .failed
+        }
+
+        func decideOutcomeUnknown(_ decision: String) {
+            guard ["acknowledge", "discard"].contains(decision), outcomeUnknownCardActionable,
+                outcomeUnknownCard?.decision == nil
+            else { return }
+            outcomeUnknownCard?.decision = decision
+            macComputerHost.sendOutcomeDecision(decision)
+            let owner = downloadOwner
+            let connection = continuity.connectionGeneration
+            let incarnation = outcomeUnknownCard?.incarnationId
+            Task { [weak self] in
+                guard let self else { return }
+                let delivered = await self.macComputerHost.flushCurrentSends()
+                await MainActor.run {
+                    guard self.downloadOwner == owner, self.continuity.connectionGeneration == connection,
+                        self.outcomeUnknownCard?.incarnationId == incarnation,
+                        self.outcomeUnknownCard?.decision == decision
+                    else { return }
+                    if delivered, self.connected {
+                        self.clearOutcomeUnknownCard()
+                    } else {
+                        self.outcomeUnknownCard?.delivery = .failed
+                    }
+                }
+            }
+        }
+
+        func retryOutcomeUnknown() {
+            guard let decision = outcomeUnknownCard?.decision,
+                outcomeUnknownCard?.delivery == .failed, outcomeUnknownCardActionable
+            else { return }
+            macComputerHost.sendOutcomeDecision(decision)
+            let owner = downloadOwner
+            let connection = continuity.connectionGeneration
+            let incarnation = outcomeUnknownCard?.incarnationId
+            Task { [weak self] in
+                guard let self else { return }
+                let delivered = await self.macComputerHost.flushCurrentSends()
+                await MainActor.run {
+                    guard self.downloadOwner == owner, self.continuity.connectionGeneration == connection,
+                        self.outcomeUnknownCard?.incarnationId == incarnation
+                    else { return }
+                    if delivered, self.connected {
+                        self.clearOutcomeUnknownCard()
+                    } else {
+                        self.outcomeUnknownCard?.delivery = .failed
+                    }
+                }
+            }
+        }
+
+        func clearOutcomeUnknownCard() {
+            if let scope = outcomeUnknownCard?.ownerScope {
+                _ = outcomeUnknownStore.clear(key: OutcomeUnknownStore.key(scope: scope))
+            }
+            outcomeUnknownCard = nil
+            macComputerHost.clearUncertainJobs()
+        }
+
+        private func outcomeOwnerScope() -> String? {
+            guard let account = conversationAccount else { return nil }
+            return serverBase.absoluteString + "|" + account.locatorStorageKey
+        }
+
+        private static func outcomeExitCode(_ value: JSONValue) -> Int? {
+            guard case .number(let code) = value else { return nil }
+            return Int(code)
+        }
+
+        private static func outcomeSignal(_ value: JSONValue) -> String? {
+            guard case .string(let name) = value else { return nil }
+            return name
+        }
+
+        private func recordOutcomeUnknownAfterDisconnect() {
+            guard signedIn, let scope = outcomeOwnerScope(), !macComputerHost.uncertainJobs.isEmpty else { return }
+            let jobs = macComputerHost.uncertainJobs.map { job in
+                OutcomeUnknownRecordJob(
+                    id: job.id, state: job.state,
+                    exitCode: Self.outcomeExitCode(job.exitCode),
+                    signal: Self.outcomeSignal(job.signal),
+                    outputBytes: job.outputBytes)
+            }
+            guard let existing = outcomeUnknownCard, !existing.restored,
+                existing.incarnationId == macComputerHost.incarnationId, existing.ownerScope == scope
+            else {
+                setOutcomeUnknownCard(
+                    OutcomeUnknownCard(
+                        hostId: macComputerHost.hostIdentifier, incarnationId: macComputerHost.incarnationId,
+                        ownerScope: scope, jobs: jobs, restored: false), scope: scope)
+                return
+            }
+            var merged = existing.jobs
+            for job in jobs where !merged.contains(job) { merged.append(job) }
+            setOutcomeUnknownCard(
+                OutcomeUnknownCard(
+                    hostId: existing.hostId, incarnationId: existing.incarnationId, ownerScope: existing.ownerScope,
+                    jobs: Array(merged.prefix(OutcomeUnknownRecord.maximumJobs)), decision: existing.decision,
+                    delivery: existing.delivery, restored: false), scope: scope)
+        }
+
+        private func setOutcomeUnknownCard(_ card: OutcomeUnknownCard, scope: String) {
+            outcomeUnknownCard = card
+            let jobs = card.jobs.map { job in
+                OutcomeUnknownRecordJob(
+                    id: job.id, state: job.state, exitCode: job.exitCode, signal: job.signal,
+                    outputBytes: job.outputBytes)
+            }
+            _ = outcomeUnknownStore.save(
+                OutcomeUnknownRecord(hostId: card.hostId, incarnationId: card.incarnationId, jobs: jobs),
+                key: OutcomeUnknownStore.key(scope: scope))
+        }
+
+        private func restoreOutcomeUnknownCard() {
+            guard outcomeUnknownCard == nil, signedIn, let scope = outcomeOwnerScope(),
+                let record = outcomeUnknownStore.load(key: OutcomeUnknownStore.key(scope: scope))
+            else { return }
+            outcomeUnknownCard = OutcomeUnknownCard(
+                hostId: record.hostId, incarnationId: record.incarnationId, ownerScope: scope,
+                jobs: record.jobs, restored: true)
+        }
+
+        func outcomeJobPreview(_ jobId: String) -> (state: String, output: String)? {
+            guard outcomeUnknownCardActionable, let preview = macComputerHost.outcomePreview(jobId) else {
+                return nil
+            }
+            return (preview.job.state, preview.output)
+        }
+    #endif
 
     func decideApproval(_ prompt: ApprovalPrompt, allow: Bool) {
         guard approvalPrompts.contains(prompt) else { return }
@@ -4594,7 +5040,9 @@ final class AppModel: NSObject {
             values.compactMap { item in stripped(item.raw).map { AstralComponent(type: item.type, raw: $0) } }
         }
         func cleaned(_ turn: ChatTurn) -> ChatTurn {
-            ChatTurn(id: turn.id, role: turn.role, text: turn.text, components: components(turn.components))
+            ChatTurn(
+                id: turn.id, role: turn.role, text: turn.text, components: components(turn.components),
+                branch: turn.branch)
         }
         activityObservationPaused = true
         canvas = components(canvas)
@@ -4862,6 +5310,18 @@ final class AppModel: NSObject {
         activityLog.removeValue(forKey: activityKey(nil))
         activeChatId = nil
         voice.updateVisibleChatLocally(nil)
+        #if os(macOS)
+            turnEditor = nil
+            pendingTurnDeparture = nil
+            queueByChat.removeAll()
+            pendingSteerTexts.removeAll()
+            steerNotice = nil
+            queueConflictNotice = nil
+            sideQuestionSheetVisible = false
+            sideQuestionDraft = ""
+            sideQuestionAnswer = nil
+            sideQuestionRequestId = nil
+        #endif
         turns = []
         canvas = []
         transientTurns = []
@@ -5022,7 +5482,7 @@ final class AppModel: NSObject {
         {
             return surface
         }
-        if action == "chat_message" || action == "load_chat" { return "chat" }
+        if action == "chat_message" || action == "load_chat" || Self.turnIntents.contains(action) { return "chat" }
         return "operation"
     }
 
@@ -5031,7 +5491,7 @@ final class AppModel: NSObject {
             if ["authorize_action", "remote_op_decision"].contains(action) { return activeChatId }
         #endif
         if action == "chat_message" || action == "load_chat"
-            || conversationMutationActions.contains(action)
+            || conversationMutationActions.contains(action) || Self.turnIntents.contains(action)
         {
             return payload["chat_id"]?.stringValue ?? activeChatId
         }
@@ -5163,6 +5623,107 @@ final class AppModel: NSObject {
         }
         return component.children.contains { permitsIntroPrompt($0, action: action, payload: payload) }
     }
+
+    #if os(macOS)
+        var turnEditor: TurnEditor?
+        private(set) var pendingTurnDeparture: TurnDeparture?
+
+        var conversationShowsBranches: Bool {
+            turns.contains { ($0.branch?.count ?? 0) > 1 }
+        }
+
+        var canActOnTurns: Bool {
+            signedIn && connected && screen == .chat && !turnBusy && !timelineReadOnly && !mandatorySurface
+                && activeChatId != nil && !projects.negotiating
+        }
+
+        func beginTurnEdit(_ turn: ChatTurn) {
+            guard canActOnTurns, turn.role == "user" else { return }
+            turnEditor = TurnEditor(turnId: turn.id, draft: turn.text, summarizesDeparted: false)
+        }
+
+        func cancelTurnEdit() {
+            turnEditor = nil
+        }
+
+        func sendEditedTurn() {
+            guard let editor = turnEditor, canActOnTurns,
+                !editor.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                let original = turns.first(where: { $0.id == editor.turnId }), original.text != editor.draft
+            else { return }
+            var payload: [String: JSONValue] = ["message": .string(editor.draft)]
+            if let chatId = activeChatId { payload["chat_id"] = .string(chatId) }
+            payload["revised_turn_id"] = .string(editor.turnId)
+            if editor.summarizesDeparted {
+                payload["summarize_departed"] = .bool(true)
+            }
+            sendEvent("chat_message", .object(payload))
+        }
+
+        func forkFromTurn(_ turn: ChatTurn) {
+            guard canActOnTurns else { return }
+            requestTurnDeparture(TurnDeparture(kind: .fork(turnId: turn.id), offersSummary: conversationShowsBranches))
+        }
+
+        func regenerateTurn(_ turn: ChatTurn) {
+            guard canActOnTurns, turn.role != "user" else { return }
+            requestTurnDeparture(
+                TurnDeparture(kind: .regenerate(turnId: turn.id), offersSummary: conversationShowsBranches))
+        }
+
+        func selectBranch(of turn: ChatTurn, targetTurnId: String) {
+            guard canActOnTurns, let branch = turn.branch,
+                branch.siblings.contains(targetTurnId), targetTurnId != turn.id
+            else { return }
+            requestTurnDeparture(
+                TurnDeparture(
+                    kind: .branchSelect(turnId: turn.id, targetTurnId: targetTurnId), offersSummary: true))
+        }
+
+        func confirmTurnDeparture(summarizeDeparted: Bool) {
+            guard let departure = pendingTurnDeparture else { return }
+            pendingTurnDeparture = nil
+            dispatchTurnDeparture(departure, summarizeDeparted: summarizeDeparted)
+        }
+
+        func cancelTurnDeparture() {
+            pendingTurnDeparture = nil
+        }
+
+        private func requestTurnDeparture(_ departure: TurnDeparture) {
+            if departure.offersSummary {
+                pendingTurnDeparture = departure
+            } else {
+                dispatchTurnDeparture(departure, summarizeDeparted: false)
+            }
+        }
+
+        private func dispatchTurnDeparture(_ departure: TurnDeparture, summarizeDeparted: Bool) {
+            guard canActOnTurns, let chatId = activeChatId else { return }
+            var payload: [String: JSONValue] = ["chat_id": .string(chatId)]
+            if summarizeDeparted { payload["summarize_departed"] = .bool(true) }
+            switch departure.kind {
+            case .fork(let turnId):
+                payload["turn_id"] = .string(turnId)
+                sendEvent("chat_fork", .object(payload))
+            case .regenerate(let turnId):
+                payload["turn_id"] = .string(turnId)
+                sendEvent("chat_regenerate", .object(payload))
+            case .branchSelect(let turnId, let targetTurnId):
+                payload["turn_id"] = .string(turnId)
+                payload["target_turn_id"] = .string(targetTurnId)
+                sendEvent("chat_branch_select", .object(payload))
+            }
+        }
+
+        func copyTurnText(_ turn: ChatTurn) {
+            guard !turn.text.isEmpty else { return }
+            NSPasteboard.general.clearContents()
+            let copied = NSPasteboard.general.setString(turn.text, forType: .string)
+            bannerIsError = false
+            errorBanner = copied ? "Copied to clipboard." : "Copying was refused by the system."
+        }
+    #endif
 
     func sendChat(_ text: String) {
         #if os(macOS)
@@ -5561,6 +6122,21 @@ final class AppModel: NSObject {
             } else if activeChatId == nil {
                 pendingCommitRequestGeneration = request
             }
+            #if os(macOS)
+                if let editor = turnEditor, payload["revised_turn_id"] == .string(editor.turnId),
+                    payload["message"] == .string(editor.draft)
+                {
+                    if continuity.connectionGeneration == nil {
+                        appendTurn(role: "user", text: editor.draft)
+                    } else {
+                        transientTurns.append(
+                            ChatTurn(
+                                id: "pending-user-\(UUID().uuidString.lowercased())",
+                                role: "user", text: editor.draft))
+                    }
+                    turnEditor = nil
+                }
+            #endif
             beginLocalOperationSubmission(
                 identity: identity,
                 action: action,

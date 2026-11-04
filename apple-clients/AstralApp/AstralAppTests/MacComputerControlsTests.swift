@@ -236,7 +236,8 @@
         func testAutomaticRestoreToggleAppearsWithConsentAndWritesTheDefault() async throws {
             let store = defaults()
             let host = MacComputerHost(
-                available: true, defaults: store, files: MacComputerFiles(defaults: store, grants: MacComputerTestWorkspaceGrants().port),
+                available: true, defaults: store,
+                files: MacComputerFiles(defaults: store, grants: MacComputerTestWorkspaceGrants().port),
                 driver: MacComputerControlsTestDriver(), monitor: MacComputerControlsTestMonitor(),
                 permissionProvider: { MacComputerPermissions(accessibility: true, screen: true, monitoring: true) },
                 desktopProbe: { true }, desktopRearm: { true }, system: MacComputerTestSystem(),

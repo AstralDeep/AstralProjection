@@ -159,6 +159,7 @@
                                 }
                             }
                             if let prompt = model.approvalPrompts.first { MacApprovalBanner(prompt: prompt) }
+                            MacOutcomeUnknownCardView()
                             ViewportRefreshNotice()
                             HStack(spacing: 0) {
                                 conversation
@@ -242,6 +243,13 @@
                 MacProjectChoiceSheet()
             }
             .sheet(item: $renamingChat) { chat in MacRenameChatSheet(chat: chat) }
+            .sheet(
+                item: Binding(
+                    get: { model.pendingTurnDeparture },
+                    set: { if $0 == nil { model.cancelTurnDeparture() } })
+            ) { departure in
+                MacTurnDepartureSheet(departure: departure)
+            }
             .confirmationDialog(
                 Text(verbatim: "Delete “\(model.chatPendingDeletion?.chat.displayTitle ?? "")”?"),
                 isPresented: Binding(

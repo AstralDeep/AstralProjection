@@ -55,6 +55,9 @@ public struct ClientDispositions: Sendable {
         "agent_tunnel":
             "BYO agent frames — relayed only by a hosting desktop; author-only clients ignore (matches Android)",
         "audit_append": "admin audit surface is web-only (044); natives fetch audit via REST",
+        "chat_queue_updated": "macOS-only turn_steer_v1 queue chips; other clients keep the legacy composer",
+        "chat_steer_recorded": "macOS-only turn_steer_v1 steer receipt; other clients keep the legacy composer",
+        "chat_steer_refused": "macOS-only turn_steer_v1 steer refusal; other clients keep the legacy composer",
         "computer_host":
             "076 presence of another of the owner's computers — surface refresh pending the Apple follow-up",
         "computer_request":
@@ -65,6 +68,7 @@ public struct ClientDispositions: Sendable {
         "llm_config_ack": "natives use the LLM chrome-surface round trip (044)",
         "llm_usage_report": "no usage readout on this client; the Mac status footer shows it",
         "rote_config": "natives are full-capability; profile info unused (044)",
+        "side_question_result": "macOS-only turn_steer_v1 side sheet answer; other clients keep the legacy composer",
         "stream_list": "no native stream-browser surface (matches Windows/Android)",
         "stream_unsubscribed": "terminal state arrives via ui_stream_data done flag",
         "system_config": "dashboard data; natives use agent_list (044)",
@@ -112,6 +116,8 @@ public struct ClientDispositions: Sendable {
         frames: ios.frames.merging([
             "computer_request": .handled, "computer_session": .handled, "computer_host": .handled,
             "llm_usage_report": .handled,
+            "chat_queue_updated": .handled, "chat_steer_recorded": .handled,
+            "chat_steer_refused": .handled, "side_question_result": .handled,
             "ui_auth_refresh_ready": .handled, "ui_auth_refreshed": .handled,
         ]) { _, new in new },
         components: fullComponentSet(fallbacks: [
@@ -192,7 +198,8 @@ public struct ClientDispositions: Sendable {
         "agent_permissions_updated", "agent_registered", "agent_stop",
         "agent_tunnel", "audit_append",
         "auth_required", "chat_created", "chat_deleted", "chat_loaded",
-        "chat_status", "chat_step", "chrome_menu", "chrome_render",
+        "chat_queue_updated", "chat_status", "chat_steer_recorded", "chat_steer_refused",
+        "chat_step", "chrome_menu", "chrome_render",
         "chrome_surface", "combine_error", "combine_status",
         "component_deleted", "component_save_error", "component_saved",
         "components_combined", "components_condensed", "composer_state",
@@ -200,7 +207,7 @@ public struct ClientDispositions: Sendable {
         "conversation_snapshot",
         "error", "heartbeat", "history_list", "llm_config_ack",
         "llm_usage_report", "notification", "operation_status",
-        "rote_config", "saved_components_list", "stream_data", "stream_error",
+        "rote_config", "saved_components_list", "side_question_result", "stream_data", "stream_error",
         "stream_list", "stream_subscribed", "stream_unsubscribed",
         "system_config", "task_completed", "task_started", "tool_progress",
         "ui_append", "ui_auth_refresh_ready", "ui_auth_refreshed", "ui_render", "ui_stream_data", "ui_update",

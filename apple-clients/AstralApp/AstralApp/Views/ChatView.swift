@@ -30,6 +30,15 @@ struct ChatShell: View {
                 showTimeline = false
             }
         }
+        #if os(macOS)
+            .sheet(
+                isPresented: Binding(
+                    get: { model.sideQuestionSheetVisible },
+                    set: { model.sideQuestionSheetVisible = $0 })
+            ) {
+                SideQuestionSheet()
+            }
+        #endif
         .sheet(item: $componentActionTarget) { target in
             ComponentActionSheet(target: target)
         }
@@ -644,11 +653,18 @@ private struct ChatBubble: View {
             ReasoningSnippet(text: turn.text)
         } else {
             let isUser = turn.role == "user"
+            let isSteer = turn.role == "steer"
+            let isOwner = isUser || isSteer
             HStack {
-                if isUser { Spacer(minLength: 40) }
+                if isOwner { Spacer(minLength: 40) }
                 VStack(alignment: .leading, spacing: 8) {
+                    if isSteer {
+                        Text("Steer").font(ConsoleTypography.caption2.weight(.semibold))
+                            .foregroundStyle(p.primary)
+                            .accessibilityIdentifier("transcript-steer-label")
+                    }
                     if !turn.text.isEmpty {
-                        if isUser {
+                        if isOwner {
                             Text(turn.text).foregroundStyle(p.text)
                         } else {
                             MarkdownBlockView(source: turn.text).foregroundStyle(p.text)
@@ -662,18 +678,18 @@ private struct ChatBubble: View {
                 .font(ConsoleTypography.subheadline)
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .background(
-                    isUser ? AnyShapeStyle(p.primary.opacity(0.20)) : AnyShapeStyle(p.surface2),
+                    isOwner ? AnyShapeStyle(p.primary.opacity(0.20)) : AnyShapeStyle(p.surface2),
                     in: RoundedRectangle(cornerRadius: AstralRadius.md)
                 )
-                .astralChartBackdrop(p, color: isUser ? p.primary : p.surface2, opacity: isUser ? 0.20 : 1)
+                .astralChartBackdrop(p, color: isOwner ? p.primary : p.surface2, opacity: isOwner ? 0.20 : 1)
                 .overlay(
                     RoundedRectangle(cornerRadius: AstralRadius.md)
-                        .stroke(isUser ? p.primary.opacity(0.30) : .clear)
+                        .stroke(isOwner ? p.primary.opacity(0.30) : .clear)
                 )
-                .frame(maxWidth: isUser ? 300 : .infinity, alignment: isUser ? .trailing : .leading)
-                if !isUser { Spacer(minLength: 20) }
+                .frame(maxWidth: isOwner ? 300 : .infinity, alignment: isOwner ? .trailing : .leading)
+                if !isOwner { Spacer(minLength: 20) }
             }
-            .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
+            .frame(maxWidth: .infinity, alignment: isOwner ? .trailing : .leading)
         }
     }
 }
@@ -743,6 +759,17 @@ struct InputBar: View {
                 }
             }
             VoiceComposerNotices()
+            #if os(macOS)
+                if model.turnSteerNegotiated {
+                    QueueChipsRow()
+                    if let notice = model.steerNotice {
+                        steerNoticeBanner(notice)
+                    }
+                    if let conflict = model.queueConflictNotice {
+                        steerNoticeBanner(conflict)
+                    }
+                }
+            #endif
             if workbenchStyle {
                 VStack(alignment: .leading, spacing: 2) {
                     messageField.lineLimit(expanded ? 8...18 : 2...6)
@@ -837,13 +864,63 @@ struct InputBar: View {
 
     private var fieldOutline: Color { focused ? p.primary : p.muted.opacity(0.8) }
 
+    private var returnActionDescription: String {
+        #if os(macOS)
+            if model.composerSteeringApplies {
+                switch model.composerReturnBinding {
+                case .steer: return "Return sends a steer"
+                case .queue: return "Return queues a follow-up"
+                }
+            }
+        #endif
+        return "Return sends the message"
+    }
+
     private var messageField: some View {
         TextField("", text: $input, axis: .vertical)
             .textFieldStyle(.plain)
             .accessibilityIdentifier("chat-composer-input")
             .accessibilityLabel("Message AstralDeep")
-            .submitLabel(.send).onSubmit(send)
+            .accessibilityHint(returnActionDescription)
+            .submitLabel(.send).onSubmit(composerPrimarySend)
             .disabled(model.mutationsLocked).focused($focused)
+            #if os(macOS)
+                .onExitCommand { model.cancelTurnRestoringQueue() }
+            #endif
+    }
+
+    private func composerPrimarySend() {
+        #if os(macOS)
+            if model.composerSteeringApplies {
+                submitComposerInput { model.sendComposerText($0) }
+                return
+            }
+        #endif
+        send()
+    }
+
+    private func submitComposerInput(_ submit: (String) -> Void) {
+        guard canSend else { return }
+        let submittedInput = input
+        focused = false
+        input = ""
+        submit(submittedInput)
+    }
+
+    private var optionReturnQueueBinding: Bool {
+        #if os(macOS)
+            return model.composerReturnBinding == .queue
+        #else
+            return false
+        #endif
+    }
+
+    private var queueShortcutActive: Bool {
+        #if os(macOS)
+            return model.composerQueueApplies
+        #else
+            return false
+        #endif
     }
 
     private var controls: some View {
@@ -861,6 +938,22 @@ struct InputBar: View {
             .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
             .frame(width: 44, height: 44)
             .disabled(model.mutationsLocked).accessibilityLabel("Attach files")
+            #if os(macOS)
+                if model.turnSteerNegotiated {
+                    Button {
+                        model.openSideQuestionSheet()
+                    } label: {
+                        Image(systemName: "questionmark.bubble").font(.system(size: 18)).foregroundStyle(p.muted)
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut(";", modifiers: .command)
+                    .disabled(model.mutationsLocked)
+                    .accessibilityLabel("Ask a side question")
+                    .accessibilityIdentifier("composer-side-question-open")
+                    .help("Ask a side question (Command-;)")
+                }
+            #endif
             VoiceComposerControls()
             if let console = model.console {
                 Menu {
@@ -894,8 +987,40 @@ struct InputBar: View {
                 .accessibilityLabel("Run in background").accessibilityValue(model.runInBackground ? "On" : "Off")
             }
             SendButton(enabled: canSend) { send() }
+            #if os(macOS)
+                if queueShortcutActive {
+                    Button {
+                        submitComposerInput { model.composerOptionReturn($0) }
+                    } label: {
+                        Image(
+                            systemName: optionReturnQueueBinding
+                                ? "text.badge.plus" : "arrow.turn.up.right"
+                        )
+                        .font(.system(size: 18)).foregroundStyle(p.muted)
+                        .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut(.return, modifiers: .option)
+                    .accessibilityLabel(optionReturnQueueBinding ? "Queue follow-up" : "Send steer")
+                    .accessibilityIdentifier("composer-option-return")
+                    .help(optionReturnQueueBinding ? "Queue follow-up (Option-Return)" : "Send steer (Option-Return)")
+                }
+            #endif
         }
     }
+
+    #if os(macOS)
+        private func steerNoticeBanner(_ notice: String) -> some View {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.bubble")
+                    .foregroundStyle(p.muted)
+                    .accessibilityHidden(true)
+                Text(notice).font(ConsoleTypography.caption).foregroundStyle(p.text)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("composer-steer-notice")
+        }
+    #endif
 
     private var canSend: Bool {
         !model.mutationsLocked
@@ -911,6 +1036,119 @@ struct InputBar: View {
         model.sendChat(submittedInput)
     }
 }
+
+#if os(macOS)
+    struct QueueChipsRow: View {
+        @Environment(AppModel.self) var model
+        @Environment(ThemeStore.self) var theme
+        @State private var editingId: String?
+        @State private var editingText = ""
+        @State private var draggingId: String?
+        private var p: AstralPalette { theme.palette }
+
+        var body: some View {
+            if !model.queuedFollowUps.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(model.queuedFollowUps) { item in
+                            chip(item)
+                                .onDrag {
+                                    draggingId = item.id
+                                    return NSItemProvider(object: item.id as NSString)
+                                }
+                                .onDrop(
+                                    of: [.text],
+                                    delegate: QueueChipDropDelegate(
+                                        target: item, model: model, draggingId: $draggingId))
+                        }
+                    }
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Queued follow-ups")
+                .accessibilityIdentifier("composer-queue-chips")
+            }
+        }
+
+        private func chip(_ item: QueuedFollowUpItem) -> some View {
+            HStack(spacing: 4) {
+                if editingId == item.id {
+                    TextField("Follow-up", text: $editingText, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .font(ConsoleTypography.caption)
+                        .frame(minWidth: 160)
+                        .onSubmit { commitEdit(item) }
+                        .onExitCommand { editingId = nil }
+                        .accessibilityIdentifier("composer-queue-chip-editor")
+                } else {
+                    Text(item.message)
+                        .font(ConsoleTypography.caption)
+                        .foregroundStyle(p.text)
+                        .lineLimit(2)
+                        .frame(maxWidth: 280, alignment: .leading)
+                        .onTapGesture {
+                            editingText = item.message
+                            editingId = item.id
+                        }
+                }
+                Button {
+                    editingText = item.message
+                    editingId = item.id
+                } label: {
+                    Image(systemName: "pencil").font(.system(size: 11))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(p.muted)
+                .accessibilityLabel("Edit follow-up")
+                .accessibilityValue(item.message)
+                .accessibilityIdentifier("composer-queue-chip-edit")
+                Button {
+                    model.removeQueuedFollowUp(item)
+                } label: {
+                    Image(systemName: "xmark").font(.system(size: 11))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(p.muted)
+                .accessibilityLabel("Remove follow-up")
+                .accessibilityValue(item.message)
+                .accessibilityIdentifier("composer-queue-chip-remove")
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(p.primary.opacity(0.12), in: Capsule())
+            .overlay(Capsule().stroke(p.primary.opacity(0.3)))
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Queued follow-up")
+            .accessibilityValue(item.message)
+            .accessibilityIdentifier("composer-queue-chip")
+        }
+
+        private func commitEdit(_ item: QueuedFollowUpItem) {
+            let text = editingText
+            editingId = nil
+            editingText = ""
+            guard text.trimmingCharacters(in: .whitespacesAndNewlines) != item.message else { return }
+            model.editQueuedFollowUp(item, text: text)
+        }
+    }
+
+    private struct QueueChipDropDelegate: DropDelegate {
+        let target: QueuedFollowUpItem
+        let model: AppModel
+        @Binding var draggingId: String?
+
+        func dropUpdated(info: DropInfo) -> DropProposal? {
+            DropProposal(operation: .move)
+        }
+
+        func performDrop(info: DropInfo) -> Bool {
+            defer { draggingId = nil }
+            guard let draggedId = draggingId, draggedId != target.id,
+                let dragged = model.queuedFollowUps.first(where: { $0.id == draggedId })
+            else { return false }
+            model.moveQueuedFollowUp(dragged, before: target)
+            return true
+        }
+    }
+#endif
 
 struct HistoryLockChip: View {
     @Environment(AppModel.self) var model

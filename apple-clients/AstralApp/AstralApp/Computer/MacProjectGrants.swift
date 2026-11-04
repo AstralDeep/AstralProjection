@@ -256,6 +256,26 @@
             }
             return resources[context.projectId, default: []].map(\.workspace)
         }
+        func localSnapshot() throws -> [ComputerWorkspace] {
+            try validateCurrent()
+            guard let manifest, let document, let catalog, key == document.scope,
+                !failedScopes.contains(document.scope), manifest.generation == document.generation,
+                resources.keys.allSatisfy({ id in
+                    catalog.contains(id) && manifest.projects.contains(where: { $0.projectId == id })
+                })
+            else {
+                throw ComputerHostError("stale_project_grant", "The local project folders are no longer available.")
+            }
+            return try manifest.projects.flatMap { project in
+                guard catalog.contains(project.projectId), let entry = document.projects[project.projectId],
+                    !entry.quarantined, entry.revision == project.grantRevision,
+                    resources[project.projectId, default: []].map({ $0.workspace.root }) == project.roots.map(\.path)
+                else {
+                    throw ComputerHostError("stale_project_grant", "The local project folders changed.")
+                }
+                return resources[project.projectId, default: []].map(\.workspace)
+            }
+        }
         func clear(project: String) throws {
             choices[project] = UUID()
             try replace(project: project, selected: [])

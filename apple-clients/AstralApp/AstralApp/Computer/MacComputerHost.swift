@@ -102,6 +102,7 @@
         var bypassConfirmation: MacBypassOrigin?
         let files: MacComputerFiles
         let projectGrants: MacProjectGrants
+        @ObservationIgnored let checkpoints: MacComputerCheckpoints
         private(set) var projectMode = false
         private(set) var projectGrantError: String?
         @ObservationIgnored private var workspaceNegotiated = true
@@ -148,8 +149,10 @@
         @ObservationIgnored private var localResumeSession: String?
         @ObservationIgnored private let commands: MacComputerCommands
         @ObservationIgnored private let appActivator: @MainActor () -> Void
+        nonisolated let incarnationId = UUID().uuidString.lowercased()
+        private(set) var uncertainJobs: [ComputerHostRetainedJob] = []
         @ObservationIgnored weak var browser: (any MacBrowserVerbHandling)?
-        @ObservationIgnored private var auxiliary: [UUID: Task<Void, Never>] = [:]
+        @ObservationIgnored private var auxiliary: [UUID: (task: Task<Void, Never>, command: Bool)] = [:]
         @ObservationIgnored private var browserTail: Task<Void, Never>?
 
         init(
@@ -168,6 +171,7 @@
             system: any MacComputerSystemIO = MacComputerLiveSystem.shared,
             panelPresenter: (@MainActor (NSPanel) -> Void)? = nil,
             commands: MacComputerCommands? = nil,
+            checkpoints: MacComputerCheckpoints? = nil,
             appActivator: (@MainActor () -> Void)? = nil,
             overlay: (any MacComputerOverlayPresenting)? = nil,
             authority: ComputerHostAuthority = ComputerHostAuthority()
@@ -178,9 +182,19 @@
             self.automatedRestore = defaults.bool(forKey: Self.automatedRearmKey)
             self.files = files ?? MacComputerFiles(defaults: defaults)
             self.projectGrants = projectGrants ?? MacProjectGrants()
+            self.checkpoints = checkpoints ?? MacComputerCheckpoints()
             self.system = system
             self.panelPresenter = panelPresenter ?? { $0.orderFrontRegardless() }
-            self.commands = commands ?? MacComputerCommands()
+            let link = MacComputerHostLink()
+            let sandboxReader = MacComputerSandboxConfigurationReader(defaults: defaults)
+            self.commands =
+                commands
+                ?? MacComputerCommands(
+                    sandbox: MacComputerSandboxController(
+                        configuration: { sandboxReader.read() },
+                        sink: { name, payload in
+                            Task { @MainActor in link.host?.sandboxEvent(name, payload) }
+                        }))
             self.appActivator = appActivator ?? { NSApp.activate() }
             let marker = Int64.random(in: 1...Int64.max)
             self.monitor = monitor ?? MacComputerInputMonitor(marker: marker)
@@ -192,7 +206,6 @@
             self.localInput = localInput
             let presenter = overlay ?? (panelPresenter == nil && self.available ? MacComputerOverlay() : nil)
             self.overlay = presenter
-            let link = MacComputerHostLink()
             var cues: (@Sendable (MacComputerOverlayCue) async -> Void)?
             if let presenter { cues = { cue in await presenter.cue(cue) } }
             self.driver =
@@ -209,9 +222,10 @@
                 hostId = fresh
             }
             let localDesktopRearmProbe = localDesktopRearmProbe ?? MacComputerDesktopProbe.localRearm
-            let localInputProof = localInputProof ?? {
-                localInput?.consume(current: NSApp.currentEvent?.cgEvent) == true
-            }
+            let localInputProof =
+                localInputProof ?? {
+                    localInput?.consume(current: NSApp.currentEvent?.cgEvent) == true
+                }
             let automatedRearmAllowed: @MainActor () -> Bool = { [weak self] in
                 defaults.bool(forKey: Self.automatedRearmKey) && self?.consentEnabled == true
             }
@@ -270,6 +284,7 @@
             }
             self.projectGrants.onRevoke = { [weak self] project in
                 guard let self else { return }
+                self.checkpoints.invalidateRestores()
                 self.authority.revokeProject(project)
                 if self.session?.projectContext?.projectId == project { self.cancelWork() }
             }
@@ -316,8 +331,12 @@
             return "Computer access is off"
         }
         var ownerBound: Bool { owner != nil }
+        var hostIdentifier: String { hostId }
         var taskActive: Bool { session != nil }
         private static let commandVerbs: Set<String> = ["run_command", "read_output", "interrupt_command"]
+        // Checkpoint verbs stay unadvertised until the server registers them in its own closed verb set.
+        private static let checkpointVerbs: Set<String> = MacComputerCheckpoints.verbs
+        private static let mutatingFileVerbs: Set<String> = ["write_file", "delete_path"]
         private static let computerName: String = {
             let name = String(
                 (Host.current().localizedName ?? "This Mac").unicodeScalars.filter { $0.value >= 32 && $0.value != 127 }
@@ -364,6 +383,7 @@
                         scale: Double(pixels.width) / max(1, bounds.width), primary: id == primary))
             }
             var verbs = ComputerHostRequest.verbs
+            verbs.subtract(Self.checkpointVerbs)
             if !projectMode && files.roots.isEmpty {
                 verbs.subtract(Self.commandVerbs.union(["read_file", "list_dir", "write_file", "delete_path"]))
             }
@@ -383,7 +403,8 @@
                 verbs: verbs.sorted(),
                 workspaceRoots: projectMode ? [] : Array(roots.prefix(ComputerHostDescriptor.maximumWorkspaceRoots)),
                 projectManifest: projectMode ? projectGrants.manifest : nil,
-                excluded: verbs.contains("read_file") ? files.exclusions.patterns : [])
+                excluded: verbs.contains("read_file") ? files.exclusions.patterns : [],
+                incarnationId: incarnationId, retainedJobs: commands.inventory())
         }
         private func announceDescriptor(_ descriptor: ComputerHostDescriptor) {
             if projectMode {
@@ -394,6 +415,7 @@
             restoreBypass()
         }
         func beginWorkspaceNegotiation(server: URL, account: String?) {
+            checkpoints.invalidateRestores()
             workspaceNegotiated = false
             pendingManifest = nil
             projectHostAnnounced = false
@@ -457,6 +479,7 @@
             if self.owner != owner {
                 files.bind(owner)
                 commands.forget()
+                checkpoints.bind(owner)
             }
             guard channelEpoch == epoch else { return }
             self.owner = owner
@@ -497,10 +520,35 @@
             channelEpoch = epoch
             outboundTail?.cancel()
             outboundTail = nil
-            retire(commands: "uncertain")
+            recordUncertainJobs()
+            retire(commands: nil)
             guard channelEpoch == epoch else { return }
             sender = nil
             monitor.stop()
+        }
+        private func recordUncertainJobs() {
+            let running = Set(commands.inventory().filter { $0.state == "running" }.map(\.id))
+            guard !running.isEmpty else { return }
+            var merged = uncertainJobs
+            for job in commands.inventory() where running.contains(job.id) {
+                if let index = merged.firstIndex(where: { $0.id == job.id }) {
+                    merged[index] = job
+                } else {
+                    merged.append(job)
+                }
+            }
+            uncertainJobs = Array(merged.prefix(ComputerHostDescriptor.maximumRetainedJobs))
+        }
+        func recordRunningJobsAsUncertain() { recordUncertainJobs() }
+        func clearUncertainJobs() { uncertainJobs = [] }
+        func outcomePreview(_ jobId: String) -> (job: ComputerHostRetainedJob, output: String)? {
+            commands.preview(jobId)
+        }
+        func sendOutcomeDecision(_ decision: String) {
+            guard ["acknowledge", "discard"].contains(decision) else { return }
+            sendEvent(
+                "outcome_ack",
+                additional: ["decision": .string(decision), "incarnation_id": .string(incarnationId)])
         }
         func signedOut() {
             let epoch = UUID()
@@ -519,10 +567,66 @@
             projectMode = false
             authority.configureProjects(false)
             commands.forget()
+            uncertainJobs = []
+            checkpoints.bind(nil)
         }
         func showControls() {
             refreshPermissions()
             controlsPresented = true
+        }
+        private func checkpointWorkspaces() throws -> [ComputerWorkspace] {
+            guard available, ownerBound else {
+                throw ComputerHostError("permission_denied", "Sign in to restore files on this Mac.")
+            }
+            let workspaces = try projectMode ? projectGrants.localSnapshot() : files.snapshot()
+            guard workspaces.allSatisfy({ $0.matchesRoot($0.root) }) else {
+                throw ComputerHostError("permission_denied", "A checkpoint folder changed. Choose it again.")
+            }
+            return workspaces
+        }
+        var checkpointRoots: [String] {
+            Array(Set((try? checkpointWorkspaces())?.map(\.root) ?? [])).sorted()
+        }
+        func checkpointSummaries(root: String) -> [MacCheckpointSummary] {
+            guard let workspaces = try? checkpointWorkspaces() else { return [] }
+            return checkpoints.summaries(workspaces: workspaces).filter { $0.rootPath == root }
+        }
+        func checkpointRestorePreview(checkpointId: String) -> MacCheckpointRestorePreview? {
+            guard let workspaces = try? checkpointWorkspaces() else { return nil }
+            return try? checkpoints.preview(checkpointId: checkpointId, workspaces: workspaces)
+        }
+        func restoreCheckpointFiles(_ checkpointId: String) async -> String {
+            guard available, ownerBound else { return "Sign in to restore files on this Mac." }
+            let workspaces: [ComputerWorkspace]
+            let checkpoints = checkpoints
+            let desktopProbe = desktopProbe
+            let authorize: @Sendable () throws -> Void
+            do {
+                workspaces = try checkpointWorkspaces()
+                authorize = try checkpoints.restoreAuthorization(workspaces: workspaces) {
+                    guard desktopProbe() else {
+                        throw ComputerHostError(
+                            "screen_locked", "Unlock this Mac before restoring files.", effectState: "not_started")
+                    }
+                }
+            } catch { return error.localizedDescription }
+            let outcome = await Task.detached {
+                Result {
+                    try checkpoints.restore(checkpointId: checkpointId, workspaces: workspaces, authorize: authorize)
+                }
+            }.value
+            switch outcome {
+            case .success(let value):
+                let noun = value.restored.count == 1 ? "file" : "files"
+                let undone = value.failed.map(\.path) + value.notAttempted
+                if undone.isEmpty {
+                    return "Restored \(value.restored.count) \(noun) from the checkpoint."
+                }
+                return "Restored \(value.restored.count) \(noun); \(undone.count) not restored: "
+                    + undone.prefix(3).joined(separator: ", ")
+            case .failure(let error):
+                return error.localizedDescription
+            }
         }
         func flushCurrentSends() async -> Bool {
             let epoch = channelEpoch
@@ -548,8 +652,40 @@
         }
         func setAutomatedRestore(_ value: Bool) {
             automatedRestore = value
-            if value { defaults.set(true, forKey: Self.automatedRearmKey) } else { defaults.removeObject(forKey: Self.automatedRearmKey) }
+            if value {
+                defaults.set(true, forKey: Self.automatedRearmKey)
+            } else {
+                defaults.removeObject(forKey: Self.automatedRearmKey)
+            }
             if value { retryBypassRestore() }
+        }
+        private func sandboxEvent(_ name: String, _ payload: [String: JSONValue]) {
+            sendEvent(name, additional: payload)
+        }
+        var sandboxEnforce: Bool {
+            MacComputerSandboxController.configuration(from: defaults).mode == .enforce
+        }
+        func setSandboxEnforce(_ value: Bool) {
+            guard
+                let updated = MacComputerSandboxController.configuration(from: defaults).replacing(
+                    mode: value ? .enforce : .shadow),
+                let data = try? JSONEncoder().encode(updated)
+            else { return }
+            defaults.set(String(decoding: data, as: UTF8.self), forKey: MacComputerSandboxController.configurationKey)
+        }
+        var sandboxSummary: String {
+            let configuration = MacComputerSandboxController.configuration(from: defaults)
+            let mode =
+                configuration.mode == .enforce
+                ? "Enforce mode blocks prohibited writes and egress."
+                : "Shadow mode records violations without blocking."
+            let domains =
+                configuration.domains.count == 1
+                ? "1 allowed egress domain" : "\(configuration.domains.count) allowed egress domains"
+            let bindings =
+                configuration.bindings.count == 1
+                ? "1 secret binding" : "\(configuration.bindings.count) secret bindings"
+            return mode + " " + domains + ", " + bindings + "."
         }
         private func retryBypassRestore() {
             guard enabled, bypassRestorePending, bypassSaved, !bypass, workspaceNegotiated,
@@ -711,7 +847,9 @@
                 return false
             }
             guard restoring ? bypassRestoreRearm() : desktopRearm(), desktopProbe() else {
-                if !restoring { lastError = "Turn on bypass yourself from AstralDeep's active, unlocked local desktop." }
+                if !restoring {
+                    lastError = "Turn on bypass yourself from AstralDeep's active, unlocked local desktop."
+                }
                 return false
             }
             return true
@@ -877,14 +1015,17 @@
             }
             retire()
         }
-        private func cancelWork(resetDriver: Bool = true, commands state: String = "interrupted") {
+        private func cancelWork(resetDriver: Bool = true, commands state: String? = "interrupted") {
             workerId = UUID()
             worker?.cancel()
             worker = nil
             queue = []
-            commands.endAll(as: state)
-            for task in auxiliary.values { task.cancel() }
-            auxiliary = [:]
+            if let state { commands.endAll(as: state) }
+            for id in Array(auxiliary.keys) {
+                let preserved = state == nil && auxiliary[id]?.command == true
+                if !preserved { auxiliary[id]?.task.cancel() }
+                auxiliary.removeValue(forKey: id)
+            }
             browserTail = nil
             refreshWorking()
             if resetDriver { Task { await driver.reset() } }
@@ -893,10 +1034,11 @@
             let busy = worker != nil || !queue.isEmpty || !auxiliary.isEmpty
             if working != busy { working = busy }
         }
-        private func retire(commands state: String = "interrupted") {
+        private func retire(commands state: String? = "interrupted") {
             resolvePauseWaiters(accepted: false)
             authority.invalidate()
             cancelWork(commands: state)
+            checkpoints.endTurn()
             session = nil
             startedAt = nil
             heartbeat?.cancel()
@@ -934,7 +1076,7 @@
                 do {
                     if incoming.id != session?.id {
                         resolvePauseWaiters(accepted: false)
-                        cancelWork()
+                        cancelWork(commands: nil)
                     }
                     if incoming.state == "active" {
                         if awaitingPauseAcknowledgment && incoming.id == session?.id { return true }
@@ -993,13 +1135,16 @@
                 }
                 if projectMode { try projectGrants.validateCurrent() }
                 let ticket = try authority.admit(request)
+                checkpoints.noteActivity()
                 queue.append((request, ticket))
                 drain()
             } catch { respond(request.id, error: error) }
             return true
         }
         private static func browserVerb(_ verb: String) -> Bool { verb.hasPrefix("browser_") }
-        private static func nonPhysical(_ verb: String) -> Bool { browserVerb(verb) || commandVerbs.contains(verb) }
+        private static func nonPhysical(_ verb: String) -> Bool {
+            browserVerb(verb) || commandVerbs.contains(verb) || checkpointVerbs.contains(verb)
+        }
         private func drain() {
             defer { refreshWorking() }
             while let index = queue.firstIndex(where: { Self.nonPhysical($0.0.verb) }) {
@@ -1025,25 +1170,31 @@
             }
             let id = UUID()
             workerId = id
+            let checkpoints = checkpoints
+            let authorize: @Sendable () throws -> Void = {
+                try authority.verify(ticket)
+                if let project = request.projectContext?.projectId,
+                    !workspaces.allSatisfy({ $0.matchesRoot($0.root) })
+                {
+                    authority.revokeProject(project)
+                    throw ComputerHostError("stale_project_grant", "The project's folders changed.")
+                }
+                guard desktopProbe() else {
+                    authority.setDesktopAvailable(false)
+                    throw ComputerHostError(
+                        "screen_locked", "This desktop is unavailable. Enable it locally after unlocking.")
+                }
+                try authority.verify(ticket)
+            }
             worker = Task { [weak self] in
                 let result: Result<[String: JSONValue], Error>
                 do {
+                    if Self.mutatingFileVerbs.contains(request.verb) {
+                        try Self.prepareCheckpoint(
+                            request, workspaces: workspaces, checkpoints: checkpoints, authorize: authorize)
+                    }
                     result = .success(
-                        try await driver.execute(request, workspaces: workspaces) {
-                            try authority.verify(ticket)
-                            if let project = request.projectContext?.projectId,
-                                !workspaces.allSatisfy({ $0.matchesRoot($0.root) })
-                            {
-                                authority.revokeProject(project)
-                                throw ComputerHostError("stale_project_grant", "The project's folders changed.")
-                            }
-                            guard desktopProbe() else {
-                                authority.setDesktopAvailable(false)
-                                throw ComputerHostError(
-                                    "screen_locked", "This desktop is unavailable. Enable it locally after unlocking.")
-                            }
-                            try authority.verify(ticket)
-                        })
+                        try await driver.execute(request, workspaces: workspaces, authorize: authorize))
                 } catch { result = .failure(error) }
                 guard let self, self.workerId == id else { return }
                 self.answer(request, ticket: ticket, with: result)
@@ -1051,16 +1202,32 @@
                 self.drain()
             }
         }
+        private static func prepareCheckpoint(
+            _ request: ComputerHostRequest, workspaces: [ComputerWorkspace],
+            checkpoints: MacComputerCheckpoints, authorize: @Sendable () throws -> Void
+        ) throws {
+            guard let path = request.args["path"]?.stringValue,
+                let root = workspaces.sorted(by: { $0.root.count > $1.root.count }).first(where: {
+                    path == $0.root || path.hasPrefix($0.root + "/")
+                })
+            else { return }
+            try checkpoints.snapshotBeforeMutation(root: root, authorize: authorize)
+        }
         private func runAuxiliary(_ request: ComputerHostRequest, _ ticket: ComputerHostTicket) {
             let authority = authority
             let desktopProbe = desktopProbe
             let roots: [String]
             let workspaces: [ComputerWorkspace]
             do {
-                workspaces =
-                    projectMode
-                        && (request.projectContext?.grantRevision != nil || Self.commandVerbs.contains(request.verb))
-                    ? try projectGrants.snapshot(context: request.projectContext) : []
+                if projectMode,
+                    request.projectContext?.grantRevision != nil || Self.commandVerbs.contains(request.verb)
+                {
+                    workspaces = try projectGrants.snapshot(context: request.projectContext)
+                } else if Self.commandVerbs.contains(request.verb) || Self.checkpointVerbs.contains(request.verb) {
+                    workspaces = files.snapshot()
+                } else {
+                    workspaces = []
+                }
                 roots = projectMode ? workspaces.map(\.root) : files.roots
             } catch {
                 respond(request.id, error: error)
@@ -1091,24 +1258,34 @@
                     try authorize()
                     guard let host = self else { return }
                     result = .success(
-                        try await host.performAuxiliary(request, ticket: ticket, roots: roots, authorize: authorize))
+                        try await host.performAuxiliary(
+                            request, ticket: ticket, roots: roots, workspaces: workspaces, authorize: authorize))
                 } catch { result = .failure(error) }
                 guard let self, self.auxiliary.removeValue(forKey: id) != nil else { return }
                 self.refreshWorking()
                 self.answer(request, ticket: ticket, with: result)
             }
-            auxiliary[id] = task
+            auxiliary[id] = (task, Self.commandVerbs.contains(request.verb))
             if serial { browserTail = task }
         }
         private func performAuxiliary(
             _ request: ComputerHostRequest, ticket: ComputerHostTicket, roots: [String],
-            authorize: @escaping @Sendable () throws -> Void
+            workspaces: [ComputerWorkspace], authorize: @escaping @Sendable () throws -> Void
         ) async throws -> [String: JSONValue] {
             switch request.verb {
             case "run_command":
+                for root in workspaces {
+                    try checkpoints.snapshotBeforeMutation(root: root, authorize: authorize)
+                }
                 return try await commands.run(
                     request, session: ticket.sessionId, roots: roots, exclusions: files.exclusions,
                     authorize: authorize)
+            case "list_checkpoints":
+                return try checkpoints.listCheckpoints(workspaces: workspaces, authorize: authorize)
+            case "diff_checkpoint":
+                return try checkpoints.diffCheckpoint(request, workspaces: workspaces, authorize: authorize)
+            case "restore_checkpoint":
+                return try checkpoints.restoreCheckpoint(request, workspaces: workspaces, authorize: authorize)
             case "read_output": return try await commands.read(request, authorize: authorize)
             case "interrupt_command": return try await commands.interrupt(request, authorize: authorize)
             default: break

@@ -481,7 +481,11 @@ final class ConsoleInteractionTests: XCTestCase {
     func testDeclinedApprovalAndOtherChatsStayInTheirOwnRows() throws {
         let model = try model()
         model.outboundTap = { _ in }
-        model.activeChatId = "c1"
+        #if os(macOS)
+            XCTAssertTrue(model.beginConversationConnection(generation))
+            model.currentApprovalDecisionSendOverride = { text, _ in WSClient.isApprovalDecision(text) }
+        #endif
+        model.activeChatId = "11111111-1111-4111-8111-111111111111"
         model.canvas = [ActivityFrames.approvalCard("r9")]
         let row = try XCTUnwrap(model.activity.first)
         XCTAssertEqual(row.id, "approval-r9")
@@ -501,9 +505,11 @@ final class ConsoleInteractionTests: XCTestCase {
         #endif
         model.canvas = [ActivityFrames.approvalCard("r9")]
         XCTAssertEqual(model.activity.count, 1)
-        model.handleFrame(ActivityFrames.step("other", chat: "c2", status: "in_progress", arguments: "{}"))
+        model.handleFrame(
+            ActivityFrames.step(
+                "other", chat: "22222222-2222-4222-8222-222222222222", status: "in_progress", arguments: "{}"))
         XCTAssertEqual(model.activity.count, 1)
-        model.activeChatId = "c2"
+        model.activeChatId = "22222222-2222-4222-8222-222222222222"
         XCTAssertEqual(model.activity.map(\.id), ["other"])
         XCTAssertEqual(model.activity.first?.position, Int.max)
         model.clearConversationForAccountRemoval()
@@ -630,7 +636,9 @@ final class ConsoleInteractionTests: XCTestCase {
             XCTAssertTrue(fixture.host.browser === model.macBrowser)
             model.signedIn = true
             model.connected = true
-            model.activeChatId = "c1"
+            XCTAssertTrue(model.beginConversationConnection(generation))
+            model.currentApprovalDecisionSendOverride = { text, _ in WSClient.isApprovalDecision(text) }
+            model.activeChatId = "11111111-1111-4111-8111-111111111111"
             var sent: [JSONValue] = []
             model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
             XCTAssertFalse(fixture.host.awaitingApproval)
