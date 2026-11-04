@@ -149,10 +149,13 @@ public struct ConversationMessage: Sendable, Equatable {
     public let createdAt: String
     public let parts: [ConversationPart]
     public let attachments: [JSONValue]
+    public let branch: ConversationMessageBranch?
 
     init?(json: JSONValue) {
         guard let object = json.objectValue,
-            Set(object.keys) == ["message_id", "role", "created_at", "parts", "attachments"],
+            Set(object.keys) == ["message_id", "role", "created_at", "parts", "attachments"]
+                || Set(object.keys)
+                    == ["message_id", "role", "created_at", "parts", "attachments", "branch"],
             let messageId = object["message_id"]?.stringValue,
             !messageId.isEmpty,
             let role = object["role"]?.stringValue,
@@ -164,6 +167,9 @@ public struct ConversationMessage: Sendable, Equatable {
             let attachments = object["attachments"]?.arrayValue,
             attachments.allSatisfy({ $0.objectValue != nil })
         else { return nil }
+        if object["branch"] != nil, ConversationMessageBranch(json: object["branch"], messageId: messageId) == nil {
+            return nil
+        }
         let parts = rawParts.compactMap(ConversationPart.init(json:))
         guard parts.count == rawParts.count else { return nil }
         self.messageId = messageId
@@ -171,6 +177,7 @@ public struct ConversationMessage: Sendable, Equatable {
         self.createdAt = createdAt
         self.parts = parts
         self.attachments = attachments
+        self.branch = object["branch"].flatMap { ConversationMessageBranch(json: $0, messageId: messageId) }
     }
 
     public var visibleText: String {
@@ -185,6 +192,46 @@ public struct ConversationMessage: Sendable, Equatable {
         attachments.compactMap { attachment in
             attachment["filename"]?.stringValue ?? attachment["name"]?.stringValue
         }
+    }
+}
+
+public struct ConversationMessageBranch: Sendable, Equatable {
+    public static let maximumSiblings = 50
+
+    public let groupId: String
+    public let index: Int
+    public let siblings: [String]
+
+    public var count: Int { siblings.count }
+
+    public init?(json: JSONValue?, messageId: String) {
+        guard let json, let object = json.objectValue,
+            Set(object.keys) == ["group_id", "index", "count", "siblings"],
+            let groupId = continuityUUID4(object["group_id"]?.stringValue),
+            let rawIndex = object["index"]?.numberValue,
+            rawIndex.rounded() == rawIndex, rawIndex >= 1,
+            let rawSiblings = object["siblings"]?.arrayValue,
+            !rawSiblings.isEmpty, rawSiblings.count <= Self.maximumSiblings,
+            object["count"]?.numberValue == Double(rawSiblings.count)
+        else { return nil }
+        var identities: Set<String> = []
+        var siblings: [String] = []
+        for sibling in rawSiblings {
+            guard let identifier = continuityUUID4(sibling.stringValue), identities.insert(identifier).inserted
+            else { return nil }
+            siblings.append(identifier)
+        }
+        guard identities.contains(messageId), Int(rawIndex) <= siblings.count else { return nil }
+        self.groupId = groupId
+        self.index = Int(rawIndex)
+        self.siblings = siblings
+    }
+
+    public func neighbor(of messageId: String, step: Int) -> String? {
+        guard let position = siblings.firstIndex(of: messageId) else { return nil }
+        let target = position + step
+        guard siblings.indices.contains(target) else { return nil }
+        return siblings[target]
     }
 }
 

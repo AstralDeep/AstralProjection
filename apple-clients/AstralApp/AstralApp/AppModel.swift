@@ -81,19 +81,42 @@ final class AppModel: NSObject {
         let role: String
         let text: String
         let components: [AstralComponent]
+        let branch: ConversationMessageBranch?
 
         init(
             id: String,
             role: String,
             text: String,
-            components: [AstralComponent] = []
+            components: [AstralComponent] = [],
+            branch: ConversationMessageBranch? = nil
         ) {
             self.id = id
             self.role = role
             self.text = text
             self.components = components
+            self.branch = branch
         }
     }
+
+    #if os(macOS)
+        struct TurnEditor: Equatable {
+            let turnId: String
+            var draft: String
+            var summarizesDeparted: Bool
+        }
+
+        struct TurnDeparture: Identifiable, Equatable {
+            enum Kind: Equatable {
+                case fork(turnId: String)
+                case regenerate(turnId: String)
+                case branchSelect(turnId: String, targetTurnId: String)
+            }
+
+            let id = UUID()
+            let kind: Kind
+            let offersSummary: Bool
+        }
+    #endif
 
     struct StagedAttachment: Identifiable, Equatable {
         let uid: Int
@@ -392,6 +415,7 @@ final class AppModel: NSObject {
     var activity: [ActivityRow] { activityLog[activityKey(activeChatId)] ?? [] }
     var canCancelTurn: Bool { signedIn && connected && turnBusy }
     private static let turnOperations: Set<String> = ["chat_message", "authorize_action", "remote_op_decision"]
+    private static let turnIntents: Set<String> = ["chat_fork", "chat_regenerate", "chat_branch_select"]
     var turnBusy: Bool {
         if turnActive || activity.contains(where: { $0.state == .running && $0.approval != .waiting }) { return true }
         if operationStatuses.values.contains(where: {
@@ -1404,6 +1428,13 @@ final class AppModel: NSObject {
             resume: resume, workReadSupported: true, guidanceNotesSupported: true,
             computerHost: hostDescriptor, computerHostCapable: hostCapable, macWorkbenchSupported: macWorkbench,
             uiAuthRefreshSupported: {
+                #if os(macOS)
+                    return true
+                #else
+                    return false
+                #endif
+            }(),
+            chatBranchesSupported: {
                 #if os(macOS)
                     return true
                 #else
@@ -3379,7 +3410,9 @@ final class AppModel: NSObject {
             canvas = snapshot.canvasComponents
             turns = turns.map { turn in
                 guard let message = snapshot.messages.first(where: { $0.messageId == turn.id }) else { return turn }
-                return ChatTurn(id: turn.id, role: turn.role, text: turn.text, components: message.components)
+                return ChatTurn(
+                    id: turn.id, role: turn.role, text: turn.text, components: message.components,
+                    branch: message.branch)
             }
             return
         }
@@ -3399,10 +3432,17 @@ final class AppModel: NSObject {
                 id: message.messageId,
                 role: message.role,
                 text: text,
-                components: message.components)
+                components: message.components,
+                branch: message.branch)
         }
         activeChatId = snapshot.chatId
         turns = restoredTurns
+        #if os(macOS)
+            if let editor = turnEditor, !snapshot.messages.contains(where: { $0.messageId == editor.turnId }) {
+                turnEditor = nil
+            }
+            pendingTurnDeparture = nil
+        #endif
         canvas = snapshot.canvasComponents
         transientTurns = []
         transientCanvas = nil
@@ -4759,7 +4799,9 @@ final class AppModel: NSObject {
             values.compactMap { item in stripped(item.raw).map { AstralComponent(type: item.type, raw: $0) } }
         }
         func cleaned(_ turn: ChatTurn) -> ChatTurn {
-            ChatTurn(id: turn.id, role: turn.role, text: turn.text, components: components(turn.components))
+            ChatTurn(
+                id: turn.id, role: turn.role, text: turn.text, components: components(turn.components),
+                branch: turn.branch)
         }
         activityObservationPaused = true
         canvas = components(canvas)
@@ -5027,6 +5069,10 @@ final class AppModel: NSObject {
         activityLog.removeValue(forKey: activityKey(nil))
         activeChatId = nil
         voice.updateVisibleChatLocally(nil)
+        #if os(macOS)
+            turnEditor = nil
+            pendingTurnDeparture = nil
+        #endif
         turns = []
         canvas = []
         transientTurns = []
@@ -5187,7 +5233,7 @@ final class AppModel: NSObject {
         {
             return surface
         }
-        if action == "chat_message" || action == "load_chat" { return "chat" }
+        if action == "chat_message" || action == "load_chat" || Self.turnIntents.contains(action) { return "chat" }
         return "operation"
     }
 
@@ -5196,7 +5242,7 @@ final class AppModel: NSObject {
             if ["authorize_action", "remote_op_decision"].contains(action) { return activeChatId }
         #endif
         if action == "chat_message" || action == "load_chat"
-            || conversationMutationActions.contains(action)
+            || conversationMutationActions.contains(action) || Self.turnIntents.contains(action)
         {
             return payload["chat_id"]?.stringValue ?? activeChatId
         }
@@ -5328,6 +5374,117 @@ final class AppModel: NSObject {
         }
         return component.children.contains { permitsIntroPrompt($0, action: action, payload: payload) }
     }
+
+    #if os(macOS)
+        var turnEditor: TurnEditor?
+        private(set) var pendingTurnDeparture: TurnDeparture?
+
+        var conversationShowsBranches: Bool {
+            turns.contains { ($0.branch?.count ?? 0) > 1 }
+        }
+
+        var canActOnTurns: Bool {
+            signedIn && connected && screen == .chat && !turnBusy && !timelineReadOnly && !mandatorySurface
+                && activeChatId != nil
+        }
+
+        func beginTurnEdit(_ turn: ChatTurn) {
+            guard canActOnTurns, turn.role == "user" else { return }
+            turnEditor = TurnEditor(turnId: turn.id, draft: turn.text, summarizesDeparted: false)
+        }
+
+        func cancelTurnEdit() {
+            turnEditor = nil
+        }
+
+        func sendEditedTurn() {
+            guard let editor = turnEditor, canActOnTurns,
+                !editor.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                turns.contains(where: { $0.id == editor.turnId })
+            else { return }
+            if continuity.connectionGeneration == nil {
+                appendTurn(role: "user", text: editor.draft)
+            } else {
+                transientTurns.append(
+                    ChatTurn(
+                        id: "pending-user-\(UUID().uuidString.lowercased())",
+                        role: "user",
+                        text: editor.draft))
+            }
+            var payload: [String: JSONValue] = ["message": .string(editor.draft)]
+            if let chatId = activeChatId { payload["chat_id"] = .string(chatId) }
+            payload["revised_turn_id"] = .string(editor.turnId)
+            if editor.summarizesDeparted {
+                payload["summarize_departed"] = .bool(true)
+            }
+            turnEditor = nil
+            sendEvent("chat_message", .object(payload))
+        }
+
+        func forkFromTurn(_ turn: ChatTurn) {
+            guard canActOnTurns else { return }
+            requestTurnDeparture(TurnDeparture(kind: .fork(turnId: turn.id), offersSummary: conversationShowsBranches))
+        }
+
+        func regenerateTurn(_ turn: ChatTurn) {
+            guard canActOnTurns, turn.role != "user" else { return }
+            requestTurnDeparture(
+                TurnDeparture(kind: .regenerate(turnId: turn.id), offersSummary: conversationShowsBranches))
+        }
+
+        func selectBranch(of turn: ChatTurn, targetTurnId: String) {
+            guard canActOnTurns, let branch = turn.branch,
+                branch.siblings.contains(targetTurnId), targetTurnId != turn.id
+            else { return }
+            requestTurnDeparture(
+                TurnDeparture(
+                    kind: .branchSelect(turnId: turn.id, targetTurnId: targetTurnId), offersSummary: true))
+        }
+
+        func confirmTurnDeparture(summarizeDeparted: Bool) {
+            guard let departure = pendingTurnDeparture else { return }
+            pendingTurnDeparture = nil
+            dispatchTurnDeparture(departure, summarizeDeparted: summarizeDeparted)
+        }
+
+        func cancelTurnDeparture() {
+            pendingTurnDeparture = nil
+        }
+
+        private func requestTurnDeparture(_ departure: TurnDeparture) {
+            if departure.offersSummary {
+                pendingTurnDeparture = departure
+            } else {
+                dispatchTurnDeparture(departure, summarizeDeparted: false)
+            }
+        }
+
+        private func dispatchTurnDeparture(_ departure: TurnDeparture, summarizeDeparted: Bool) {
+            guard canActOnTurns, let chatId = activeChatId else { return }
+            var payload: [String: JSONValue] = ["chat_id": .string(chatId)]
+            if summarizeDeparted { payload["summarize_departed"] = .bool(true) }
+            switch departure.kind {
+            case .fork(let turnId):
+                payload["turn_id"] = .string(turnId)
+                sendEvent("chat_fork", .object(payload))
+            case .regenerate(let turnId):
+                payload["turn_id"] = .string(turnId)
+                sendEvent("chat_regenerate", .object(payload))
+            case .branchSelect(let turnId, let targetTurnId):
+                payload["turn_id"] = .string(turnId)
+                payload["target_turn_id"] = .string(targetTurnId)
+                sendEvent("chat_branch_select", .object(payload))
+            }
+        }
+
+        func copyTurnText(_ turn: ChatTurn) {
+            guard !turn.text.isEmpty else { return }
+            NSPasteboard.general.clearContents()
+            let copied = NSPasteboard.general.setString(turn.text, forType: .string)
+            bannerIsError = false
+            errorBanner = copied ? "Copied to clipboard." : "Copying was refused by the system."
+        }
+    #endif
 
     func sendChat(_ text: String) {
         #if os(macOS)
