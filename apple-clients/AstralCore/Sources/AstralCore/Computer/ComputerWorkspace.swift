@@ -438,7 +438,9 @@
             }
             if let mode {
                 guard fchmod(fd, mode & 0o1777) == 0 else { throw failure() }
-            } else if original >= 0 { try preserve(from: original, to: fd, mode: existing.st_mode) }
+            } else if original >= 0 {
+                try preserve(from: original, to: fd, mode: existing.st_mode)
+            }
             guard fsync(fd) == 0 else { throw failure() }
             try authorize()
             if renameatx_np(parent, temporary, parent, name, overwrite ? 0 : UInt32(RENAME_EXCL)) != 0 {

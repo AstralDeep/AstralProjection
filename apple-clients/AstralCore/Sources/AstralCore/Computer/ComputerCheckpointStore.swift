@@ -115,6 +115,7 @@
         }
 
         private let lock = NSLock()
+        private let turnLock = NSLock()
         private let scopeTag: String
         private let checkpointsDirectory: URL
         private let blobsDirectory: URL
@@ -160,8 +161,8 @@
         }
 
         public func noteActivity() -> String {
-            lock.lock()
-            defer { lock.unlock() }
+            turnLock.lock()
+            defer { turnLock.unlock() }
             let time = now()
             if let turnId, time - turnActivity <= turnGap {
                 turnActivity = time
@@ -174,14 +175,14 @@
         }
 
         public func endTurn() {
-            lock.lock()
-            defer { lock.unlock() }
+            turnLock.lock()
+            defer { turnLock.unlock() }
             turnId = nil
         }
 
         public var currentTurnId: String? {
-            lock.lock()
-            defer { lock.unlock() }
+            turnLock.lock()
+            defer { turnLock.unlock() }
             return turnId
         }
 
@@ -245,7 +246,7 @@
                     }
                 }
             } catch {
-                Self.collectBlobs(directory: blobsDirectory, referenced: Set(files.map(\.digest)))
+                Self.collectBlobs(directory: blobsDirectory, referenced: Self.referencedDigests(recordsLocked()))
                 throw error
             }
             pruneLocked(rootDigest: root.rootIdentity.digest, keepingTurn: turnId)
@@ -269,7 +270,8 @@
         }
 
         private static func treeHash(_ files: [ComputerCheckpointFile]) -> String {
-            let canonical = files
+            let canonical =
+                files
                 .map { "\($0.path)\n\($0.digest)\n\(String($0.mode, radix: 8))\n\($0.size)" }
                 .joined(separator: "\n")
             return digest(Data(canonical.utf8))
@@ -282,8 +284,9 @@
             let url = directory.appendingPathComponent(digest)
             guard !FileManager.default.fileExists(atPath: url.path) else { return }
             let temporary = directory.appendingPathComponent(".blob-" + UUID().uuidString.lowercased())
-            guard FileManager.default.createFile(
-                atPath: temporary.path, contents: Data(bytes), attributes: [.posixPermissions: 0o600])
+            guard
+                FileManager.default.createFile(
+                    atPath: temporary.path, contents: Data(bytes), attributes: [.posixPermissions: 0o600])
             else {
                 throw ComputerHostError("failed", "The checkpoint store could not record content.")
             }
@@ -311,8 +314,9 @@
         }
 
         private static func collectBlobs(directory: URL, referenced: Set<String>) {
-            let urls = (try? FileManager.default.contentsOfDirectory(
-                at: directory, includingPropertiesForKeys: nil)) ?? []
+            let urls =
+                (try? FileManager.default.contentsOfDirectory(
+                    at: directory, includingPropertiesForKeys: nil)) ?? []
             for url in urls where !referenced.contains(url.lastPathComponent) {
                 try? FileManager.default.removeItem(at: url)
             }
@@ -324,8 +328,9 @@
             let data = try encoder.encode(document)
             let temporary = url.deletingLastPathComponent().appendingPathComponent(
                 ".index-" + UUID().uuidString.lowercased())
-            guard FileManager.default.createFile(
-                atPath: temporary.path, contents: data, attributes: [.posixPermissions: 0o600])
+            guard
+                FileManager.default.createFile(
+                    atPath: temporary.path, contents: data, attributes: [.posixPermissions: 0o600])
             else {
                 throw ComputerHostError("failed", "The checkpoint record could not be written.")
             }
@@ -349,9 +354,11 @@
         }
 
         private func recordsLocked() -> [ComputerCheckpointRecord] {
-            let urls = (try? FileManager.default.contentsOfDirectory(
-                at: checkpointsDirectory, includingPropertiesForKeys: nil)) ?? []
-            return urls
+            let urls =
+                (try? FileManager.default.contentsOfDirectory(
+                    at: checkpointsDirectory, includingPropertiesForKeys: nil)) ?? []
+            return
+                urls
                 .filter { $0.pathExtension == "json" }
                 .compactMap { url -> ComputerCheckpointRecord? in
                     guard let data = FileManager.default.contents(atPath: url.path),
@@ -377,7 +384,7 @@
 
         private static func validRelativePath(_ path: String) -> Bool {
             !path.isEmpty && !path.hasPrefix("/")
-            && path.split(separator: "/").allSatisfy { $0 != "." && $0 != ".." && !$0.isEmpty }
+                && path.split(separator: "/").allSatisfy { $0 != "." && $0 != ".." && !$0.isEmpty }
         }
 
         private func recordLocked(_ id: String) -> ComputerCheckpointRecord? {
@@ -389,7 +396,8 @@
             var roots = recordsLocked().filter { $0.rootIdentityDigest == rootDigest }
             while roots.count >= limits.count {
                 guard
-                    let oldest = roots
+                    let oldest =
+                        roots
                         .filter({ $0.turnId != keepingTurn })
                         .min(by: { $0.createdAt < $1.createdAt })
                 else { break }

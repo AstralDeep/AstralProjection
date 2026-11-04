@@ -158,7 +158,7 @@
             lock.withLock {
                 [
                     "mode": .string(mode.rawValue), "profile_digest": .string(digest),
-                    "allowed_domains": .array(domains.sorted().map(.string)),
+                    "allowed_domains": .array(domains.sorted().map(JSONValue.string)),
                     "proxy_port": proxyPort.map { .number(Double($0)) } ?? .null,
                     "violations": .array(records.prefix(Self.violationLimit).map(\.json)),
                 ]
@@ -346,7 +346,7 @@
             holder.target = session
             let wrapped = MacComputerCommandPlan(
                 executable: Self.launcherPath,
-                arguments: ["-f", profilePath] + plan.arguments,
+                arguments: [Self.launcherPath, "-f", profilePath, plan.executable] + plan.arguments.dropFirst(),
                 environment: launchEnvironment, directory: plan.directory, stdin: plan.stdin)
             return MacComputerSandboxLaunch(plan: wrapped, session: session)
         }
@@ -362,7 +362,8 @@
             }
             guard FileManager.default.isExecutableFile(atPath: ComputerSandboxProfile.probeProgram) else {
                 throw ComputerHostError(
-                    "sandbox_refused", "The sandbox compile probe \(ComputerSandboxProfile.probeProgram) is "
+                    "sandbox_refused",
+                    "The sandbox compile probe \(ComputerSandboxProfile.probeProgram) is "
                         + "missing, so the command cannot be checked before it starts.")
             }
             let process = Process()

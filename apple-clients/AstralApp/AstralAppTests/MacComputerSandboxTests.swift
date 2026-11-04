@@ -5,6 +5,7 @@
 #if os(macOS)
     import AstralCore
     import CryptoKit
+    import Darwin
     import XCTest
     @testable import AstralDeep
 
@@ -128,11 +129,12 @@
             XCTAssertEqual(validator.validations.count, 1)
             let (executable, profilePath) = try XCTUnwrap(validator.validations.first)
             XCTAssertEqual(executable, ComputerSandboxProfile.launcherPath)
-            XCTAssertEqual(launch.plan.arguments, ["-f", profilePath, "/bin/echo", "hi"])
+            XCTAssertEqual(
+                launch.plan.arguments, [ComputerSandboxProfile.launcherPath, "-f", profilePath, "/bin/echo", "hi"])
             let profile = try String(contentsOfFile: profilePath, encoding: .utf8)
             XCTAssertTrue(profile.contains("(deny default)"))
             XCTAssertTrue(profile.contains("(subpath \"\(root)\""))
-            XCTAssertTrue(profile.contains("(allow network-outbound (remote ip \"127.0.0.1:51234\"))"))
+            XCTAssertTrue(profile.contains("(allow network-outbound (remote ip \"localhost:51234\"))"))
             XCTAssertEqual(launch.session.digest, digest(profile))
             XCTAssertEqual(launch.session.mode, .enforce)
             XCTAssertEqual(launch.session.domains, ["api.github.com"])
@@ -278,7 +280,7 @@
             XCTAssertNotNil(result["job_id"])
             let plan = try XCTUnwrap(spawner.plans.first)
             XCTAssertEqual(plan.executable, ComputerSandboxProfile.launcherPath)
-            XCTAssertEqual(plan.arguments.first, "-f")
+            XCTAssertEqual(plan.arguments.first, ComputerSandboxProfile.launcherPath)
             XCTAssertEqual(plan.arguments.last, "hi")
             XCTAssertNotNil(plan.environment["HTTP_PROXY"])
             let event = try XCTUnwrap(log.named("command.sandbox_violation").first)
@@ -304,16 +306,24 @@
             let started = try await commands.run(
                 try request(
                     "run_command",
-                    ["argv": .array([.string("sleep"), .string("1")]), "cwd": .string(root),
-                     "background": .bool(true),], deadline: 600000), session: session, roots: [root], authorize: {})
+                    [
+                        "argv": .array([.string("sleep"), .string("1")]), "cwd": .string(root),
+                        "background": .bool(true),
+                    ], deadline: 600000), session: session, roots: [root], authorize: {})
             let jobId = try XCTUnwrap(started["job_id"]?.stringValue)
             let read = try await commands.read(
                 try request("read_output", ["job_id": .string(jobId)], deadline: 30000), authorize: {})
             XCTAssertEqual(read["sandbox"]?.objectValue?["mode"], .string("enforce"))
             let violations = try XCTUnwrap(read["sandbox"]?.objectValue?["violations"]?.arrayValue)
             XCTAssertEqual(violations.first?["operation"], .string("file-read-data"))
-            let chunk = try XCTUnwrap(read["chunks"]?.arrayValue?.first?["data"]?.stringValue)
-            XCTAssertEqual(chunk, "[astral:redacted] leaked\n")
+            let chunks = try XCTUnwrap(read["chunks"]?.arrayValue)
+            let stdout = chunks.filter { $0["stream"]?.stringValue == "stdout" }
+                .compactMap { $0["data"]?.stringValue }.joined()
+            let stderr = chunks.filter { $0["stream"]?.stringValue == "stderr" }
+                .compactMap { $0["data"]?.stringValue }.joined()
+            XCTAssertEqual(stdout, "[astral:redacted] leaked\n")
+            XCTAssertEqual(stderr, "Sandbox: git(9002) deny(2) file-read-data /Users/sam/proj/.env\n")
+            XCTAssertFalse(chunks.contains { $0["data"]?.stringValue?.contains("ASTRAL_GITHUB_TOKEN") == true })
             commands.endAll(as: "interrupted")
         }
 
@@ -335,6 +345,117 @@
             XCTAssertTrue((1024..<65536).contains(Int(port)))
             XCTAssertEqual(launch.plan.environment["HTTP_PROXY"], "http://127.0.0.1:\(Int(port))")
             launch.session.close()
+        }
+        func testPreparedPlanRunsTheResolvedExecutableThroughThePosixSpawner() async throws {
+            let root = try folder()
+            let log = MacComputerSandboxEventLog()
+            let subject = controller(try configuration(), log: log)
+            let plan = MacComputerCommandPlan(
+                executable: "/bin/echo", arguments: ["echo", "sandbox-launch-ok"],
+                environment: ["PATH": "/usr/bin:/bin"], directory: root, stdin: nil)
+            let launch = try await subject.prepare(
+                jobId: UUID().uuidString, plan: plan, environment: plan.environment, roots: [root],
+                exclusions: .defaults)
+            defer { launch.session.close() }
+            let output = MacComputerCommandOutput()
+            let process = try MacComputerPosixSpawner().spawn(launch.plan, output: output)
+            let result = await process.wait()
+            XCTAssertEqual(result, .exited(0))
+            XCTAssertEqual(output.tail(.stdout, limit: 1024).text, "sandbox-launch-ok\n")
+        }
+
+        func testProxyConnectAcknowledgesTheClientAndRelaysBufferedTunnelBytes() throws {
+            let upstream = try socketListening()
+            defer { Darwin.close(upstream.descriptor) }
+            let traffic = MacComputerSandboxEventLog()
+            let received = expectation(description: "upstream receives tunneled bytes")
+            DispatchQueue.global().async {
+                let peer = Darwin.accept(upstream.descriptor, nil, nil)
+                defer {
+                    if peer >= 0 { Darwin.close(peer) }
+                    received.fulfill()
+                }
+                guard peer >= 0 else { return }
+                var timeout = timeval(tv_sec: 3, tv_usec: 0)
+                setsockopt(peer, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+                var bytes = [UInt8](repeating: 0, count: 4096)
+                let count = Darwin.recv(peer, &bytes, bytes.count, 0)
+                guard count > 0 else { return }
+                traffic.append("received", ["bytes": .string(String(decoding: bytes.prefix(count), as: UTF8.self))])
+                _ = Data("pong".utf8).withUnsafeBytes { Darwin.send(peer, $0.baseAddress, $0.count, 0) }
+            }
+            let proxy = try MacComputerEgressProxy(
+                request: MacComputerEgressProxyRequest(
+                    jobId: UUID().uuidString,
+                    policy: ComputerEgressPolicy(mode: .shadow, domains: [], bindings: []), secrets: { _ in nil },
+                    sink: MacComputerEgressDecisionSink()))
+            try proxy.start()
+            defer { proxy.stop() }
+            let client = try socketConnected(port: proxy.port)
+            defer { Darwin.close(client) }
+            let request = Data(
+                "CONNECT 127.0.0.1:\(upstream.port) HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\nearly".utf8)
+            _ = request.withUnsafeBytes { Darwin.send(client, $0.baseAddress, $0.count, 0) }
+            var response = Data()
+            var bytes = [UInt8](repeating: 0, count: 4096)
+            while !response.suffix(4).elementsEqual(Data("pong".utf8)) {
+                let count = Darwin.recv(client, &bytes, bytes.count, 0)
+                guard count > 0 else { break }
+                response.append(contentsOf: bytes.prefix(count))
+            }
+            wait(for: [received], timeout: 5)
+            XCTAssertEqual(String(decoding: response, as: UTF8.self), "HTTP/1.1 200 Connection established\r\n\r\npong")
+            XCTAssertEqual(traffic.named("received").first?["bytes"], .string("early"))
+        }
+
+        private func socketListening() throws -> (descriptor: Int32, port: UInt16) {
+            let descriptor = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+            guard descriptor >= 0 else { throw POSIXError(.ENOTSOCK) }
+            do {
+                var address = sockaddr_in()
+                address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+                address.sin_family = sa_family_t(AF_INET)
+                address.sin_addr.s_addr = inet_addr("127.0.0.1")
+                let result = withUnsafePointer(to: &address) {
+                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                        Darwin.bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                    }
+                }
+                guard result == 0, Darwin.listen(descriptor, 1) == 0 else { throw POSIXError(.EADDRNOTAVAIL) }
+                var size = socklen_t(MemoryLayout<sockaddr_in>.size)
+                let inspected = withUnsafeMutablePointer(to: &address) {
+                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                        getsockname(descriptor, $0, &size)
+                    }
+                }
+                guard inspected == 0 else { throw POSIXError(.EADDRNOTAVAIL) }
+                return (descriptor, UInt16(bigEndian: address.sin_port))
+            } catch {
+                Darwin.close(descriptor)
+                throw error
+            }
+        }
+
+        private func socketConnected(port: UInt16) throws -> Int32 {
+            let descriptor = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+            guard descriptor >= 0 else { throw POSIXError(.ENOTSOCK) }
+            var timeout = timeval(tv_sec: 3, tv_usec: 0)
+            setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+            var address = sockaddr_in()
+            address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+            address.sin_family = sa_family_t(AF_INET)
+            address.sin_addr.s_addr = inet_addr("127.0.0.1")
+            address.sin_port = port.bigEndian
+            let result = withUnsafePointer(to: &address) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    Darwin.connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                }
+            }
+            guard result == 0 else {
+                Darwin.close(descriptor)
+                throw POSIXError(.ECONNREFUSED)
+            }
+            return descriptor
         }
     }
 #endif

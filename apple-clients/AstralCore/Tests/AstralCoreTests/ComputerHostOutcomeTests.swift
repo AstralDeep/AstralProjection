@@ -7,7 +7,7 @@ import XCTest
 @testable import AstralCore
 
 private let outcomeHost = "88888888-8888-4888-8888-888888888888"
-private let outcomeIncarnation = "99999999-9999-4999-8999-999999999999"
+private let outcomeIncarnation = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
 private let outcomeJob = "abcdef01-2345-4678-9abc-def012345678"
 
 final class ComputerHostOutcomeTests: XCTestCase {
@@ -36,8 +36,10 @@ final class ComputerHostOutcomeTests: XCTestCase {
         XCTAssertNil(try descriptor(incarnation: nil, jobs: []).json["incarnation_id"])
         XCTAssertNil(try descriptor(incarnation: nil, jobs: []).json["retained_jobs"])
         let running = try retained()
-        let finished = try retained(state: "exited", exitCode: .number(2), outputBytes: 2048)
-        let signaled = try retained(state: "interrupted", signal: .string("TERM"))
+        let finished = try retained(
+            id: "abcdef02-2345-4678-9abc-def012345678", state: "exited", exitCode: .number(2), outputBytes: 2048)
+        let signaled = try retained(
+            id: "abcdef03-2345-4678-9abc-def012345678", state: "interrupted", signal: .string("TERM"))
         let json = try descriptor(jobs: [running, finished, signaled]).json
         XCTAssertEqual(json["incarnation_id"], .string(incarnation))
         XCTAssertEqual(
@@ -48,11 +50,11 @@ final class ComputerHostOutcomeTests: XCTestCase {
                     "signal": .null, "output_bytes": .number(0),
                 ]),
                 .object([
-                    "job_id": .string(job), "state": .string("exited"), "exit_code": .number(2),
+                    "job_id": .string(finished.id), "state": .string("exited"), "exit_code": .number(2),
                     "signal": .null, "output_bytes": .number(2048),
                 ]),
                 .object([
-                    "job_id": .string(job), "state": .string("interrupted"), "exit_code": .null,
+                    "job_id": .string(signaled.id), "state": .string("interrupted"), "exit_code": .null,
                     "signal": .string("TERM"), "output_bytes": .number(0),
                 ]),
             ]))

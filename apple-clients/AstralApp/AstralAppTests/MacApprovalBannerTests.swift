@@ -385,8 +385,13 @@
                     defer { mount.close() }
                     try await mount.settle()
                     let text = try mount.text()
-                    for kept in [prompt.site, primary, "Deny"].compactMap({ $0 }) {
+                    for kept in [primary, "Deny"] {
                         XCTAssertTrue(text.contains(kept), "\(preset) missing \(kept): \(text)")
+                    }
+                    if let site = prompt.site {
+                        let element = try XCTUnwrap(
+                            mount.accessibility.first { $0.identifier == "approval-banner-site" })
+                        XCTAssertTrue(element.label == site || element.value == site, preset)
                     }
                     XCTAssertFalse(text.contains(missing), "\(preset) shows \(missing): \(text)")
                     try mount.snapshot(self, name: "approval_banner-\(primary.lowercased())-\(preset)")
@@ -547,7 +552,9 @@
                 model.canvas = [card]
                 let prompt = try XCTUnwrap(model.approvalPrompts.first)
                 let button = try XCTUnwrap(
-                    card.children.first { $0.raw["payload"]?["decision"] == .string(item.allow ? "approve" : "decline") })
+                    card.children.first {
+                        $0.raw["payload"]?["decision"] == .string(item.allow ? "approve" : "decline")
+                    })
                 let offered = try XCTUnwrap(button.raw["payload"]?.objectValue)
                 model.decideApproval(prompt, allow: item.allow)
                 let frame = try XCTUnwrap(sent().last { $0["action"] == .string("remote_op_decision") })

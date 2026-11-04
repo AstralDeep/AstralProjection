@@ -19,13 +19,13 @@
         }
 
         func testDomainValidationAcceptsNamesAndSuffixWildcardsOnly() {
-            for value in ["api.github.com", "example.COM", "*.example.com", "a.io", "xn--80ak6aa92e.com"] {
+            for value in ["api.github.com", "A.com", "example.COM", "*.example.com", "a.io", "xn--80ak6aa92e.com"] {
                 XCTAssertNotNil(domain(value), value)
             }
             XCTAssertEqual(domain("Example.COM")?.value, "example.com")
             for value in [
                 "", "*", "*.", ".", "a", "com", "*.com", "a..b", ".a.com", "a.com.", "-a.com", "a-.com",
-                "a_b.com", "a b.com", "A.com", String(repeating: "a", count: 64) + ".com",
+                "a_b.com", "a b.com", String(repeating: "a", count: 64) + ".com",
                 String(repeating: "a.", count: 127) + "com", "a.com/\u{0065}", "a.com:443",
             ] {
                 XCTAssertNil(domain(value), value)
@@ -82,7 +82,7 @@
             XCTAssertNil(
                 ComputerSandboxConfiguration(
                     mode: .shadow, domains: [],
-                    bindings: Array(repeating: binding("ASTRAL_OK", "a.io", "s")!, count: 17)))
+                    bindings: Array(repeating: binding("ASTRAL_OKAY", "a.io", "s")!, count: 17)))
         }
 
         func testIPAddressParsingAndClassificationRefusesEveryNonPublicRoutableClass() throws {
@@ -231,7 +231,7 @@
                 in: head, bindings: subject.bindings(for: "other.example.com"), resolving: { _ in "x" })
             XCTAssertEqual(untouched.head, head)
             let multiline = ComputerSandboxPolicy.swapPlaceholders(
-                in: head, bindings: [binding("ASTRAL_GITHUB_TOKEN", "api.github.com", "line\nbreak")!],
+                in: head, bindings: [binding("ASTRAL_GITHUB_TOKEN", "api.github.com", "line-break")!],
                 resolving: { _ in "line\nbreak" })
             XCTAssertEqual(multiline.head, head)
             XCTAssertEqual(multiline.missing, ["ASTRAL_GITHUB_TOKEN"])

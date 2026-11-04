@@ -559,7 +559,8 @@ final class ComputerHostProtocolTests: XCTestCase {
         }
         XCTAssertTrue(ComputerHostOutbound.isReviewDecision(try frame([:])))
         XCTAssertTrue(
-            ComputerHostOutbound.isReviewDecision(try frame(["display_digest": .string(String(repeating: "0f", count: 32))])))
+            ComputerHostOutbound.isReviewDecision(
+                try frame(["display_digest": .string(String(repeating: "0f", count: 32))])))
         for bad: JSONValue in [.string(String(repeating: "0F", count: 32)), .string("0f"), .number(1), .null] {
             XCTAssertFalse(ComputerHostOutbound.isReviewDecision(try frame(["display_digest": bad])))
         }

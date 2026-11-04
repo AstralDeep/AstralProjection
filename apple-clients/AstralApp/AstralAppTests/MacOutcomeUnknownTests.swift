@@ -127,7 +127,7 @@
         }
 
         private func waitUntil(
-            _ tries: Int = 2000, _ condition: @autoclosure () throws -> Bool
+            _ condition: @autoclosure () throws -> Bool, tries: Int = 2000
         ) async throws -> Bool {
             for _ in 0..<tries {
                 if try condition() { return true }
@@ -142,6 +142,8 @@
                 defaults: fixture.defaults, computerHost: fixture.host)
             model.signedIn = true
             model.bindConversationAccount(owner)
+            fixture.host.bind(owner: "outcome-owner") { fixture.channel.send($0) }
+            fixture.host.setEnabled(true)
             return model
         }
 
@@ -153,6 +155,41 @@
                     "decision": payload["decision"]!, "incarnation_id": payload["incarnation_id"]!,
                 ])
             XCTAssertTrue(ComputerHostOutbound.isValid(frame))
+        }
+
+        func testStoreBoundsTheJobInventoryAndRejectsPersistedOutputContent() throws {
+            let suite = "MacOutcomeUnknownTests." + UUID().uuidString
+            suites.append(suite)
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            let store = OutcomeUnknownStore(defaults: defaults)
+            let jobs = (0..<OutcomeUnknownRecord.maximumJobs).map { index in
+                OutcomeUnknownRecordJob(
+                    id: String(format: "%08x-a111-4111-8111-111111111111", index), state: "running",
+                    exitCode: nil, signal: nil, outputBytes: index)
+            }
+            let record = OutcomeUnknownRecord(
+                hostId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                incarnationId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", jobs: jobs)
+            let key = OutcomeUnknownStore.key(scope: "test-owner")
+
+            XCTAssertTrue(store.save(record, key: key))
+            XCTAssertEqual(store.load(key: key), record)
+            XCTAssertFalse(
+                store.save(
+                    OutcomeUnknownRecord(
+                        hostId: record.hostId, incarnationId: record.incarnationId, jobs: jobs + [jobs[0]]), key: key))
+            XCTAssertEqual(store.load(key: key), record)
+
+            let encoded = try XCTUnwrap(defaults.string(forKey: key))
+            var object = try XCTUnwrap(JSONValue.parse(Data(encoded.utf8)).objectValue)
+            var entries = try XCTUnwrap(object["jobs"]?.arrayValue)
+            var first = try XCTUnwrap(entries[0].objectValue)
+            first["output"] = .string("private output")
+            entries[0] = .object(first)
+            object["jobs"] = .array(entries)
+            defaults.set(String(decoding: try JSONValue.object(object).encoded(), as: UTF8.self), forKey: key)
+
+            XCTAssertNil(store.load(key: key))
         }
 
         func testDisconnectBuildsActionableCardAndAcknowledgeSendsExactlyOneIntent() async throws {
@@ -175,7 +212,8 @@
             XCTAssertEqual(stored.jobs.map(\.id), [job])
             reconnect(fixture, model)
             model.decideOutcomeUnknown("acknowledge")
-            XCTAssertTrue(try await waitUntil(model.outcomeUnknownCard == nil))
+            let acknowledged = try await waitUntil(model.outcomeUnknownCard == nil)
+            XCTAssertTrue(acknowledged)
             let decisions = fixture.channel.decisions()
             XCTAssertEqual(decisions.count, 1)
             XCTAssertEqual(decisions.first?["decision"], .string("acknowledge"))
@@ -197,7 +235,8 @@
             await model.handle(.disconnected(reason: "server restart"))
             reconnect(fixture, model)
             model.decideOutcomeUnknown("discard")
-            XCTAssertTrue(try await waitUntil(model.outcomeUnknownCard == nil))
+            let discarded = try await waitUntil(model.outcomeUnknownCard == nil)
+            XCTAssertTrue(discarded)
             let decisions = fixture.channel.decisions()
             XCTAssertEqual(decisions.count, 1)
             XCTAssertEqual(decisions.first?["decision"], .string("discard"))
@@ -213,15 +252,17 @@
             _ = try await startBackgroundJob(fixture)
             await model.handle(.disconnected(reason: "server restart"))
             model.decideOutcomeUnknown("acknowledge")
+            let failed = try await waitUntil(model.outcomeUnknownCard?.delivery == .failed)
             XCTAssertTrue(
-                try await waitUntil(model.outcomeUnknownCard?.delivery == .failed),
+                failed,
                 "an intent that cannot reach the server keeps the card on retry")
             XCTAssertEqual(fixture.channel.decisions().count, 0)
             XCTAssertNotNil(model.outcomeUnknownCard)
             XCTAssertNotNil(fixture.store.load(key: OutcomeUnknownStore.key(scope: scope(model, owner))))
             reconnect(fixture, model)
             model.retryOutcomeUnknown()
-            XCTAssertTrue(try await waitUntil(model.outcomeUnknownCard == nil))
+            let retried = try await waitUntil(model.outcomeUnknownCard == nil)
+            XCTAssertTrue(retried)
             XCTAssertEqual(fixture.channel.decisions().count, 1)
             XCTAssertNil(fixture.store.load(key: OutcomeUnknownStore.key(scope: scope(model, owner))))
             XCTAssertTrue(fixture.host.uncertainJobs.isEmpty)

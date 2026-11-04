@@ -558,7 +558,8 @@ public struct ComputerHostRequest: Sendable, Equatable {
                 required: true)
             if args["value"] != nil { try text("value", 4000, empty: true) }
             if let action = args["action"]?.stringValue,
-                ["set_value", "pick"].contains(action), args["value"] == nil {
+                ["set_value", "pick"].contains(action), args["value"] == nil
+            {
                 throw ComputerHostError("out_of_range", "Missing value.")
             }
             if args["confirm_element"] != nil { try text("confirm_element", 200) }
@@ -730,7 +731,9 @@ public enum ComputerHostOutbound {
         else { return false }
         let key = action == "authorize_action" ? "hitl_request_id" : "proposal_id"
         return payload[key]?.stringValue.map { !$0.isEmpty && $0.count <= 200 } == true
-            && Set(payload.keys).isSubset(of: [key, "decision", "submission_id", "request_generation", "display_digest"])
+            && Set(payload.keys).isSubset(of: [
+                key, "decision", "submission_id", "request_generation", "display_digest",
+            ])
             && payload["display_digest"].map(isDisplayDigest) != false
     }
     public static func isDisplayDigest(_ value: JSONValue) -> Bool {

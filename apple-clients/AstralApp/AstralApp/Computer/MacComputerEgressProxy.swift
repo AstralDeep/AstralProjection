@@ -133,22 +133,24 @@
             guard let parsed, let target = parsed.target else {
                 reply(connection, status: "400 Bad Request")
                 guard let unknown = ComputerEgressTarget(host: "unknown", port: 0) else { return }
-                record(ComputerEgressDecision(
-                    target: unknown, verdict: .refuse(.malformedRequest), forwarded: false, placeholders: []))
+                record(
+                    ComputerEgressDecision(
+                        target: unknown, verdict: .refuse(.malformedRequest), forwarded: false, placeholders: []))
                 return
             }
             let resolved = ComputerIPAddress.parse(target.host).map { [$0] } ?? Self.resolve(target.host)
             let evaluation = request.policy.evaluate(request: parsed, resolved: resolved)
             switch evaluation.verdict {
-            case .allow(let rule):
+            case .allow:
                 forward(
                     connection, parsed: parsed, target: target, evaluation: evaluation, resolved: resolved,
                     body: body)
             case .refuse(let reason):
                 let forwarding = request.policy.mode == .shadow && !resolved.isEmpty
-                record(ComputerEgressDecision(
-                    target: target, verdict: .refuse(reason), forwarded: forwarding,
-                    placeholders: evaluation.placeholders))
+                record(
+                    ComputerEgressDecision(
+                        target: target, verdict: .refuse(reason), forwarded: forwarding,
+                        placeholders: evaluation.placeholders))
                 if forwarding {
                     forward(
                         connection, parsed: parsed, target: target, evaluation: evaluation, resolved: resolved,
@@ -168,9 +170,10 @@
                 let swapped = ComputerSandboxPolicy.swapPlaceholders(
                     in: head, bindings: request.policy.bindings(for: target.host), resolving: request.secrets)
                 if !swapped.missing.isEmpty {
-                    record(ComputerEgressDecision(
-                        target: target, verdict: .refuse(.secretUnavailable), forwarded: false,
-                        placeholders: evaluation.placeholders))
+                    record(
+                        ComputerEgressDecision(
+                            target: target, verdict: .refuse(.secretUnavailable), forwarded: false,
+                            placeholders: evaluation.placeholders))
                     reply(connection, status: parsed.form == .connect ? "403 Forbidden" : "502 Bad Gateway")
                     return
                 }
@@ -183,7 +186,7 @@
             }
             let payload: Data?
             if parsed.form == .connect {
-                payload = nil
+                payload = body.isEmpty ? nil : body
             } else {
                 var forwardedHead = head
                 if let requestLine = parsed.originFormRequestLine {
@@ -217,15 +220,19 @@
                 guard let outgoing else { return }
                 switch state {
                 case .ready:
-                    let greeting = tunnel ? Data("HTTP/1.1 200 Connection established\r\n\r\n".utf8) : initialPayload
-                    outgoing.send(content: greeting, completion: .contentProcessed { [weak self] error in
-                        if error != nil {
-                            self?.closePair(client, outgoing)
-                            return
-                        }
-                        self?.pump(client, outgoing)
-                        self?.pump(outgoing, client)
-                    })
+                    if tunnel {
+                        client.send(
+                            content: Data("HTTP/1.1 200 Connection established\r\n\r\n".utf8),
+                            completion: .contentProcessed { [weak self] error in
+                                if error != nil {
+                                    self?.closePair(client, outgoing)
+                                    return
+                                }
+                                self?.relay(client, outgoing, initialPayload: initialPayload)
+                            })
+                    } else {
+                        self?.relay(client, outgoing, initialPayload: initialPayload)
+                    }
                 case .failed, .cancelled:
                     client.cancel()
                     self?.untrack(outgoing)
@@ -233,6 +240,24 @@
                 }
             }
             outgoing.start(queue: queue)
+        }
+
+        private func relay(_ client: NWConnection, _ outgoing: NWConnection, initialPayload: Data?) {
+            guard let initialPayload, !initialPayload.isEmpty else {
+                pump(client, outgoing)
+                pump(outgoing, client)
+                return
+            }
+            outgoing.send(
+                content: initialPayload,
+                completion: .contentProcessed { [weak self] error in
+                    if error != nil {
+                        self?.closePair(client, outgoing)
+                        return
+                    }
+                    self?.pump(client, outgoing)
+                    self?.pump(outgoing, client)
+                })
         }
 
         private func pump(_ source: NWConnection, _ destination: NWConnection) {
@@ -247,7 +272,7 @@
                                 self?.closePair(source, destination)
                                 return
                             }
-                            self.pump(source, destination)
+                            self?.pump(source, destination)
                         })
                     return
                 }
@@ -291,13 +316,14 @@
             while let node = current, addresses.count < 16 {
                 var buffer = [CChar](repeating: 0, count: Int(NI_MAXHOST))
                 if getnameinfo(
-                    node.ai_addr, node.ai_addrlen, &buffer, socklen_t(buffer.count), nil, 0, NI_NUMERICHOST) == 0
+                    node.pointee.ai_addr, node.pointee.ai_addrlen, &buffer, socklen_t(buffer.count), nil, 0,
+                    NI_NUMERICHOST) == 0
                 {
                     if let address = ComputerIPAddress.parse(String(cString: buffer)), !addresses.contains(address) {
                         addresses.append(address)
                     }
                 }
-                current = node.ai_next
+                current = node.pointee.ai_next
             }
             return addresses
         }

@@ -33,16 +33,22 @@
         private let limits: ComputerCheckpointStore.Limits
         private var scope: String?
         private var store: ComputerCheckpointStore?
+        private var restoreEpoch = UUID()
 
-        init(directory: URL = Self.defaultDirectory, limits: ComputerCheckpointStore.Limits = .standard) {
+        init(
+            directory: URL = MacComputerCheckpoints.defaultDirectory,
+            limits: ComputerCheckpointStore.Limits = .standard
+        ) {
             self.directory = directory
             self.limits = limits
         }
 
         static var defaultDirectory: URL {
-            let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            let support =
+                FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
                 ?? FileManager.default.temporaryDirectory
-            return support
+            return
+                support
                 .appendingPathComponent(Bundle.main.bundleIdentifier ?? "AstralDeep", isDirectory: true)
                 .appendingPathComponent("ComputerCheckpoints", isDirectory: true)
         }
@@ -59,6 +65,7 @@
             lock.lock()
             defer { lock.unlock() }
             guard scope != owner else { return }
+            restoreEpoch = UUID()
             scope = owner
             store = nil
             guard let owner else { return }
@@ -74,16 +81,39 @@
         }
 
         func endTurn() {
+            invalidateRestores()
             _ = withStore { $0.endTurn() }
         }
 
+        func invalidateRestores() {
+            lock.lock()
+            restoreEpoch = UUID()
+            lock.unlock()
+        }
+
+        private func verifyRestore(_ epoch: UUID) throws {
+            lock.lock()
+            let current = restoreEpoch == epoch && scope != nil && store != nil
+            lock.unlock()
+            guard current else {
+                throw ComputerHostError(
+                    "interrupted", "The account or folder grants changed. Review the checkpoint before retrying.",
+                    effectState: "not_started")
+            }
+        }
+
         func snapshotBeforeMutation(root: ComputerWorkspace, authorize: () throws -> Void) throws {
-            guard let checkpointStore = withStore({ $0 }) else { return }
+            guard let checkpointStore = withStore({ $0 }) else {
+                throw ComputerHostError(
+                    "failed", "The checkpoint store is unavailable, so the file change was refused.",
+                    effectState: "not_started")
+            }
             try authorize()
             let turn = checkpointStore.noteActivity()
             if let record = try checkpointStore.snapshotIfNeeded(turnId: turn, root: root) {
                 Self.log.info(
-                    "checkpoint.created turn=\(record.turnId, privacy: .private) root=\(record.rootIdentityDigest, privacy: .public) tree=\(record.treeHash, privacy: .public) files=\(record.fileCount)")
+                    "checkpoint.created turn=\(record.turnId, privacy: .private) root=\(record.rootIdentityDigest, privacy: .public) tree=\(record.treeHash, privacy: .public) files=\(record.fileCount)"
+                )
             }
         }
 
@@ -182,7 +212,8 @@
             }
             let outcome = try store.restore(id, root: root, path: path, authorize: authorize)
             Self.log.info(
-                "checkpoint.restored restored=\(outcome.restored.count) skipped=\(outcome.failed.count + outcome.notAttempted.count)")
+                "checkpoint.restored restored=\(outcome.restored.count) skipped=\(outcome.failed.count + outcome.notAttempted.count)"
+            )
             return outcome
         }
 
@@ -220,10 +251,33 @@
                 changes: diff.changes, extras: diff.extras)
         }
 
-        func restore(checkpointId: String, workspaces: [ComputerWorkspace]) throws
-            -> ComputerCheckpointRestoreOutcome
-        {
-            try restore(checkpointId, path: nil, workspaces: workspaces, authorize: {})
+        func restoreAuthorization(
+            workspaces: [ComputerWorkspace],
+            authorize: @escaping @Sendable () throws -> Void
+        ) throws -> @Sendable () throws -> Void {
+            lock.lock()
+            let epoch = restoreEpoch
+            lock.unlock()
+            let verify: @Sendable () throws -> Void = { [self] in
+                try verifyRestore(epoch)
+                try authorize()
+                try verifyRestore(epoch)
+                guard workspaces.allSatisfy({ $0.matchesRoot($0.root) }) else {
+                    throw ComputerHostError(
+                        "permission_denied", "A checkpoint folder changed. Choose the folder again.",
+                        effectState: "not_started")
+                }
+            }
+            try verifyRestore(epoch)
+            return verify
+        }
+
+        func restore(
+            checkpointId: String, workspaces: [ComputerWorkspace],
+            authorize: @escaping @Sendable () throws -> Void
+        ) throws -> ComputerCheckpointRestoreOutcome {
+            let verify = try restoreAuthorization(workspaces: workspaces, authorize: authorize)
+            return try restore(checkpointId, path: nil, workspaces: workspaces, authorize: verify)
         }
     }
 

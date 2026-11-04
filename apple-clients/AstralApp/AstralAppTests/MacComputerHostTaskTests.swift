@@ -598,6 +598,8 @@
             }
             host.beginWorkspaceNegotiation(server: URL(string: "https://example.test")!, account: "task-owner")
             host.workspaceNegotiated(projects: false)
+            let announced = await host.flushCurrentSends()
+            XCTAssertTrue(announced)
             let announce = try XCTUnwrap(events.last { $0["event"] == .string("announce") })
             XCTAssertEqual(announce["host"]?["incarnation_id"], .string(host.incarnationId))
             XCTAssertEqual(announce["host"]?["retained_jobs"]?.arrayValue?.first?["job_id"], .string(job))
@@ -651,11 +653,13 @@
             XCTAssertEqual(commands.registry.job(job)?.state, "interrupted")
         }
 
-        func testOutcomeDecisionSendsOneClosedFramePerCall() throws {
+        func testOutcomeDecisionSendsOneClosedFramePerCall() async throws {
             let host = try makeHost()
             host.sendOutcomeDecision("acknowledge")
             host.sendOutcomeDecision("continue")
             host.sendOutcomeDecision("discard")
+            let delivered = await host.flushCurrentSends()
+            XCTAssertTrue(delivered)
             let decisions = events.filter { $0["event"] == .string("outcome_ack") }
             XCTAssertEqual(decisions.count, 2)
             XCTAssertEqual(decisions.first?["decision"], .string("acknowledge"))

@@ -47,9 +47,12 @@
                     .frame(maxHeight: 260)
                     .accessibilityIdentifier("side-question-answer")
                 }
-                TextField("Ask a side question", text: Binding(
-                    get: { model.sideQuestionDraft }, set: { model.sideQuestionDraft = $0 }
-                ), axis: .vertical)
+                TextField(
+                    "Ask a side question",
+                    text: Binding(
+                        get: { model.sideQuestionDraft }, set: { model.sideQuestionDraft = $0 }
+                    ), axis: .vertical
+                )
                 .textFieldStyle(.plain)
                 .lineLimit(2...5)
                 .padding(8)

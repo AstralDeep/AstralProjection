@@ -197,7 +197,7 @@ public enum ComputerIPAddress: Sendable, Equatable, Hashable {
             remainder = remainder.dropFirst().dropLast()
         }
         let body = String(remainder)
-        var bytes = Array(repeating: 0, count: 16)
+        var bytes = [UInt8](repeating: 0, count: 16)
         if let range = body.range(of: "::") {
             let left = body[..<range.lowerBound]
             let right = body[range.upperBound...]
@@ -349,9 +349,9 @@ public struct ComputerEgressRequest: Sendable, Equatable {
 
     public static func parse(_ head: String) -> ComputerEgressRequest? {
         guard !head.isEmpty, head.utf8.count <= maximumHeadBytes else { return nil }
-        let lines = head.split(separator: "\n", omittingEmptySubsequences: false)
+        let lines = head.components(separatedBy: "\n")
         guard let first = lines.first else { return nil }
-        let requestLine = first.hasSuffix("\r") ? first.dropLast() : first
+        let requestLine = first.hasSuffix("\r") ? String(first.dropLast()) : first
         let tokens = requestLine.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
         guard tokens.count == 3, !tokens[0].isEmpty, tokens[2].hasPrefix("HTTP/") else { return nil }
         let method = tokens[0].uppercased()
@@ -430,7 +430,7 @@ public struct ComputerEgressDecision: Sendable, Equatable {
             "rule": .string(rule),
         ]
         if !placeholders.isEmpty {
-            payload["placeholders"] = .array(placeholders.sorted().map(.string))
+            payload["placeholders"] = .array(placeholders.sorted().map(JSONValue.string))
         }
         return payload
     }
@@ -496,6 +496,9 @@ public struct ComputerEgressPolicy: Sendable, Equatable {
         return ComputerEgressEvaluation(verdict: .allow(rule: rule), placeholders: found)
     }
 
+}
+
+public enum ComputerSandboxPolicy {
     public static func swapPlaceholders(
         in head: String, bindings: [ComputerEgressBinding], resolving: (String) -> String?
     ) -> (head: String, swapped: [String], missing: [String]) {
@@ -544,7 +547,7 @@ public struct ComputerSandboxViolation: Sendable, Equatable {
     public var key: String { "\(pid)|\(operation)|\(target)" }
 
     public static func parse(_ text: String) -> [ComputerSandboxViolation] {
-        text.split(separator: "\n", omittingEmptySubsequences: true).compactMap { parseLine(String($0)) }
+        text.components(separatedBy: "\n").compactMap(parseLine)
     }
 
     static func parseLine(_ raw: String) -> ComputerSandboxViolation? {

@@ -153,7 +153,9 @@
                 guard case (let canvas, let local)? = locate(point) else { return }
                 canvas.ripple(at: local)
             case .drag(let start, let end):
-                if case (let canvas, let from)? = locate(start), case (let other, let to)? = locate(end), canvas === other {
+                if case (let canvas, let from)? = locate(start), case (let other, let to)? = locate(end),
+                    canvas === other
+                {
                     canvas.path(from: from, to: to)
                 } else {
                     if case (let canvas, let local)? = locate(start) { canvas.ripple(at: local) }

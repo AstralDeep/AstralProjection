@@ -6,6 +6,30 @@
     import XCTest
     @testable import AstralDeep
 
+    private final class MacCheckpointRestoreGate: @unchecked Sendable {
+        let entered: XCTestExpectation
+        private let lock = NSLock()
+        private let released = DispatchSemaphore(value: 0)
+        private var armed = false
+
+        init(entered: XCTestExpectation) { self.entered = entered }
+        func arm() {
+            lock.lock()
+            armed = true
+            lock.unlock()
+        }
+        func release() { released.signal() }
+        func probe() -> Bool {
+            lock.lock()
+            let wait = armed
+            armed = false
+            lock.unlock()
+            guard wait else { return true }
+            entered.fulfill()
+            return released.wait(timeout: .now() + 5) == .success
+        }
+    }
+
     @MainActor
     final class MacComputerCheckpointTests: XCTestCase {
         private var counter = 0
@@ -20,7 +44,8 @@
 
         private func makeHost(
             roots: [URL] = [], limits: ComputerCheckpointStore.Limits = .standard,
-            commands: MacComputerCommands? = nil
+            commands: MacComputerCommands? = nil, projectGrants: MacProjectGrants? = nil,
+            desktopProbe: @escaping @Sendable () -> Bool = { true }
         ) throws -> (host: MacComputerHost, storeDirectory: URL) {
             let suite = "checkpoint-" + UUID().uuidString
             let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -36,11 +61,11 @@
             let checkpoints = MacComputerCheckpoints(directory: storeDirectory, limits: limits)
             let system = MacComputerTestSystem()
             let host = MacComputerHost(
-                available: true, defaults: defaults, files: files,
+                available: true, defaults: defaults, files: files, projectGrants: projectGrants,
                 driver: MacComputerDriver(marker: 7, system: system, overlay: nil, bypass: { false }),
                 monitor: MacComputerTaskMonitor(),
                 permissionProvider: { MacComputerPermissions(accessibility: true, screen: true, monitoring: true) },
-                desktopProbe: { true }, desktopRearm: { true }, system: system,
+                desktopProbe: desktopProbe, desktopRearm: { true }, system: system,
                 panelPresenter: { _ in },
                 commands: commands
                     ?? MacComputerCommands(
@@ -122,7 +147,10 @@
             let session = try startSession(host)
             _ = try await send(
                 host, session, "write_file",
-                ["path": canonical + "/seeded.txt", "content": "after", "if_exists": .string("overwrite")])
+                [
+                    "path": .string(canonical + "/seeded.txt"), "content": .string("after"),
+                    "if_exists": .string("overwrite"),
+                ])
             XCTAssertTrue(try XCTUnwrap(host.checkpointSummaries(root: canonical).first).currentTurn)
 
             host.stop()
@@ -138,7 +166,10 @@
             let session = try startSession(host)
             let response = try await send(
                 host, session, "write_file",
-                ["path": canonical + "/seeded.txt", "content": "after", "if_exists": .string("overwrite")])
+                [
+                    "path": .string(canonical + "/seeded.txt"), "content": .string("after"),
+                    "if_exists": .string("overwrite"),
+                ])
             XCTAssertEqual(response["ok"], .bool(true))
 
             let summaries = host.checkpointSummaries(root: canonical)
@@ -162,8 +193,8 @@
             let canonical = try XCTUnwrap(host.files.roots.first)
             let session = try startSession(host)
             let overwrite: [String: JSONValue] = [
-                "path": canonical + "/notes.md",
-                "content": "one\nx\ny\ntwo\nthree\n",
+                "path": .string(canonical + "/notes.md"),
+                "content": .string("one\nx\ny\ntwo\nthree\n"),
                 "if_exists": .string("overwrite"),
             ]
             _ = try await send(host, session, "write_file", overwrite)
@@ -189,12 +220,35 @@
             let session = try startSession(host)
             let response = try await send(
                 host, session, "write_file",
-                ["path": canonical + "/created.txt", "content": "payload", "if_exists": .string("overwrite")])
+                [
+                    "path": .string(canonical + "/created.txt"), "content": .string("payload"),
+                    "if_exists": .string("overwrite"),
+                ])
             XCTAssertEqual(response["ok"], .bool(false))
             XCTAssertEqual(response["error"]?["code"], .string("capacity_exceeded"))
             XCTAssertEqual(response["error"]?["effect_state"], .string("not_started"))
             XCTAssertFalse(FileManager.default.fileExists(atPath: canonical + "/created.txt"))
             XCTAssertTrue(host.checkpointSummaries(root: canonical).isEmpty)
+        }
+
+        func testUnavailableCheckpointStoreRefusesBeforeMutation() throws {
+            let root = try folder().resolvingSymlinksInPath()
+            let workspace = try ComputerWorkspace(root: root.path)
+            let path = workspace.root + "/seeded.txt"
+            try workspace.write(path, content: "before", overwrite: false, authorize: {})
+            let blockedDirectory = try folder().appendingPathComponent("blocked")
+            try Data("not a directory".utf8).write(to: blockedDirectory)
+            let checkpoints = MacComputerCheckpoints(directory: blockedDirectory)
+            checkpoints.bind("checkpoint-owner")
+
+            XCTAssertThrowsError(
+                try checkpoints.snapshotBeforeMutation(root: workspace, authorize: {})
+            ) { error in
+                XCTAssertEqual((error as? ComputerHostError)?.code, "failed")
+                XCTAssertEqual((error as? ComputerHostError)?.effectState, "not_started")
+            }
+            XCTAssertEqual(try String(contentsOfFile: path, encoding: .utf8), "before")
+            XCTAssertTrue(checkpoints.summaries(workspaces: [workspace]).isEmpty)
         }
 
         func testRunCommandTakesTheCheckpointBeforeSpawning() async throws {
@@ -215,6 +269,123 @@
             XCTAssertEqual(host.checkpointSummaries(root: canonical).count, 1)
             XCTAssertEqual(
                 try String(contentsOf: root.appendingPathComponent("seeded.txt"), encoding: .utf8), "before")
+        }
+
+        func testRunCommandSnapshotsEveryWritableRootBeforeSpawning() async throws {
+            let first = try folder().resolvingSymlinksInPath()
+            let second = try folder().resolvingSymlinksInPath()
+            for root in [first, second] {
+                try Data("before".utf8).write(to: root.appendingPathComponent("seeded.txt"))
+            }
+            let spawner = MacComputerFakeSpawner()
+            spawner.failure = ComputerHostError("failed", "The command could not start.")
+            let (host, _) = try makeHost(
+                roots: [first, second],
+                commands: MacComputerCommands(
+                    spawner: spawner, clock: MacComputerFakeClock { $0 >= 20 }, inherited: [:],
+                    loginPath: { "/usr/bin:/bin" }))
+            let session = try startSession(host)
+            _ = try await send(
+                host, session, "run_command", ["command": .string("echo hi"), "cwd": .string(first.path)])
+            for root in [first, second] {
+                XCTAssertEqual(host.checkpointSummaries(root: root.path).count, 1)
+            }
+        }
+
+        private func assertRestoreRetires(removeGrant: Bool) async throws {
+            let entered = expectation(description: "restore reaches its desktop authority check")
+            let gate = MacCheckpointRestoreGate(entered: entered)
+            defer { gate.release() }
+            let root = try folder().resolvingSymlinksInPath()
+            try Data("before".utf8).write(to: root.appendingPathComponent("seeded.txt"))
+            let (host, _) = try makeHost(roots: [root], desktopProbe: { gate.probe() })
+            let session = try startSession(host)
+            _ = try await send(
+                host, session, "write_file",
+                [
+                    "path": .string(root.path + "/seeded.txt"), "content": .string("after"),
+                    "if_exists": .string("overwrite"),
+                ])
+            let summary = try XCTUnwrap(host.checkpointSummaries(root: root.path).first)
+            host.stop()
+            gate.arm()
+            let restoring = Task { await host.restoreCheckpointFiles(summary.id) }
+            await fulfillment(of: [entered], timeout: 5)
+            if removeGrant {
+                MacComputerControlCommand.removeWorkspace(root.path).perform(on: host)
+            } else {
+                host.signedOut()
+            }
+            gate.release()
+            let message = await restoring.value
+            XCTAssertFalse(message.hasPrefix("Restored 1 file"))
+            XCTAssertEqual(try String(contentsOf: root.appendingPathComponent("seeded.txt")), "after")
+        }
+
+        func testOwnerRestoreStopsWhenTheAccountRetiresDuringAuthorization() async throws {
+            try await assertRestoreRetires(removeGrant: false)
+        }
+
+        func testOwnerRestoreStopsWhenTheFolderGrantRetiresDuringAuthorization() async throws {
+            try await assertRestoreRetires(removeGrant: true)
+        }
+
+        func testOwnerRestoreRechecksAccountAuthorityBeforeEachFile() throws {
+            let root = try folder().resolvingSymlinksInPath()
+            let workspace = try ComputerWorkspace(root: root.path)
+            for name in ["a.txt", "b.txt"] {
+                try workspace.write(workspace.root + "/" + name, content: "before", overwrite: false, authorize: {})
+            }
+            let checkpoints = MacComputerCheckpoints(directory: try folder())
+            checkpoints.bind("checkpoint-owner")
+            try checkpoints.snapshotBeforeMutation(root: workspace, authorize: {})
+            let summary = try XCTUnwrap(checkpoints.summaries(workspaces: [workspace]).first)
+            for name in ["a.txt", "b.txt"] {
+                try workspace.write(workspace.root + "/" + name, content: "after", overwrite: true, authorize: {})
+            }
+            let outcome = try checkpoints.restore(checkpointId: summary.id, workspaces: [workspace]) {
+                if (try? String(contentsOf: root.appendingPathComponent("a.txt"), encoding: .utf8)) == "before" {
+                    checkpoints.bind(nil)
+                }
+            }
+            XCTAssertEqual(outcome.restored, ["a.txt"])
+            XCTAssertEqual(outcome.failed.map(\.path), ["b.txt"])
+            XCTAssertEqual(outcome.failed.map(\.code), ["interrupted"])
+            XCTAssertEqual(try String(contentsOf: root.appendingPathComponent("b.txt"), encoding: .utf8), "after")
+        }
+
+        func testProjectCheckpointRootsRequireCurrentLocalGrants() async throws {
+            let root = try folder().resolvingSymlinksInPath()
+            let grants = MacComputerTestWorkspaceGrants()
+            grants.selection = [root]
+            var documents: [String: Data] = [:]
+            let projects = MacProjectGrants(
+                grants: grants.port, persistence: .init(read: { documents[$0] }, write: { documents[$0] = $1 }))
+            let (host, _) = try makeHost(projectGrants: projects)
+            let project = "11111111-1111-4111-8111-111111111111"
+            host.beginWorkspaceNegotiation(server: URL(string: "https://example.test")!, account: "checkpoint-owner")
+            host.workspaceNegotiated(projects: true)
+            try host.reconcileProjects([project])
+            try projects.choose(project: project)
+            let workspace = try XCTUnwrap(try projects.localSnapshot().first)
+            let path = workspace.root + "/seeded.txt"
+            try workspace.write(path, content: "before", overwrite: false, authorize: {})
+            try host.checkpoints.snapshotBeforeMutation(root: workspace, authorize: {})
+            try workspace.write(path, content: "after", overwrite: true, authorize: {})
+
+            XCTAssertTrue(host.files.roots.isEmpty)
+            XCTAssertEqual(host.checkpointRoots, [root.path])
+            let summary = try XCTUnwrap(host.checkpointSummaries(root: root.path).first)
+            XCTAssertNotNil(host.checkpointRestorePreview(checkpointId: summary.id))
+            let message = await host.restoreCheckpointFiles(summary.id)
+            XCTAssertEqual(message, "Restored 1 file from the checkpoint.")
+            XCTAssertEqual(try String(contentsOfFile: path, encoding: .utf8), "before")
+
+            try projects.remove(project: project, path: root.path)
+            XCTAssertTrue(host.checkpointRoots.isEmpty)
+            XCTAssertNil(host.checkpointRestorePreview(checkpointId: summary.id))
+            projects.awaitReconciliation()
+            XCTAssertThrowsError(try projects.localSnapshot())
         }
 
         func testRestoreVerbDeniesRevokedGrantsAndChangedIdentities() throws {
@@ -281,7 +452,10 @@
             let session = try startSession(host)
             _ = try await send(
                 host, session, "write_file",
-                ["path": canonical + "/seeded.txt", "content": "after", "if_exists": .string("overwrite")])
+                [
+                    "path": .string(canonical + "/seeded.txt"), "content": .string("after"),
+                    "if_exists": .string("overwrite"),
+                ])
             let summary = try XCTUnwrap(host.checkpointSummaries(root: canonical).first)
 
             host.signedOut()

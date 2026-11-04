@@ -997,7 +997,7 @@ struct InputBar: View {
                                 ? "text.badge.plus" : "arrow.turn.up.right"
                         )
                         .font(.system(size: 18)).foregroundStyle(p.muted)
-                            .frame(width: 44, height: 44)
+                        .frame(width: 44, height: 44)
                     }
                     .buttonStyle(.plain)
                     .keyboardShortcut(.return, modifiers: .option)
@@ -1135,11 +1135,11 @@ struct InputBar: View {
         let model: AppModel
         @Binding var draggingId: String?
 
-        func dropUpdated(_ info: DropInfo) -> DropProposal? {
+        func dropUpdated(info: DropInfo) -> DropProposal? {
             DropProposal(operation: .move)
         }
 
-        func performDrop(_ info: DropInfo) -> Bool {
+        func performDrop(info: DropInfo) -> Bool {
             defer { draggingId = nil }
             guard let draggedId = draggingId, draggedId != target.id,
                 let dragged = model.queuedFollowUps.first(where: { $0.id == draggedId })

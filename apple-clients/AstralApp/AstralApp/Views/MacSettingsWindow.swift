@@ -73,10 +73,13 @@
                     .accessibilityIdentifier("settings-computer-controls")
                 }
                 Section("Composer keys") {
-                    Picker("While a task runs, Return", selection: Binding(
-                        get: { model.composerReturnBinding },
-                        set: { model.composerReturnBinding = $0 }
-                    )) {
+                    Picker(
+                        "While a task runs, Return",
+                        selection: Binding(
+                            get: { model.composerReturnBinding },
+                            set: { model.composerReturnBinding = $0 }
+                        )
+                    ) {
                         Text("Sends a steer").tag(AppModel.ComposerReturnBinding.steer)
                         Text("Queues a follow-up").tag(AppModel.ComposerReturnBinding.queue)
                     }

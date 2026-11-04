@@ -24,9 +24,11 @@ final class TurnSteerFrameTests: XCTestCase {
 
     private func acknowledgement(_ console: String) -> TurnSteerAcknowledgement? {
         TurnSteerAcknowledgement.fromRoteConfig(
-            try! JSONValue.parse(Data("""
-            {"device_profile":{"console":{"turn_steer":\(console)}}}
-            """.utf8)))
+            try! JSONValue.parse(
+                Data(
+                    """
+                    {"device_profile":{"console":{"turn_steer":\(console)}}}
+                    """.utf8)))
     }
 
     func testAcknowledgementAcceptsTheExactContractShape() {

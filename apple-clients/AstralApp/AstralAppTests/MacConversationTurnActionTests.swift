@@ -71,6 +71,10 @@
             return { sent }
         }
 
+        private func submissionId(of frame: JSONValue) -> String? {
+            frame["submission_id"]?.stringValue
+        }
+
         private func refusal(_ submissionId: String) -> InboundFrame {
             InboundFrame(
                 name: "error",
@@ -138,8 +142,10 @@
             let model = model()
             model.turns = [
                 turn(older, role: "user", text: "First wording"),
-                turn(mine, role: "user", text: "Revised wording", branch: siblingBranch(
-                    index: 2, siblings: [older, mine, newer], messageId: mine)),
+                turn(
+                    mine, role: "user", text: "Revised wording",
+                    branch: siblingBranch(
+                        index: 2, siblings: [older, mine, newer], messageId: mine)),
             ]
             let sent = capture(model)
 
@@ -227,8 +233,10 @@
             model.regenerateTurn(turn(reply, role: "assistant", text: "Answer"))
             model.beginTurnEdit(turn(mine, role: "user", text: "Question"))
             model.selectBranch(
-                of: turn(mine, role: "user", text: "Question", branch: siblingBranch(
-                    index: 1, siblings: [mine, newer], messageId: mine)),
+                of: turn(
+                    mine, role: "user", text: "Question",
+                    branch: siblingBranch(
+                        index: 1, siblings: [mine, newer], messageId: mine)),
                 targetTurnId: newer)
 
             XCTAssertEqual(sent().count, 0)
@@ -418,12 +426,57 @@
             XCTAssertEqual(sent().last?["action"], .string("chat_regenerate"))
         }
 
+        func testPendingProjectNegotiationPreservesTheEditedDraftUntilSubmissionIsReady() {
+            let model = model()
+            model.turns = [turn(mine, role: "user", text: "Question")]
+            model.beginTurnEdit(turn(mine, role: "user", text: "Question"))
+            model.turnEditor?.draft = "Revised question"
+            model.projects.bind(
+                scope: "pending-owner", client: RestClient(serverBase: model.serverBase, tokenProvider: { nil }))
+            let sent = capture(model)
+
+            model.sendEditedTurn()
+
+            XCTAssertTrue(sent().isEmpty)
+            XCTAssertEqual(model.turnEditor?.draft, "Revised question")
+            XCTAssertTrue(model.transientTurns.isEmpty)
+            model.projects.negotiate(false)
+            model.sendEditedTurn()
+            XCTAssertEqual(sent().count, 1)
+            XCTAssertNil(model.turnEditor)
+            XCTAssertEqual(model.transientTurns.last?.text, "Revised question")
+        }
+
+        func testSteerPresentationRetainsItsLabelAndActualRoleActions() async throws {
+            let model = model()
+            let steer = turn(mine, role: "steer", text: "Use the staging cluster")
+            model.turns = [steer]
+            let mount = SurfaceMount(
+                MacWorkbenchTranscript(maximumWidth: 720, contentPadding: EdgeInsets()), model: model,
+                size: CGSize(width: 760, height: 500))
+            defer { mount.close() }
+            try await mount.settle()
+
+            let tree = try mount.accessibility
+            XCTAssertEqual(tree.first { $0.identifier == "conversation-turn-\(mine)" }?.label, "Steer")
+            let steerLabel = tree.first { $0.identifier == "transcript-steer-label" }
+            XCTAssertEqual(steerLabel?.label ?? steerLabel?.value, "Steer")
+            XCTAssertNil(tree.first { $0.identifier == "conversation-edit-\(mine)" })
+            XCTAssertEqual(tree.first { $0.identifier == "conversation-copy-\(mine)" }?.label, "Copy")
+            XCTAssertEqual(tree.first { $0.identifier == "conversation-fork-\(mine)" }?.label, "Fork from here")
+
+            model.beginTurnEdit(steer)
+            XCTAssertNil(model.turnEditor)
+        }
+
         func testTranscriptExposesNamedActionsAndTheSwitcherToAccessibility() async throws {
             let model = model()
             model.turns = [
                 turn(older, role: "user", text: "First wording"),
-                turn(mine, role: "user", text: "Revised wording", branch: siblingBranch(
-                    index: 2, siblings: [older, mine, newer], messageId: mine)),
+                turn(
+                    mine, role: "user", text: "Revised wording",
+                    branch: siblingBranch(
+                        index: 2, siblings: [older, mine, newer], messageId: mine)),
                 turn(reply, role: "assistant", text: "Answer"),
             ]
             let mount = SurfaceMount(

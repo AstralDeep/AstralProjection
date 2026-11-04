@@ -185,14 +185,15 @@
             self.checkpoints = checkpoints ?? MacComputerCheckpoints()
             self.system = system
             self.panelPresenter = panelPresenter ?? { $0.orderFrontRegardless() }
+            let link = MacComputerHostLink()
             let sandboxReader = MacComputerSandboxConfigurationReader(defaults: defaults)
             self.commands =
                 commands
                 ?? MacComputerCommands(
                     sandbox: MacComputerSandboxController(
                         configuration: { sandboxReader.read() },
-                        sink: { [weak self] name, payload in
-                            Task { @MainActor [weak self] in self?.sandboxEvent(name, payload) }
+                        sink: { name, payload in
+                            Task { @MainActor in link.host?.sandboxEvent(name, payload) }
                         }))
             self.appActivator = appActivator ?? { NSApp.activate() }
             let marker = Int64.random(in: 1...Int64.max)
@@ -205,7 +206,6 @@
             self.localInput = localInput
             let presenter = overlay ?? (panelPresenter == nil && self.available ? MacComputerOverlay() : nil)
             self.overlay = presenter
-            let link = MacComputerHostLink()
             var cues: (@Sendable (MacComputerOverlayCue) async -> Void)?
             if let presenter { cues = { cue in await presenter.cue(cue) } }
             self.driver =
@@ -284,6 +284,7 @@
             }
             self.projectGrants.onRevoke = { [weak self] project in
                 guard let self else { return }
+                self.checkpoints.invalidateRestores()
                 self.authority.revokeProject(project)
                 if self.session?.projectContext?.projectId == project { self.cancelWork() }
             }
@@ -414,6 +415,7 @@
             restoreBypass()
         }
         func beginWorkspaceNegotiation(server: URL, account: String?) {
+            checkpoints.invalidateRestores()
             workspaceNegotiated = false
             pendingManifest = nil
             projectHostAnnounced = false
@@ -572,19 +574,46 @@
             refreshPermissions()
             controlsPresented = true
         }
+        private func checkpointWorkspaces() throws -> [ComputerWorkspace] {
+            guard available, ownerBound else {
+                throw ComputerHostError("permission_denied", "Sign in to restore files on this Mac.")
+            }
+            let workspaces = try projectMode ? projectGrants.localSnapshot() : files.snapshot()
+            guard workspaces.allSatisfy({ $0.matchesRoot($0.root) }) else {
+                throw ComputerHostError("permission_denied", "A checkpoint folder changed. Choose it again.")
+            }
+            return workspaces
+        }
+        var checkpointRoots: [String] {
+            Array(Set((try? checkpointWorkspaces())?.map(\.root) ?? [])).sorted()
+        }
         func checkpointSummaries(root: String) -> [MacCheckpointSummary] {
-            checkpoints.summaries(workspaces: files.snapshot()).filter { $0.rootPath == root }
+            guard let workspaces = try? checkpointWorkspaces() else { return [] }
+            return checkpoints.summaries(workspaces: workspaces).filter { $0.rootPath == root }
         }
         func checkpointRestorePreview(checkpointId: String) -> MacCheckpointRestorePreview? {
-            guard available, ownerBound else { return nil }
-            return try? checkpoints.preview(checkpointId: checkpointId, workspaces: files.snapshot())
+            guard let workspaces = try? checkpointWorkspaces() else { return nil }
+            return try? checkpoints.preview(checkpointId: checkpointId, workspaces: workspaces)
         }
         func restoreCheckpointFiles(_ checkpointId: String) async -> String {
             guard available, ownerBound else { return "Sign in to restore files on this Mac." }
+            let workspaces: [ComputerWorkspace]
             let checkpoints = checkpoints
-            let workspaces = files.snapshot()
+            let desktopProbe = desktopProbe
+            let authorize: @Sendable () throws -> Void
+            do {
+                workspaces = try checkpointWorkspaces()
+                authorize = try checkpoints.restoreAuthorization(workspaces: workspaces) {
+                    guard desktopProbe() else {
+                        throw ComputerHostError(
+                            "screen_locked", "Unlock this Mac before restoring files.", effectState: "not_started")
+                    }
+                }
+            } catch { return error.localizedDescription }
             let outcome = await Task.detached {
-                Result { try checkpoints.restore(checkpointId: checkpointId, workspaces: workspaces) }
+                Result {
+                    try checkpoints.restore(checkpointId: checkpointId, workspaces: workspaces, authorize: authorize)
+                }
             }.value
             switch outcome {
             case .success(let value):
@@ -1229,7 +1258,8 @@
                     try authorize()
                     guard let host = self else { return }
                     result = .success(
-                        try await host.performAuxiliary(request, ticket: ticket, roots: roots, authorize: authorize))
+                        try await host.performAuxiliary(
+                            request, ticket: ticket, roots: roots, workspaces: workspaces, authorize: authorize))
                 } catch { result = .failure(error) }
                 guard let self, self.auxiliary.removeValue(forKey: id) != nil else { return }
                 self.refreshWorking()
@@ -1240,13 +1270,11 @@
         }
         private func performAuxiliary(
             _ request: ComputerHostRequest, ticket: ComputerHostTicket, roots: [String],
-            authorize: @escaping @Sendable () throws -> Void
+            workspaces: [ComputerWorkspace], authorize: @escaping @Sendable () throws -> Void
         ) async throws -> [String: JSONValue] {
             switch request.verb {
             case "run_command":
-                if let cwd = request.args["cwd"]?.stringValue,
-                    let root = workspaces.first(where: { cwd == $0.root || cwd.hasPrefix($0.root + "/") })
-                {
+                for root in workspaces {
                     try checkpoints.snapshotBeforeMutation(root: root, authorize: authorize)
                 }
                 return try await commands.run(

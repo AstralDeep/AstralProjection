@@ -36,7 +36,7 @@ final class OutcomeUnknownStore: @unchecked Sendable {
 
     @discardableResult
     func save(_ record: OutcomeUnknownRecord, key: String) -> Bool {
-        guard record.jobs.count <= Self.maximumJobs else { return false }
+        guard record.jobs.count <= OutcomeUnknownRecord.maximumJobs else { return false }
         var jobs: [[String: JSONValue]] = []
         for job in record.jobs {
             guard Self.canonicalUUID4(job.id), ComputerHostRetainedJob.states.contains(job.state),
@@ -82,7 +82,7 @@ final class OutcomeUnknownStore: @unchecked Sendable {
                 let id = fields["job_id"]?.stringValue, Self.canonicalUUID4(id),
                 let state = fields["state"]?.stringValue, ComputerHostRetainedJob.states.contains(state),
                 let bytes = fields["output_bytes"]?.numberValue, Self.boundedInteger(bytes),
-                fields.keys.isSubset(of: ["job_id", "state", "exit_code", "signal", "output_bytes"])
+                Set(fields.keys).isSubset(of: ["job_id", "state", "exit_code", "signal", "output_bytes"])
             else { return nil }
             var exitCode: Int?
             if let raw = fields["exit_code"] {

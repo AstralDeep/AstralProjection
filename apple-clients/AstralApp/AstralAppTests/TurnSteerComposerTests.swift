@@ -68,6 +68,16 @@
                 """)!
         }
 
+        func testRegistrationAdvertisesBothSteeringAndConversationBranches() throws {
+            let (model, _) = try makeModel()
+            let registration = try JSONValue.parse(Data(model.registrationFrame(token: "token", resumed: false).utf8))
+            let capabilities = Set(try XCTUnwrap(registration["capabilities"]?.arrayValue).compactMap(\.stringValue))
+
+            XCTAssertEqual(registration["device"]?["turn_steer_v1"], .bool(true))
+            XCTAssertTrue(capabilities.contains("turn_steer_v1"))
+            XCTAssertTrue(capabilities.contains("chat_branches_v1"))
+        }
+
         func testWithoutNegotiationTheComposerSendsAnOrdinaryMessage() throws {
             let (model, sent) = try makeModel()
             negotiate(model)
@@ -95,7 +105,7 @@
         }
 
         func testSteerRecordingAppendsASteerTurnAndSkippedTrailEntries() throws {
-            let (model, _) = try makeModel()
+            let (model, sent) = try makeModel()
             negotiate(model)
             armTurn(model)
             model.sendComposerText("skip the screenshot")
@@ -113,7 +123,7 @@
         }
 
         func testRefusedSteerRestoresTheComposerTextWithANotice() throws {
-            let (model, _) = try makeModel()
+            let (model, sent) = try makeModel()
             negotiate(model)
             armTurn(model)
             model.sendComposerText("hold the deploy")
@@ -165,7 +175,8 @@
             let (model, sent) = try makeModel()
             negotiate(model)
             armTurn(model)
-            let items = #"{"queue_id":"\#(queueId)","message":"update the changelog","revision":1},"#
+            let items =
+                #"{"queue_id":"\#(queueId)","message":"update the changelog","revision":1},"#
                 + #"{"queue_id":"88888888-8888-4888-8888-888888888888","message":"ping the cluster","revision":1}"#
             model.handleFrame(queueSnapshot(3, items))
             XCTAssertTrue(model.cancelTurnRestoringQueue())
@@ -180,12 +191,16 @@
             negotiate(model)
             armTurn(model)
             let proposal = String(repeating: "ab", count: 16)
+            let request = try XCTUnwrap(sent().last { $0["action"] == .string("chat_message") })
+            let generation = try XCTUnwrap(request["request_generation"]?.stringValue)
             model.handleFrame(
                 InboundFrame.parse(
                     """
-                    {"type":"ui_upsert","ops":[{"op":"upsert","component_id":"approval",
+                    {"type":"ui_upsert","chat_id":"\(chat)","connection_generation":"\(connection)",
+                     "request_generation":"\(generation)","base_render_revision":0,"frame_sequence":1,
+                     "ops":[{"op":"upsert","component_id":"approval",
                      "component":{"type":"card","id":"au_approval_\(proposal)",
-                      "title":"Confirm an action",
+                      "title":"Confirm an action on Test Mac",
                       "content":[{"type":"text","variant":"body","content":"Open a site"},
                        {"type":"button","label":"Approve","action":"remote_op_decision",
                         "payload":{"proposal_id":"\(proposal)","decision":"approve"}},

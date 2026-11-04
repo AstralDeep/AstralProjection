@@ -20,7 +20,7 @@
                 )
                 .font(ConsoleTypography.caption).foregroundStyle(palette.muted)
                 .fixedSize(horizontal: false, vertical: true)
-                ForEach(host.files.roots, id: \.self) { root in
+                ForEach(host.checkpointRoots, id: \.self) { root in
                     MacCheckpointRootRow(host: host, root: root, preview: $pending)
                 }
             }
@@ -57,7 +57,7 @@
                 }
             }
             .onAppear { reload() }
-            .onChange(of: pending) { _, value in
+            .onChange(of: preview) { _, value in
                 if value == nil { reload() }
             }
         }
@@ -123,10 +123,11 @@
                     if !preview.extras.isEmpty {
                         Text(
                             "\(preview.extras.count) file\(preview.extras.count == 1 ? "" : "s") created after the "
-                                + "checkpoint stay: \(preview.extras.prefix(3).joined(separator: ", "))")
-                            .font(ConsoleTypography.caption).foregroundStyle(palette.muted)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("mac-checkpoint-extras")
+                                + "checkpoint stay: \(preview.extras.prefix(3).joined(separator: ", "))"
+                        )
+                        .font(ConsoleTypography.caption).foregroundStyle(palette.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("mac-checkpoint-extras")
                     }
                 }
             } footer: {

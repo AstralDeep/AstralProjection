@@ -23,15 +23,15 @@ final class ConversationBranchSnapshotTests: XCTestCase {
         let extra = extraField ? ",\"source\":\"fork\"" : ""
         let quoted = members.map { "\"\($0)\"" }.joined(separator: ",")
         return """
-        {"group_id":"\(groupId)","index":\(index),"count":\(total),"siblings":[\(quoted)]\(extra)}
-        """
+            {"group_id":"\(groupId)","index":\(index),"count":\(total),"siblings":[\(quoted)]\(extra)}
+            """
     }
 
     private func messageJSON(branch: String?) -> String {
         let field = branch.map { ",\"branch\":\($0)" } ?? ""
         return """
-        {"message_id":"\(turn)","role":"user","created_at":"2026-11-03T10:00:00Z","parts":[{"type":"text","text":"Question"}],"attachments":[]\(field)}
-        """
+            {"message_id":"\(turn)","role":"user","created_at":"2026-11-03T10:00:00Z","parts":[{"type":"text","text":"Question"}],"attachments":[]\(field)}
+            """
     }
 
     private func decoded(_ json: String) -> ConversationMessage? {
@@ -83,7 +83,8 @@ final class ConversationBranchSnapshotTests: XCTestCase {
     }
 
     func testMaximumSiblingCountIsAcceptedAndBeyondIsRejected() {
-        let members = (0..<50).map { String(format: "%08x-a111-4111-8111-111111111111", $0) }
+        var members = (0..<50).map { String(format: "%08x-a111-4111-8111-111111111111", $0) }
+        members[16] = turn
         XCTAssertNotNil(decoded(messageJSON(branch: branchJSON(index: 17, siblings: members))))
         let overflow = members + ["ffffffff-ffff-4fff-8fff-ffffffffffff"]
         XCTAssertNil(decoded(messageJSON(branch: branchJSON(index: 1, siblings: overflow))))
@@ -124,23 +125,24 @@ final class ConversationBranchSnapshotTests: XCTestCase {
 
     func testSnapshotTranscriptCarriesBranchesIntoMessages() {
         let transcript = """
-        [
-          {"message_id":"\(older)","role":"user","created_at":"2026-11-03T09:59:00Z","parts":[{"type":"text","text":"Older"}],"attachments":[]},
-          {"message_id":"\(turn)","role":"user","created_at":"2026-11-03T10:00:00Z","parts":[{"type":"text","text":"Question"}],"attachments":[],"branch":\(branchJSON())}
-        ]
-        """
-        guard let frame = InboundFrame.parse(
+            [
+              {"message_id":"\(older)","role":"user","created_at":"2026-11-03T09:59:00Z","parts":[{"type":"text","text":"Older"}],"attachments":[]},
+              {"message_id":"\(turn)","role":"user","created_at":"2026-11-03T10:00:00Z","parts":[{"type":"text","text":"Question"}],"attachments":[],"branch":\(branchJSON())}
+            ]
             """
-            {"type":"conversation_snapshot","schema_version":1,
-             "snapshot_id":"55555555-5555-4555-8555-555555555555",
-             "chat_id":"11111111-1111-4111-8111-111111111111",
-             "connection_generation":"22222222-2222-4222-8222-222222222222",
-             "request_generation":"33333333-3333-4333-8333-333333333333",
-             "snapshot_purpose":"hydration","render_revision":0,
-             "committed_at":"2026-11-03T10:01:00Z",
-             "transcript":\(transcript),
-             "canvas":{"target":"canvas","components":[]}}
-            """),
+        guard
+            let frame = InboundFrame.parse(
+                """
+                {"type":"conversation_snapshot","schema_version":1,
+                 "snapshot_id":"55555555-5555-4555-8555-555555555555",
+                 "chat_id":"11111111-1111-4111-8111-111111111111",
+                 "connection_generation":"22222222-2222-4222-8222-222222222222",
+                 "request_generation":"33333333-3333-4333-8333-333333333333",
+                 "snapshot_purpose":"hydration","render_revision":0,
+                 "committed_at":"2026-11-03T10:01:00Z",
+                 "transcript":\(transcript),
+                 "canvas":{"target":"canvas","components":[]}}
+                """),
             let snapshot = ConversationSnapshot(frame: frame)
         else {
             XCTFail("A snapshot carrying branch fields should parse")

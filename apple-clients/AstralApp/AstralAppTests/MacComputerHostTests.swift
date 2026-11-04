@@ -40,7 +40,7 @@
                 XCTAssertEqual(
                     host.enabled, shouldEnable,
                     "automatedRearm=\(automatedRearm), savedConsent=\(savedConsent): automated rearm requires "
-                    + "both the opt-in and saved owner consent; otherwise local input is required.")
+                        + "both the opt-in and saved owner consent; otherwise local input is required.")
                 if shouldEnable {
                     let id = UUID().uuidString.lowercased()
                     host.consume(try session(host, id: id))

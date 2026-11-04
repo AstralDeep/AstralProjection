@@ -3,6 +3,7 @@
 // system sandbox-exec on a real Mac.
 
 #if os(macOS)
+    import Darwin
     import XCTest
 
     @testable import AstralCore
@@ -25,12 +26,12 @@
             XCTAssertTrue(profile.contains("(import \"system.sb\")"))
             XCTAssertTrue(profile.contains("(allow process-exec*)"))
             XCTAssertTrue(profile.contains("(allow file-read* (subpath \"/\"))"))
-            let writeRule = "(allow file-write* file-set* "
+            let writeRule = "(allow file-write* "
             XCTAssertTrue(profile.contains(writeRule + "(subpath \"/Users/sam/Work/Pi-Agent\"))"))
             XCTAssertTrue(profile.contains(writeRule + "(subpath \"/private/var/folders/job-temp\"))"))
             XCTAssertFalse(profile.contains("(allow file-write* (subpath \"/Users/sam\"))"))
-            XCTAssertTrue(profile.contains("(allow network-outbound (remote ip \"127.0.0.1:45678\"))"))
-            XCTAssertTrue(profile.contains("(allow network-bind (local ip \"127.0.0.1:0\"))"))
+            XCTAssertTrue(profile.contains("(allow network-outbound (remote ip \"localhost:45678\"))"))
+            XCTAssertTrue(profile.contains("(allow network-bind (local ip \"localhost:*\"))"))
             XCTAssertEqual(
                 profile.components(separatedBy: "(allow network-outbound (remote ip").count - 1, 1)
             XCTAssertTrue(profile.contains("(allow network-outbound (remote unix-socket"))
@@ -66,16 +67,18 @@
                 profile.contains("(deny file-read* (literal \"/Users/sam/Work/Pi-Agent/realm-export.json\"))"))
             XCTAssertTrue(
                 profile.contains(
-                    "(deny file-read* (regex #\"(?i)^/Users/sam/Work/Pi-Agent(/[^/]+)*/[^/]*[.]pem(/|$)\"))"))
-            XCTAssertTrue(profile.contains("[.]env[^/]*"))
+                    "(deny file-read* (regex #\"^/Users/sam/Work/Pi-Agent(/[^/]+)*/[^/]*[.][pP][eE][mM](/|$)\"))"))
+            XCTAssertTrue(profile.contains("[.][eE][nN][vV][^/]*"))
         }
 
         func testExclusionRegexesAnchorUnderTheRootAndMatchAnyDepth() throws {
             let rules = ComputerSandboxProfile.readDenials(
                 root: "/Users/sam/Work", patterns: ["*.pem", "private/", "id_rsa*", "credentials?.json"])
             XCTAssertTrue(rules.count == 5)
-            let pem = try XCTUnwrap(rules.first { $0.contains("[.]pem") })
-            XCTAssertTrue(pem.hasPrefix("(deny file-read* (regex #\"(?i)^/Users/sam/Work(/[^/]+)*/[^/]*[.]pem(/|$)"))
+            let pem = try XCTUnwrap(rules.first { $0.contains("[.][pP][eE][mM]") })
+            XCTAssertTrue(
+                pem.hasPrefix(
+                    "(deny file-read* (regex #\"^/Users/sam/Work" + "(/[^/]+)*/[^/]*[.][pP][eE][mM](/|$)"))
             let directory = try XCTUnwrap(rules.first { $0.contains("private") && $0.contains("literal") })
             XCTAssertTrue(directory.contains("(literal \"/Users/sam/Work/private\")"))
             XCTAssertEqual(
@@ -128,6 +131,31 @@
             XCTAssertEqual(
                 process.terminationStatus, 0,
                 String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self))
+        }
+
+        func testEnforceProfileRefusesMixedCaseExcludedFiles() throws {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+            let profilePath = directory.appendingPathComponent("profile.sb")
+            let pointer = try XCTUnwrap(realpath(directory.path, nil))
+            defer { free(pointer) }
+            let root = String(cString: pointer)
+            let profile = ComputerSandboxProfile.generate(
+                input(roots: [root], exclusions: ["*.pem", ".env*"], bundle: nil, port: nil))
+            try Data(profile.utf8).write(to: profilePath)
+            for name in ["secret.PEM", ".ENV.local"] {
+                let path = directory.appendingPathComponent(name)
+                try Data("private".utf8).write(to: path)
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: ComputerSandboxProfile.launcherPath)
+                process.arguments = ["-f", profilePath.path, "/bin/cat", path.path]
+                process.standardError = Pipe()
+                process.standardOutput = Pipe()
+                try process.run()
+                process.waitUntilExit()
+                XCTAssertNotEqual(process.terminationStatus, 0, name)
+            }
         }
 
         func testGeneratedShadowProfileAlsoCompiles() throws {

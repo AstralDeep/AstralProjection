@@ -454,7 +454,7 @@ final class AppModel: NSObject {
         @ObservationIgnored private var composerReturnBindingStored: ComposerReturnBinding
         struct QueueSnapshot: Equatable {
             let revision: Int
-            let items: [QueuedFollowUpItem]
+            var items: [QueuedFollowUpItem]
         }
         var turnSteerNegotiated: Bool { turnSteerAck != nil }
         var turnQueueCapable: Bool { turnSteerAck?.queueCapable ?? false }
@@ -1486,6 +1486,13 @@ final class AppModel: NSObject {
                 #endif
             }(),
             chatBranchesSupported: {
+                #if os(macOS)
+                    return true
+                #else
+                    return false
+                #endif
+            }(),
+            turnSteerSupported: {
                 #if os(macOS)
                     return true
                 #else
@@ -2961,8 +2968,8 @@ final class AppModel: NSObject {
         case "workspace_timeline_mode":
             timelineReadOnly = frame.payload["active"]?.boolValue ?? frame.payload["on"]?.boolValue ?? false
         #if os(macOS)
-        case "chat_steer_recorded", "chat_steer_refused", "chat_queue_updated", "side_question_result":
-            reduceTurnSteer(frame)
+            case "chat_steer_recorded", "chat_steer_refused", "chat_queue_updated", "side_question_result":
+                reduceTurnSteer(frame)
         #endif
         case "error":
             let admissionRefused = reduceAdmissionRefusal(frame)
@@ -3499,9 +3506,7 @@ final class AppModel: NSObject {
         activeChatId = snapshot.chatId
         turns = restoredTurns
         #if os(macOS)
-            if let editor = turnEditor, !snapshot.messages.contains(where: { $0.messageId == editor.turnId }) {
-                turnEditor = nil
-            }
+            turnEditor = nil
             pendingTurnDeparture = nil
         #endif
         canvas = snapshot.canvasComponents
@@ -5629,7 +5634,7 @@ final class AppModel: NSObject {
 
         var canActOnTurns: Bool {
             signedIn && connected && screen == .chat && !turnBusy && !timelineReadOnly && !mandatorySurface
-                && activeChatId != nil
+                && activeChatId != nil && !projects.negotiating
         }
 
         func beginTurnEdit(_ turn: ChatTurn) {
@@ -5644,24 +5649,14 @@ final class AppModel: NSObject {
         func sendEditedTurn() {
             guard let editor = turnEditor, canActOnTurns,
                 !editor.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                turns.contains(where: { $0.id == editor.turnId })
+                let original = turns.first(where: { $0.id == editor.turnId }), original.text != editor.draft
             else { return }
-            if continuity.connectionGeneration == nil {
-                appendTurn(role: "user", text: editor.draft)
-            } else {
-                transientTurns.append(
-                    ChatTurn(
-                        id: "pending-user-\(UUID().uuidString.lowercased())",
-                        role: "user",
-                        text: editor.draft))
-            }
             var payload: [String: JSONValue] = ["message": .string(editor.draft)]
             if let chatId = activeChatId { payload["chat_id"] = .string(chatId) }
             payload["revised_turn_id"] = .string(editor.turnId)
             if editor.summarizesDeparted {
                 payload["summarize_departed"] = .bool(true)
             }
-            turnEditor = nil
             sendEvent("chat_message", .object(payload))
         }
 
@@ -6127,6 +6122,21 @@ final class AppModel: NSObject {
             } else if activeChatId == nil {
                 pendingCommitRequestGeneration = request
             }
+            #if os(macOS)
+                if let editor = turnEditor, payload["revised_turn_id"] == .string(editor.turnId),
+                    payload["message"] == .string(editor.draft)
+                {
+                    if continuity.connectionGeneration == nil {
+                        appendTurn(role: "user", text: editor.draft)
+                    } else {
+                        transientTurns.append(
+                            ChatTurn(
+                                id: "pending-user-\(UUID().uuidString.lowercased())",
+                                role: "user", text: editor.draft))
+                    }
+                    turnEditor = nil
+                }
+            #endif
             beginLocalOperationSubmission(
                 identity: identity,
                 action: action,

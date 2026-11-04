@@ -136,10 +136,10 @@
                                 .accessibilityIdentifier("mac-computer-workspace-error")
                         }
                     }
-                    if !host.files.roots.isEmpty {
-                        Divider().overlay(palette.border)
-                        MacCheckpointFilesSection(host: host)
-                    }
+                }
+                if !host.checkpointRoots.isEmpty {
+                    Divider().overlay(palette.border)
+                    MacCheckpointFilesSection(host: host)
                 }
                 if host.session != nil { MacComputerSessionControls(host: host) }
                 if host.available {

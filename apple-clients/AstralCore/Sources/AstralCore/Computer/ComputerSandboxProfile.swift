@@ -45,10 +45,10 @@ public enum ComputerSandboxProfile {
         switch input.mode {
         case .shadow:
             return """
-            (version 1)
-            (allow default)
+                (version 1)
+                (allow default)
 
-            """
+                """
         case .enforce:
             return enforce(input)
         }
@@ -78,9 +78,9 @@ public enum ComputerSandboxProfile {
         return result
     }
 
-    static func globRegex(_ pattern: String) -> String {
+    static func globRegex(_ pattern: String, caseInsensitive: Bool = false) -> String {
         var result = ""
-        var characters = Array(pattern)
+        let characters = Array(pattern)
         var index = 0
         while index < characters.count {
             let character = characters[index]
@@ -93,13 +93,20 @@ public enum ComputerSandboxProfile {
                 if let close = characters[(index + 1)...].firstIndex(of: "]") {
                     var body = String(characters[(index + 1)..<close])
                     if body.hasPrefix("!") { body = "^" + body.dropFirst() }
+                    if caseInsensitive {
+                        let negated = body.hasPrefix("^")
+                        let contents = negated ? String(body.dropFirst()) : body
+                        body = (negated ? "^" : "") + contents.lowercased() + contents.uppercased()
+                    }
                     result += "[" + body + "]"
                     index = close + 1
                     continue
                 }
                 result += "[[]"
             default:
-                if ".+(){}|^$".contains(character) {
+                if caseInsensitive, character.isASCII, character.isLetter {
+                    result += "[" + String(character).lowercased() + String(character).uppercased() + "]"
+                } else if ".+(){}|^$".contains(character) {
                     result += "[" + String(character) + "]"
                 } else {
                     result += String(character)
@@ -111,7 +118,7 @@ public enum ComputerSandboxProfile {
     }
 
     static func readDenials(root: String, patterns: [String]) -> [String] {
-        let anchored = "(?i)^" + escapedRegex(root) + "(/[^/]+)*/"
+        let anchored = "^" + escapedRegex(root) + "(/[^/]+)*/"
         var rules: [String] = []
         for pattern in patterns {
             let name = String(pattern.dropLast(pattern.hasSuffix("/") ? 1 : 0))
@@ -122,18 +129,20 @@ public enum ComputerSandboxProfile {
                 rules.append("(deny file-read* (subpath " + quote(target) + "))")
                 continue
             }
-            rules.append("(deny file-read* (regex " + regexLiteral(anchored + globRegex(name) + "(/|$)") + "))")
+            rules.append(
+                "(deny file-read* (regex " + regexLiteral(anchored + globRegex(name, caseInsensitive: true) + "(/|$)")
+                    + "))")
         }
         return rules
     }
 
     static func protectedWriteDenials(root: String) -> [String] {
         [
-            "(deny file-write* file-set* (subpath "
+            "(deny file-write* (subpath "
                 + quote(root + "/.git/hooks") + "))",
-            "(deny file-write* file-set* (literal "
+            "(deny file-write* (literal "
                 + quote(root + "/.git/config") + "))",
-            "(deny file-write* file-set* (literal "
+            "(deny file-write* (literal "
                 + quote(root + "/.git/config.lock") + "))",
         ]
     }
@@ -142,26 +151,26 @@ public enum ComputerSandboxProfile {
         var rules: [String] = []
         for file in shellStartupFiles {
             rules.append(
-                "(deny file-write* file-set* (literal "
+                "(deny file-write* (literal "
                     + quote(home + "/" + file) + "))")
         }
         for directory in launchAgentPaths + [home + "/Library/LaunchAgents"] {
             rules.append(
-                "(deny file-write* file-set* (subpath "
+                "(deny file-write* (subpath "
                     + quote(directory) + "))")
         }
         if let bundlePath, !bundlePath.isEmpty {
             rules.append(
-                "(deny file-write* file-set* (subpath "
+                "(deny file-write* (subpath "
                     + quote(bundlePath) + "))")
         }
         let support = home + "/Library/Application Support/" + supportIdentifier
         rules.append(
-            "(deny file-write* file-set* (subpath "
+            "(deny file-write* (subpath "
                 + quote(support) + "))")
         let preferences = home + "/Library/Preferences/" + supportIdentifier + ".plist"
         rules.append(
-            "(deny file-write* file-set* (literal "
+            "(deny file-write* (literal "
                 + quote(preferences) + "))")
         return rules
     }
@@ -186,26 +195,27 @@ public enum ComputerSandboxProfile {
             "(allow ipc-sysv*)",
             "(allow sysctl-read)",
             "(allow file-read* (subpath \"/\"))",
-            "(allow file-ioctl*)",
+            "(allow file-ioctl)",
         ]
         if let port = input.proxyPort {
-            lines.append("(allow network-outbound (remote ip \"127.0.0.1:\(port)\"))")
+            lines.append("(allow network-outbound (remote ip \"localhost:\(port)\"))")
             lines.append("(allow network-outbound (remote unix-socket (literal \"/private/var/run/mDNSResponder\")))")
-            lines.append("(allow network-bind (local ip \"127.0.0.1:0\"))")
-            lines.append("(allow network-inbound (local ip \"127.0.0.1:0\"))")
+            lines.append("(allow network-bind (local ip \"localhost:*\"))")
+            lines.append("(allow network-inbound (local ip \"localhost:*\"))")
         }
         lines.append("")
         for root in input.writeRoots where !root.isEmpty {
             lines.append(
-                "(allow file-write* file-set* (subpath "
+                "(allow file-write* (subpath "
                     + quote(root) + "))")
         }
         lines.append("")
         for root in input.writeRoots where !root.isEmpty {
             lines.append(contentsOf: protectedWriteDenials(root: root))
         }
-        lines.append(contentsOf: protectedHomeDenials(
-            home: input.home, bundlePath: input.bundlePath, supportIdentifier: input.supportIdentifier))
+        lines.append(
+            contentsOf: protectedHomeDenials(
+                home: input.home, bundlePath: input.bundlePath, supportIdentifier: input.supportIdentifier))
         lines.append(contentsOf: keychainReadDenials(home: input.home))
         var exclusions = Set<String>()
         for root in input.writeRoots where !root.isEmpty {
