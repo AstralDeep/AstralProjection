@@ -86,8 +86,9 @@ public struct ComputerEgressBinding: Sendable, Equatable, Hashable, Codable {
         let host = try values.decode(String.self, forKey: .host)
         let secret = try values.decode(String.self, forKey: .secret)
         guard let binding = ComputerEgressBinding(placeholder: placeholder, host: host, secret: secret) else {
-            throw DecodingError.dataCorruptedError(
-                forKey: .placeholder, in: values, debugDescription: "invalid egress binding")
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: values.codingPath, debugDescription: "invalid egress binding"))
         }
         self = binding
     }
@@ -140,8 +141,9 @@ public struct ComputerSandboxConfiguration: Sendable, Equatable, Codable {
         let domains = try values.decodeIfPresent([ComputerEgressDomain].self, forKey: .domains) ?? []
         let bindings = try values.decodeIfPresent([ComputerEgressBinding].self, forKey: .bindings) ?? []
         guard let configuration = ComputerSandboxConfiguration(mode: mode, domains: domains, bindings: bindings) else {
-            throw DecodingError.dataCorruptedError(
-                forKey: .mode, in: values, debugDescription: "invalid sandbox configuration")
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: values.codingPath, debugDescription: "invalid sandbox configuration"))
         }
         self = configuration
     }
@@ -194,11 +196,12 @@ public enum ComputerIPAddress: Sendable, Equatable, Hashable {
         if remainder.hasPrefix("[") && remainder.hasSuffix("]") {
             remainder = remainder.dropFirst().dropLast()
         }
+        let body = String(remainder)
         var bytes = Array(repeating: 0, count: 16)
-        if let range = remainder.range(of: "::") {
-            let left = remainder[..<range.lowerBound]
-            let right = remainder[range.upperBound...]
-            guard remainder.range(of: "::", options: [], range: range.upperBound..<remainder.endIndex) == nil else {
+        if let range = body.range(of: "::") {
+            let left = body[..<range.lowerBound]
+            let right = body[range.upperBound...]
+            guard body.range(of: "::", options: [], range: range.upperBound..<body.endIndex) == nil else {
                 return nil
             }
             let head = Self.ipv6Groups(left)
@@ -216,7 +219,7 @@ public enum ComputerIPAddress: Sendable, Equatable, Hashable {
             }
             return bytes
         }
-        guard let groups = Self.ipv6Groups(remainder), groups.count == 8 else { return nil }
+        guard let groups = Self.ipv6Groups(body[...]), groups.count == 8 else { return nil }
         for (index, group) in groups.enumerated() {
             bytes[index * 2] = UInt8((group >> 8) & 0xFF)
             bytes[index * 2 + 1] = UInt8(group & 0xFF)
@@ -547,17 +550,19 @@ public struct ComputerSandboxViolation: Sendable, Equatable {
     static func parseLine(_ raw: String) -> ComputerSandboxViolation? {
         let line = raw.hasSuffix("\r") ? String(raw.dropLast()) : raw
         guard line.hasPrefix("Sandbox: ") else { return nil }
-        let remainder = line.dropFirst("Sandbox: ".count)
+        let remainder = String(line.dropFirst("Sandbox: ".count))
         guard let open = remainder.firstIndex(of: "(") else { return nil }
         let process = String(remainder[..<open])
-        guard !process.isEmpty, let deny = remainder[open...].range(of: ") deny(") else { return nil }
+        guard !process.isEmpty,
+            let deny = remainder.range(of: ") deny(", range: open..<remainder.endIndex)
+        else { return nil }
         let pidText = String(remainder[remainder.index(after: open)..<deny.lowerBound])
         guard let pid = Int(pidText), (1...4_194_303).contains(pid) else { return nil }
         let body = remainder[deny.upperBound...]
         guard let close = body.firstIndex(of: ")") else { return nil }
         let count = String(body[..<close])
         guard !count.isEmpty, count.allSatisfy(\.isNumber) else { return nil }
-        let detail = body[body.index(after: close)...].trimmingCharacters(in: .whitespaces)
+        let detail = String(body[body.index(after: close)...]).trimmingCharacters(in: .whitespaces)
         guard !detail.isEmpty, let separator = detail.firstIndex(of: " ") else { return nil }
         let operation = String(detail[..<separator])
         let target = String(detail[detail.index(after: separator)...]).trimmingCharacters(in: .whitespaces)
