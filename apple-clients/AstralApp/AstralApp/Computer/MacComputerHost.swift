@@ -180,7 +180,15 @@
             self.projectGrants = projectGrants ?? MacProjectGrants()
             self.system = system
             self.panelPresenter = panelPresenter ?? { $0.orderFrontRegardless() }
-            self.commands = commands ?? MacComputerCommands()
+            let sandboxReader = MacComputerSandboxConfigurationReader(defaults: defaults)
+            self.commands =
+                commands
+                ?? MacComputerCommands(
+                    sandbox: MacComputerSandboxController(
+                        configuration: { sandboxReader.read() },
+                        sink: { [weak self] name, payload in
+                            Task { @MainActor [weak self] in self?.sandboxEvent(name, payload) }
+                        }))
             self.appActivator = appActivator ?? { NSApp.activate() }
             let marker = Int64.random(in: 1...Int64.max)
             self.monitor = monitor ?? MacComputerInputMonitor(marker: marker)
@@ -550,6 +558,34 @@
             automatedRestore = value
             if value { defaults.set(true, forKey: Self.automatedRearmKey) } else { defaults.removeObject(forKey: Self.automatedRearmKey) }
             if value { retryBypassRestore() }
+        }
+        private func sandboxEvent(_ name: String, _ payload: [String: JSONValue]) {
+            sendEvent(name, additional: payload)
+        }
+        var sandboxEnforce: Bool {
+            MacComputerSandboxController.configuration(from: defaults).mode == .enforce
+        }
+        func setSandboxEnforce(_ value: Bool) {
+            guard
+                let updated = MacComputerSandboxController.configuration(from: defaults).replacing(
+                    mode: value ? .enforce : .shadow),
+                let data = try? JSONEncoder().encode(updated)
+            else { return }
+            defaults.set(String(decoding: data, as: UTF8.self), forKey: MacComputerSandboxController.configurationKey)
+        }
+        var sandboxSummary: String {
+            let configuration = MacComputerSandboxController.configuration(from: defaults)
+            let mode =
+                configuration.mode == .enforce
+                ? "Enforce mode blocks prohibited writes and egress."
+                : "Shadow mode records violations without blocking."
+            let domains =
+                configuration.domains.count == 1
+                ? "1 allowed egress domain" : "\(configuration.domains.count) allowed egress domains"
+            let bindings =
+                configuration.bindings.count == 1
+                ? "1 secret binding" : "\(configuration.bindings.count) secret bindings"
+            return mode + " " + domains + ", " + bindings + "."
         }
         private func retryBypassRestore() {
             guard enabled, bypassRestorePending, bypassSaved, !bypass, workspaceNegotiated,
