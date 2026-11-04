@@ -88,33 +88,33 @@
         }
 
         private static func deniedRoot(workspaces: [ComputerWorkspace]) -> ComputerHostError {
-            ComputerHostError(
-                "permission_denied",
+            let message =
                 workspaces.isEmpty
-                    ? "The folder grant for that checkpoint was revoked, so the request was refused."
-                    : "The folder identity changed since that checkpoint was taken, so the request was refused.")
+                ? "The folder grant for that checkpoint was revoked, so the request was refused."
+                : "The folder identity changed since that checkpoint was taken, so the request was refused."
+            return ComputerHostError("permission_denied", message)
         }
 
         func listCheckpoints(
             workspaces: [ComputerWorkspace], authorize: () throws -> Void
         ) throws -> [String: JSONValue] {
             try authorize()
+            guard let store = withStore({ $0 }) else {
+                return ["checkpoints": .array([])]
+            }
             let granted = Set(workspaces.map { $0.rootIdentity.digest })
-            let rows: [JSONValue] =
-                try withStore { store in
-                    let current = store.currentTurnId
-                    return store.records().filter { granted.contains($0.rootIdentityDigest) }.map { record in
-                        .object([
-                            "checkpoint_id": .string(record.id), "turn_id": .string(record.turnId),
-                            "root_path": .string(record.rootPath), "tree_hash": .string(record.treeHash),
-                            "file_count": .number(Double(record.fileCount)),
-                            "captured_bytes": .number(Double(record.capturedBytes)),
-                            "created_at": .number(record.createdAt),
-                            "current_turn": .bool(record.turnId == current),
-                            "skipped_count": .number(Double(record.skipped.count)),
-                        ])
-                    }
-                } ?? []
+            let current = store.currentTurnId
+            let rows: [JSONValue] = store.records().filter { granted.contains($0.rootIdentityDigest) }.map { record in
+                .object([
+                    "checkpoint_id": .string(record.id), "turn_id": .string(record.turnId),
+                    "root_path": .string(record.rootPath), "tree_hash": .string(record.treeHash),
+                    "file_count": .number(Double(record.fileCount)),
+                    "captured_bytes": .number(Double(record.capturedBytes)),
+                    "created_at": .number(record.createdAt),
+                    "current_turn": .bool(record.turnId == current),
+                    "skipped_count": .number(Double(record.skipped.count)),
+                ])
+            }
             return ["checkpoints": .array(rows)]
         }
 
@@ -188,15 +188,14 @@
 
         func summaries(workspaces: [ComputerWorkspace]) -> [MacCheckpointSummary] {
             let granted = Set(workspaces.map { $0.rootIdentity.digest })
-            return withStore { store in
-                let current = store.currentTurnId
-                return store.records().filter { granted.contains($0.rootIdentityDigest) }.map { record in
-                    MacCheckpointSummary(
-                        id: record.id, turnId: record.turnId, rootPath: record.rootPath, fileCount: record.fileCount,
-                        capturedBytes: record.capturedBytes, createdAt: record.createdAt,
-                        currentTurn: record.turnId == current)
-                }
-            } ?? []
+            guard let store = withStore({ $0 }) else { return [] }
+            let current = store.currentTurnId
+            return store.records().filter { granted.contains($0.rootIdentityDigest) }.map { record in
+                MacCheckpointSummary(
+                    id: record.id, turnId: record.turnId, rootPath: record.rootPath, fileCount: record.fileCount,
+                    capturedBytes: record.capturedBytes, createdAt: record.createdAt,
+                    currentTurn: record.turnId == current)
+            }
         }
 
         func preview(

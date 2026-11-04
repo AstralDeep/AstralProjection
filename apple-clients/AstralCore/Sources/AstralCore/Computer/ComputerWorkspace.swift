@@ -206,22 +206,20 @@
             guard Int(info.st_size) <= maximum else {
                 throw ComputerHostError("out_of_range", "The file exceeds the capture limit.")
             }
-            var bytes = [UInt8]()
-            bytes.reserveCapacity(Int(info.st_size))
-            var buffer = [UInt8](repeating: 0, count: 262_144)
-            while true {
-                let n = buffer.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, buffer.count) }
+            var bytes = [UInt8](repeating: 0, count: maximum)
+            var used = 0
+            while used < bytes.count {
+                let n = bytes.withUnsafeMutableBytes {
+                    Darwin.read(fd, $0.baseAddress!.advanced(by: used), $0.count - used)
+                }
                 if n < 0 {
                     if errno == EINTR { continue }
                     throw failure()
                 }
                 if n == 0 { break }
-                bytes.append(contentsOf: buffer[0..<n])
-                guard bytes.count <= maximum else {
-                    throw ComputerHostError("out_of_range", "The file exceeds the capture limit.")
-                }
+                used += n
             }
-            return (bytes, info.st_mode & 0o7777)
+            return (Array(bytes.prefix(used)), info.st_mode & 0o7777)
         }
         func walkTree(limit: Int, visitor: (ComputerWorkspaceTreeEntry) throws -> Void) throws {
             var pending: [[String]] = [[]]

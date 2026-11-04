@@ -269,8 +269,7 @@
         }
 
         private static func treeHash(_ files: [ComputerCheckpointFile]) -> String {
-            let canonical =
-                files
+            let canonical = files
                 .map { "\($0.path)\n\($0.digest)\n\(String($0.mode, radix: 8))\n\($0.size)" }
                 .joined(separator: "\n")
             return digest(Data(canonical.utf8))
@@ -461,9 +460,8 @@
             for index in 1...older.count {
                 lower[0] = 0
                 for column in 1...newer.count {
-                    lower[column] =
-                        older[index - 1] == newer[column - 1]
-                        ? upper[column - 1] + 1 : max(upper[column], lower[column - 1])
+                    let matched = older[index - 1] == newer[column - 1]
+                    lower[column] = matched ? upper[column - 1] + 1 : max(upper[column], lower[column - 1])
                 }
                 swap(&upper, &lower)
             }
