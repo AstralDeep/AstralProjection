@@ -62,6 +62,20 @@ Before the first changing action of a turn (a `write_file`, a `delete_path`, or 
 Computer controls shows a **Restore files** section per granted folder. Restoring first shows exactly which files would be overwritten (with line counts where both versions are text), then restores on explicit confirmation; files created after the checkpoint stay. Restoring is refused when the folder grant was removed or the folder identity changed. An interrupted restore reports which paths were restored and which were not, and is never retried automatically. The `checkpoint.created` and `checkpoint.restored` entries in the app's unified logging record turn, root-identity digest, tree hash and counts, never content.
 
 The agent-facing `list_checkpoints`, `diff_checkpoint` and `restore_checkpoint` verbs are implemented with their argument whitelists but stay unadvertised until the server registers them; owner restores through Computer controls work without that registration.
+## Command sandbox
+
+Every `run_command` job is wrapped in a generated macOS Seatbelt profile launched through the absolute system `/usr/bin/sandbox-exec` path. Before a job starts, the host compiles the profile with a `sandbox-exec` probe and starts a per-job loopback egress proxy; if the launcher is missing, the profile fails to compile, the proxy cannot start in enforce mode, or a requested environment value carries a placeholder secret, the job is refused with `sandbox_refused` and never spawns.
+
+The enforce profile denies by default: writes are allowed only inside the selected roots and a per-job scratch directory (also set as the job's `TMPDIR`); Git hooks and `.git/config` inside a root, shell startup files, LaunchAgents, Astral's own bundle, support data and preferences stay read-only; excluded workspace patterns and the Keychain directories are unreadable; and network connects only to `127.0.0.1:<proxy port>`, with DNS to the system resolver. The shadow mode profile is fully permissive and exists so the same launcher path is compiled and validated without blocking.
+
+The proxy speaks the standard forward-proxy contract (absolute-form HTTP and `CONNECT`). It applies the owner's egress domain list, refuses private, link-local, loopback and metadata destinations after resolving the listed host itself, and swaps owner-configured placeholder tokens for Keychain secrets only on egress to the binding's exact host. Children that ignore the standard proxy environment variables lose network in enforce mode and their refusals are recorded.
+
+Results and audit:
+
+- Each `run_command` and `read_output` result carries `job_id` and a `sandbox` object with the profile SHA-256 digest, the allowed domains, the sandbox mode, the proxy port and the violations recorded so far.
+- The host emits `command.sandbox_violation` records (source, operation, target, detail, blocked) for Seatbelt denials parsed from the job's captured stderr and for egress decisions the policy would refuse, and `egress.decision` records (host, port, decision, rule, mode) for proxy connections. Records never contain request or response bodies. Placeholder tokens are scrubbed from captured output and never enter the job environment.
+
+The owner configures the sandbox in Computer controls: the toggle switches between shadow (default) and enforce. The egress domain list and the placeholder-to-Keychain bindings are read from the `computer.sandbox.configuration` defaults key as JSON, for example `{"mode":"enforce","domains":["api.github.com"],"bindings":[{"placeholder":"ASTRAL_GITHUB_TOKEN","host":"api.github.com","secret":"astral.egress.github"}]}`. Placeholder names begin with `ASTRAL_` and the referenced secret is a generic-password Keychain item named by `secret`. Invalid configuration falls back to shadow mode with an empty list.
 
 ## Verify
 
