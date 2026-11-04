@@ -83,9 +83,7 @@
             let turn = checkpointStore.noteActivity()
             if let record = try checkpointStore.snapshotIfNeeded(turnId: turn, root: root) {
                 Self.log.info(
-                    "checkpoint.created turn=\(record.turnId, privacy: .private) "
-                        + "root=\(record.rootIdentityDigest, privacy: .public) "
-                        + "tree=\(record.treeHash, privacy: .public) files=\(record.fileCount)")
+                    "checkpoint.created turn=\(record.turnId, privacy: .private) root=\(record.rootIdentityDigest, privacy: .public) tree=\(record.treeHash, privacy: .public) files=\(record.fileCount)")
             }
         }
 
@@ -184,8 +182,7 @@
             }
             let outcome = try store.restore(id, root: root, path: path, authorize: authorize)
             Self.log.info(
-                "checkpoint.restored restored=\(outcome.restored.count) "
-                    + "skipped=\(outcome.failed.count + outcome.notAttempted.count)")
+                "checkpoint.restored restored=\(outcome.restored.count) skipped=\(outcome.failed.count + outcome.notAttempted.count)")
             return outcome
         }
 

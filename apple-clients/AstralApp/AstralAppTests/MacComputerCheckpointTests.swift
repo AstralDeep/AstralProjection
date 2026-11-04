@@ -161,9 +161,12 @@
             let (host, _) = try makeHost(roots: [root])
             let canonical = try XCTUnwrap(host.files.roots.first)
             let session = try startSession(host)
-            _ = try await send(
-                host, session, "write_file",
-                ["path": canonical + "/notes.md", "content": "one\nx\ny\ntwo\nthree\n", "if_exists": .string("overwrite")])
+            let overwrite: [String: JSONValue] = [
+                "path": canonical + "/notes.md",
+                "content": "one\nx\ny\ntwo\nthree\n",
+                "if_exists": .string("overwrite"),
+            ]
+            _ = try await send(host, session, "write_file", overwrite)
             try Data("added later".utf8).write(to: root.appendingPathComponent("extra.txt"))
 
             let summary = try XCTUnwrap(host.checkpointSummaries(root: canonical).first)

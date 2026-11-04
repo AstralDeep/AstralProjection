@@ -36,6 +36,10 @@
             return directory.appendingPathComponent(String(digest.prefix(16)), isDirectory: true)
         }
 
+        private func contents(_ path: String) throws -> String {
+            return try String(contentsOfFile: path, encoding: .utf8)
+        }
+
         private func mode(of path: String) -> mode_t {
             var info = stat()
             guard stat(path, &info) == 0 else { return 0 }
@@ -85,7 +89,8 @@
             try Data("kept".utf8).write(to: folder.appendingPathComponent("normal.txt"))
             try Data(repeating: 0x21, count: 12).write(to: folder.appendingPathComponent("big.bin"))
             try FileManager.default.createSymbolicLink(
-                at: folder.appendingPathComponent("link.txt"), withDestinationURL: outside.appendingPathComponent("target.txt"))
+                at: folder.appendingPathComponent("link.txt"),
+                withDestinationURL: outside.appendingPathComponent("target.txt"))
             try Data("paired".utf8).write(to: folder.appendingPathComponent("dup.txt"))
             try FileManager.default.linkItem(
                 at: folder.appendingPathComponent("dup.txt"), to: folder.appendingPathComponent("hard.txt"))
@@ -115,7 +120,7 @@
                 XCTAssertNotEqual(data, Data("outside".utf8))
             }
             let outcome = try store.restore(record.id, root: workspace, path: nil, authorize: {})
-            XCTAssertEqual(try String(contentsOfFile: folder.appendingPathComponent("link.txt").path, encoding: .utf8), "outside")
+            XCTAssertEqual(try contents(folder.appendingPathComponent("link.txt").path), "outside")
         }
 
         func testGitRepositoryContentsAreNeverCaptured() throws {
@@ -149,19 +154,21 @@
             XCTAssertThrowsError(try store.restore(record.id, root: fresh, path: nil, authorize: {})) { error in
                 XCTAssertEqual((error as? ComputerHostError)?.code, "permission_denied")
             }
-            XCTAssertEqual(try String(contentsOfFile: folder.appendingPathComponent("file.txt").path, encoding: .utf8), "replaced")
+            XCTAssertEqual(try contents(folder.appendingPathComponent("file.txt").path), "replaced")
         }
 
         func testInterruptedRestoreStopsAndReportsWithoutRetrying() throws {
             let folder = try makeFolder()
             let workspace = try ComputerWorkspace(root: folder.path)
             for name in ["a.txt", "b.txt", "c.txt"] {
-                try workspace.write(workspace.root + "/" + name, content: "original \(name)", overwrite: false, authorize: {})
+                try workspace.write(
+                    workspace.root + "/" + name, content: "original \(name)", overwrite: false, authorize: {})
             }
             let store = try makeStore()
             let record = try XCTUnwrap(try store.snapshotIfNeeded(turnId: store.noteActivity(), root: workspace))
             for name in ["a.txt", "b.txt", "c.txt"] {
-                try workspace.write(workspace.root + "/" + name, content: "edited \(name)", overwrite: true, authorize: {})
+                try workspace.write(
+                    workspace.root + "/" + name, content: "edited \(name)", overwrite: true, authorize: {})
             }
             try FileManager.default.removeItem(at: folder.appendingPathComponent("b.txt"))
             try FileManager.default.createDirectory(at: folder.appendingPathComponent("b.txt"))
@@ -171,16 +178,17 @@
             XCTAssertEqual(outcome.failed.map(\.path), ["b.txt"])
             XCTAssertEqual(outcome.failed.map(\.code), ["permission_denied"])
             XCTAssertEqual(outcome.notAttempted, ["c.txt"])
-            XCTAssertEqual(try String(contentsOfFile: folder.appendingPathComponent("a.txt").path, encoding: .utf8), "original a.txt")
+            XCTAssertEqual(try contents(folder.appendingPathComponent("a.txt").path), "original a.txt")
             XCTAssertTrue(FileManager.default.isDirectory(atPath: folder.appendingPathComponent("b.txt").path))
-            XCTAssertEqual(try String(contentsOfFile: folder.appendingPathComponent("c.txt").path, encoding: .utf8), "edited c.txt")
+            XCTAssertEqual(try contents(folder.appendingPathComponent("c.txt").path), "edited c.txt")
         }
 
         func testSingleFileRestoreLeavesOtherHandEditsIntact() throws {
             let folder = try makeFolder()
             let workspace = try ComputerWorkspace(root: folder.path)
             for name in ["one.txt", "two.txt"] {
-                try workspace.write(workspace.root + "/" + name, content: "checkpointed", overwrite: false, authorize: {})
+                try workspace.write(
+                    workspace.root + "/" + name, content: "checkpointed", overwrite: false, authorize: {})
             }
             let store = try makeStore()
             let record = try XCTUnwrap(try store.snapshotIfNeeded(turnId: store.noteActivity(), root: workspace))
@@ -189,8 +197,8 @@
 
             let outcome = try store.restore(record.id, root: workspace, path: "one.txt", authorize: {})
             XCTAssertEqual(outcome.restored, ["one.txt"])
-            XCTAssertEqual(try String(contentsOfFile: folder.appendingPathComponent("one.txt").path, encoding: .utf8), "checkpointed")
-            XCTAssertEqual(try String(contentsOfFile: folder.appendingPathComponent("two.txt").path, encoding: .utf8), "hand edit")
+            XCTAssertEqual(try contents(folder.appendingPathComponent("one.txt").path), "checkpointed")
+            XCTAssertEqual(try contents(folder.appendingPathComponent("two.txt").path), "hand edit")
         }
 
         func testSnapshotOverTheSizeCapRefusesBeforeAnyEffect() throws {
@@ -217,7 +225,8 @@
             try workspace.write(workspace.root + "/file.txt", content: "v0", overwrite: false, authorize: {})
             let clock = MutableClock()
             let store = try makeStore(
-                limits: ComputerCheckpointStore.Limits(fileBytes: 1024, snapshotBytes: 1_000_000, count: 3, entries: 100),
+                limits: ComputerCheckpointStore.Limits(
+                    fileBytes: 1024, snapshotBytes: 1_000_000, count: 3, entries: 100),
                 clock: clock)
             var ids: [String] = []
             for round in 1...4 {
@@ -267,7 +276,8 @@
             let store = try makeStore()
             let record = try XCTUnwrap(try store.snapshotIfNeeded(turnId: store.noteActivity(), root: workspace))
 
-            try workspace.write(workspace.root + "/lines.txt", content: "a\nx\ny\nc\nd\n", overwrite: true, authorize: {})
+            try workspace.write(
+                workspace.root + "/lines.txt", content: "a\nx\ny\nc\nd\n", overwrite: true, authorize: {})
             try FileManager.default.removeItem(at: folder.appendingPathComponent("gone.txt"))
             try Data("brand new".utf8).write(to: folder.appendingPathComponent("new.txt"))
 
@@ -297,7 +307,7 @@
             let huge = Array(repeating: "line\n", count: 4001).joined()
             XCTAssertNil(
                 ComputerCheckpointStore.lineCounts(previous: Array(huge.utf8), current: Array(huge.utf8)))
-            let binary = Array([0x61, 0x00, 0x62].utf8)
+            let binary: [UInt8] = [0x61, 0x00, 0x62]
             XCTAssertNil(ComputerCheckpointStore.lineCounts(previous: binary, current: binary))
         }
 

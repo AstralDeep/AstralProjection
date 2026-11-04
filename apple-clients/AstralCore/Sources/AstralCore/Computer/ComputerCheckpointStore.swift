@@ -63,6 +63,14 @@
             public let snapshotBytes: Int
             public let count: Int
             public let entries: Int
+
+            public init(fileBytes: Int, snapshotBytes: Int, count: Int, entries: Int) {
+                self.fileBytes = fileBytes
+                self.snapshotBytes = snapshotBytes
+                self.count = count
+                self.entries = entries
+            }
+
             public static let standard = Limits(
                 fileBytes: 8_388_608, snapshotBytes: 268_435_456, count: 12, entries: 20_000)
         }

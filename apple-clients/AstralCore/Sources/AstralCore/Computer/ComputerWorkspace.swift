@@ -16,7 +16,7 @@
             inode = info.st_ino
             generation = info.st_gen
         }
-        var digest: String {
+        public var digest: String {
             let value = "\(device):\(inode):\(generation)"
             return SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
         }
