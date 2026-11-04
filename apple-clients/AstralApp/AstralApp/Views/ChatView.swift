@@ -881,7 +881,7 @@ struct InputBar: View {
             .textFieldStyle(.plain)
             .accessibilityIdentifier("chat-composer-input")
             .accessibilityLabel("Message AstralDeep")
-            .accessibilityValue(returnActionDescription)
+            .accessibilityHint(returnActionDescription)
             .submitLabel(.send).onSubmit(composerPrimarySend)
             .disabled(model.mutationsLocked).focused($focused)
             #if os(macOS)

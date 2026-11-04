@@ -1,11 +1,10 @@
-// AppModel tests for turn_steer_v1: capability gating exactly at the rote_config acknowledgement,
-// Return/Option-Return steering and queue semantics with their stable client message ids, refusal
-// restore, queue snapshot hydration and edit conflicts, Esc cancel-and-restore, approval isolation,
-// and the side-question sheet's transcript isolation.
+// Qualifies AppModel's negotiated Mac steering, queue, side-question, and composer accessibility behavior.
+// Mounted InputBar views and captured protocol frames exercise the same model and controls used by the app.
 
 #if os(macOS)
     import AstralCore
     import Foundation
+    import SwiftUI
     import XCTest
 
     @testable import AstralDeep
@@ -76,6 +75,40 @@
             XCTAssertEqual(registration["device"]?["turn_steer_v1"], .bool(true))
             XCTAssertTrue(capabilities.contains("turn_steer_v1"))
             XCTAssertTrue(capabilities.contains("chat_branches_v1"))
+        }
+
+        func testMountedComposerPreservesNativeDraftValueAndDescribesReturnWithHints() async throws {
+            let (model, _) = try makeModel()
+            let mount = SurfaceMount(
+                InputBar(
+                    input: Binding(get: { model.composerDraft }, set: { model.composerDraft = $0 }),
+                    framed: false, workbenchStyle: true),
+                model: model, size: CGSize(width: 640, height: 300))
+            defer { mount.close() }
+
+            for mode in ["message", "steer", "queue"] {
+                let hint: String
+                switch mode {
+                case "steer":
+                    negotiate(model)
+                    armTurn(model)
+                    hint = "Return sends a steer"
+                case "queue":
+                    model.composerReturnBinding = .queue
+                    hint = "Return queues a follow-up"
+                default:
+                    hint = "Return sends the message"
+                }
+                let draft = "\(mode) first line\nSecond line"
+                model.composerDraft = draft
+                try await mount.settle()
+                let field = try XCTUnwrap(
+                    try mount.accessibility.first { $0.identifier == "chat-composer-input" })
+
+                XCTAssertEqual(field.label, "Message AstralDeep", mode)
+                XCTAssertEqual(field.value, draft, mode)
+                XCTAssertEqual(field.help, hint, mode)
+            }
         }
 
         func testWithoutNegotiationTheComposerSendsAnOrdinaryMessage() throws {
