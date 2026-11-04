@@ -47,9 +47,10 @@ final class ComputerHostProtocolTests: XCTestCase {
             "browser_scroll", "browser_dialog", "list_apps", "ax_tree", "ax_find", "ax_action", "menu", "zoom",
             "browser_find", "browser_hover", "browser_zoom", "browser_console", "browser_network",
             "browser_evaluate", "browser_resize", "browser_tabs",
+            "list_checkpoints", "diff_checkpoint", "restore_checkpoint",
         ]
         XCTAssertTrue(added.isSubset(of: ComputerHostRequest.verbs))
-        XCTAssertEqual(ComputerHostRequest.verbs.count, 46)
+        XCTAssertEqual(ComputerHostRequest.verbs.count, 49)
         XCTAssertFalse(ComputerHostRequest.verbs.contains("run_shell"))
         let descriptor = try ComputerHostDescriptor(
             hostId: session, name: "Test Mac", clientVersion: "1.9.0",
@@ -70,7 +71,7 @@ final class ComputerHostProtocolTests: XCTestCase {
             "browser_click": 5000, "browser_fill": 5000, "browser_press": 5000, "browser_scroll": 5000,
             "browser_dialog": 5000, "ax_tree": 8000, "browser_find": 5000, "browser_hover": 5000,
             "browser_zoom": 5000, "browser_console": 5000, "browser_network": 5000, "browser_evaluate": 15000,
-            "browser_resize": 5000, "browser_tabs": 15000,
+            "browser_resize": 5000, "browser_tabs": 15000, "diff_checkpoint": 120000, "restore_checkpoint": 120000,
         ]
         for verb in ComputerHostRequest.verbs {
             XCTAssertEqual(ComputerHostRequest.maximumDeadlineMs(for: verb), ceilings[verb] ?? 30000, verb)
@@ -97,6 +98,26 @@ final class ComputerHostProtocolTests: XCTestCase {
         XCTAssertThrowsError(try request("browser_wait", args: ["for": .string("load")], deadline: 15001))
         XCTAssertNoThrow(try request("browser_snapshot", args: [:], deadline: 5000))
         XCTAssertThrowsError(try request("browser_snapshot", args: [:], deadline: 5001))
+    }
+
+    func testCheckpointVerbsRequireACheckpointIdAndBoundedOptionalPath() throws {
+        let identifier = "abcdef01-2345-4678-9abc-def012345678"
+        XCTAssertNoThrow(try request("list_checkpoints", args: [:]))
+        XCTAssertThrowsError(try request("list_checkpoints", args: ["path": .string("/x")]))
+        XCTAssertNoThrow(try request("diff_checkpoint", args: ["checkpoint_id": .string(identifier)]))
+        XCTAssertNoThrow(
+            try request(
+                "diff_checkpoint", args: ["checkpoint_id": .string(identifier), "path": .string("/x/notes.md")]))
+        XCTAssertThrowsError(try request("diff_checkpoint", args: [:]))
+        XCTAssertThrowsError(try request("diff_checkpoint", args: ["checkpoint_id": .string("not-a-uuid")]))
+        XCTAssertThrowsError(try request("diff_checkpoint", args: ["checkpoint_id": .string(identifier.uppercased())]))
+        XCTAssertThrowsError(
+            try request("restore_checkpoint", args: ["checkpoint_id": .string(identifier), "path": .string("rel")]))
+        XCTAssertThrowsError(
+            try request(
+                "restore_checkpoint",
+                args: ["checkpoint_id": .string(identifier), "path": .string("/x"), "extra": .bool(true)]))
+        XCTAssertNoThrow(try request("restore_checkpoint", args: ["checkpoint_id": .string(identifier)]))
     }
 
     func testRunCommandTakesExactlyOneCommandFormAndBoundedFields() throws {

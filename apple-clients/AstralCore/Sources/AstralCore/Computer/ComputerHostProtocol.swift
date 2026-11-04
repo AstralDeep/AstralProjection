@@ -200,6 +200,7 @@ public struct ComputerHostRequest: Sendable, Equatable {
         "list_apps", "ax_tree", "ax_find", "ax_action", "menu", "zoom",
         "browser_find", "browser_hover", "browser_zoom", "browser_console", "browser_network", "browser_evaluate",
         "browser_resize", "browser_tabs",
+        "list_checkpoints", "diff_checkpoint", "restore_checkpoint",
     ]
     private static let deadlineCeilings: [String: Double] = [
         "run_command": 630000, "read_output": 30000, "interrupt_command": 5000, "browser_navigate": 15000,
@@ -207,7 +208,7 @@ public struct ComputerHostRequest: Sendable, Equatable {
         "browser_click": 5000, "browser_fill": 5000, "browser_press": 5000, "browser_scroll": 5000,
         "browser_dialog": 5000, "ax_tree": 8000, "browser_find": 5000, "browser_hover": 5000, "browser_zoom": 5000,
         "browser_console": 5000, "browser_network": 5000, "browser_evaluate": 15000, "browser_resize": 5000,
-        "browser_tabs": 15000,
+        "browser_tabs": 15000, "diff_checkpoint": 120000, "restore_checkpoint": 120000,
     ]
     public static func maximumDeadlineMs(for verb: String) -> Double { deadlineCeilings[verb] ?? 30000 }
     public let id: String
@@ -269,6 +270,8 @@ public struct ComputerHostRequest: Sendable, Equatable {
             "run_command": ["command", "argv", "cwd", "env", "timeout_s", "background", "stdin"],
             "read_output": ["job_id", "stream", "offset", "max_bytes", "wait_s"],
             "interrupt_command": ["job_id", "signal"],
+            "list_checkpoints": [], "diff_checkpoint": ["checkpoint_id", "path"],
+            "restore_checkpoint": ["checkpoint_id", "path"],
             "browser_snapshot": ["scope_ref", "mode", "max_chars", "ref", "depth"],
             "browser_get_text": ["ref", "max_chars"],
             "browser_screenshot": ["max_width", "ref"], "browser_wait": ["for", "text", "ref", "seconds"],
@@ -461,6 +464,17 @@ public struct ComputerHostRequest: Sendable, Equatable {
                 try integer("offset", 0...9_007_199_254_740_991)
                 try integer("max_bytes", 1...65536)
                 try seconds("wait_s", 0...25)
+            }
+        case "list_checkpoints": break
+        case "diff_checkpoint", "restore_checkpoint":
+            guard let checkpoint = args["checkpoint_id"]?.stringValue,
+                computerFullMatch(checkpoint, "^[0-9a-f-]{36}$")
+            else { throw ComputerHostError("out_of_range", "Invalid checkpoint_id.") }
+            if args["path"] != nil {
+                try text("path", 1024)
+                guard args["path"]!.stringValue!.hasPrefix("/"),
+                    !args["path"]!.stringValue!.split(separator: "/").contains("..")
+                else { throw ComputerHostError("out_of_range", "An absolute workspace path is required.") }
             }
         case "browser_snapshot":
             try reference("scope_ref")

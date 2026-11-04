@@ -55,6 +55,14 @@ Every announce reports a fresh host incarnation id plus the command jobs the hos
 
 The driver cannot operate Astral's own process or its visible controls. Screenshots and window listing can still include Astral. Secure fields, unknown focus, stale window geometry, missing permissions, symlinks, hard-linked file reads and paths outside selected roots fail closed. File tools support bounded UTF-8 files and files/empty-directory deletion, not recursive trees.
 
+## Restore files after a turn
+
+Before the first changing action of a turn (a `write_file`, a `delete_path`, or a `run_command` inside a granted folder), the Mac captures the affected granted root into a private checkpoint store under the app's Application Support container, keyed by the signed-in account and server scope and the folder's recorded identity. Files matched by the workspace exclusion patterns are never captured; symlinks and hard links are reported as skipped and never followed; the project's own `.git` directory is never read or captured. Caps apply (8 MiB per file, 256 MiB per snapshot, 12 checkpoints per folder with oldest-first pruning that never removes the current turn's checkpoint); when a snapshot would exceed a cap, the changing action is refused before it runs. Checkpoints never touch the project's own git history and never leave the Mac.
+
+Computer controls shows a **Restore files** section per granted folder. Restoring first shows exactly which files would be overwritten (with line counts where both versions are text), then restores on explicit confirmation; files created after the checkpoint stay. Restoring is refused when the folder grant was removed or the folder identity changed. An interrupted restore reports which paths were restored and which were not, and is never retried automatically. The `checkpoint.created` and `checkpoint.restored` entries in the app's unified logging record turn, root-identity digest, tree hash and counts, never content.
+
+The agent-facing `list_checkpoints`, `diff_checkpoint` and `restore_checkpoint` verbs are implemented with their argument whitelists but stay unadvertised until the server registers them; owner restores through Computer controls work without that registration.
+
 ## Verify
 
 ```sh
