@@ -37,8 +37,8 @@
 
         func start() throws {
             lock.withLock {
-                ready = false
-                failure = nil
+                self.ready = false
+                self.failure = nil
             }
             listener.stateUpdateHandler = { [weak self] state in
                 guard let self else { return }
@@ -62,11 +62,12 @@
             }
             listener.start(queue: queue)
             _ = gate.wait(timeout: .now() + 5)
-            let (ready, failure, bound) = lock.withLock { (self.ready, self.failure, self.bound) }
-            guard ready, failure == nil, bound != 0 else {
+            let (started, startFailure, listeningPort) = lock.withLock { (self.ready, self.failure, self.bound) }
+            guard started, startFailure == nil, listeningPort != 0 else {
                 stop()
                 throw ComputerHostError(
-                    "sandbox_refused", "The command egress proxy did not start\(failure.map { ": \($0)" } ?? ".").")
+                    "sandbox_refused", "The command egress proxy did not start\(startFailure.map { ": \($0)" } ?? ".")."
+                )
             }
         }
 
