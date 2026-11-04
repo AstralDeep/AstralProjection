@@ -436,6 +436,48 @@ final class AppModel: NSObject {
     var agentLifecycles: [String: AgentLifecycle] = [:]
     var localOperationSubmissions: [String: LocalOperationSubmission] = [:]
 
+    #if os(macOS)
+        enum ComposerReturnBinding: String, CaseIterable {
+            case steer
+            case queue
+        }
+        static let composerReturnBindingKey = "astraldeep.composer.return-binding.v1"
+        @ObservationIgnored private var turnSteerAck: TurnSteerAcknowledgement?
+        @ObservationIgnored private var queueByChat: [String: QueueSnapshot] = [:]
+        @ObservationIgnored private var pendingSteerTexts: [String: String] = [:]
+        var steerNotice: String?
+        var queueConflictNotice: String?
+        var sideQuestionSheetVisible = false
+        var sideQuestionDraft = ""
+        var sideQuestionAnswer: String?
+        @ObservationIgnored private var sideQuestionRequestId: String?
+        @ObservationIgnored private var composerReturnBindingStored: ComposerReturnBinding
+        struct QueueSnapshot: Equatable {
+            let revision: Int
+            let items: [QueuedFollowUpItem]
+        }
+        var turnSteerNegotiated: Bool { turnSteerAck != nil }
+        var turnQueueCapable: Bool { turnSteerAck?.queueCapable ?? false }
+        var queuedFollowUps: [QueuedFollowUpItem] {
+            guard let chat = activeChatId, let snapshot = queueByChat[chat] else { return [] }
+            return snapshot.items
+        }
+        var composerSteeringApplies: Bool {
+            turnSteerNegotiated && turnActive && signedIn && connected && !mutationsLocked
+                && !timelineReadOnly
+        }
+        var composerQueueApplies: Bool {
+            turnQueueCapable && composerSteeringApplies
+        }
+        var composerReturnBinding: ComposerReturnBinding {
+            get { composerReturnBindingStored }
+            set {
+                composerReturnBindingStored = newValue
+                defaults.set(newValue.rawValue, forKey: Self.composerReturnBindingKey)
+            }
+        }
+    #endif
+
     var pendingSurfaceRequestGenerations: Set<String> {
         Set(
             localOperationSubmissions.values.compactMap { submission in
@@ -671,6 +713,15 @@ final class AppModel: NSObject {
         self.conversationResumeStore = conversationResumeStore
         self.outcomeUnknownStore = outcomeUnknownStore
         self.defaults = defaults
+        #if os(macOS)
+            if let stored = defaults.string(forKey: Self.composerReturnBindingKey),
+                let binding = ComposerReturnBinding(rawValue: stored)
+            {
+                composerReturnBindingStored = binding
+            } else {
+                composerReturnBindingStored = .steer
+            }
+        #endif
         let voiceDeviceKey = "astraldeep.voice.device-id.v1"
         if let stored = defaults.string(forKey: voiceDeviceKey),
             let parsed = UUID(uuidString: stored), parsed.uuidString.lowercased() == stored,
@@ -2261,6 +2312,7 @@ final class AppModel: NSObject {
             var descriptor = DeviceDescriptor.macos(viewportWidth: w, viewportHeight: h)
             descriptor.macWorkbenchSupported = true
             descriptor.projectWorkspacesSupported = true
+            descriptor.turnSteerSupported = true
         #else
             let size = UIScreen.main.bounds.size
             let (w, h) = lastReportedViewport ?? (Int(size.width), Int(size.height))
@@ -2356,6 +2408,11 @@ final class AppModel: NSObject {
             projects.negotiate(accepted)
             macComputerHost.workspaceNegotiated(projects: accepted)
             if accepted, connected { Task { await projects.refresh() } }
+            turnSteerAck = TurnSteerAcknowledgement.fromRoteConfig(frame.payload)
+            if !turnSteerNegotiated {
+                queueByChat.removeAll()
+                pendingSteerTexts.removeAll()
+            }
         #endif
         viewportSnapshotSupported = frame.payload["viewport_snapshot_supported"]?.boolValue == true
     }
@@ -2903,6 +2960,10 @@ final class AppModel: NSObject {
             themeStore.apply(spec: frame.payload["theme"] ?? frame.payload)
         case "workspace_timeline_mode":
             timelineReadOnly = frame.payload["active"]?.boolValue ?? frame.payload["on"]?.boolValue ?? false
+        #if os(macOS)
+        case "chat_steer_recorded", "chat_steer_refused", "chat_queue_updated", "side_question_result":
+            reduceTurnSteer(frame)
+        #endif
         case "error":
             let admissionRefused = reduceAdmissionRefusal(frame)
             let llmAdmissionRefused = reduceLLMAdmissionRefusal(frame)
@@ -4065,6 +4126,181 @@ final class AppModel: NSObject {
     }
 
     #if os(macOS)
+        func sendComposerText(_ text: String) {
+            guard composerSteeringApplies else {
+                sendChat(text)
+                return
+            }
+            switch composerReturnBinding {
+            case .steer: sendSteer(text)
+            case .queue:
+                if turnQueueCapable {
+                    queueFollowUp(text)
+                } else {
+                    sendSteer(text)
+                }
+            }
+        }
+
+        func composerOptionReturn(_ text: String) {
+            guard composerSteeringApplies else {
+                sendChat(text)
+                return
+            }
+            switch composerReturnBinding {
+            case .steer: queueFollowUp(text)
+            case .queue: sendSteer(text)
+            }
+        }
+
+        func sendSteer(_ text: String) {
+            guard composerSteeringApplies, let frame = TurnSteerOutbound.chatSteer(text, sessionId: activeChatId)
+            else { return }
+            let clientMessageId = clientMessageId(of: frame)
+            pendingSteerTexts[clientMessageId] = text
+            steerNotice = nil
+            queueConflictNotice = nil
+            transientTurns.append(
+                ChatTurn(id: "pending-steer-\(clientMessageId)", role: "steer", text: text))
+            rawSend(frame)
+        }
+
+        func queueFollowUp(_ text: String) {
+            guard composerQueueApplies, let frame = TurnSteerOutbound.chatQueuePut(text, sessionId: activeChatId)
+            else { return }
+            steerNotice = nil
+            queueConflictNotice = nil
+            rawSend(frame)
+        }
+
+        func editQueuedFollowUp(_ item: QueuedFollowUpItem, text: String) {
+            guard turnQueueCapable,
+                let frame = TurnSteerOutbound.chatQueueEdit(
+                    text, queueId: item.id, expectedRevision: item.revision, sessionId: activeChatId)
+            else { return }
+            queueConflictNotice = nil
+            rawSend(frame)
+        }
+
+        func removeQueuedFollowUp(_ item: QueuedFollowUpItem) {
+            guard let chat = activeChatId else { return }
+            queueByChat[chat]?.items.removeAll { $0.id == item.id }
+            guard turnQueueCapable,
+                let frame = TurnSteerOutbound.chatQueueRemove(queueId: item.id, sessionId: activeChatId)
+            else { return }
+            rawSend(frame)
+        }
+
+        func moveQueuedFollowUp(_ item: QueuedFollowUpItem, before: QueuedFollowUpItem?) {
+            guard let chat = activeChatId, var snapshot = queueByChat[chat],
+                snapshot.items.contains(where: { $0.id == item.id })
+            else { return }
+            snapshot.items.removeAll { $0.id == item.id }
+            let target = before.flatMap { moving in snapshot.items.firstIndex { $0.id == moving.id } }
+            snapshot.items.insert(item, at: target ?? snapshot.items.count)
+            queueByChat[chat] = snapshot
+            guard turnQueueCapable,
+                let frame = TurnSteerOutbound.chatQueueMove(
+                    queueId: item.id, beforeQueueId: before?.id, sessionId: activeChatId)
+            else { return }
+            rawSend(frame)
+        }
+
+        @discardableResult
+        func cancelTurnRestoringQueue() -> Bool {
+            guard turnSteerNegotiated, canCancelTurn || !queuedFollowUps.isEmpty else { return false }
+            let restored = queuedFollowUps.map { $0.message }
+            for item in queuedFollowUps {
+                removeQueuedFollowUp(item)
+            }
+            if canCancelTurn {
+                _ = cancelCurrentTurn()
+            }
+            steerNotice = nil
+            queueConflictNotice = nil
+            if !restored.isEmpty {
+                composerDraft = restored.joined(separator: "\n\n")
+            }
+            return true
+        }
+
+        func askSideQuestion(_ question: String) {
+            guard turnSteerNegotiated, signedIn, connected,
+                let frame = TurnSteerOutbound.sideQuestion(question, sessionId: activeChatId)
+            else { return }
+            sideQuestionRequestId = clientMessageId(of: frame)
+            sideQuestionAnswer = nil
+            rawSend(frame)
+        }
+
+        var sideQuestionPending: Bool { sideQuestionRequestId != nil && sideQuestionAnswer == nil }
+
+        private func clientMessageId(of frameText: String) -> String {
+            let frame = (try? JSONValue.parse(Data(frameText.utf8))) ?? .null
+            return frame["payload"]?["client_message_id"]?.stringValue ?? ""
+        }
+
+        private func reduceTurnSteer(_ frame: InboundFrame) {
+            switch frame.name {
+            case "chat_steer_recorded":
+                guard let recorded = ChatSteerRecorded(frame: frame) else { return }
+                pendingSteerTexts.removeValue(forKey: recorded.clientMessageId)
+                for skipped in recorded.skippedCalls {
+                    stepTrail = trailUpsert(stepTrail, "\u{21b7} \(skipped.name) \u{2014} \(skipped.reason)")
+                }
+            case "chat_steer_refused":
+                guard let refused = ChatSteerRefused(frame: frame) else { return }
+                let text = pendingSteerTexts.removeValue(forKey: refused.clientMessageId)
+                transientTurns.removeAll { $0.id == "pending-steer-\(refused.clientMessageId)" }
+                if let text {
+                    composerDraft = text
+                }
+                steerNotice = steerRefusalNotice(refused)
+            case "chat_queue_updated":
+                guard let updated = ChatQueueUpdated(frame: frame) else { return }
+                let chat = updated.chatId
+                if let existing = queueByChat[chat], updated.revision < existing.revision { return }
+                if composerQueueApplies, let snapshot = queueByChat[chat] {
+                    for item in updated.items {
+                        if let before = snapshot.items.first(where: { $0.id == item.id }),
+                            before.revision < item.revision, before.message != item.message
+                        {
+                            queueConflictNotice = "This follow-up changed on another device."
+                        }
+                    }
+                }
+                queueByChat[chat] = QueueSnapshot(revision: updated.revision, items: updated.items)
+            case "side_question_result":
+                guard let result = SideQuestionResult(frame: frame),
+                    result.clientMessageId == sideQuestionRequestId
+                else { return }
+                sideQuestionAnswer = result.answer
+                sideQuestionRequestId = nil
+            default:
+                break
+            }
+        }
+
+        private func steerRefusalNotice(_ refused: ChatSteerRefused) -> String {
+            switch refused.code {
+            case .staleTurn: return "The task moved on, so this steer was not applied."
+            case .notRunning: return "No task is running, so this steer was not applied."
+            case .approvalPending: return "Decide the approval first; steers cannot answer approvals."
+            case .capacityExceeded: return "Too many steers are waiting; try again shortly."
+            case .invalidInput: return "This steer text was not accepted."
+            }
+        }
+
+        func openSideQuestionSheet() {
+            guard turnSteerNegotiated, !mutationsLocked else { return }
+            sideQuestionDraft = ""
+            sideQuestionAnswer = nil
+            sideQuestionRequestId = nil
+            sideQuestionSheetVisible = true
+        }
+    #endif
+
+    #if os(macOS)
         func computerApplicationWillTerminate() {
             releaseComputerBypass()
             macComputerHost.recordRunningJobsAsUncertain()
@@ -5072,6 +5308,14 @@ final class AppModel: NSObject {
         #if os(macOS)
             turnEditor = nil
             pendingTurnDeparture = nil
+            queueByChat.removeAll()
+            pendingSteerTexts.removeAll()
+            steerNotice = nil
+            queueConflictNotice = nil
+            sideQuestionSheetVisible = false
+            sideQuestionDraft = ""
+            sideQuestionAnswer = nil
+            sideQuestionRequestId = nil
         #endif
         turns = []
         canvas = []

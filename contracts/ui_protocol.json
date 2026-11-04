@@ -758,7 +758,7 @@
       },
       "payload": {
         "version": 1,
-        "agent": "null or {agent_id, revision_id} — one active declarative agent revision",
+        "agent": "null or {agent_id, revision_id} \u2014 one active declarative agent revision",
         "skills": "list of {skill_id, revision}, at most 20, unique",
         "notes": "list of {note_id, revision}, at most 8, unique",
         "shape": "Exactly the version-1 selection work_submit accepts; every button carries the complete resulting selection, never a delta. The all-empty shape clears the chat's selection and is never forwarded as a Work selection.",
@@ -819,7 +819,7 @@
           "button",
           "param_picker"
         ],
-        "text": "Notes appear only as category, revision and enabled state — never their value. Skills appear only as name, /command, revision and enabled state — never their instructions."
+        "text": "Notes appear only as category, revision and enabled state \u2014 never their value. Skills appear only as name, /command, revision and enabled state \u2014 never their instructions."
       },
       "legacy": "Hosts expose the picker only to clients advertising guidance_selection_v1; other clients submit Work without a selection exactly as before."
     },
@@ -3777,6 +3777,114 @@
       },
       "recovery": "A failed folder change revokes current-process authority, including refresh/reconnect/rebind, and visibly reports that it was not saved. A restart may restore the last successfully committed folders only after exact scope/bookmark/physical identity verification and durable fresh revision allocation. Failed restoration writes admit no grant; total storage failure cannot guarantee durable revocation. Explicit successful retry restores current-process access.",
       "creation": "Every chatless entry uses the selected project or opens a chooser/create flow. Creation offers an optional native folder picker and text-only use; cancelling folder selection preserves the created text project. Pending intent, draft and current chat remain fenced to owner/server/connection/navigation until success."
+    },
+    "turn_steer_v1": {
+      "version": 1,
+      "scope": "Owner-typed mid-turn steering, queued follow-ups and side questions on the macOS DirectDownload composer; every other client and every server without the capability keeps the ordinary composer behavior unchanged.",
+      "negotiation": "Authenticated register_ui capabilities includes turn_steer_v1, device.turn_steer_v1 is exactly true, and the device type is macos with the console contract. The server acknowledges only in the rote_config device profile described below; without that acknowledgment the composer behaves exactly as it does today.",
+      "acknowledgment": "rote_config.device_profile.console.turn_steer = {version:1, queue_capable:bool}. queue_capable false records steers and side questions but no durable queue; the composer hides queue affordances.",
+      "clients": {
+        "macos": "steer and queue from the composer, queue chips hydrated from the server, side-question sheet, swapped bindings in Settings",
+        "browser": "compatible legacy composer",
+        "windows": "compatible legacy composer",
+        "android": "compatible legacy composer",
+        "ios": "compatible legacy composer",
+        "watch": "compatible legacy composer"
+      },
+      "client_actions": {
+        "chat_steer": {
+          "exact_fields": [
+            "message",
+            "client_message_id"
+          ],
+          "message": "1-20000 Unicode scalar values after trimming; owner-typed text only",
+          "client_message_id": "canonical lowercase UUIDv4 generated once per owner action and never reused"
+        },
+        "chat_queue_put": {
+          "exact_fields": [
+            "message",
+            "client_message_id"
+          ],
+          "message": "1-20000 Unicode scalar values after trimming; owner-typed text only"
+        },
+        "chat_queue_edit": {
+          "exact_fields": [
+            "queue_id",
+            "message",
+            "expected_revision",
+            "client_message_id"
+          ],
+          "expected_revision": "the queue revision the editor was showing; a mismatch is a cross-device conflict the server refuses"
+        },
+        "chat_queue_remove": {
+          "exact_fields": [
+            "queue_id",
+            "client_message_id"
+          ]
+        },
+        "chat_queue_move": {
+          "exact_fields": [
+            "queue_id",
+            "before_queue_id",
+            "client_message_id"
+          ],
+          "before_queue_id": "nullable; null moves the chip to the end"
+        },
+        "side_question": {
+          "exact_fields": [
+            "question",
+            "client_message_id"
+          ],
+          "question": "1-20000 Unicode scalar values after trimming; owner-typed text only"
+        }
+      },
+      "server_events": {
+        "chat_steer_recorded": {
+          "fields": [
+            "chat_id",
+            "client_message_id",
+            "skipped_calls"
+          ],
+          "skipped_calls": "array of 0-50 objects with name and reason; the composer copies them into the step trail"
+        },
+        "chat_steer_refused": {
+          "fields": [
+            "chat_id",
+            "client_message_id",
+            "code",
+            "message"
+          ],
+          "codes": [
+            "stale_turn",
+            "not_running",
+            "approval_pending",
+            "invalid_input",
+            "capacity_exceeded"
+          ]
+        },
+        "chat_queue_updated": {
+          "fields": [
+            "chat_id",
+            "revision",
+            "items"
+          ],
+          "items": "authoritative whole-queue snapshot; each item has queue_id, message, revision; the snapshot hydrates chips after relaunch and reconnect and resolves edit conflicts by keeping the newer revision"
+        },
+        "side_question_result": {
+          "fields": [
+            "client_message_id",
+            "answer"
+          ],
+          "answer": "1-20000 Unicode scalar values; rendered only in the side sheet, never appended to the transcript, canvas or history"
+        }
+      },
+      "approval_isolation": "A steer, queue action or side question never answers an approval banner; approving still requires the banner's own authorize_action or remote_op_decision control. The server refuses a steer while an approval is pending with code approval_pending.",
+      "identity": "Every client action carries submission_id and request_generation from the standard ui_event envelope plus its client_message_id, so chat_steer and chat_queue events correlate with the owner action in the audit chain.",
+      "bounds": {
+        "message_scalars": 20000,
+        "queue_items": 16,
+        "skipped_calls": 50
+      }
     }
   },
   "frame_contracts": {
@@ -3784,20 +3892,40 @@
       "capability": "register_ui.capabilities.ui_auth_refresh_v1",
       "client_request": {
         "type": "refresh_ui_auth",
-        "exact_fields": ["type", "request_id", "connection_generation", "token"],
+        "exact_fields": [
+          "type",
+          "request_id",
+          "connection_generation",
+          "token"
+        ],
         "request_id": "canonical_lowercase_uuid4",
         "connection_generation": "current registered connection uuid4",
         "token": "fresh OAuth access token; never log or return it"
       },
       "server_ready": {
         "type": "ui_auth_refresh_ready",
-        "exact_fields": ["type", "connection_generation"]
+        "exact_fields": [
+          "type",
+          "connection_generation"
+        ]
       },
       "server_acknowledgement": {
         "type": "ui_auth_refreshed",
-        "exact_fields": ["type", "request_id", "connection_generation", "accepted", "closed_code?"]
+        "exact_fields": [
+          "type",
+          "request_id",
+          "connection_generation",
+          "accepted",
+          "closed_code?"
+        ]
       },
-      "closed_codes": ["invalid", "identity_changed", "stale_connection", "authority_changed", "session_unavailable"],
+      "closed_codes": [
+        "invalid",
+        "identity_changed",
+        "stale_connection",
+        "authority_changed",
+        "session_unavailable"
+      ],
       "binding": "Same registered WebSocket and connection generation, with exact outstanding request id; no queue, reconnect, or operation replay.",
       "identity": "Require exact iss and sub; same-key azp or client_id and same-key sid or session_state on both tokens; preserve normalized aud, scope, realm_access.roles, resource_access roles, and groups. Missing or changed identity/authority claims refuse renewal.",
       "scope": "Optional macOS capability. Unsupported clients and servers retain legacy behavior."
@@ -4475,7 +4603,19 @@
       "category": "chat"
     },
     {
+      "name": "chat_queue_updated",
+      "category": "chat"
+    },
+    {
       "name": "chat_status",
+      "category": "chat"
+    },
+    {
+      "name": "chat_steer_recorded",
+      "category": "chat"
+    },
+    {
+      "name": "chat_steer_refused",
       "category": "chat"
     },
     {
@@ -4586,6 +4726,10 @@
     {
       "name": "saved_components_list",
       "category": "component_verbs"
+    },
+    {
+      "name": "side_question_result",
+      "category": "chat"
     },
     {
       "name": "stream_data",
@@ -4713,8 +4857,13 @@
     "chat_fork",
     "chat_message",
     "chat_pin",
+    "chat_queue_edit",
+    "chat_queue_move",
+    "chat_queue_put",
+    "chat_queue_remove",
     "chat_regenerate",
     "chat_rename",
+    "chat_steer",
     "chat_unarchive",
     "chat_unpin",
     "chrome_admin_proposal_decide",
@@ -4858,6 +5007,7 @@
     "save_theme",
     "schedule_decision",
     "set_agent_permissions",
+    "side_question",
     "stream_list",
     "stream_subscribe",
     "stream_unsubscribe",
@@ -5014,7 +5164,9 @@
     {
       "field": "capabilities.ui_auth_refresh_v1",
       "shape": "string capability token",
-      "carried_on": ["register_ui.capabilities"],
+      "carried_on": [
+        "register_ui.capabilities"
+      ],
       "scope": "Optional macOS same-socket credential renewal; only usable after ui_auth_refresh_ready on the current generation.",
       "introduced_by": "goal-run-subject-token-renewal",
       "contract": "frame_contracts.ui_auth_refresh_v1"
@@ -5369,7 +5521,7 @@
       "carried_on": [
         "conversation_snapshot.transcript[]"
       ],
-      "scope": "Optional per-transcript-message sibling disclosure for the active branch path; absent on every message of an unbranched chat and on legacy snapshots. Sibling identifiers let the Mac offer branch switching, and the server keeps branch state across relaunch and reconnect — the client persists none of it.",
+      "scope": "Optional per-transcript-message sibling disclosure for the active branch path; absent on every message of an unbranched chat and on legacy snapshots. Sibling identifiers let the Mac offer branch switching, and the server keeps branch state across relaunch and reconnect \u2014 the client persists none of it.",
       "contract": "additive turn-intent fields gated by the register_ui chat_branches_v1 capability"
     }
   ],

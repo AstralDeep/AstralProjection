@@ -83,6 +83,10 @@ CLASSIFICATION: dict[str, str] = {
     "ui_auth_refreshed": IGNORED,
     "audit_append": IGNORED,
     "agent_creation_progress": IGNORED,
+    "chat_queue_updated": IGNORED,
+    "chat_steer_recorded": IGNORED,
+    "chat_steer_refused": IGNORED,
+    "side_question_result": IGNORED,
     "notification": HANDLED,
     "error": HANDLED,
 }
