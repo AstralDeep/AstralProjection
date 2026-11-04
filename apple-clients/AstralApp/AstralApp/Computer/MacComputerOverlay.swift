@@ -144,23 +144,23 @@
                 model.app = MacComputerAccessibility.bounded(MacComputerAccessibility.clean(name), 60)
             case .point(let point, let label):
                 avoid(appKit(point))
-                guard case let (canvas, local)? = locate(point) else { return }
+                guard case (let canvas, let local)? = locate(point) else { return }
                 for panel in glyphPanels where panel.contentView !== canvas {
                     (panel.contentView as? MacComputerOverlayCanvas)?.hidePointer()
                 }
                 canvas.glide(to: local, label: label.map { MacComputerAccessibility.bounded($0, 80) })
             case .click(let point):
-                guard case let (canvas, local)? = locate(point) else { return }
+                guard case (let canvas, let local)? = locate(point) else { return }
                 canvas.ripple(at: local)
             case .drag(let start, let end):
-                if case let (canvas, from)? = locate(start), case let (other, to)? = locate(end), canvas === other {
+                if case (let canvas, let from)? = locate(start), case (let other, let to)? = locate(end), canvas === other {
                     canvas.path(from: from, to: to)
                 } else {
-                    if case let (canvas, local)? = locate(start) { canvas.ripple(at: local) }
-                    if case let (canvas, local)? = locate(end) { canvas.ripple(at: local) }
+                    if case (let canvas, let local)? = locate(start) { canvas.ripple(at: local) }
+                    if case (let canvas, let local)? = locate(end) { canvas.ripple(at: local) }
                 }
             case .scroll(let point, let dx, let dy):
-                guard case let (canvas, local)? = locate(point) else { return }
+                guard case (let canvas, let local)? = locate(point) else { return }
                 canvas.scroll(at: local, dx: dx, dy: dy)
             case .chord(let text):
                 let screen = banner?.screen ?? screens().first

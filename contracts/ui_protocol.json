@@ -5122,15 +5122,33 @@
         "verbs": [
           "non-empty subset of the closed computer-host verb set"
         ],
-        "protocol": 1
+        "protocol": 1,
+        "incarnation_id": "canonical lowercase uuid4, fresh per host process launch",
+        "retained_jobs": [
+          "{job_id, state, exit_code, signal, output_bytes} (at most 64, unique uuid4 job ids; state in running | exited | interrupted | timed_out | uncertain; running jobs carry null exit_code and signal)"
+        ]
       },
       "carried_on": [
         "register_ui",
         "ui_event.computer_event (event=announce, under host)"
       ],
-      "scope": "present only when the desktop owner switched on 'Allow remote control'; absent means the socket is not a controllable host; a malformed descriptor costs host eligibility, never the session",
+      "scope": "present only when the desktop owner switched on 'Allow remote control'; absent means the socket is not a controllable host; a malformed descriptor costs host eligibility, never the session. Optional incarnation_id and retained_jobs report the host's current process incarnation and the command jobs it still holds, with output sizes and never output content; a changed incarnation means jobs reported by an earlier incarnation are unknown rather than reattached, and absent fields mean a pre-incarnation host",
       "introduced_by": "076-remote-computer-control (FR-002)",
       "contract": "specs/076-remote-computer-control/contracts/transport.md"
+    },
+    {
+      "field": "outcome_ack",
+      "shape": {
+        "event": "outcome_ack",
+        "decision": "acknowledge | discard",
+        "incarnation_id": "canonical lowercase uuid4 matching the announced host incarnation"
+      },
+      "carried_on": [
+        "ui_event.computer_event (event=outcome_ack)"
+      ],
+      "scope": "One owner intent per outcome-unknown card, sent by the host that reported the retained jobs; acknowledge only lets the chat continue and discard ends the turn, while every new action stays reviewed and delegated as usual. Repeated intents for one card are refused by the sender; the card carries no authority of its own and the server records the acknowledgment without ever receiving job output.",
+      "introduced_by": "macOS retained-host-job outcome reporting",
+      "contract": "accept_actions.computer_event"
     },
     {
       "field": "console_contract",

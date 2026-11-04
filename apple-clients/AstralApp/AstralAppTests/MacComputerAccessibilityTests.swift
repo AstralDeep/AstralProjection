@@ -227,7 +227,8 @@
             XCTAssertEqual(secret["matches"], .array([]))
             let buttons = try await run(
                 fixture, "ax_find", ["query": .string("e"), "role": .string("button"), "max": .number(2)])
-            XCTAssertEqual(buttons["matches"]?.arrayValue?.compactMap { $0["title"]?.stringValue }, ["close", "Delete"])
+            XCTAssertEqual(
+                buttons["matches"]?.arrayValue?.compactMap { $0["title"]?.stringValue }, ["close", "Delete"])
             XCTAssertEqual(buttons["truncated"], .bool(true))
         }
 
@@ -464,7 +465,8 @@
             XCTAssertTrue(missing?.contains("Choices: Save…, Export") == true)
             _ = await refusal(
                 "not_found", fixture, "menu", ["path": .array([.string("File"), .string("Save"), .string("More")])])
-            _ = await refusal("target_disabled", fixture, "menu", ["path": .array([.string("File"), .string("Print")])])
+            _ = await refusal(
+                "target_disabled", fixture, "menu", ["path": .array([.string("File"), .string("Print")])])
             let trash: JSONValue = .array([.string("File"), .string("Move to Trash")])
             let refused = await refusal("confirmation_required", fixture, "menu", ["path": trash])
             let message = try XCTUnwrap(refused)
@@ -554,9 +556,10 @@
                 ])
             let tree = try await run(fixture, "ax_tree")
             let treeSnapshot = try XCTUnwrap(tree["snapshot_id"]?.stringValue)
-            let refs = tree["lines"]?.arrayValue?.compactMap { line in
-                line.stringValue.map { String($0.dropFirst().prefix { $0 != "]" }) }
-            } ?? []
+            let refs =
+                tree["lines"]?.arrayValue?.compactMap { line in
+                    line.stringValue.map { String($0.dropFirst().prefix { $0 != "]" }) }
+                } ?? []
             _ = try await run(
                 fixture, "drag",
                 ["ref": .string(refs[1]), "ref2": .string(refs[0]), "snapshot_id": .string(treeSnapshot)])

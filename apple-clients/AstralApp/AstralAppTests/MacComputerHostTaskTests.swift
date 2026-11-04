@@ -570,7 +570,7 @@
             XCTAssertFalse(host.working)
         }
 
-        func testSocketLossLeavesRunningJobsUncertainForTheNextRead() async throws {
+        func testSocketLossKeepsTheJobRunningReportsItOnReconnectAndForgetsOnSignOut() async throws {
             let root = try folder()
             let commands = MacComputerCommands(
                 spawner: MacComputerFakeSpawner(), clock: MacComputerFakeClock { $0 >= 20 }, inherited: [:],
@@ -588,19 +588,89 @@
             let started = await response(start, host: host)
             let job = try XCTUnwrap(started?["result"]?["job_id"]?.stringValue)
             host.disconnect()
-            for _ in 0..<2000 where commands.registry.job(job)?.running == true { await Task.yield() }
+            try await Task.sleep(nanoseconds: 50_000_000)
+            XCTAssertEqual(commands.registry.job(job)?.state, "running")
+            XCTAssertEqual(host.uncertainJobs.map(\.id), [job])
+            XCTAssertEqual(host.uncertainJobs.first?.state, "running")
             host.bind(owner: "task-owner") { [weak self] text in
                 if let frame = try? JSONValue.parse(Data(text.utf8)) { self?.sent.append(frame) }
                 return true
             }
+            host.beginWorkspaceNegotiation(server: URL(string: "https://example.test")!, account: "task-owner")
+            host.workspaceNegotiated(projects: false)
+            let announce = try XCTUnwrap(events.last { $0["event"] == .string("announce") })
+            XCTAssertEqual(announce["host"]?["incarnation_id"], .string(host.incarnationId))
+            XCTAssertEqual(announce["host"]?["retained_jobs"]?.arrayValue?.first?["job_id"], .string(job))
+            XCTAssertEqual(announce["host"]?["retained_jobs"]?.arrayValue?.first?["state"], .string("running"))
+            XCTAssertTrue(
+                ComputerHostOutbound.isValid(
+                    String(decoding: try sent.last!.encoded(), as: UTF8.self)))
             let second = UUID().uuidString.lowercased()
             host.consume(try session(host, second))
+            try await Task.sleep(nanoseconds: 50_000_000)
+            XCTAssertEqual(commands.registry.job(job)?.state, "running")
             let (read, output) = try request(second, "read_output", ["job_id": .string(job)])
             host.consume(output)
             let state = await response(read, host: host)
-            XCTAssertEqual(state?["result"]?["state"], .string("uncertain"))
+            XCTAssertEqual(state?["result"]?["state"], .string("running"))
             host.signedOut()
             XCTAssertNil(commands.registry.job(job))
+            XCTAssertTrue(host.uncertainJobs.isEmpty)
+        }
+
+        func testForegroundCommandSurvivesDisconnectAndKeepsItsOutcomeInspectable() async throws {
+            let root = try folder()
+            let spawner = MacComputerFakeSpawner()
+            let commands = MacComputerCommands(
+                spawner: spawner, clock: MacComputerFakeClock { $0 >= 20 }, inherited: [:],
+                loginPath: { "/usr/bin:/bin" })
+            let host = try makeHost(roots: [root], commands: commands)
+            let id = UUID().uuidString.lowercased()
+            host.consume(try session(host, id))
+            let (start, foreground) = try request(
+                id, "run_command",
+                ["argv": .array([.string("sleep")]), "cwd": .string(host.files.roots[0]), "timeout_s": .number(600)],
+                deadline: 600000)
+            host.consume(foreground)
+            var jobId: String?
+            for _ in 0..<2000 {
+                jobId = commands.registry.all.first?.id
+                if jobId != nil { break }
+                await Task.yield()
+            }
+            let job = try XCTUnwrap(jobId)
+            host.disconnect()
+            try await Task.sleep(nanoseconds: 50_000_000)
+            XCTAssertEqual(commands.registry.job(job)?.state, "running")
+            XCTAssertEqual(spawner.processes.last?.signals, [], "a disconnect never signals a retained job")
+            XCTAssertEqual(host.uncertainJobs.map(\.id), [job])
+            let preview = try XCTUnwrap(commands.preview(job))
+            XCTAssertEqual(preview.job.id, job)
+            host.stop()
+            for _ in 0..<2000 where commands.registry.job(job)?.running == true { await Task.yield() }
+            XCTAssertEqual(commands.registry.job(job)?.state, "interrupted")
+        }
+
+        func testOutcomeDecisionSendsOneClosedFramePerCall() throws {
+            let host = try makeHost()
+            host.sendOutcomeDecision("acknowledge")
+            host.sendOutcomeDecision("continue")
+            host.sendOutcomeDecision("discard")
+            let decisions = events.filter { $0["event"] == .string("outcome_ack") }
+            XCTAssertEqual(decisions.count, 2)
+            XCTAssertEqual(decisions.first?["decision"], .string("acknowledge"))
+            XCTAssertEqual(decisions.last?["decision"], .string("discard"))
+            XCTAssertEqual(decisions.first?["incarnation_id"], .string(host.incarnationId))
+            XCTAssertEqual(decisions.first?["host_id"], .string(try XCTUnwrap(host.descriptor).hostId))
+            for event in decisions {
+                let frame = ComputerHostOutbound.frame(
+                    action: "computer_event",
+                    payload: [
+                        "host_id": event["host_id"]!, "event": event["event"]!,
+                        "decision": event["decision"]!, "incarnation_id": event["incarnation_id"]!,
+                    ])
+                XCTAssertTrue(ComputerHostOutbound.isValid(frame))
+            }
         }
 
         func testLocalPauseRefusesRemoteResumeUntilLocalResume() async throws {

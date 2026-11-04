@@ -159,6 +159,7 @@
                                 }
                             }
                             if let prompt = model.approvalPrompts.first { MacApprovalBanner(prompt: prompt) }
+                            MacOutcomeUnknownCardView()
                             ViewportRefreshNotice()
                             HStack(spacing: 0) {
                                 conversation
