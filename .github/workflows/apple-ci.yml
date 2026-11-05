@@ -659,6 +659,10 @@ jobs:
             selectors+=("-only-testing:AstralAppUITests/$selected")
           done
           derived="$PWD/build/060/app-${{ matrix.platform }}-ui-dd"
+          target_args=(-project "${APP_PROJECT}" -scheme AstralApp)
+          project_args=(-derivedDataPath "$derived"
+            -clonedSourcePackagesDirPath "$PWD/build/060/swift-package-clones"
+            -disableAutomaticPackageResolution -skipPackageUpdates)
           test_action='test'
           if [[ "${{ matrix.platform }}" == "macos" ]]; then
             xcodebuild -project "${APP_PROJECT}" -scheme AstralApp -destination "$dest" \
@@ -668,13 +672,19 @@ jobs:
               -disableAutomaticPackageResolution -skipPackageUpdates build-for-testing
           fi
           if [[ "${{ matrix.platform }}" == "ios" ]]; then
+            runs=("$derived"/Build/Products/*.xctestrun)
+            if [[ ${#runs[@]} -ne 1 || ! -f "${runs[0]}" || -L "${runs[0]}" ]]; then
+              echo "::error::Expected one restored xctestrun file"
+              exit 1
+            fi
+            target_args=(-xctestrun "${runs[0]}")
+            project_args=()
             xcrun simctl bootstatus "${{ steps.ios_sim.outputs.udid }}" -b
           fi
           test_action=test-without-building
           set +e
           xcodebuild \
-            -project "${APP_PROJECT}" \
-            -scheme AstralApp \
+            "${target_args[@]}" \
             -destination "$dest" \
             -configuration Debug \
             CODE_SIGNING_ALLOWED=NO \
@@ -684,10 +694,7 @@ jobs:
             -maximum-test-execution-time-allowance 300 \
             -retry-tests-on-failure \
             -test-iterations 2 \
-            -derivedDataPath "$derived" \
-            -clonedSourcePackagesDirPath "$PWD/build/060/swift-package-clones" \
-            -disableAutomaticPackageResolution \
-            -skipPackageUpdates \
+            ${project_args[@]+"${project_args[@]}"} \
             -resultBundlePath "$result" \
             "${selectors[@]}" \
             "$test_action"

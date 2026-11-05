@@ -1480,6 +1480,14 @@ def test_ios_mapping_collection_guard_refuses_lane_rebuild_or_domain_loss(old, n
         _assert_ios_domain_collection(text.replace(old, new, 1))
 
 
+def _ios_ui_runfile(tmp_path, index=0):
+    products = tmp_path / "build/060/app-ios-ui-dd/Build/Products"
+    products.mkdir(parents=True, exist_ok=True)
+    path = products / f"AstralApp fixture {index}.xctestrun"
+    path.write_text("restored test specification")
+    return path
+
+
 @pytest.mark.parametrize(
     "lane,slug",
     [("unit", "macos"), ("unit", "ios"), ("ui", "macos"), ("ui", "ios-1"), ("ui", "ios-2"), ("ui", "ios-3")],
@@ -1534,6 +1542,7 @@ def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, lane, slug)
         f'python3() {{ {command} python3 "$@"; }}\n'
     )
     record = tmp_path / "commands.jsonl"
+    runfile = _ios_ui_runfile(tmp_path) if lane == "ui" and platform == "ios" else None
     result = subprocess.run(
         [bash, "-c", prefix + script],
         cwd=tmp_path,
@@ -1558,7 +1567,21 @@ def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, lane, slug)
     if builds:
         assert not any(value.startswith("-only-testing:") for value in builds[0])
     assert xcode[-1][-1] == "test-without-building"
-    assert xcode[-1][xcode[-1].index("-project") + 1] == "Owned Fixture.xcodeproj"
+    if runfile is not None:
+        assert xcode[-1][xcode[-1].index("-xctestrun") + 1] == str(runfile)
+        assert all(flag not in xcode[-1] for flag in (
+            "-project", "-scheme", "-derivedDataPath", "-clonedSourcePackagesDirPath",
+            "-disableAutomaticPackageResolution", "-skipPackageUpdates",
+        ))
+    else:
+        assert xcode[-1][xcode[-1].index("-project") + 1] == "Owned Fixture.xcodeproj"
+        assert "-xctestrun" not in xcode[-1]
+        if lane == "ui":
+            assert "-disableAutomaticPackageResolution" in xcode[-1]
+            assert "-skipPackageUpdates" in xcode[-1]
+            assert xcode[-1][xcode[-1].index("-clonedSourcePackagesDirPath") + 1] == str(
+                tmp_path / "build/060/swift-package-clones"
+            )
     assert "CODE_SIGNING_ALLOWED=NO" in xcode[-1]
     _assert_retried_test_run(xcode)
     assert not any(value.startswith("-parallel") for call in xcode for value in call)
@@ -1654,7 +1677,7 @@ def test_apple_core_ios_builds_once_then_runs_one_retried_suite(tmp_path):
     assert collectors[0][collectors[0].index("--lane") + 1] == "core"
 
 
-def _run_first_login_step(tmp_path, slug, *, suite_exit):
+def _run_first_login_step(tmp_path, slug, *, suite_exit, runfile_count=1):
     bash = "/bin/bash" if Path("/bin/bash").is_file() else shutil.which("bash")
     if bash is None:
         pytest.skip("Apple workflow shell contract requires Bash")
@@ -1684,6 +1707,9 @@ def _run_first_login_step(tmp_path, slug, *, suite_exit):
     ) + "\n"
     record = tmp_path / "commands.jsonl"
     record.touch()
+    if slug != "macos":
+        for index in range(runfile_count):
+            _ios_ui_runfile(tmp_path, index)
     result = subprocess.run(
         [bash, "-c", prefix + script],
         cwd=tmp_path,
@@ -1896,3 +1922,25 @@ def test_ios_ui_build_producer_packs_only_a_successful_complete_build(tmp_path, 
     if packs:
         assert packs[0][1:3] == ["scripts/ci_apple_ui_products.py", "pack"]
         assert packs[0][packs[0].index("--derived") + 1] == str(tmp_path / "build/060/app-ios-ui-dd")
+
+
+@pytest.mark.parametrize("slug", ["ios-1", "ios-2", "ios-3"])
+@pytest.mark.parametrize("count", [0, 2], ids=["missing", "duplicate"])
+def test_ios_ui_refuses_missing_or_ambiguous_restored_test_specification(tmp_path, slug, count):
+    result, calls = _run_first_login_step(tmp_path, slug, suite_exit=0, runfile_count=count)
+    assert result.returncode == 1
+    assert "::error::Expected one restored xctestrun file" in result.stdout
+    assert calls == []
+
+
+@pytest.mark.parametrize("slug", ["ios-1", "ios-2", "ios-3"])
+def test_ios_ui_refuses_a_symlinked_restored_test_specification(tmp_path, slug):
+    runfile = _ios_ui_runfile(tmp_path)
+    runfile.unlink()
+    target = tmp_path / "other.xctestrun"
+    target.write_text("outside restored Products")
+    runfile.symlink_to(target)
+    result, calls = _run_first_login_step(tmp_path, slug, suite_exit=0, runfile_count=0)
+    assert result.returncode == 1
+    assert "::error::Expected one restored xctestrun file" in result.stdout
+    assert calls == []
