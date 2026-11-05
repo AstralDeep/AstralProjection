@@ -23,7 +23,7 @@ BUILDERS = {
     "saved_results_088": ("saved_results_v1", "saved_results", build_saved_results_view),
 }
 NEW_ACTIONS = {SAVE_ACTION, "chrome_job_stop"}
-ACTION_COUNT = 173
+ACTION_COUNT = 180
 
 
 def manifest():
