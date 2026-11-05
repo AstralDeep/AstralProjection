@@ -42,11 +42,18 @@ def test_descriptor_declares_incarnation_and_retained_job_inventory() -> None:
 
 def test_outcome_ack_rides_the_existing_computer_event_action_without_new_vocabulary() -> None:
     entry = additive_field("outcome_ack")
-    assert entry["carried_on"] == ["ui_event.computer_event (event=outcome_ack)"]
-    assert set(entry["shape"]) == {"event", "decision", "incarnation_id"}
+    assert entry["carried_on"] == [
+        "ui_event.computer_event (event=outcome_ack)",
+        "computer_host (success receipt after audit acceptance)",
+    ]
+    assert set(entry["shape"]) == {"event", "decision", "incarnation_id", "success_receipt"}
     assert entry["shape"]["decision"] == "acknowledge | discard"
     assert entry["shape"]["event"] == "outcome_ack"
-    assert "Repeated" in entry["scope"]
+    receipt = entry["shape"]["success_receipt"]
+    assert receipt["type"] == "computer_host"
+    assert set(receipt["outcome_ack"]) == {"decision", "incarnation_id", "connection_generation"}
+    assert "idempotently replayed" in entry["scope"]
+    assert "bounded timeout" in entry["scope"]
     assert "computer_event" in MANIFEST["accept_actions"]
     assert "outcome_ack" not in MANIFEST["accept_actions"]
     assert "outcome_unknown" not in {item["name"] for item in MANIFEST["push_types"]}
@@ -75,6 +82,13 @@ def test_shared_fixture_announce_and_acknowledgment_stay_conformant() -> None:
     assert ack["payload"]["event"] == "outcome_ack"
     assert ack["payload"]["decision"] in {"acknowledge", "discard"}
     assert ack["payload"]["incarnation_id"] == incarnation
+    receipt = FIXTURE["outcome_ack_receipt"]
+    assert receipt["type"] == "computer_host"
+    assert receipt["host_id"] == host["host_id"]
+    assert set(receipt["outcome_ack"]) == {"decision", "incarnation_id", "connection_generation"}
+    assert receipt["outcome_ack"]["decision"] == ack["payload"]["decision"]
+    assert receipt["outcome_ack"]["incarnation_id"] == incarnation
+    assert len(receipt["outcome_ack"]["connection_generation"]) == 36
     assert "output text never travels" in FIXTURE["never_on_the_wire"]["stdout"]
     assert "output_bytes" in FIXTURE["never_on_the_wire"]["stderr"]
     descriptor_shape = additive_field("computer_host")["shape"]

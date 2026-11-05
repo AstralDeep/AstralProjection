@@ -142,6 +142,10 @@
                     MacCheckpointFilesSection(host: host)
                 }
                 if host.session != nil { MacComputerSessionControls(host: host) }
+                if !host.activityTimeline.entries.isEmpty {
+                    Divider().overlay(palette.border)
+                    MacComputerActivitySection(timeline: host.activityTimeline)
+                }
                 if host.available {
                     Divider().overlay(palette.border)
                     VStack(alignment: .leading, spacing: 10) {
@@ -173,6 +177,32 @@
                 Spacer()
                 Button(allowed ? "Review" : "Grant access", action: command.action(on: host)).disabled(!host.available)
             }
+        }
+    }
+
+    private struct MacComputerActivitySection: View {
+        @Bindable var timeline: MacComputerActivityTimeline
+        @Environment(ThemeStore.self) private var theme: ThemeStore?
+
+        var body: some View {
+            let palette = theme?.palette ?? .graphite
+            VStack(alignment: .leading, spacing: 8) {
+                SettingsSectionTitle("Recent computer activity")
+                ForEach(timeline.entries.suffix(12).reversed()) { entry in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(entry.title)
+                        if let verb = entry.safeVerb {
+                            Text(verb).foregroundStyle(palette.muted)
+                        }
+                        Spacer(minLength: 4)
+                        Text(entry.occurredAt, style: .time)
+                            .foregroundStyle(palette.muted)
+                    }
+                    .font(ConsoleTypography.caption)
+                    .accessibilityElement(children: .combine)
+                }
+            }
+            .accessibilityIdentifier("mac-computer-activity")
         }
     }
 

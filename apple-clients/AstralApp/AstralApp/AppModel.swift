@@ -267,6 +267,9 @@ final class AppModel: NSObject {
         didSet {
             if oldValue && !signedIn { cancelChatDeletion() }
             #if os(macOS)
+                if oldValue != signedIn {
+                    syncMacNotificationBadge()
+                }
                 if oldValue && !signedIn {
                     retireProjectCatalog()
                 }
@@ -357,6 +360,11 @@ final class AppModel: NSObject {
     }
     var pendingCanvas: [AstralComponent] = []
     var turnActive = false
+    #if os(macOS)
+        @ObservationIgnored var macWorkNotificationService = MacWorkNotificationService()
+        @ObservationIgnored private var macTurnNotificationStartedAt: Date?
+        @ObservationIgnored private var macTurnNotificationEventId: String?
+    #endif
     var pendingReplace = false
     var liveOpsThisTurn = false
     var canvasLabel = ""
@@ -615,8 +623,11 @@ final class AppModel: NSObject {
     @ObservationIgnored private var conversationNavigationGeneration = 0
     @ObservationIgnored private var conversationResumeStore: ConversationResumeStore
     @ObservationIgnored private var outcomeUnknownStore: OutcomeUnknownStore
+    @ObservationIgnored var outcomeAckWait: @Sendable () async -> Void = {
+        try? await Task.sleep(nanoseconds: 5_000_000_000)
+    }
     @ObservationIgnored private var conversationAccount: ConversationAccount?
-    @ObservationIgnored private var continuity = ConversationContinuityReducer()
+    @ObservationIgnored var continuity = ConversationContinuityReducer()
     private(set) var viewportRefreshFailed = false
     private var viewportSnapshotSupported = false
     private var pendingViewportDevice: DeviceDescriptor?
@@ -674,6 +685,20 @@ final class AppModel: NSObject {
         RestClient(
             serverBase: serverBase, tokenProvider: { [weak self] in await self?.freshAccessToken() },
             transport: restTransportOverride)
+    }
+
+    func scopedRest(owner: DownloadOwner, server: URL) -> RestClient {
+        RestClient(
+            serverBase: server,
+            tokenProvider: { [weak self] in await self?.scopedAccessToken(owner: owner, server: server) },
+            transport: restTransportOverride)
+    }
+
+    private func scopedAccessToken(owner: DownloadOwner, server: URL) async -> String? {
+        guard !Task.isCancelled, downloadOwner == owner, serverBase == server else { return nil }
+        let token = await freshAccessToken()
+        guard !Task.isCancelled, downloadOwner == owner, serverBase == server else { return nil }
+        return token
     }
 
     override convenience init() {
@@ -750,6 +775,10 @@ final class AppModel: NSObject {
         super.init()
         #if os(macOS)
             macComputerHost.bypassDidEnable = { [weak self] host in self?.withdrawLocalComputerReviews(host) }
+            macComputerHost.outcomeDecisionAcknowledged = { [weak self] host, incarnation, decision, generation in
+                self?.confirmOutcomeUnknown(
+                    hostId: host, incarnationId: incarnation, decision: decision, connectionGeneration: generation)
+            }
             projects.onReconciled = { [weak self] ids in
                 guard let self else { return }
                 try self.macComputerHost.reconcileProjects(ids)
@@ -2885,6 +2914,10 @@ final class AppModel: NSObject {
         case "user_message_acked":
             if let chatId = nestedChatId(frame) { adoptChat(chatId) }
             turnActive = true
+            #if os(macOS)
+                macTurnNotificationStartedAt = Date()
+                macTurnNotificationEventId = UUID().uuidString.lowercased()
+            #endif
             pendingReplace = true
             pendingCanvas = []
             liveOpsThisTurn = false
@@ -2899,7 +2932,20 @@ final class AppModel: NSObject {
             if frame.payload["status"]?.stringValue == "done", frame.payload["message"]?.stringValue == "Cancelled" {
                 recordActivityCancellation(chatId: nestedChatId(frame) ?? activeChatId)
             }
-            if ["done", "idle"].contains(frame.payload["status"]?.stringValue ?? "") { finishActivityProgress() }
+            if ["done", "idle"].contains(frame.payload["status"]?.stringValue ?? "") {
+                finishActivityProgress()
+                #if os(macOS)
+                    if let startedAt = macTurnNotificationStartedAt, let eventID = macTurnNotificationEventId {
+                        let ownerScope = macNotificationOwnerScope
+                        Task {
+                            await macWorkNotificationService.workFinished(
+                                eventID: eventID, ownerScope: ownerScope, startedAt: startedAt)
+                        }
+                    }
+                    macTurnNotificationStartedAt = nil
+                    macTurnNotificationEventId = nil
+                #endif
+            }
             reduceStatus(frame)
         case "agent_list":
             agents = Agent.list(from: frame.payload["agents"])
@@ -4359,6 +4405,7 @@ final class AppModel: NSObject {
             let jobs: [OutcomeUnknownRecordJob]
             var decision: String?
             var delivery: Delivery = .pending
+            var decisionConnectionGeneration: String? = nil
             let restored: Bool
             var id: String { hostId + "/" + incarnationId }
         }
@@ -4377,6 +4424,8 @@ final class AppModel: NSObject {
                 outcomeUnknownCard?.decision == nil
             else { return }
             outcomeUnknownCard?.decision = decision
+            let generation = continuity.connectionGeneration
+            outcomeUnknownCard?.decisionConnectionGeneration = generation
             macComputerHost.sendOutcomeDecision(decision)
             let owner = downloadOwner
             let connection = continuity.connectionGeneration
@@ -4389,8 +4438,10 @@ final class AppModel: NSObject {
                         self.outcomeUnknownCard?.incarnationId == incarnation,
                         self.outcomeUnknownCard?.decision == decision
                     else { return }
-                    if delivered, self.connected {
-                        self.clearOutcomeUnknownCard()
+                    if delivered, self.connected, let generation {
+                        self.scheduleOutcomeAckTimeout(
+                            hostId: self.outcomeUnknownCard?.hostId ?? "", incarnationId: incarnation ?? "",
+                            decision: decision, owner: owner, connectionGeneration: generation)
                     } else {
                         self.outcomeUnknownCard?.delivery = .failed
                     }
@@ -4402,6 +4453,9 @@ final class AppModel: NSObject {
             guard let decision = outcomeUnknownCard?.decision,
                 outcomeUnknownCard?.delivery == .failed, outcomeUnknownCardActionable
             else { return }
+            outcomeUnknownCard?.delivery = .pending
+            let generation = continuity.connectionGeneration
+            outcomeUnknownCard?.decisionConnectionGeneration = generation
             macComputerHost.sendOutcomeDecision(decision)
             let owner = downloadOwner
             let connection = continuity.connectionGeneration
@@ -4411,10 +4465,13 @@ final class AppModel: NSObject {
                 let delivered = await self.macComputerHost.flushCurrentSends()
                 await MainActor.run {
                     guard self.downloadOwner == owner, self.continuity.connectionGeneration == connection,
-                        self.outcomeUnknownCard?.incarnationId == incarnation
+                        self.outcomeUnknownCard?.incarnationId == incarnation,
+                        self.outcomeUnknownCard?.decision == decision
                     else { return }
-                    if delivered, self.connected {
-                        self.clearOutcomeUnknownCard()
+                    if delivered, self.connected, let generation {
+                        self.scheduleOutcomeAckTimeout(
+                            hostId: self.outcomeUnknownCard?.hostId ?? "", incarnationId: incarnation ?? "",
+                            decision: decision, owner: owner, connectionGeneration: generation)
                     } else {
                         self.outcomeUnknownCard?.delivery = .failed
                     }
@@ -4428,6 +4485,37 @@ final class AppModel: NSObject {
             }
             outcomeUnknownCard = nil
             macComputerHost.clearUncertainJobs()
+        }
+
+        private func confirmOutcomeUnknown(
+            hostId: String, incarnationId: String, decision: String, connectionGeneration: String
+        ) {
+            guard let card = outcomeUnknownCard, !card.restored, card.hostId == hostId,
+                card.incarnationId == incarnationId, card.decision == decision, card.delivery == .pending,
+                card.decisionConnectionGeneration == connectionGeneration,
+                continuity.connectionGeneration == connectionGeneration,
+                signedIn, card.ownerScope == outcomeOwnerScope(),
+                card.hostId == macComputerHost.hostIdentifier, card.incarnationId == macComputerHost.incarnationId
+            else { return }
+            clearOutcomeUnknownCard()
+        }
+
+        private func scheduleOutcomeAckTimeout(
+            hostId: String, incarnationId: String, decision: String, owner: DownloadOwner?,
+            connectionGeneration: String
+        ) {
+            let wait = outcomeAckWait
+            Task { [weak self] in
+                await wait()
+                guard let self, self.downloadOwner == owner,
+                    self.outcomeUnknownCard?.hostId == hostId,
+                    self.outcomeUnknownCard?.incarnationId == incarnationId,
+                    self.outcomeUnknownCard?.decision == decision,
+                    self.outcomeUnknownCard?.decisionConnectionGeneration == connectionGeneration,
+                    self.outcomeUnknownCard?.delivery == .pending
+                else { return }
+                self.outcomeUnknownCard?.delivery = .failed
+            }
         }
 
         private func outcomeOwnerScope() -> String? {
@@ -5170,7 +5258,12 @@ final class AppModel: NSObject {
             .filter { !Self.bypassApproved($0.card) }
         let pending = cards.map(\.approval)
         let prompts = cards.compactMap { Self.approvalPrompt($0.card, $0.approval) }
-        if prompts != approvalPrompts { approvalPrompts = prompts }
+        if prompts != approvalPrompts {
+            approvalPrompts = prompts
+            #if os(macOS)
+                syncMacNotificationBadge()
+            #endif
+        }
         for item in cards where approvalRows[item.approval.requestId] == nil {
             linkApproval(item.approval)
             approvalHosts[item.approval.requestId] = item.card.raw["computer_host_id"]?.stringValue
@@ -5218,6 +5311,15 @@ final class AppModel: NSObject {
             owner: downloadOwner,
             connection: continuity.connectionGeneration, chat: chatId, row: linked, decision: "",
             expectsReceipt: approvalReceiptsSupported, submissionId: nil, requestGeneration: nil)
+        #if os(macOS)
+            syncMacNotificationBadge()
+            if let ownerScope = macNotificationOwnerScope {
+                Task {
+                    await macWorkNotificationService.approvalRequired(
+                        eventID: approval.requestId, ownerScope: ownerScope)
+                }
+            }
+        #endif
         announce(approval.summary.isEmpty ? "Approval waiting" : "Approval waiting: \(approval.summary)")
         if let image = approval.image { attachActivityThumbnail(image, to: linked, chatId: chatId) }
     }
@@ -5246,6 +5348,9 @@ final class AppModel: NSObject {
         approvalRows = [:]
         approvalOrigins = [:]
         approvalHosts = [:]
+        #if os(macOS)
+            syncMacNotificationBadge()
+        #endif
         withdrawingApprovals = []
         redispatchable = []
         screenThumbnailSource = nil
@@ -5253,6 +5358,22 @@ final class AppModel: NSObject {
             macComputerHost.approvalWaiting(false)
         #endif
     }
+
+    #if os(macOS)
+        var macNotificationOwnerScope: String? {
+            guard signedIn, let account = downloadOwner.account else { return nil }
+            return serverBase.absoluteString + "|" + account.locatorStorageKey
+        }
+
+        func requestMacWorkNotificationPermission() async -> Bool {
+            await macWorkNotificationService.requestPermission()
+        }
+
+        private func syncMacNotificationBadge() {
+            macWorkNotificationService.setPendingApprovals(
+                signedIn ? waitingApprovals : 0, ownerScope: signedIn ? macNotificationOwnerScope : nil)
+        }
+    #endif
 
     private func isReasoning(_ c: AstralComponent) -> Bool {
         c.type.lowercased() == "collapsible" && (c.raw["title"]?.stringValue ?? "").lowercased() == "reasoning"

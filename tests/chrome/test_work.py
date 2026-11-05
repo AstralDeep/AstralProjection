@@ -575,6 +575,22 @@ def test_result_without_host_bindings_never_offers_save():
         assert not save_buttons(view) and "Save" not in render_html(view)
 
 
+def test_skill_lesson_entry_uses_existing_navigation_action_and_source_operation():
+    value = state(skill_draft=True)
+    before = deepcopy(value)
+    view = build_work_view(value)
+    offered = [b for b in buttons(view) if b["label"] == "Draft reusable lesson"]
+    assert len(offered) == 1
+    assert offered[0]["action"] == "chrome_open"
+    assert offered[0]["payload"] == {
+        "surface": "agent_authoring", "params": {"work_result_id": ID}
+    }
+    assert "page text is not copied" in render_html(view)
+    assert value == before
+    assert not [b for b in buttons(build_work_view(state(skill_draft=False)))
+                if b["label"] == "Draft reusable lesson"]
+
+
 def test_save_button_carries_exactly_the_server_issued_propose_bindings():
     value = state(save=save())
     before = deepcopy(value)

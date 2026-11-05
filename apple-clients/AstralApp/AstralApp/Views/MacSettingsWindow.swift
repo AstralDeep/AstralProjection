@@ -2,6 +2,7 @@
 // AstralAppMain hosts it as a Settings scene; the panes open the existing update, computer and server surfaces.
 
 #if os(macOS)
+    import AppKit
     import AstralCore
     import SwiftUI
 
@@ -55,6 +56,7 @@
         @Environment(ThemeStore.self) private var theme
         @Environment(\.dismiss) private var dismiss
         @Bindable var host: MacComputerHost
+        @State private var notificationAuthorization: MacWorkNotificationSystem.Authorization = .notDetermined
 
         var body: some View {
             Form {
@@ -71,6 +73,37 @@
                     }
                     .disabled(!host.available)
                     .accessibilityIdentifier("settings-computer-controls")
+                }
+                Section("Notifications") {
+                    LabeledContent("Status") {
+                        Text(notificationStatus)
+                            .foregroundStyle(theme.palette.muted)
+                            .accessibilityIdentifier("settings-notification-status")
+                    }
+                    Text(
+                        "Generic alerts for pending approvals and chat turns lasting at least 30 seconds. Alert text never includes chat content."
+                    )
+                    .font(ConsoleTypography.caption).foregroundStyle(theme.palette.muted)
+                    HStack {
+                        Spacer()
+                        Button(notificationAuthorization == .denied ? "Open System Settings…" : "Enable notifications")
+                        {
+                            if notificationAuthorization == .denied {
+                                if let url = URL(
+                                    string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")
+                                {
+                                    NSWorkspace.shared.open(url)
+                                }
+                            } else {
+                                Task {
+                                    _ = await model.requestMacWorkNotificationPermission()
+                                    await refreshNotificationAuthorization()
+                                }
+                            }
+                        }
+                        .disabled(notificationAuthorization == .authorized)
+                        .accessibilityIdentifier("settings-notification-permission")
+                    }
                 }
                 Section("Composer keys") {
                     Picker(
@@ -94,6 +127,19 @@
             .background(theme.palette.surface)
             .fixedSize(horizontal: false, vertical: true)
             .bypassConfirmation(host: host, origin: .settings)
+            .task { await refreshNotificationAuthorization() }
+        }
+
+        private var notificationStatus: String {
+            switch notificationAuthorization {
+            case .authorized: return "On"
+            case .denied: return "Off in System Settings"
+            case .notDetermined: return "Off"
+            }
+        }
+
+        private func refreshNotificationAuthorization() async {
+            notificationAuthorization = await model.macWorkNotificationService.permissionState()
         }
     }
 

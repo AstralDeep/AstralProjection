@@ -103,6 +103,7 @@
         let files: MacComputerFiles
         let projectGrants: MacProjectGrants
         @ObservationIgnored let checkpoints: MacComputerCheckpoints
+        let activityTimeline: MacComputerActivityTimeline
         private(set) var projectMode = false
         private(set) var projectGrantError: String?
         @ObservationIgnored private var workspaceNegotiated = true
@@ -151,6 +152,7 @@
         @ObservationIgnored private let appActivator: @MainActor () -> Void
         nonisolated let incarnationId = UUID().uuidString.lowercased()
         private(set) var uncertainJobs: [ComputerHostRetainedJob] = []
+        var outcomeDecisionAcknowledged: ((String, String, String, String) -> Void)?
         @ObservationIgnored weak var browser: (any MacBrowserVerbHandling)?
         @ObservationIgnored private var auxiliary: [UUID: (task: Task<Void, Never>, command: Bool)] = [:]
         @ObservationIgnored private var browserTail: Task<Void, Never>?
@@ -172,6 +174,7 @@
             panelPresenter: (@MainActor (NSPanel) -> Void)? = nil,
             commands: MacComputerCommands? = nil,
             checkpoints: MacComputerCheckpoints? = nil,
+            activityTimeline: MacComputerActivityTimeline? = nil,
             appActivator: (@MainActor () -> Void)? = nil,
             overlay: (any MacComputerOverlayPresenting)? = nil,
             authority: ComputerHostAuthority = ComputerHostAuthority()
@@ -183,6 +186,7 @@
             self.files = files ?? MacComputerFiles(defaults: defaults)
             self.projectGrants = projectGrants ?? MacProjectGrants()
             self.checkpoints = checkpoints ?? MacComputerCheckpoints()
+            self.activityTimeline = activityTimeline ?? MacComputerActivityTimeline()
             self.system = system
             self.panelPresenter = panelPresenter ?? { $0.orderFrontRegardless() }
             let link = MacComputerHostLink()
@@ -483,6 +487,7 @@
             }
             guard channelEpoch == epoch else { return }
             self.owner = owner
+            activityTimeline.bind(owner: owner)
             self.sender = sender
             bypassSaved = available && bypassKey.map { defaults.bool(forKey: $0) } == true
             bypassRestorePending = bypassSaved
@@ -559,6 +564,7 @@
             desktopAvailable = false
             authority.setDesktopAvailable(false, requiresLocalRearm: false)
             owner = nil
+            activityTimeline.bind(owner: nil)
             enabled = false
             consentEnabled = false
             files.bind(nil)
@@ -924,7 +930,11 @@
         func pause() { pause(reason: "local_pause") }
         func takeover() { pause(reason: "local_input") }
         func approvalWaiting(_ waiting: Bool) {
-            awaitingApproval = waiting && session != nil
+            let next = waiting && session != nil
+            if next != awaitingApproval {
+                activityTimeline.record(.approval, state: next ? "waiting" : "cleared")
+            }
+            awaitingApproval = next
             if awaitingApproval {
                 showPanel()
             } else if session != nil {
@@ -945,6 +955,7 @@
                     "session_id": .string(current.id), "host_id": .string(hostId), "state": .string("paused"),
                     "controller_label": .string(current.controller),
                 ]))
+            activityTimeline.record(.pause, state: "paused")
             sendEvent("paused", additional: ["session_id": .string(current.id), "reason": .string(reason)])
             showPanel()
         }
@@ -952,10 +963,12 @@
             guard let current = session, current.state == "paused", !awaitingPauseAcknowledgment, permissionsReady
             else { return }
             guard localResume(), desktopProbe() else {
+                activityTimeline.record(.resume, state: "denied")
                 lastError = "Resume this task yourself using AstralDeep's local session controls."
                 return
             }
             localResumeSession = current.id
+            activityTimeline.record(.resume, state: "requested")
             sendEvent("resumed", additional: ["session_id": .string(current.id)])
         }
         func recordApprovalInteraction() -> String? {
@@ -1011,6 +1024,7 @@
         }
         func stop() {
             if let session {
+                activityTimeline.record(.stop, state: "stopped")
                 sendEvent("stopped", additional: ["session_id": .string(session.id), "reason": .string("local_stop")])
             }
             retire()
@@ -1057,6 +1071,17 @@
                 if frame.payload["host_id"]?.stringValue == hostId {
                     reconcileBypass(frame.payload["bypass"]?.boolValue)
                     if let ack = frame.payload["project_manifest_ack"] { acceptManifest(ack) }
+                    if let ack = frame.payload["outcome_ack"], let values = ack.objectValue,
+                        Set(values.keys) == ["decision", "incarnation_id", "connection_generation"],
+                        let decision = ack["decision"]?.stringValue,
+                        ["acknowledge", "discard"].contains(decision),
+                        let incarnation = ack["incarnation_id"]?.stringValue,
+                        UUID(uuidString: incarnation)?.uuidString.lowercased() == incarnation,
+                        let generation = ack["connection_generation"]?.stringValue,
+                        UUID(uuidString: generation)?.uuidString.lowercased() == generation
+                    {
+                        outcomeDecisionAcknowledged?(hostId, incarnation, decision, generation)
+                    }
                 }
                 return true
             }
@@ -1066,7 +1091,10 @@
                 }
                 reconcileBypass(incoming.bypass)
                 if incoming.state == "ended" {
-                    if session?.id == incoming.id { retire() }
+                    if session?.id == incoming.id {
+                        activityTimeline.record(.stop, state: "stopped")
+                        retire()
+                    }
                     return true
                 }
                 refreshPermissions()
@@ -1106,8 +1134,14 @@
                             localPauseReason = reason
                         }
                     }
+                    let prior = session
                     if session?.id != incoming.id { startedAt = ProcessInfo.processInfo.systemUptime }
                     session = incoming
+                    if prior?.id == incoming.id, prior?.state == "paused", incoming.state == "active" {
+                        activityTimeline.record(.resume, state: "active")
+                    } else if prior?.id == incoming.id, prior?.state == "active", incoming.state == "paused" {
+                        activityTimeline.record(.pause, state: "paused")
+                    }
                     if incoming.state == "paused" { resolvePauseWaiters(accepted: approvalPauseReady(incoming.id)) }
                     showPanel()
                     startHeartbeat()
@@ -1117,6 +1151,7 @@
             guard frame.name == "computer_request" else { return false }
             let request: ComputerHostRequest
             do { request = try ComputerHostRequest(json: frame.payload) } catch {
+                activityTimeline.record(.denial, state: "denied")
                 if let id = frame.payload["request_id"]?.stringValue { respond(id, error: error) }
                 return true
             }
@@ -1135,10 +1170,18 @@
                 }
                 if projectMode { try projectGrants.validateCurrent() }
                 let ticket = try authority.admit(request)
+                activityTimeline.record(
+                    Self.checkpointVerbs.contains(request.verb) ? .checkpoint : .admission,
+                    state: "admitted", verb: request.verb)
                 checkpoints.noteActivity()
                 queue.append((request, ticket))
                 drain()
-            } catch { respond(request.id, error: error) }
+            } catch {
+                activityTimeline.record(
+                    Self.checkpointVerbs.contains(request.verb) ? .checkpoint : .denial,
+                    state: "denied", verb: request.verb)
+                respond(request.id, error: error)
+            }
             return true
         }
         private static func browserVerb(_ verb: String) -> Bool { verb.hasPrefix("browser_") }
@@ -1302,12 +1345,23 @@
             do {
                 try authority.verify(ticket)
                 switch result {
-                case .success(let value): respond(request.id, result: value)
+                case .success(let value):
+                    activityTimeline.record(
+                        Self.checkpointVerbs.contains(request.verb) ? .checkpoint : .result,
+                        state: "succeeded", verb: request.verb)
+                    respond(request.id, result: value)
                 case .failure(let error):
+                    activityTimeline.record(
+                        Self.checkpointVerbs.contains(request.verb) ? .checkpoint : .denial,
+                        state: "denied", verb: request.verb)
                     respond(request.id, error: error)
                     lastError = error.localizedDescription
                 }
             } catch {
+                activityTimeline.record(
+                    Self.checkpointVerbs.contains(request.verb) ? .checkpoint : .result,
+                    state: Self.checkpointVerbs.contains(request.verb) ? "denied" : "interrupted",
+                    verb: request.verb)
                 respond(request.id, error: error)
                 lastError = "The operation was interrupted; inspect the current computer state before retrying."
             }

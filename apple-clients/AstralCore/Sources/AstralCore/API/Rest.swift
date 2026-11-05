@@ -259,7 +259,7 @@ public struct RestClient: Sendable {
 
     func request(
         _ method: String, _ path: String, body: JSONValue? = nil,
-        queryItems: [URLQueryItem] = []
+        queryItems: [URLQueryItem] = [], requiresAuthentication: Bool = false
     ) async throws -> (Int, JSONValue) {
         guard var parts = URLComponents(url: serverBase.appendingPathComponent(path), resolvingAgainstBaseURL: false)
         else { throw URLError(.badURL) }
@@ -271,7 +271,11 @@ public struct RestClient: Sendable {
             method: method,
             body: try body?.encoded(),
             contentType: body == nil ? nil : "application/json")
-        if let token = await tokenProvider() {
+        let token = await tokenProvider()
+        if requiresAuthentication, token?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+            throw URLError(.userAuthenticationRequired)
+        }
+        if let token {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         if let projectConnection, path.hasPrefix("api/projects") || path.hasPrefix("api/chats") {
@@ -280,6 +284,67 @@ public struct RestClient: Sendable {
         }
         let (status, data) = try await transport(request)
         return (status, (try? JSONValue.parse(data)) ?? .object([:]))
+    }
+
+    public func workOperationsRequest(
+        _ method: String, _ suffix: String = "", body: JSONValue? = nil,
+        queryItems: [URLQueryItem] = []
+    ) async throws -> (Int, JSONValue) {
+        let readSuffix =
+            suffix.isEmpty
+            || suffix.range(
+                of: #"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(?:/(?:poll|result))?$"#,
+                options: .regularExpression) != nil
+        let controlSuffix =
+            suffix.range(
+                of: #"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/(?:pause|resume|cancel)$"#,
+                options: .regularExpression) != nil
+        let controlBody =
+            body?.objectValue.flatMap { fields -> Bool? in
+                guard Set(fields.keys) == ["expected_revision", "submission_id"],
+                    let revision = fields["expected_revision"]?.numberValue, revision >= 1,
+                    revision.rounded() == revision, revision <= 9_007_199_254_740_991,
+                    let submission = fields["submission_id"]?.stringValue,
+                    submission.range(
+                        of: #"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"#,
+                        options: .regularExpression) != nil
+                else { return false }
+                return true
+            } == true
+        let queryNames = Set(queryItems.map(\.name))
+        let permittedQueryNames: Set<String> =
+            method == "GET" && suffix.isEmpty
+            ? ["limit", "after_id"]
+            : method == "GET" && suffix.hasSuffix("/poll") ? ["after_revision"] : []
+        guard ["GET", "POST"].contains(method), suffix.utf8.count <= 256,
+            method == "GET" ? readSuffix : controlSuffix,
+            method != "GET" || body == nil,
+            method != "POST" || controlBody,
+            queryNames.count == queryItems.count, queryNames.isSubset(of: permittedQueryNames),
+            queryItems.allSatisfy({ $0.value?.utf8.count ?? 0 <= 256 })
+        else { throw URLError(.badURL) }
+        return try await authenticatedRequest(
+            method, "api/work/v1/operations" + (suffix.isEmpty ? "" : "/" + suffix),
+            body: body, queryItems: queryItems)
+    }
+
+    public func authenticatedRequest(
+        _ method: String, _ path: String, body: JSONValue? = nil,
+        queryItems: [URLQueryItem] = []
+    ) async throws -> (Int, JSONValue) {
+        let segments = path.split(separator: "/", omittingEmptySubsequences: false)
+        let queryNames = Set(queryItems.map { $0.name.lowercased() })
+        guard ["GET", "POST", "PUT", "PATCH", "DELETE"].contains(method),
+            path.utf8.count <= 1024,
+            method != "GET" || body == nil,
+            path.range(of: #"^api/[A-Za-z0-9._/-]+$"#, options: .regularExpression) != nil,
+            segments.count >= 2, segments.first == "api",
+            segments.dropFirst().allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }),
+            !["token", "access_token", "authorization"].contains(where: queryNames.contains),
+            queryNames.count == queryItems.count,
+            queryItems.allSatisfy({ ($0.value?.utf8.count ?? 0) <= 1024 })
+        else { throw URLError(.badURL) }
+        return try await request(method, path, body: body, queryItems: queryItems, requiresAuthentication: true)
     }
 
     public func chats() async throws -> [ChatSummary] {

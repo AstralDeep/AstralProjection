@@ -570,7 +570,7 @@ def _review(value, row, approve, conversation_title):
     return components
 
 
-def _result(envelope, row, save=None):
+def _result(envelope, row, save=None, skill_draft=False):
     _keys(envelope, {"id", "revision", "result"})
     _require(
         _identity(envelope["id"]) == row["id"] and _integer(envelope["revision"]) == row["revision"]
@@ -651,6 +651,21 @@ def _result(envelope, row, save=None):
             title="Completeness",
         )
     )
+    if skill_draft:
+        components.append(
+            card(
+                "Reusable lesson",
+                [
+                    text("Create a source-handling lesson from this completed result. "
+                         "The page text is not copied into the skill; review and edit the "
+                         "candidate before saving it disabled.", "caption"),
+                    button("Draft reusable lesson", "chrome_open", {
+                        "surface": "agent_authoring",
+                        "params": {"work_result_id": row["id"]},
+                    }),
+                ],
+            )
+        )
     if save is not None:
         components.extend(_save(save, row, result["available"]))
     return components
@@ -687,7 +702,9 @@ def build_work_view(
                 if state.get("continuity") is not None:
                     components.extend(_continuity(state["continuity"], row))
             elif mode == "result":
-                components = _result(state.get("result"), row, state.get("save"))
+                skill_draft = state.get("skill_draft", False)
+                _require(type(skill_draft) is bool)
+                components = _result(state.get("result"), row, state.get("save"), skill_draft)
             else:
                 components = _review(
                     state.get("review"), row, state.get("approve"), state.get("conversation_title")
