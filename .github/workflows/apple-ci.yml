@@ -423,8 +423,50 @@ jobs:
             done
           fi
 
-  first-login-ui:
+  swift-package-prewarm:
     needs: [changes]
+    if: needs.changes.outputs.apple == 'true'
+    name: Required · prewarm pinned app Swift packages
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - name: Check out candidate
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Select exact Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          selected=""
+          for candidate in /Applications/Xcode_26.6.app /Applications/Xcode_26.6*.app /Applications/Xcode.app; do
+            [[ -d "$candidate" ]] || continue
+            if [[ "$("$candidate/Contents/Developer/usr/bin/xcodebuild" -version | sed -n '1p')" == "Xcode ${XCODE_VERSION}" ]] && \
+               [[ "$("$candidate/Contents/Developer/usr/bin/xcodebuild" -version | sed -n '2p')" == "Build version ${XCODE_BUILD}" ]]; then
+              selected="$candidate"
+              break
+            fi
+          done
+          [[ -n "$selected" ]] || { echo "Xcode ${XCODE_VERSION} (${XCODE_BUILD}) is required" >&2; exit 1; }
+          sudo xcode-select --switch "$selected/Contents/Developer"
+          [[ "$(xcodebuild -version | sed -n '1p')" == "Xcode ${XCODE_VERSION}" ]]
+          [[ "$(xcodebuild -version | sed -n '2p')" == "Build version ${XCODE_BUILD}" ]]
+      - name: Restore or save pinned Swift package clones
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/060/swift-package-clones
+          key: astralprojection-swiftpm-xcode-${{ env.XCODE_BUILD }}-${{ hashFiles('apple-clients/AstralApp/AstralApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+      - name: Resolve only versions in Package.resolved
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -resolvePackageDependencies \
+            -project "${APP_PROJECT}" \
+            -scheme AstralApp \
+            -clonedSourcePackagesDirPath "$PWD/build/060/swift-package-clones" \
+            -onlyUsePackageVersionsFromResolvedFile \
+            -skipPackageUpdates
+
+  first-login-ui:
+    needs: [changes, swift-package-prewarm]
     if: needs.changes.outputs.apple == 'true'
     name: Required · ${{ matrix.name }} first-login and voice UI
     runs-on: macos-26
@@ -477,6 +519,12 @@ jobs:
           sudo xcode-select --switch "$selected/Contents/Developer"
           [[ "$(xcodebuild -version | sed -n '1p')" == "Xcode ${XCODE_VERSION}" ]]
           [[ "$(xcodebuild -version | sed -n '2p')" == "Build version ${XCODE_BUILD}" ]]
+      - name: Restore pinned Swift package clones
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/060/swift-package-clones
+          key: astralprojection-swiftpm-xcode-${{ env.XCODE_BUILD }}-${{ hashFiles('apple-clients/AstralApp/AstralApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          fail-on-cache-miss: true
       - name: Require the supported iOS runtime
         if: matrix.platform == 'ios'
         shell: bash
@@ -527,7 +575,9 @@ jobs:
           test_action='test'
           xcodebuild -project "${APP_PROJECT}" -scheme AstralApp -destination "$dest" \
             -configuration Debug CODE_SIGNING_ALLOWED=NO -enableCodeCoverage YES \
-            COMPILER_INDEX_STORE_ENABLE=NO -derivedDataPath "$derived" build-for-testing
+            COMPILER_INDEX_STORE_ENABLE=NO -derivedDataPath "$derived" \
+            -clonedSourcePackagesDirPath "$PWD/build/060/swift-package-clones" \
+            -disableAutomaticPackageResolution -skipPackageUpdates build-for-testing
           if [[ "${{ matrix.platform }}" == "ios" ]]; then
             xcrun simctl bootstatus "${{ steps.ios_sim.outputs.udid }}" -b
           fi
@@ -546,6 +596,9 @@ jobs:
             -retry-tests-on-failure \
             -test-iterations 2 \
             -derivedDataPath "$derived" \
+            -clonedSourcePackagesDirPath "$PWD/build/060/swift-package-clones" \
+            -disableAutomaticPackageResolution \
+            -skipPackageUpdates \
             -resultBundlePath "$result" \
             "${selectors[@]}" \
             "$test_action"

@@ -455,6 +455,7 @@ def _assert_first_login_shards(apple: str) -> None:
 def _assert_apple_platform_contract(apple: str) -> None:
     app_unit = _job_block(apple, "app-unit-tests")
     core_ios = _job_block(apple, "core-ios-tests")
+    package_prewarm = _job_block(apple, "swift-package-prewarm")
     first_login = _job_block(apple, "first-login-ui")
     watch = _job_block(apple, "watch-continuity")
     apple_required = _job_block(apple, "apple-required")
@@ -466,6 +467,25 @@ def _assert_apple_platform_contract(apple: str) -> None:
         'WATCHOS_RUNTIME: "26.5"',
     ):
         assert setting in apple
+    package_cache_key = (
+        "astralprojection-swiftpm-xcode-${{ env.XCODE_BUILD }}-"
+        "${{ hashFiles('apple-clients/AstralApp/AstralApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}"
+    )
+    cache_action = "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9"
+    assert "timeout-minutes: 20" in package_prewarm
+    assert "name: Select exact Xcode" in package_prewarm
+    assert package_prewarm.count(cache_action) == 1
+    assert package_prewarm.count(package_cache_key) == 1
+    assert "fail-on-cache-miss" not in package_prewarm
+    assert "-resolvePackageDependencies" in package_prewarm
+    assert "-onlyUsePackageVersionsFromResolvedFile" in package_prewarm
+    assert "-skipPackageUpdates" in package_prewarm
+    assert "needs: [changes, swift-package-prewarm]" in first_login
+    assert first_login.count(cache_action) == 1
+    assert first_login.count(package_cache_key) == 1
+    assert "fail-on-cache-miss: true" in first_login
+    assert '-clonedSourcePackagesDirPath "$PWD/build/060/swift-package-clones"' in first_login
+    assert "-disableAutomaticPackageResolution -skipPackageUpdates build-for-testing" in first_login
     for job_id in (
         "swift-lint",
         "core-tests",
@@ -524,7 +544,14 @@ def _assert_apple_platform_contract(apple: str) -> None:
     assert first_login.index("build-for-testing") < first_login.index(
         'xcrun simctl bootstatus "${{ steps.ios_sim.outputs.udid }}" -b'
     ) < first_login.index("test_action=test-without-building")
-    assert "COMPILER_INDEX_STORE_ENABLE=NO -derivedDataPath \"$derived\" build-for-testing" in first_login
+    assert (
+        "COMPILER_INDEX_STORE_ENABLE=NO -derivedDataPath \"$derived\" \\\n"
+        "            -clonedSourcePackagesDirPath \"$PWD/build/060/swift-package-clones\" \\\n"
+        "            -disableAutomaticPackageResolution -skipPackageUpdates build-for-testing"
+    ) in first_login
+    assert first_login.count('-clonedSourcePackagesDirPath "$PWD/build/060/swift-package-clones"') == 2
+    assert first_login.count("-disableAutomaticPackageResolution") == 2
+    assert first_login.count("-skipPackageUpdates") == 2
     assert all("-parallel-testing" not in job for job in (first_login, app_unit, core_ios))
     assert 'result="${COVERAGE_ROOT}/AstralApp-${{ matrix.slug }}-first-login.xcresult"' in first_login
     assert APPLE_RESULT_GUARD in first_login
