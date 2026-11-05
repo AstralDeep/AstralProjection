@@ -175,7 +175,12 @@ def test_workflow_guard_mutants_cannot_hide_failed_or_skipped_native_work():
         text = (root / ".github/workflows" / f"{lane}-ci.yml").read_text()
         for job in jobs:
             block = re.split(r"(?m)^  [\w-]+:\s*$", text.split(f"  {job}:\n", 1)[1], maxsplit=1)[0]
-            assert "    needs: [changes]\n" in block
+            expected_needs = (
+                "    needs: [changes, swift-package-prewarm]\n"
+                if lane == "apple" and job == "first-login-ui"
+                else "    needs: [changes]\n"
+            )
+            assert expected_needs in block
             assert f"if: needs.changes.outputs.{lane} == 'true'" in block
         aggregate = text.split(f"  {lane}-required:\n", 1)[1]
         assert "      - changes\n" in aggregate

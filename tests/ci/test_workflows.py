@@ -491,6 +491,7 @@ def _assert_apple_platform_contract(apple: str) -> None:
         "core-tests",
         "core-ios-tests",
         "app-unit-tests",
+        "swift-package-prewarm",
         "first-login-ui",
         "watch-continuity",
     ):
@@ -1023,6 +1024,7 @@ def test_native_ci_is_active_and_uses_standalone_paths() -> None:
         "core-tests",
         "core-ios-tests",
         "app-unit-tests",
+        "swift-package-prewarm",
         "first-login-ui",
         "watch-continuity",
         "apple-required",
