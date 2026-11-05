@@ -5301,7 +5301,7 @@
       "carried_on": [
         "ui_event.computer_event (event=outcome_ack)"
       ],
-      "scope": "One owner intent per outcome-unknown card, sent by the host that reported the retained jobs; acknowledge only lets the chat continue and discard ends the turn, while every new action stays reviewed and delegated as usual. Repeated intents for one card are refused by the sender; the card carries no authority of its own and the server records the acknowledgment without ever receiving job output.",
+      "scope": "One owner intent per outcome-unknown card, sent by the host that reported the retained jobs; acknowledge or discard resolves the earlier unknown result, while every new action stays reviewed and delegated as usual. Discard never cancels a different active chat because the retained job summary has no chat binding. Repeated intents for one card are refused by the sender; the card carries no authority of its own and the server records the decision without ever receiving job output.",
       "introduced_by": "macOS retained-host-job outcome reporting",
       "contract": "accept_actions.computer_event"
     },

@@ -77,6 +77,7 @@
                             Button("Discard") { model.decideOutcomeUnknown("discard") }
                                 .buttonStyle(AstralButtonStyle(palette: p, variant: "secondary"))
                                 .disabled(!actionable)
+                                .help("Dismiss these earlier unknown results. Other chats keep running.")
                                 .accessibilityIdentifier("outcome-unknown-discard")
                             Button("Acknowledge and continue") { model.decideOutcomeUnknown("acknowledge") }
                                 .buttonStyle(AstralButtonStyle(palette: p, variant: "primary"))
