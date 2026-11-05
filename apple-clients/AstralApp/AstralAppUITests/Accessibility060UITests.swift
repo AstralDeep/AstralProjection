@@ -6,6 +6,13 @@ import XCTest
 final class Accessibility060UITests: XCTestCase {
     private var app: XCUIApplication!
 
+    override class func setUp() {
+        super.setUp()
+        #if os(iOS)
+            requireIOSFixtureReadiness()
+        #endif
+    }
+
     override func tearDown() {
         app?.terminate()
         app = nil

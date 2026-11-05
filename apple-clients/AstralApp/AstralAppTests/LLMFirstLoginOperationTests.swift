@@ -89,6 +89,28 @@ final class LLMFirstLoginOperationTests: XCTestCase {
     }
 
     #if DEBUG
+        func testComponentRefinementFixtureKeepsTheExactRichComponentAndConversationContext() throws {
+            let models = try (0..<2).map { _ in
+                let defaults = try XCTUnwrap(UserDefaults(suiteName: "ComponentRefinementFixture.\(UUID().uuidString)"))
+                return AppModel(
+                    conversationResumeStore: ConversationResumeStore(defaults: defaults),
+                    tokenStore: InMemoryTokenStore(), defaults: defaults)
+            }
+            let rich = models[0]
+            let focused = models[1]
+            FirstLoginUITestFixture.install(.workspaceRichResult, on: rich)
+            FirstLoginUITestFixture.install(.workspaceComponentRefinement, on: focused)
+            XCTAssertGreaterThan(rich.canvas.count, 1)
+            XCTAssertEqual(focused.canvas.count, 1)
+            let original = try XCTUnwrap(rich.canvas.first { $0.raw["component_id"]?.stringValue == "review-details" })
+            XCTAssertEqual(focused.canvas.first?.raw, original.raw)
+            XCTAssertEqual(focused.activeChatId, rich.activeChatId)
+            XCTAssertEqual(focused.composerDraft, rich.composerDraft)
+            XCTAssertEqual(focused.turns.map(\.text), rich.turns.map(\.text))
+            XCTAssertEqual(focused.screen, rich.screen)
+            XCTAssertEqual(focused.workspaceStarted, rich.workspaceStarted)
+        }
+
         func testUICompletionGateRequiresBothOptInsAndAnExactLoopbackPort() throws {
             let arguments = ["--astral-ui-test-first-login", "slow-success"]
             let key = "ASTRAL_UI_FIRST_LOGIN_GATE_PORT"
