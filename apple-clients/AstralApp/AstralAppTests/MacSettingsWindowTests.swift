@@ -131,6 +131,33 @@
             }
         }
 
+        func testRemoteMCPEntryRequiresConnectionAndOpensServerOwnedSurface() async throws {
+            let model = try model()
+            model.connected = false
+            var sent: [JSONValue] = []
+            model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+            let mount = SurfaceMount(
+                MacSettingsThisMac(
+                    host: MacComputerHost(
+                        available: false, defaults: try defaults(),
+                        permissionProvider: {
+                            MacComputerPermissions(accessibility: false, screen: false, monitoring: false)
+                        })),
+                model: model, size: CGSize(width: 460, height: 620))
+            defer { mount.close() }
+            try await mount.settle()
+            XCTAssertFalse(try mount.text().contains("Remote MCP"))
+            XCTAssertTrue(sent.isEmpty)
+
+            model.connected = true
+            try await mount.settle()
+            XCTAssertTrue(try mount.text().contains("Remote MCP"))
+            try mount.click(text: "Remote MCP")
+            try await mount.settle()
+            XCTAssertEqual(sent.last?["action"], .string("chrome_open"))
+            XCTAssertEqual(sent.last?["payload"]?["surface"], .string("remote_mcp"))
+        }
+
         func testAccountOpensAuthorizedSurfacesAndShowsUnavailableLoadingAndSignedOutStates() async throws {
             let model = try model(menu: try handoffMenu())
             var sent: [JSONValue] = []

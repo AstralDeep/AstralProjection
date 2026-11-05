@@ -121,6 +121,18 @@
                     Text("Option-Return does the other action while the server offers steering.")
                         .font(ConsoleTypography.caption).foregroundStyle(theme.palette.muted)
                 }
+                if model.signedIn && model.connected {
+                    Section("Connections") {
+                        HStack {
+                            Spacer()
+                            Button("Remote MCP…") {
+                                model.openSurface("remote_mcp")
+                                dismiss()
+                            }
+                            .accessibilityIdentifier("settings-remote-mcp")
+                        }
+                    }
+                }
             }
             .formStyle(.grouped).scrollContentBackground(.hidden)
             .font(ConsoleTypography.subheadline)
