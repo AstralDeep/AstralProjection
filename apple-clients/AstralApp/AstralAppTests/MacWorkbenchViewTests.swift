@@ -763,21 +763,13 @@
                     $0.isVisible && !windows.contains(ObjectIdentifier($0))
                 })
             defer { popover.close() }
+            try mount.snapshot(self, name: "standard-connection-security-notice", in: popover)
             let content = WorkbenchAccessibility.hostedElements(in: try XCTUnwrap(popover.contentView))
             XCTAssertTrue(
                 content.contains {
                     $0.accessibilityLabel() == message || ($0.accessibilityValue() as? String) == message
                 })
-            let close = try XCTUnwrap(
-                content.first {
-                    $0.accessibilityRole() == .button
-                        && ($0.accessibilityLabel() == "Close" || $0.accessibilityTitle() == "Close")
-                },
-                content.map {
-                    "role=\($0.accessibilityRole()?.rawValue ?? "-") title=\($0.accessibilityTitle() ?? "-") "
-                        + "label=\($0.accessibilityLabel() ?? "-") id=\($0.accessibilityIdentifier() ?? "-")"
-                }.joined(separator: "\n"))
-            XCTAssertTrue(close.accessibilityPerformPress())
+            try mount.click(text: "Close", in: popover, exact: true)
             try await mount.settle()
             XCTAssertFalse(popover.isVisible)
             model.agents = Agent.list(from: .array([external, native]))

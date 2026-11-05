@@ -106,9 +106,11 @@
             }
         }
 
-        func bitmap() throws -> NSBitmapImageRep {
-            let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
-            view.cacheDisplay(in: view.bounds, to: bitmap)
+        func bitmap() throws -> NSBitmapImageRep { try bitmap(in: view) }
+
+        private func bitmap(in target: NSView) throws -> NSBitmapImageRep {
+            let bitmap = try XCTUnwrap(target.bitmapImageRepForCachingDisplay(in: target.bounds))
+            target.cacheDisplay(in: target.bounds, to: bitmap)
             return bitmap
         }
 
@@ -135,10 +137,14 @@
         }
 
         func textFrame(_ text: String, exact: Bool = false) throws -> CGRect? {
+            try textFrame(text, exact: exact, in: view)
+        }
+
+        private func textFrame(_ text: String, exact: Bool, in target: NSView) throws -> CGRect? {
             let request = VNRecognizeTextRequest()
             request.recognitionLevel = .accurate
             request.usesLanguageCorrection = false
-            try VNImageRequestHandler(cgImage: XCTUnwrap(bitmap().cgImage)).perform([request])
+            try VNImageRequestHandler(cgImage: XCTUnwrap(bitmap(in: target).cgImage)).perform([request])
             var match: CGRect?
             for observation in request.results ?? [] {
                 guard let candidate = observation.topCandidates(1).first,
@@ -149,20 +155,23 @@
                 break
             }
             guard let box = match else { return nil }
-            let size = view.bounds.size
+            let bounds = target.bounds
             return CGRect(
-                x: box.minX * size.width, y: (1 - box.maxY) * size.height, width: box.width * size.width,
-                height: box.height * size.height)
+                x: bounds.minX + box.minX * bounds.width,
+                y: bounds.minY + (target.isFlipped ? 1 - box.maxY : box.minY) * bounds.height,
+                width: box.width * bounds.width, height: box.height * bounds.height)
         }
 
-        func click(at point: CGPoint) throws {
-            let location = view.convert(point, to: nil)
+        func click(at point: CGPoint) throws { try click(at: point, in: window, view: view) }
+
+        private func click(at point: CGPoint, in target: NSWindow, view source: NSView) throws {
+            let location = source.convert(point, to: nil)
             for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-                window.sendEvent(
+                target.sendEvent(
                     try XCTUnwrap(
                         NSEvent.mouseEvent(
                             with: type, location: location, modifierFlags: [],
-                            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: target.windowNumber,
                             context: nil, eventNumber: 0, clickCount: 1, pressure: 1)))
             }
         }
@@ -170,6 +179,12 @@
         func click(text: String, exact: Bool = false) throws {
             let frame = try XCTUnwrap(textFrame(text, exact: exact), "No rendered text \(text)")
             try click(at: CGPoint(x: frame.midX, y: frame.midY))
+        }
+
+        func click(text: String, in target: NSWindow, exact: Bool = false) throws {
+            let source = try XCTUnwrap(target.contentView)
+            let frame = try XCTUnwrap(textFrame(text, exact: exact, in: source), "No rendered text \(text)")
+            try click(at: CGPoint(x: frame.midX, y: frame.midY), in: target, view: source)
         }
 
         func type(_ text: String) {
@@ -188,7 +203,15 @@
         }
 
         func snapshot(_ test: XCTestCase, name: String) throws {
-            let data = try XCTUnwrap(bitmap().representation(using: .png, properties: [:]))
+            try snapshot(test, name: name, view: view)
+        }
+
+        func snapshot(_ test: XCTestCase, name: String, in target: NSWindow) throws {
+            try snapshot(test, name: name, view: XCTUnwrap(target.contentView))
+        }
+
+        private func snapshot(_ test: XCTestCase, name: String, view source: NSView) throws {
+            let data = try XCTUnwrap(bitmap(in: source).representation(using: .png, properties: [:]))
             let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.png")
             attachment.name = name
             attachment.lifetime = .keepAlways
