@@ -115,14 +115,19 @@ final class WatchConsoleNavigationUITests: XCTestCase {
             .firstMatch
         reveal(background)
         background.tap()
-        let dismiss = app.buttons["OK"]
+        let dismiss = app.buttons.matching(NSPredicate(format: "label == %@", "OK")).firstMatch
+        let handoffMessage = app.tables.staticTexts["Continue on your phone or desktop."].firstMatch
         XCTAssertTrue(dismiss.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertTrue(app.tables.staticTexts["Continue on your phone or desktop."].firstMatch.exists)
+        XCTAssertTrue(handoffMessage.exists, app.debugDescription)
         capture("Watch console handoff")
         XCTAssertFalse(peer.frames.contains { $0["action"] as? String == "chat_message" })
         dismiss.tap()
+        let handoffDismissed = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: handoffMessage)
+        XCTAssertEqual(XCTWaiter.wait(for: [handoffDismissed], timeout: 5), .completed, app.debugDescription)
         let recent = app.buttons["Recent work"]
         reveal(recent)
+        XCTAssertTrue(recent.isHittable, app.debugDescription)
         recent.tap()
         let received = XCTNSPredicateExpectation(
             predicate: NSPredicate { [peer] _, _ in
