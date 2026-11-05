@@ -110,11 +110,12 @@ final class ManifestDriftTests: XCTestCase {
         XCTAssertEqual(manifest.componentTypes.count, 43)
         XCTAssertEqual(manifest.acceptActions.count, 180)
         XCTAssertTrue(Set(manifest.acceptActions).isSuperset(of: ["chrome_work_result_save", "chrome_job_stop"]))
-        XCTAssertTrue(Set(manifest.acceptActions).isSuperset(of: [
-            "chrome_remote_mcp_delete", "chrome_remote_mcp_edit", "chrome_remote_mcp_oauth_start",
-            "chrome_remote_mcp_save", "chrome_remote_mcp_test", "chrome_remote_mcp_toggle_connector",
-            "chrome_remote_mcp_toggle_tool"
-        ]))
+        XCTAssertTrue(
+            Set(manifest.acceptActions).isSuperset(of: [
+                "chrome_remote_mcp_delete", "chrome_remote_mcp_edit", "chrome_remote_mcp_oauth_start",
+                "chrome_remote_mcp_save", "chrome_remote_mcp_test", "chrome_remote_mcp_toggle_connector",
+                "chrome_remote_mcp_toggle_tool",
+            ]))
         XCTAssertEqual(Set(manifest.acceptActions.filter { $0.hasPrefix("chrome_note_") }), GuidanceRequest.noteActions)
     }
 
