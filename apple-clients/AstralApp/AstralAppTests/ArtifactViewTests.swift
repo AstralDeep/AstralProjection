@@ -134,13 +134,8 @@ final class ArtifactViewTests: XCTestCase {
         let page = try component(#"{"type":"html_artifact","component_id":"h1","version":2,"html":"<p>x</p>"}"#)
         XCTAssertNil(CanvasArtifactFocus.index(in: [text]))
         XCTAssertNil(CanvasArtifactFocus.identity(of: [text]))
-        #if os(macOS)
-            XCTAssertEqual(CanvasArtifactFocus.index(in: [first, text, page, text]), 2)
-            XCTAssertEqual(CanvasArtifactFocus.identity(of: [first, page]), "html_artifact:h1:2")
-        #else
-            XCTAssertEqual(CanvasArtifactFocus.index(in: [first, text, page, text]), 0)
-            XCTAssertEqual(CanvasArtifactFocus.identity(of: [first, page]), "artifact:a1:1")
-        #endif
+        XCTAssertEqual(CanvasArtifactFocus.index(in: [first, text, page, text]), 2)
+        XCTAssertEqual(CanvasArtifactFocus.identity(of: [first, page]), "html_artifact:h1:2")
         XCTAssertEqual(CanvasArtifactFocus.identity(of: [first]), "artifact:a1:1")
     }
 
