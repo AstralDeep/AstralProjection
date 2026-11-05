@@ -1233,7 +1233,7 @@
       "sourceMode": "100644",
       "task": "T060/T006/T011/T016/T017/T020/T024/T025",
       "reason": "Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable. Feature 088 CI fixture repair: validate both explicit test gates and exact loopback port constraints before enabling the DEBUG-only completion handshake. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Ordinary Apple settings parity: retain form defaults and labeled wire values, correlate current surface operations, preserve errors and saved-provider warnings, render accepted account palettes, support arbitrary color cancellation, and make dashboard and keyboard controls reachable. Correct test imports to the pinned Apple CI ordering with ordinary modules before testable modules; assertions and lint policy remain intact. Fair bounded CI: prove a draft edited while completion is held cannot change submitted credentials or create a second submission, and only the first authoritative terminal advances the mandatory provider screen; retain production timers and memory-only credentials.",
-      "resultSha256": "0659b117e689b17b92919a4bbeb70dbecf0268e1b68b2f4b5f6b0e262023f0fe"
+      "resultSha256": "b75b0abc5e541a3f4fa872a771aee64b99b7b1ccd2216ec32731bcffd00f3fed"
     },
     {
       "path": "apple-clients/AstralApp/AstralAppTests/StatusLifecycleTests.swift",
