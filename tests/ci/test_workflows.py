@@ -88,7 +88,7 @@ def _assert_core_trigger_and_python_coverage(text: str) -> None:
         "pytest -q -p no:cacheprovider "
         "--cov=astralprojection --cov=rote --cov=webrender "
         "--cov=scripts.merge_xccov_line_coverage --cov=scripts.build_offline_assets "
-        "--cov=scripts.build_native_export --cov=scripts.android_coverage --cov=scripts.native_xccov_domain --cov=scripts.collect_xccov_native_domain --cov=scripts.export_xccov_line_coverage --cov=scripts.check_changed_coverage --cov=scripts.ci_review_diagnostics --cov=scripts.ci_lanes --cov=scripts.ci_retry_diagnostics --cov=scripts.check_regression_effectiveness --cov=scripts.swift_inactive_input --cov-branch "
+        "--cov=scripts.build_native_export --cov=scripts.android_coverage --cov=scripts.native_xccov_domain --cov=scripts.collect_xccov_native_domain --cov=scripts.export_xccov_line_coverage --cov=scripts.check_changed_coverage --cov=scripts.ci_review_diagnostics --cov=scripts.ci_lanes --cov=scripts.ci_apple_ui_products --cov=scripts.ci_retry_diagnostics --cov=scripts.check_regression_effectiveness --cov=scripts.swift_inactive_input --cov-branch "
         "--cov-report=xml:build/074/coverage/projection-python.xml"
     ) in python
     assert "run: python scripts/check_regression_effectiveness.py" in _step_block(
@@ -480,7 +480,7 @@ def _assert_apple_platform_contract(apple: str) -> None:
     assert "-resolvePackageDependencies" in package_prewarm
     assert "-onlyUsePackageVersionsFromResolvedFile" in package_prewarm
     assert "-skipPackageUpdates" in package_prewarm
-    assert "needs: [changes, swift-package-prewarm]" in first_login
+    assert "needs: [changes, swift-package-prewarm, ios-ui-build]" in first_login
     assert first_login.count(cache_action) == 1
     assert first_login.count(package_cache_key) == 1
     assert "fail-on-cache-miss: true" in first_login
@@ -492,6 +492,7 @@ def _assert_apple_platform_contract(apple: str) -> None:
         "core-ios-tests",
         "app-unit-tests",
         "swift-package-prewarm",
+        "ios-ui-build",
         "first-login-ui",
         "watch-continuity",
     ):
@@ -545,11 +546,8 @@ def _assert_apple_platform_contract(apple: str) -> None:
     assert first_login.index("build-for-testing") < first_login.index(
         'xcrun simctl bootstatus "${{ steps.ios_sim.outputs.udid }}" -b'
     ) < first_login.index("test_action=test-without-building")
-    assert (
-        "COMPILER_INDEX_STORE_ENABLE=NO -derivedDataPath \"$derived\" \\\n"
-        "            -clonedSourcePackagesDirPath \"$PWD/build/060/swift-package-clones\" \\\n"
-        "            -disableAutomaticPackageResolution -skipPackageUpdates build-for-testing"
-    ) in first_login
+    assert 'if [[ "${{ matrix.platform }}" == "macos" ]]; then' in first_login
+    assert "COMPILER_INDEX_STORE_ENABLE=NO" in first_login
     assert first_login.count('-clonedSourcePackagesDirPath "$PWD/build/060/swift-package-clones"') == 2
     assert first_login.count("-disableAutomaticPackageResolution") == 2
     assert first_login.count("-skipPackageUpdates") == 2
@@ -962,7 +960,7 @@ def test_core_android_and_apple_jobs_are_capped_at_thirty_minutes(workflow_name:
     _assert_jobs_capped_at_thirty_minutes((ACTIVE / workflow_name).read_text(encoding="utf-8"))
 
 
-APPLE_TEST_JOBS = ("core-tests", "core-ios-tests", "app-unit-tests", "first-login-ui", "watch-continuity")
+APPLE_TEST_JOBS = ("core-tests", "core-ios-tests", "app-unit-tests", "ios-ui-build", "first-login-ui", "watch-continuity")
 
 
 def _assert_apple_test_jobs_within_twenty_minutes(text: str) -> None:
@@ -1025,6 +1023,7 @@ def test_native_ci_is_active_and_uses_standalone_paths() -> None:
         "core-ios-tests",
         "app-unit-tests",
         "swift-package-prewarm",
+        "ios-ui-build",
         "first-login-ui",
         "watch-continuity",
         "apple-required",
@@ -1340,7 +1339,8 @@ def test_apple_aggregate_rejects_missing_pinned_marker_download_action(
     download_action = (
         "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093"
     )
-    mutated = apple.replace(download_action, replacement, 1)
+    aggregate = _job_block(apple, "apple-required")
+    mutated = apple.replace(aggregate, aggregate.replace(download_action, replacement, 1), 1)
     assert mutated != apple
 
     with pytest.raises(AssertionError):
@@ -1551,21 +1551,23 @@ def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, lane, slug)
     calls = [json.loads(line) for line in record.read_text().splitlines()]
     assert all("" not in call for call in calls)
     xcode = [call for call in calls if call[0] == "xcodebuild"]
-    assert len(xcode) == 2
-    assert xcode[0][-1] == "build-for-testing"
-    assert not any(value.startswith("-only-testing:") for value in xcode[0])
+    builds_locally = lane == "unit" or platform == "macos"
+    assert len(xcode) == (2 if builds_locally else 1)
+    builds = [call for call in xcode if "build-for-testing" in call]
+    assert len(builds) == int(builds_locally)
+    if builds:
+        assert not any(value.startswith("-only-testing:") for value in builds[0])
     assert xcode[-1][-1] == "test-without-building"
     assert xcode[-1][xcode[-1].index("-project") + 1] == "Owned Fixture.xcodeproj"
     assert "CODE_SIGNING_ALLOWED=NO" in xcode[-1]
     _assert_retried_test_run(xcode)
     assert not any(value.startswith("-parallel") for call in xcode for value in call)
-    assert ("COMPILER_INDEX_STORE_ENABLE=NO" in xcode[0]) == (lane == "ui")
+    assert any("COMPILER_INDEX_STORE_ENABLE=NO" in call for call in builds) == (lane == "ui" and platform == "macos")
     boots = [call for call in calls if call[0] == "xcrun"]
     if lane == "ui":
         selectors = [arg for arg in xcode[-1] if arg.startswith("-only-testing:")]
         assert selectors == ["-only-testing:AstralAppUITests/" + name for name in entry["tests"].split()]
         assert boots == ([["xcrun", "simctl", "bootstatus", "owned-fixture-id", "-b"]] if platform == "ios" else [])
-        assert calls.index(boots[0]) > calls.index(xcode[0]) if boots else True
         assert calls.index(boots[0]) < calls.index(xcode[-1]) if boots else True
     else:
         assert "-only-testing:AstralAppTests" in xcode[-1]
@@ -1827,3 +1829,70 @@ def test_external_panel_browser_gate_executes_the_built_wheel() -> None:
     assert "tests/chatgpt-panel.spec.js" in web
     assert "--env ASTRAL_PANEL_COVERAGE_OUTPUT=/workspace/build/coverage/chatgpt-panel.json" in web
     assert '["backend/webrender/static/chatgpt-panel.js"]["s"]' in web
+
+
+def test_ios_ui_build_transport_is_required_and_bound_to_the_current_run():
+    apple = (ACTIVE / "apple-ci.yml").read_text()
+    producer = _job_block(apple, "ios-ui-build")
+    consumer = _job_block(apple, "first-login-ui")
+    aggregate = _job_block(apple, "apple-required")
+    assert "--cov=scripts.ci_apple_ui_products" in _job_block((ACTIVE / "ci.yml").read_text(), "python")
+    assert "needs: [changes, swift-package-prewarm]" in producer
+    assert "if: needs.changes.outputs.apple == 'true'" in producer
+    assert "timeout-minutes: 20" in producer
+    assert "-scheme AstralApp" in producer and "-only-testing:" not in producer
+    assert "-enableCodeCoverage YES" in producer
+    assert "-disableAutomaticPackageResolution -skipPackageUpdates build-for-testing" in producer
+    assert 'derived="$PWD/build/060/app-ios-ui-dd"' in producer
+    assert "scripts/ci_apple_ui_products.py pack" in producer
+    assert "test-without-building" not in producer
+    assert "xcrun simctl boot" not in producer
+    upload = _step_block(producer, "Publish same-run iOS UI test Products")
+    download = _step_block(consumer, "Download same-run iOS UI test Products")
+    assert "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02" in upload
+    assert "if-no-files-found: error" in upload and "compression-level: 0" in upload
+    assert "build/060/ios-ui-build-products.tar" in upload
+    assert "build/060/ios-ui-build-products.json" in upload
+    assert "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093" in download
+    assert "name: apple-ios-ui-build-products" in upload and "name: apple-ios-ui-build-products" in download
+    assert "run-id:" not in download and "github-token:" not in download
+    assert "if: matrix.platform == 'ios'" in download
+    restore = _step_block(consumer, "Restore source-bound iOS UI test Products")
+    assert "if: matrix.platform == 'ios'" in restore
+    assert "scripts/ci_apple_ui_products.py restore" in restore
+    assert '--derived "$PWD/build/060/app-ios-ui-dd"' in restore
+    assert "set -euo pipefail" in restore
+    assert "      - ios-ui-build\n" in aggregate
+    assert aggregate.count("${{ needs.ios-ui-build.result }}") == 2
+
+
+@pytest.mark.parametrize("build_exit", [0, 65])
+def test_ios_ui_build_producer_packs_only_a_successful_complete_build(tmp_path, build_exit):
+    text = (ACTIVE / "apple-ci.yml").read_text()
+    step = _step_block(_job_block(text, "ios-ui-build"), "Build complete iOS app test Products with coverage")
+    script = textwrap.dedent(step.split("run: |\n", 1)[1]).replace("${{ steps.ios_build_sim.outputs.udid }}", "owned-build-id")
+    recorder = tmp_path / "record.py"
+    recorder.write_text(
+        "import json, os, sys\n"
+        "with open(os.environ['COMMAND_RECORD'], 'a') as out: out.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+        "raise SystemExit(int(os.environ['BUILD_EXIT']) if sys.argv[1] == 'xcodebuild' else 0)\n"
+    )
+    command = f"{shlex.quote(sys.executable)} {shlex.quote(str(recorder))}"
+    prefix = "\n".join(f'{name}() {{ {command} {name} "$@"; }}' for name in ("xcodebuild", "python3", "xcrun")) + "\n"
+    record = tmp_path / "commands.jsonl"
+    result = subprocess.run(
+        ["/bin/bash", "-c", prefix + script], cwd=tmp_path,
+        env={**os.environ, "APP_PROJECT": "Fixture.xcodeproj", "COMMAND_RECORD": str(record), "BUILD_EXIT": str(build_exit)},
+        capture_output=True, text=True, timeout=15,
+    )
+    assert result.returncode == build_exit, result.stderr
+    calls = [json.loads(line) for line in record.read_text().splitlines()]
+    assert calls[0][0] == "xcodebuild" and calls[0][-1] == "build-for-testing"
+    assert calls[0][calls[0].index("-scheme") + 1] == "AstralApp"
+    assert not any(arg.startswith("-only-testing:") for arg in calls[0])
+    assert calls[-1] == ["xcrun", "simctl", "delete", "owned-build-id"]
+    packs = [call for call in calls if call[0] == "python3"]
+    assert len(packs) == int(build_exit == 0)
+    if packs:
+        assert packs[0][1:3] == ["scripts/ci_apple_ui_products.py", "pack"]
+        assert packs[0][packs[0].index("--derived") + 1] == str(tmp_path / "build/060/app-ios-ui-dd")
