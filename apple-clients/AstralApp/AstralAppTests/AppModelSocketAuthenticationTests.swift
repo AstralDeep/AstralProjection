@@ -120,7 +120,7 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
                     return ServerSessionReply(
                         body: .object(["outcome": .string("revoked"), "revoked": .bool(true), "queued": .bool(false)]))
                 }
-                let token = await replies.next()
+                let token = try await replies.next()
                 return ServerSessionReply(
                     body: .object([
                         "authenticated": .bool(true), "access_token": .string(token),
@@ -264,6 +264,42 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
             }
         }
 
+        func testServerCustodySocketChangeDiscardsHeldRefreshAndRecovers() async throws {
+            for claims: [String: Any] in [[:], ["sid": "changed-session"], ["sub": "changed-owner"]] {
+                try await withServerCustodyModel(candidateSession: "fixture-session", candidateClaims: claims) {
+                    model, peer, storage, clock, scope, replies in
+                    let initial = try XCTUnwrap(peer.registrations.last)
+                    let priorData = try XCTUnwrap(storage.load(scope.storageKey))
+                    let recoveryToken = self.serverCustodyJWT(
+                        issuer: scope.issuer, clientID: model.clientId, session: "fixture-session",
+                        expiry: clock.now.addingTimeInterval(7200), marker: "recovery")
+                    await replies.append(recoveryToken)
+                    await replies.holdNext()
+                    clock.advance(180)
+                    let refresh = Task { _ = try? await model.rest.chats() }
+                    await replies.waitUntilHeld()
+
+                    peer.disconnect(socket: initial.socket)
+                    try await self.waitUntil { !model.connected }
+                    await replies.release()
+                    _ = await refresh.value
+
+                    XCTAssertTrue(model.signedIn)
+                    XCTAssertEqual(try storage.load(scope.storageKey), priorData)
+                    XCTAssertTrue(peer.authRefreshes.isEmpty)
+                    XCTAssertNotEqual(model.surfaceFailureMessage, "Your sign-in changed. Sign in again to continue.")
+
+                    try await self.waitUntil { peer.registrations.count == 2 && model.connected }
+                    XCTAssertEqual(peer.registrations.last?.token, recoveryToken)
+                    XCTAssertNotEqual(peer.registrations.last?.socket, initial.socket)
+                    let recovered = try JSONDecoder().decode(
+                        ServerSession.self, from: XCTUnwrap(storage.load(scope.storageKey)))
+                    XCTAssertEqual(recovered.accessToken, recoveryToken)
+                    XCTAssertTrue(model.signedIn)
+                }
+            }
+        }
+
         func testServerCustodyLateRefreshCannotRestoreAfterLogout() async throws {
             try await withServerCustodyModel(candidateSession: "fixture-session") {
                 model, peer, storage, clock, scope, replies in
@@ -340,6 +376,88 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
                 let state = model.uiAuthRefreshCredentialStateForTesting(matches: initial.token)
                 XCTAssertTrue(state.active)
                 XCTAssertTrue(state.registered)
+            }
+        }
+
+        func testServerCustodyTimerRetriesTemporaryFailuresWithBoundedBackoffAndRecovers() async throws {
+            let timer = ControlledCredentialSleeper()
+            let sleeper: @Sendable (UInt64) async -> Void = { await timer.sleep($0) }
+            try await withServerCustodyModel(
+                candidateSession: "fixture-session", uiAuthRefreshSleeper: sleeper
+            ) { model, peer, storage, clock, scope, replies in
+                let initial = try XCTUnwrap(peer.registrations.last)
+                let priorData = try XCTUnwrap(storage.load(scope.storageKey))
+                await timer.waitUntilScheduled(1)
+                await replies.failNext(4)
+                clock.advance(80)
+                for count in 2...5 {
+                    await timer.fireNext()
+                    await timer.waitUntilScheduled(count)
+                    XCTAssertTrue(model.signedIn)
+                    XCTAssertEqual(try storage.load(scope.storageKey), priorData)
+                    XCTAssertTrue(peer.authRefreshes.isEmpty)
+                }
+                let delays = await timer.delays()
+                XCTAssertEqual(Array(delays.dropFirst()), [15, 30, 60, 60].map { UInt64($0) * 1_000_000_000 })
+
+                await timer.fireNext()
+                await timer.waitUntilScheduled(6)
+                XCTAssertTrue(model.signedIn)
+                XCTAssertTrue(model.connected)
+                XCTAssertNil(model.surfaceFailureMessage)
+                XCTAssertEqual(peer.registrations.count, 1)
+                XCTAssertEqual(peer.authRefreshes.first?.socket, initial.socket)
+                XCTAssertNotEqual(peer.authRefreshes.first?.frame.payload["token"], .string(initial.token))
+                let recoveredDelays = await timer.delays()
+                XCTAssertGreaterThan(try XCTUnwrap(recoveredDelays.last), 60_000_000_000)
+                await model.signOut(revokeRemote: false)
+                await timer.fireNext()
+            }
+        }
+
+        func testServerCustodyTimerRetryCannotRestoreAfterLogout() async throws {
+            let timer = ControlledCredentialSleeper()
+            let sleeper: @Sendable (UInt64) async -> Void = { await timer.sleep($0) }
+            try await withServerCustodyModel(
+                candidateSession: "fixture-session", uiAuthRefreshSleeper: sleeper
+            ) { model, peer, storage, clock, scope, replies in
+                await timer.waitUntilScheduled(1)
+                await replies.failNext()
+                clock.advance(80)
+                await timer.fireNext()
+                await timer.waitUntilScheduled(2)
+                await model.signOut(revokeRemote: false)
+                await timer.fireNext()
+                XCTAssertFalse(model.signedIn)
+                XCTAssertNil(try storage.load(scope.storageKey))
+                XCTAssertTrue(peer.authRefreshes.isEmpty)
+            }
+        }
+
+        func testServerCustodyTimerRetryIsRetiredWhenConnectionChanges() async throws {
+            let timer = ControlledCredentialSleeper()
+            let sleeper: @Sendable (UInt64) async -> Void = { await timer.sleep($0) }
+            try await withServerCustodyModel(
+                candidateSession: "fixture-session", uiAuthRefreshSleeper: sleeper
+            ) { model, peer, storage, clock, scope, replies in
+                let initial = try XCTUnwrap(peer.registrations.last)
+                await timer.waitUntilScheduled(1)
+                await replies.failNext()
+                clock.advance(80)
+                await timer.fireNext()
+                await timer.waitUntilScheduled(2)
+                peer.disconnect(socket: initial.socket)
+                try await waitUntil { peer.registrations.count == 2 && model.connected }
+                await timer.waitUntilScheduled(3)
+                let recoveredData = try XCTUnwrap(storage.load(scope.storageKey))
+                let recovered = try XCTUnwrap(peer.registrations.last)
+                await timer.fireNext()
+                XCTAssertTrue(model.signedIn)
+                XCTAssertEqual(try storage.load(scope.storageKey), recoveredData)
+                XCTAssertNotEqual(recovered.socket, initial.socket)
+                XCTAssertTrue(peer.authRefreshes.isEmpty)
+                await model.signOut(revokeRemote: false)
+                await timer.fireNext()
             }
         }
 
@@ -1527,6 +1645,7 @@ private final class CredentialTestClock: @unchecked Sendable {
 private actor ServerCustodyRefreshReplies {
     private var tokens: [String]
     private var consumed = 0
+    private var failuresRemaining = 0
     private var heldIndex: Int?
     private var currentlyHeld = false
     private var releaseContinuation: CheckedContinuation<Void, Never>?
@@ -1534,7 +1653,12 @@ private actor ServerCustodyRefreshReplies {
     init(tokens: [String]) { self.tokens = tokens }
     func append(_ token: String) { tokens.append(token) }
     func holdNext() { heldIndex = consumed }
-    func next() async -> String {
+    func failNext(_ count: Int = 1) { failuresRemaining = count }
+    func next() async throws -> String {
+        if failuresRemaining > 0 {
+            failuresRemaining -= 1
+            throw ServerSessionError.unavailable
+        }
         let index = consumed
         consumed += 1
         precondition(!tokens.isEmpty, "unexpected server custody refresh")
@@ -1578,6 +1702,8 @@ private actor ControlledCredentialSleeper {
         if scheduled.count >= count { return }
         await withCheckedContinuation { waiters.append((count, $0)) }
     }
+
+    func delays() -> [UInt64] { scheduled }
 
     func fireNext() {
         precondition(!continuations.isEmpty, "no scheduled credential timer")
