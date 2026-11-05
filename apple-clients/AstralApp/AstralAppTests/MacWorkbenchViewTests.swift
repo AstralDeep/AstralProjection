@@ -770,8 +770,13 @@
                 })
             let close = try XCTUnwrap(
                 content.first {
-                    $0.accessibilityIdentifier() == "agent-security-close-remote-mcp-1"
-                })
+                    $0.accessibilityRole() == .button
+                        && ($0.accessibilityLabel() == "Close" || $0.accessibilityTitle() == "Close")
+                },
+                content.map {
+                    "role=\($0.accessibilityRole()?.rawValue ?? "-") title=\($0.accessibilityTitle() ?? "-") "
+                        + "label=\($0.accessibilityLabel() ?? "-") id=\($0.accessibilityIdentifier() ?? "-")"
+                }.joined(separator: "\n"))
             XCTAssertTrue(close.accessibilityPerformPress())
             try await mount.settle()
             XCTAssertFalse(popover.isVisible)
