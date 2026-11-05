@@ -29,6 +29,28 @@ final class AgentConnectionSecurityTests: XCTestCase {
         XCTAssertEqual(catalog.agents.first?.connectionSecurity, agent.connectionSecurity)
     }
 
+    func testStandardA2ANoticeUsesTheTrustedServerTextAndRejectsMalformedMessages() throws {
+        var object = try XCTUnwrap(notice.objectValue)
+        object["kind"] = .string("standard_a2a")
+        object["title"] = .string("Standard A2A connection")
+        let agent = try XCTUnwrap(
+            Agent(
+                json: .object([
+                    "id": .string("imported-a2a-1"), "connection_security": .object(object),
+                ])))
+        XCTAssertEqual(agent.connectionSecurity?.title, "Standard A2A connection")
+        XCTAssertEqual(agent.connectionSecurity?.message, notice["message"]?.stringValue)
+        object["message"] = .string(String(repeating: "x", count: 2001))
+        XCTAssertNil(ConnectionSecurityNotice(json: .object(object)))
+        object["message"] = .bool(false)
+        XCTAssertNil(ConnectionSecurityNotice(json: .object(object)))
+        let remoteMetadata = Agent(
+            json: .object([
+                "id": .string("legacy"), "metadata": .object(["connection_security": .object(object)]),
+            ]))
+        XCTAssertNil(remoteMetadata?.connectionSecurity)
+    }
+
     func testNativePanAtlasAndRemoteMetadataNeverImplyAWarning() throws {
         for payload: JSONValue in [
             .object(["id": .string("panatlas-1"), "url": .string("https://panatlas.net/agent")]),

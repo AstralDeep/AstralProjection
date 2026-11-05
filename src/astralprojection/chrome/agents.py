@@ -59,16 +59,17 @@ def _agent_badges(agent: Mapping[str, object]) -> list[ComponentView]:
 def _agent_card(agent: Mapping[str, object], content: list[ComponentView]) -> ComponentView:
     title = agent.get("name") or "Unnamed agent"
     notice = agent.get("connection_security")
-    if isinstance(notice, Mapping) and notice.get("kind") == "standard_mcp":
+    if isinstance(notice, Mapping) and notice.get("kind") in ("standard_mcp", "standard_a2a"):
         values = (notice.get("title"), notice.get("message"))
         if all(
             isinstance(value, str) and value.strip() and clean_text(value) == value
             and len(value.encode("utf-8")) <= limit
             for value, limit in zip(values, (120, 2000), strict=True)
         ):
+            notice_key = "external_a2a_security" if notice["kind"] == "standard_a2a" else "external_mcp_security"
             control = button(
                 "⚠", "chrome_open",
-                {"surface": "remote_mcp", "params": {"notice": "external_mcp_security"}},
+                {"surface": "remote_mcp", "params": {"notice": notice_key}},
                 variant="ghost",
             ).to_dict()
             control.pop("type")

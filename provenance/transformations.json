@@ -1402,9 +1402,9 @@
       "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Agents.swift",
       "sourceBlob": "f7f1650973d4fbd6574fc69669edd084f1910663",
       "sourceMode": "100644",
-      "resultSha256": "6840eab09c42c6cb55abc4d5f216c28debef943195824fffa030b643abfd33fc",
+      "resultSha256": "6fc7bba228bfd1c9d6286b36974eee75f58c193ee9b48af83d4169e9879f5c5b",
       "task": "T063",
-      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Render bounded server-classified standard MCP connection notices beside Mac agents without inferring trust from remote metadata or endpoint URLs."
+      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Render bounded server-classified standard MCP connection notices beside Mac agents without inferring trust from remote metadata or endpoint URLs. Recognize bounded server-classified standard A2A connection notices alongside MCP without inferring transport from remote metadata."
     },
     {
       "path": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Components.swift",

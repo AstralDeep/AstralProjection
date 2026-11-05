@@ -7,7 +7,7 @@ public struct ConnectionSecurityNotice: Equatable, Sendable {
     public let message: String
 
     public init?(json: JSONValue?) {
-        guard json?["kind"]?.stringValue == "standard_mcp",
+        guard ["standard_mcp", "standard_a2a"].contains(json?["kind"]?.stringValue ?? ""),
             let title = Self.text(json?["title"], maximum: 120),
             let message = Self.text(json?["message"], maximum: 2000)
         else { return nil }

@@ -762,13 +762,17 @@
                 NSApp.windows.first {
                     $0.isVisible && !windows.contains(ObjectIdentifier($0))
                 })
-            popover.title = "Agent security test \(UUID().uuidString)"
             defer { popover.close() }
-            let content = try XCTUnwrap(WorkbenchAccessibility.snapshot(windowTitle: popover.title)).elements
-            XCTAssertTrue(content.contains { $0.label == message || $0.value == message })
+            let content = WorkbenchAccessibility.hostedElements(in: try XCTUnwrap(popover.contentView))
             XCTAssertTrue(
-                WorkbenchAccessibility.press(
-                    identifier: "agent-security-close-remote-mcp-1", windowTitle: popover.title))
+                content.contains {
+                    $0.accessibilityLabel() == message || ($0.accessibilityValue() as? String) == message
+                })
+            let close = try XCTUnwrap(
+                content.first {
+                    $0.accessibilityIdentifier() == "agent-security-close-remote-mcp-1"
+                })
+            XCTAssertTrue(close.accessibilityPerformPress())
             try await mount.settle()
             XCTAssertFalse(popover.isVisible)
             model.agents = Agent.list(from: .array([external, native]))
@@ -1666,6 +1670,14 @@
         static func snapshot(windowTitle: String) -> Element? {
             guard let window = window(title: windowTitle) else { return nil }
             return snapshot(window, depth: 0)
+        }
+
+        static func hostedElements(in view: NSView) -> [any NSAccessibilityProtocol] {
+            func walk(_ raw: Any, depth: Int) -> [any NSAccessibilityProtocol] {
+                guard depth < 64, let element = raw as? any NSAccessibilityProtocol else { return [] }
+                return [element] + (element.accessibilityChildren() ?? []).flatMap { walk($0, depth: depth + 1) }
+            }
+            return walk(view, depth: 0)
         }
 
         static func press(identifier: String, windowTitle: String) -> Bool {
