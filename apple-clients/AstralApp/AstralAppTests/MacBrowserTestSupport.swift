@@ -241,7 +241,7 @@
             suite = "astral.browser-tests." + UUID().uuidString
             defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
             pane = MacBrowserPane()
-            driver = MacBrowserDriver(host: nil, defaults: defaults, pane: pane)
+            driver = MacBrowserDriver(host: nil, defaults: defaults, pane: pane, shortVerbTimeoutCeiling: 10.0)
             let screen = try XCTUnwrap(NSScreen.main)
             window = NSWindow(
                 contentRect: CGRect(origin: screen.visibleFrame.origin, size: CGSize(width: 1024, height: 768)),
