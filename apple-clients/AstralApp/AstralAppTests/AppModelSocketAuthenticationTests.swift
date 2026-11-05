@@ -68,6 +68,7 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
             candidateSession: String, candidateScope: String = "openid profile",
             candidateClaims: [String: Any] = [:], reuseAccessToken: Bool = false,
             additionalReplyTokens: [String] = [],
+            sendsUIAuthRefreshReady: Bool = true,
             uiAuthRefreshSleeper: @escaping @Sendable (UInt64) async -> Void = {
                 try? await Task.sleep(nanoseconds: $0)
             },
@@ -78,7 +79,7 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
         ) async throws {
             let clock = CredentialTestClock()
             let peer = try SocketAuthenticationPeer(clock: clock)
-            peer.uiAuthRefreshSupported = true
+            peer.uiAuthRefreshSupported = sendsUIAuthRefreshReady
             peer.start()
             defer { peer.stop() }
             await fulfillment(of: [peer.ready], timeout: 10)
@@ -222,6 +223,44 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
                     XCTAssertEqual(peer.registrations.first?.token, initial.token, label)
                     XCTAssertTrue(model.signedIn, label)
                 }
+            }
+        }
+
+        func testServerCustodyRefreshChecksStoredIdentityBeforeSocketReadiness() async throws {
+            let cases: [(String, [String: Any])] = [
+                ("changed_audience", ["aud": ["different-client"]]),
+                ("malformed_audience", ["aud": ["astral-desktop", 7]]),
+            ]
+            for (label, claims) in cases {
+                try await withServerCustodyModel(
+                    candidateSession: "fixture-session", candidateClaims: claims,
+                    sendsUIAuthRefreshReady: false
+                ) { model, peer, storage, clock, scope, _ in
+                    let prior = try JSONDecoder().decode(
+                        ServerSession.self, from: XCTUnwrap(storage.load(scope.storageKey)))
+                    clock.advance(180)
+                    _ = try? await model.rest.chats()
+
+                    let persisted = try JSONDecoder().decode(
+                        ServerSession.self, from: XCTUnwrap(storage.load(scope.storageKey)))
+                    XCTAssertEqual(persisted.accessToken, prior.accessToken, label)
+                    XCTAssertTrue(peer.authRefreshes.isEmpty, label)
+                    XCTAssertEqual(peer.registrations.count, 1, label)
+                }
+            }
+
+            try await withServerCustodyModel(
+                candidateSession: "fixture-session", sendsUIAuthRefreshReady: false
+            ) { model, peer, storage, clock, scope, _ in
+                let prior = try JSONDecoder().decode(
+                    ServerSession.self, from: XCTUnwrap(storage.load(scope.storageKey)))
+                clock.advance(180)
+                _ = try? await model.rest.chats()
+
+                let persisted = try JSONDecoder().decode(
+                    ServerSession.self, from: XCTUnwrap(storage.load(scope.storageKey)))
+                XCTAssertNotEqual(persisted.accessToken, prior.accessToken)
+                XCTAssertEqual(peer.registrations.count, 1)
             }
         }
 

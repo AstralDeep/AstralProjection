@@ -1748,7 +1748,10 @@ final class AppModel: NSObject {
             }()
             let activeToken = readySocketContext.flatMap { _ in tokens }
             let readyIdentity = activeToken.flatMap { UIAuthRefreshIdentity(token: $0) }
-            let storedIdentity = readySocketContext.flatMap { _ in UIAuthRefreshIdentity(token: session.tokenSet) }
+            let storedIdentity = UIAuthRefreshIdentity(token: session.tokenSet)
+            guard let storedIdentity else {
+                return .rejected("registered server session identity is unavailable")
+            }
             if readySocketContext != nil, readyIdentity == nil || storedIdentity != readyIdentity {
                 return .rejected("registered server session identity is unavailable")
             }
@@ -1763,6 +1766,10 @@ final class AppModel: NSObject {
                 return .rejected("server session identity changed")
             }
             #if os(macOS)
+                guard UIAuthRefreshIdentity(token: result.tokenSet) == storedIdentity else {
+                    surfaceFailureMessage = "Your sign-in changed. Sign in again to continue."
+                    return .rejected("server session refresh changed identity or authorization")
+                }
                 if let ready = readySocketContext {
                     guard let activeToken, let readyIdentity else {
                         return .rejected("registered server session identity is unavailable")
