@@ -123,14 +123,17 @@
             _ fixture: Fixture, _ model: AppModel, decision: String, incarnation: String? = nil,
             connection: String? = nil
         ) {
-            model.handleFrame(InboundFrame(name: "computer_host", payload: .object([
-                "host_id": .string(fixture.host.hostIdentifier),
-                "outcome_ack": .object([
-                    "decision": .string(decision),
-                    "incarnation_id": .string(incarnation ?? fixture.host.incarnationId),
-                    "connection_generation": .string(connection ?? model.continuity.connectionGeneration ?? ""),
-                ]),
-            ])))
+            model.handleFrame(
+                InboundFrame(
+                    name: "computer_host",
+                    payload: .object([
+                        "host_id": .string(fixture.host.hostIdentifier),
+                        "outcome_ack": .object([
+                            "decision": .string(decision),
+                            "incarnation_id": .string(incarnation ?? fixture.host.incarnationId),
+                            "connection_generation": .string(connection ?? model.continuity.connectionGeneration ?? ""),
+                        ]),
+                    ])))
         }
 
         private func account(_ subject: String) throws -> ConversationAccount {

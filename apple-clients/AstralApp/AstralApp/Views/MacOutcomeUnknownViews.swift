@@ -85,9 +85,12 @@
                                 .accessibilityIdentifier("outcome-unknown-acknowledge")
                             Spacer()
                             if !actionable {
-                                Text(card.decision == nil ? "Open this Mac's owner session to act." : "Waiting for server confirmation.")
-                                    .font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                                    .accessibilityIdentifier("outcome-unknown-note")
+                                Text(
+                                    card.decision == nil
+                                        ? "Open this Mac's owner session to act." : "Waiting for server confirmation."
+                                )
+                                .font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                                .accessibilityIdentifier("outcome-unknown-note")
                             }
                         }
                     }
