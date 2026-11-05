@@ -75,6 +75,19 @@ final class LLMFirstLoginOperationTests: XCTestCase {
         return model.llmFirstLoginOperation!
     }
 
+    private func waitForOperation(
+        timeout: Duration = .seconds(2),
+        where condition: () -> Bool
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while !condition() {
+            guard clock.now < deadline else { return false }
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
+        return true
+    }
+
     #if DEBUG
         func testUICompletionGateRequiresBothOptInsAndAnExactLoopbackPort() throws {
             let arguments = ["--astral-ui-test-first-login", "slow-success"]
@@ -247,17 +260,41 @@ final class LLMFirstLoginOperationTests: XCTestCase {
         XCTAssertEqual(model.llmFirstLoginOperation?.sequence, 2)
     }
 
-    func testTenSecondWatchdogEndsLoadingWithoutInventingOrSuppressingServerTerminal() async {
+    func testFirstLoginPhaseBecomesVisibleWhileOperationIsLoading() async {
         let (model, log) = modelWithConnection()
-        model.llmFirstLoginPhaseDelay = 5_000_000
-        model.llmFirstLoginWatchdogDelay = 20_000_000
+        model.llmFirstLoginPhaseDelay = 1_000_000
+        model.llmFirstLoginWatchdogDelay = 60_000_000_000
         let local = start(model)
 
-        try? await Task.sleep(nanoseconds: 10_000_000)
+        let phaseAppeared = await waitForOperation {
+            model.llmFirstLoginOperation?.phaseVisible == true
+        }
+        XCTAssertTrue(phaseAppeared)
         XCTAssertTrue(model.llmFirstLoginOperation?.phaseVisible == true)
         XCTAssertTrue(model.llmFirstLoginOperation?.isLoading == true)
+        XCTAssertEqual(log.frames.count, 1)
 
-        try? await Task.sleep(nanoseconds: 30_000_000)
+        model.handleFrame(
+            status(
+                request: local.requestGeneration,
+                sequence: 0,
+                state: "completed",
+                phase: "completed",
+                label: "Provider setup complete"))
+        XCTAssertTrue(model.llmFirstLoginOperation?.isAuthoritativelyTerminal == true)
+        XCTAssertFalse(model.llmFirstLoginOperation?.isLoading == true)
+    }
+
+    func testTenSecondWatchdogEndsLoadingWithoutInventingOrSuppressingServerTerminal() async {
+        let (model, log) = modelWithConnection()
+        model.llmFirstLoginPhaseDelay = 60_000_000_000
+        model.llmFirstLoginWatchdogDelay = 1_000_000
+        let local = start(model)
+
+        let watchdogFired = await waitForOperation {
+            model.llmFirstLoginOperation?.state == .unconfirmed
+        }
+        XCTAssertTrue(watchdogFired)
         XCTAssertEqual(model.llmFirstLoginOperation?.state, .unconfirmed)
         XCTAssertEqual(model.llmFirstLoginOperation?.submissionId, local.submissionId)
         XCTAssertEqual(model.llmFirstLoginOperation?.label, "Unable to confirm; reconnecting")
