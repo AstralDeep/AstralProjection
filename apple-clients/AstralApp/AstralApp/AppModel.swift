@@ -1748,7 +1748,10 @@ final class AppModel: NSObject {
             }()
             let activeToken = readySocketContext.flatMap { _ in tokens }
             let readyIdentity = activeToken.flatMap { UIAuthRefreshIdentity(token: $0) }
-            let storedIdentity = readySocketContext.flatMap { _ in UIAuthRefreshIdentity(token: session.tokenSet) }
+            let storedIdentity = UIAuthRefreshIdentity(token: session.tokenSet)
+            guard let storedIdentity else {
+                return .rejected("registered server session identity is unavailable")
+            }
             if readySocketContext != nil, readyIdentity == nil || storedIdentity != readyIdentity {
                 return .rejected("registered server session identity is unavailable")
             }
@@ -1759,20 +1762,29 @@ final class AppModel: NSObject {
             guard !Task.isCancelled, generation == sessionGeneration, serverSession == session,
                 self.oidc.map({ try? ServerSessionScope(server: serverBase, oidc: $0) }) == scope
             else { return .transient("session changed") }
+            #if os(macOS)
+                if let ready = readySocketContext {
+                    guard socketAuthenticationIsCurrent(ready), ready.socket === ws,
+                        ready.connection == continuity.connectionGeneration,
+                        uiAuthRefreshReadyContext?.token == ready.token,
+                        registeredAccessToken == ready.token, tokens?.accessToken == ready.token
+                    else { return .transient("connection changed during server session refresh") }
+                }
+            #endif
             guard result.scope == session.scope, result.owner == session.owner else {
                 return .rejected("server session identity changed")
             }
             #if os(macOS)
-                if let ready = readySocketContext {
+                guard UIAuthRefreshIdentity(token: result.tokenSet) == storedIdentity else {
+                    surfaceFailureMessage = "Your sign-in changed. Sign in again to continue."
+                    return .rejected("server session refresh changed identity or authorization")
+                }
+                if readySocketContext != nil {
                     guard let activeToken, let readyIdentity else {
                         return .rejected("registered server session identity is unavailable")
                     }
                     let sameAccessToken = result.accessToken == activeToken.accessToken
-                    guard socketAuthenticationIsCurrent(ready), ready.socket === ws,
-                        ready.connection == continuity.connectionGeneration,
-                        uiAuthRefreshReadyContext?.token == ready.token,
-                        registeredAccessToken == ready.token, tokens?.accessToken == ready.token,
-                        UIAuthRefreshIdentity(token: result.tokenSet) == readyIdentity,
+                    guard UIAuthRefreshIdentity(token: result.tokenSet) == readyIdentity,
                         sameAccessToken
                             || UIAuthRefreshIdentity.isValidRotation(
                                 from: activeToken, to: result.tokenSet, now: credentialClock())
@@ -1785,9 +1797,25 @@ final class AppModel: NSObject {
             try serverSessionStorage.save(JSONEncoder().encode(result), key: scope.storageKey)
             serverSession = result
             return .ok(result.tokenSet)
-        } catch ServerSessionError.retired { return .rejected("server session expired") } catch ServerSessionError
-            .invalid
-        { return .rejected("server session invalid") } catch { return .transient("server session unavailable") }
+        } catch {
+            #if os(macOS)
+                guard !Task.isCancelled, generation == sessionGeneration, serverSession == session,
+                    self.oidc.map({ try? ServerSessionScope(server: serverBase, oidc: $0) }) == scope
+                else { return .transient("session changed") }
+                if let ready = readySocketContext {
+                    guard socketAuthenticationIsCurrent(ready), ready.socket === ws,
+                        ready.connection == continuity.connectionGeneration,
+                        uiAuthRefreshReadyContext?.token == ready.token,
+                        registeredAccessToken == ready.token, tokens?.accessToken == ready.token
+                    else { return .transient("connection changed during server session refresh") }
+                }
+            #endif
+            switch error {
+            case ServerSessionError.retired: return .rejected("server session expired")
+            case ServerSessionError.invalid: return .rejected("server session invalid")
+            default: return .transient("server session unavailable")
+            }
+        }
     }
 
     private func serverSocketHeaders(url: URL, owner: DownloadOwner, server: URL) async -> [String: String]? {
@@ -2113,24 +2141,46 @@ final class AppModel: NSObject {
             let delay = max(15, secondsUntilExpiry > 60 ? secondsUntilExpiry - 60 : secondsUntilExpiry)
             let nanoseconds = UInt64(min(delay, 86_400) * 1_000_000_000)
             uiAuthRefreshTimerTask = Task { @MainActor [weak self] in
-                await self?.uiAuthRefreshSleeper(nanoseconds)
-                guard !Task.isCancelled, let self,
-                    self.downloadOwner == context.owner, self.ws === context.socket,
-                    self.continuity.connectionGeneration == context.connection,
-                    self.registeredAccessToken == context.token
-                else { return }
-                let outcome = await self.refreshOutcome()
-                guard self.downloadOwner == context.owner, self.ws === context.socket,
-                    self.continuity.connectionGeneration == context.connection
-                else { return }
-                if case .rejected = outcome {
-                    self.surfaceFailureMessage = "Your sign-in expired. Sign in again to continue."
-                    await self.signOut(revokeRemote: false)
-                } else if case .transient = outcome {
-                    if self.surfaceFailureMessage == "Your sign-in changed. Sign in again to continue." {
+                var wait = nanoseconds
+                var retry: UInt64 = 15_000_000_000
+                while !Task.isCancelled {
+                    await self?.uiAuthRefreshSleeper(wait)
+                    guard !Task.isCancelled, let self,
+                        self.downloadOwner == context.owner, self.ws === context.socket,
+                        self.continuity.connectionGeneration == context.connection,
+                        self.registeredAccessToken == context.token,
+                        self.tokens?.accessToken == context.token
+                    else { return }
+                    let outcome = await self.refreshOutcome()
+                    guard self.downloadOwner == context.owner, self.ws === context.socket,
+                        self.continuity.connectionGeneration == context.connection
+                    else { return }
+                    if case .ok = outcome {
+                        if self.surfaceFailureMessage == "Your sign-in could not be refreshed. Retrying automatically."
+                        {
+                            self.surfaceFailureMessage = nil
+                        }
+                        return
+                    }
+                    guard !Task.isCancelled else { return }
+                    if case .rejected = outcome {
+                        self.surfaceFailureMessage = "Your sign-in expired. Sign in again to continue."
                         await self.signOut(revokeRemote: false)
+                        return
+                    } else if case .transient = outcome {
+                        if self.surfaceFailureMessage == "Your sign-in changed. Sign in again to continue." {
+                            await self.signOut(revokeRemote: false)
+                            return
+                        }
+                        guard self.socketAuthenticationIsCurrent(context),
+                            self.uiAuthRefreshReadyContext?.token == context.token,
+                            self.tokens?.accessToken == context.token
+                        else { return }
+                        self.surfaceFailureMessage = "Your sign-in could not be refreshed. Retrying automatically."
+                        wait = retry
+                        retry = min(retry * 2, 60_000_000_000)
                     } else {
-                        self.surfaceFailureMessage = "Your sign-in could not be refreshed. Reconnect to continue."
+                        return
                     }
                 }
             }

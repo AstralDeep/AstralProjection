@@ -218,6 +218,18 @@ public enum ServerSessionHTTP {
         ) { completionHandler(nil) }
     }
 
+    static func validate(response: HTTPURLResponse, request: URLRequest) throws {
+        if [401, 403].contains(response.statusCode) { throw ServerSessionError.retired }
+        #if os(macOS)
+            if response.statusCode == 429 || (500...599).contains(response.statusCode) {
+                throw ServerSessionError.unavailable
+            }
+        #endif
+        guard response.statusCode == 200, response.url == request.url,
+            response.mimeType?.lowercased() == "application/json", response.expectedContentLength <= 32768
+        else { throw ServerSessionError.invalid }
+    }
+
     public static func request(_ request: URLRequest) async throws -> ServerSessionReply {
         let session = URLSession(
             configuration: NoStoreHTTP.configuration(), delegate: RedirectRefusal(), delegateQueue: nil)
@@ -225,10 +237,7 @@ public enum ServerSessionHTTP {
         do {
             let (stream, response) = try await session.bytes(for: request)
             guard let response = response as? HTTPURLResponse else { throw ServerSessionError.invalid }
-            if [401, 403].contains(response.statusCode) { throw ServerSessionError.retired }
-            guard response.statusCode == 200, response.url == request.url,
-                response.mimeType?.lowercased() == "application/json", response.expectedContentLength <= 32768
-            else { throw ServerSessionError.invalid }
+            try validate(response: response, request: request)
             var data = Data()
             for try await byte in stream {
                 guard data.count < 32768 else { throw ServerSessionError.invalid }

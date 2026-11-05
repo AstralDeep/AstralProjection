@@ -59,6 +59,7 @@
         @ObservationIgnored var bypassActive: () -> Bool
         @ObservationIgnored private var bypassedRequest = false
         @ObservationIgnored private let defaults: UserDefaults
+        @ObservationIgnored private let shortVerbTimeoutCeiling: Double
         @ObservationIgnored private var owner: String?
         @ObservationIgnored private var sessionId: String?
         @ObservationIgnored private(set) var approved: Set<String> = []
@@ -78,12 +79,16 @@
         @ObservationIgnored private var settleUntil = 0.0
         @ObservationIgnored private var linger: Task<Void, Never>?
 
-        init(host: MacComputerHost?, defaults: UserDefaults = .standard, pane: MacBrowserPane? = nil) {
+        init(
+            host: MacComputerHost?, defaults: UserDefaults = .standard, pane: MacBrowserPane? = nil,
+            shortVerbTimeoutCeiling: Double = 5.0
+        ) {
             let first = pane ?? MacBrowserPane()
             context = first.context
             tabs = [MacBrowserTab(id: "t1", pane: first)]
             activeTabId = "t1"
             self.defaults = defaults
+            self.shortVerbTimeoutCeiling = shortVerbTimeoutCeiling
             self.host = host
             takeover = { [weak host] in host?.takeover() }
             agentActive = { [weak host] in host?.session?.state == "active" }
@@ -159,7 +164,7 @@
             bypassedRequest = approvalSource == "bypass" && bypassActive()
             defer { bypassedRequest = false }
             if session != sessionId { resetSession(session) }
-            let ceiling = Self.longVerbs.contains(verb) ? 15.0 : 5.0
+            let ceiling = Self.longVerbs.contains(verb) ? 15.0 : shortVerbTimeoutCeiling
             let budget = min(ceiling, remaining - 0.35)
             guard budget > 0.2 else {
                 throw ComputerHostError("interrupted", "The request deadline leaves no time for the browser pane.")

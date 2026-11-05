@@ -636,7 +636,9 @@ final class CanvasCapture088Tests: XCTestCase {
         coordinator.update(
             webView, component: component, viewportWidth: 320, captureRegistry: registry, captureNode: node)
         do {
-            for _ in 0..<100 {
+            let clock = ContinuousClock()
+            let readinessDeadline = clock.now.advanced(by: .seconds(30))
+            while clock.now < readinessDeadline {
                 if coordinator.readyForCapture,
                     (try? await webView.evaluateJavaScript("document.documentElement.dataset.chartState")) as? String
                         == "ready"

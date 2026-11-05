@@ -90,6 +90,9 @@
     }
     nonisolated final class MacComputerLiveSystem: MacComputerSystemIO {
         static let shared = MacComputerLiveSystem()
+        static func hasLiveProcess(pid: pid_t, isTerminated: Bool) -> Bool {
+            pid > 0 && !isTerminated
+        }
         let hostPID = ProcessInfo.processInfo.processIdentifier
         let hostBundleIdentifier = Bundle.main.bundleIdentifier
         private init() {}
@@ -175,8 +178,9 @@
         }
         func delay(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
         @MainActor func runningApplications() -> [MacComputerApplication] {
-            NSWorkspace.shared.runningApplications.map {
-                MacComputerApplication(
+            NSWorkspace.shared.runningApplications.compactMap {
+                guard Self.hasLiveProcess(pid: $0.processIdentifier, isTerminated: $0.isTerminated) else { return nil }
+                return MacComputerApplication(
                     pid: $0.processIdentifier, bundleIdentifier: $0.bundleIdentifier,
                     regular: $0.activationPolicy == .regular, name: $0.localizedName, active: $0.isActive,
                     hidden: $0.isHidden)

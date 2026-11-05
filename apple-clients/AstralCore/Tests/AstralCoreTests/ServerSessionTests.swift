@@ -7,6 +7,32 @@ import XCTest
 @testable import AstralCore
 
 final class ServerSessionTests: XCTestCase {
+    #if os(macOS)
+        func testHTTPTemporaryFailuresRemainUnavailableAndDefinitiveResponsesStayRejected() throws {
+            let request = URLRequest(url: URL(string: "https://example.test/auth/session")!)
+            for status in [429, 500, 502, 503, 599, 401, 403, 302, 400, 200] {
+                let response = HTTPURLResponse(
+                    url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "text/html"])!
+                XCTAssertThrowsError(try ServerSessionHTTP.validate(response: response, request: request)) { error in
+                    guard let error = error as? ServerSessionError else {
+                        return XCTFail("unexpected error type")
+                    }
+                    switch (status, error) {
+                    case (429, .unavailable), (500...599, .unavailable), (401, .retired), (403, .retired),
+                        (302, .invalid), (400, .invalid), (200, .invalid):
+                        break
+                    default: XCTFail("unexpected classification for HTTP \(status)")
+                    }
+                }
+            }
+            let valid = HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"])!
+            XCTAssertNoThrow(try ServerSessionHTTP.validate(response: valid, request: request))
+        }
+    #endif
+
     private func scope(_ server: String = "https://example.test") throws -> ServerSessionScope {
         try ServerSessionScope(
             server: URL(string: server)!,

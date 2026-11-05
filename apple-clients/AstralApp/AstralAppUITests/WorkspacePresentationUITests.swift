@@ -5,6 +5,13 @@
 import XCTest
 
 final class WorkspacePresentationUITests: XCTestCase {
+    override class func setUp() {
+        super.setUp()
+        #if os(iOS)
+            requireIOSFixtureReadiness()
+        #endif
+    }
+
     func testWorkspaceActionsFollowServerOrderKeepNativeTargetsAndLeaveWithCanvas() {
         let app = XCUIApplication()
         app.launchArguments = ["--astral-ui-test-first-login", "workspace-actions"]
@@ -182,7 +189,7 @@ final class WorkspacePresentationUITests: XCTestCase {
 
         func testCancelingComponentRefinementPreservesResultSelectedTabAndComposerDraft() {
             let app = XCUIApplication()
-            app.launchArguments = ["--astral-ui-test-first-login", "workspace-rich-result"]
+            app.launchArguments = ["--astral-ui-test-first-login", "workspace-component-refinement"]
             app.launchEnvironment["ASTRAL_UI_TESTING"] = "1"
             app.launch()
             defer { app.terminate() }

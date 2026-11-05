@@ -75,7 +75,42 @@ final class LLMFirstLoginOperationTests: XCTestCase {
         return model.llmFirstLoginOperation!
     }
 
+    private func waitForOperation(
+        timeout: Duration = .seconds(2),
+        where condition: () -> Bool
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while !condition() {
+            guard clock.now < deadline else { return false }
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
+        return true
+    }
+
     #if DEBUG
+        func testComponentRefinementFixtureKeepsTheExactRichComponentAndConversationContext() throws {
+            let models = try (0..<2).map { _ in
+                let defaults = try XCTUnwrap(UserDefaults(suiteName: "ComponentRefinementFixture.\(UUID().uuidString)"))
+                return AppModel(
+                    conversationResumeStore: ConversationResumeStore(defaults: defaults),
+                    tokenStore: InMemoryTokenStore(), defaults: defaults)
+            }
+            let rich = models[0]
+            let focused = models[1]
+            FirstLoginUITestFixture.install(.workspaceRichResult, on: rich)
+            FirstLoginUITestFixture.install(.workspaceComponentRefinement, on: focused)
+            XCTAssertGreaterThan(rich.canvas.count, 1)
+            XCTAssertEqual(focused.canvas.count, 1)
+            let original = try XCTUnwrap(rich.canvas.first { $0.raw["component_id"]?.stringValue == "review-details" })
+            XCTAssertEqual(focused.canvas.first?.raw, original.raw)
+            XCTAssertEqual(focused.activeChatId, rich.activeChatId)
+            XCTAssertEqual(focused.composerDraft, rich.composerDraft)
+            XCTAssertEqual(focused.turns.map(\.text), rich.turns.map(\.text))
+            XCTAssertEqual(focused.screen, rich.screen)
+            XCTAssertEqual(focused.workspaceStarted, rich.workspaceStarted)
+        }
+
         func testUICompletionGateRequiresBothOptInsAndAnExactLoopbackPort() throws {
             let arguments = ["--astral-ui-test-first-login", "slow-success"]
             let key = "ASTRAL_UI_FIRST_LOGIN_GATE_PORT"
@@ -247,17 +282,41 @@ final class LLMFirstLoginOperationTests: XCTestCase {
         XCTAssertEqual(model.llmFirstLoginOperation?.sequence, 2)
     }
 
-    func testTenSecondWatchdogEndsLoadingWithoutInventingOrSuppressingServerTerminal() async {
+    func testFirstLoginPhaseBecomesVisibleWhileOperationIsLoading() async {
         let (model, log) = modelWithConnection()
-        model.llmFirstLoginPhaseDelay = 5_000_000
-        model.llmFirstLoginWatchdogDelay = 20_000_000
+        model.llmFirstLoginPhaseDelay = 1_000_000
+        model.llmFirstLoginWatchdogDelay = 60_000_000_000
         let local = start(model)
 
-        try? await Task.sleep(nanoseconds: 10_000_000)
+        let phaseAppeared = await waitForOperation {
+            model.llmFirstLoginOperation?.phaseVisible == true
+        }
+        XCTAssertTrue(phaseAppeared)
         XCTAssertTrue(model.llmFirstLoginOperation?.phaseVisible == true)
         XCTAssertTrue(model.llmFirstLoginOperation?.isLoading == true)
+        XCTAssertEqual(log.frames.count, 1)
 
-        try? await Task.sleep(nanoseconds: 30_000_000)
+        model.handleFrame(
+            status(
+                request: local.requestGeneration,
+                sequence: 0,
+                state: "completed",
+                phase: "completed",
+                label: "Provider setup complete"))
+        XCTAssertTrue(model.llmFirstLoginOperation?.isAuthoritativelyTerminal == true)
+        XCTAssertFalse(model.llmFirstLoginOperation?.isLoading == true)
+    }
+
+    func testTenSecondWatchdogEndsLoadingWithoutInventingOrSuppressingServerTerminal() async {
+        let (model, log) = modelWithConnection()
+        model.llmFirstLoginPhaseDelay = 60_000_000_000
+        model.llmFirstLoginWatchdogDelay = 1_000_000
+        let local = start(model)
+
+        let watchdogFired = await waitForOperation {
+            model.llmFirstLoginOperation?.state == .unconfirmed
+        }
+        XCTAssertTrue(watchdogFired)
         XCTAssertEqual(model.llmFirstLoginOperation?.state, .unconfirmed)
         XCTAssertEqual(model.llmFirstLoginOperation?.submissionId, local.submissionId)
         XCTAssertEqual(model.llmFirstLoginOperation?.label, "Unable to confirm; reconnecting")

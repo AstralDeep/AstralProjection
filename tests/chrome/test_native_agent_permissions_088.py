@@ -88,3 +88,42 @@ def test_explicit_host_denials_override_legacy_manage_flag():
     assert "chrome_perms_save" not in json.dumps(result)
     assert "chrome_visibility_set" not in json.dumps(result)
     assert "chrome_safe_set" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("kind,agent_id,name,title,notice_key", [
+    ("standard_mcp", "remote-mcp-1", "Remote MCP", "Standard MCP connection", "external_mcp_security"),
+    ("standard_a2a", "imported-a2a-1", "External peer", "Standard A2A connection", "external_a2a_security"),
+])
+def test_standard_connection_warning_is_a_separate_accessible_action_in_list_and_detail(
+    kind, agent_id, name, title, notice_key,
+):
+    agent = {"id": agent_id, "name": name, "connection_security": {
+        "kind": kind, "title": title,
+        "message": "Astral permissions still apply. The provider controls its data handling.",
+    }}
+    for view in (build_agents_view([agent]), build_agents_view(selected=agent)):
+        nodes = list(walk(view.to_dict()))
+        warning = next(node for node in nodes if node.get("id") == f"agent-security-warning-{agent_id}")
+        assert warning["type"] == "button" and warning["label"] == "⚠"
+        assert warning["aria-label"] == title
+        assert warning["action"] == "chrome_open"
+        assert warning["payload"] == {"surface": "remote_mcp", "params": {"notice": notice_key}}
+        assert any(node.get("content") == name for node in nodes)
+
+
+@pytest.mark.parametrize("agent", [
+    {"id": "panatlas-1", "name": "PanAtlas", "url": "https://panatlas.net/agent"},
+    {"id": "legacy", "url": "https://example.test/mcp"},
+    {"id": "legacy", "url": "https://example.test/agent"},
+    {"id": "legacy", "metadata": {"connection_security": {"kind": "standard_mcp"}}},
+    {"id": "legacy", "metadata": {"connection_security": {"kind": "standard_a2a"}}},
+    {"id": "imported-a2a-1", "connection_security": {"kind": "standard_a2a", "title": "A2A", "message": 5}},
+    {"id": "remote-mcp-1", "connection_security": {"kind": "unknown", "title": "Warning", "message": "Text"}},
+    {"id": "remote-mcp-1", "connection_security": {"kind": "standard_mcp", "title": "", "message": "Text"}},
+    {"id": "remote-mcp-1", "connection_security": {"kind": "standard_mcp", "title": "x" * 121, "message": "Text"}},
+    {"id": "remote-mcp-1", "connection_security": {"kind": "standard_mcp", "title": "Warning", "message": "x" * 2001}},
+    {"id": "remote-mcp-1", "connection_security": {"kind": "standard_mcp", "title": "Warning", "message": "unsafe\0text"}},
+])
+def test_native_or_malformed_agent_metadata_does_not_create_a_warning(agent):
+    for view in (build_agents_view([agent]), build_agents_view(selected=agent)):
+        assert not any(node.get("id", "").startswith("agent-security-warning-") for node in walk(view.to_dict()))

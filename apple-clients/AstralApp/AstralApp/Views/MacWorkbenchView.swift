@@ -913,28 +913,33 @@
 
         private func row(_ agent: ConsoleAgent) -> some View {
             let ready = agent.state == .ready
-            return Button {
-                open(agent)
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: ready ? "circle.fill" : "circle.slash")
-                        .font(.system(size: ready ? 8 : 12, weight: .semibold))
-                        .foregroundStyle(ready ? p.success : p.muted)
-                        .frame(width: 14).accessibilityHidden(true)
-                    Text(agent.name).font(ConsoleTypography.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    if !ready {
-                        Text("Offline").font(ConsoleTypography.caption).foregroundStyle(p.muted)
+            return HStack(spacing: 8) {
+                Button {
+                    open(agent)
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: ready ? "circle.fill" : "circle.slash")
+                            .font(.system(size: ready ? 8 : 12, weight: .semibold))
+                            .foregroundStyle(ready ? p.success : p.muted)
+                            .frame(width: 14).accessibilityHidden(true)
+                        Text(agent.name).font(ConsoleTypography.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        if !ready {
+                            Text("Offline").font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                        }
                     }
+                    .padding(.vertical, 10).contentShape(Rectangle())
                 }
-                .padding(.vertical, 10).contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .help(agent.description)
+                .accessibilityLabel(agent.name)
+                .accessibilityValue(ready ? "Available" : "Offline")
+                .accessibilityHint(agent.description)
+                .accessibilityIdentifier("workbench-agent-\(agent.id)")
+                if let notice = agent.connectionSecurity {
+                    MacAgentSecurityWarning(agentID: agent.id, notice: notice)
+                }
             }
-            .buttonStyle(.plain)
-            .help(agent.description)
-            .accessibilityLabel(agent.name)
-            .accessibilityValue(ready ? "Available" : "Offline")
-            .accessibilityHint(agent.description)
-            .accessibilityIdentifier("workbench-agent-\(agent.id)")
         }
 
         private func open(_ agent: ConsoleAgent) {

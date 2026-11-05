@@ -16,6 +16,7 @@
             case workspaceChartScroll = "workspace-chart-scroll"
             case workspaceStyles = "workspace-styles"
             case workspaceRichResult = "workspace-rich-result"
+            case workspaceComponentRefinement = "workspace-component-refinement"
             case workspaceHistory = "workspace-history"
             case workspaceActions = "workspace-actions"
             case workspaceActionsHTTP = "workspace-actions-http"
@@ -90,7 +91,9 @@
                     conversationResumeStore: ConversationResumeStore(defaults: defaults),
                     tokenStore: InMemoryTokenStore(), defaults: defaults)
             }
-            if requestedScenario() == .workspaceRichResult {
+            if let scenario = requestedScenario(),
+                [.workspaceRichResult, .workspaceComponentRefinement].contains(scenario)
+            {
                 guard ProcessInfo.processInfo.environment["ASTRAL_UI_TESTING"] == "1",
                     let defaults = UserDefaults(suiteName: "WorkspaceComponentUITest.\(UUID().uuidString)")
                 else { preconditionFailure("Invalid component UI-test configuration.") }
@@ -206,6 +209,11 @@
             }
             if scenario == .workspaceRichResult {
                 installWorkspaceRichResult(on: model)
+                return
+            }
+            if scenario == .workspaceComponentRefinement {
+                installWorkspaceRichResult(on: model)
+                model.canvas = model.canvas.filter { $0.raw["component_id"]?.stringValue == "review-details" }
                 return
             }
             if scenario == .workspaceActions {
@@ -334,7 +342,8 @@
             case .chatComposer, .workspaceStart, .workspaceCanvas, .workspaceChartScroll, .workspaceStyles,
                 .workspaceHistory,
                 .workspaceActions, .workspaceActionsHTTP, .componentActionsHTTP, .componentTimelineHTTP,
-                .workspaceRichResult, .workspaceNavigation, .workspaceNavigationMandatory:
+                .workspaceRichResult, .workspaceComponentRefinement, .workspaceNavigation,
+                .workspaceNavigationMandatory:
                 break
             case .voiceComposer:
                 break
