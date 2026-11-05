@@ -56,6 +56,31 @@ def _agent_badges(agent: Mapping[str, object]) -> list[ComponentView]:
     return badges
 
 
+def _agent_card(agent: Mapping[str, object], content: list[ComponentView]) -> ComponentView:
+    title = agent.get("name") or "Unnamed agent"
+    notice = agent.get("connection_security")
+    if isinstance(notice, Mapping) and notice.get("kind") == "standard_mcp":
+        values = (notice.get("title"), notice.get("message"))
+        if all(
+            isinstance(value, str) and value.strip() and clean_text(value) == value
+            and len(value.encode("utf-8")) <= limit
+            for value, limit in zip(values, (120, 2000), strict=True)
+        ):
+            control = button(
+                "⚠", "chrome_open",
+                {"surface": "remote_mcp", "params": {"notice": "external_mcp_security"}},
+                variant="ghost",
+            ).to_dict()
+            control.pop("type")
+            control["id"] = f"agent-security-warning-{clean_text(agent.get('agent_id') or agent.get('id'))}"
+            control["aria-label"] = notice["title"]
+            return card("", [
+                container([text(title, "h3"), ComponentView("button", control)], direction="row"),
+                *content,
+            ])
+    return card(title, content)
+
+
 def build_agents_view(
     agents: Iterable[Mapping[str, object]] = (),
     *,
@@ -112,8 +137,8 @@ def build_agents_view(
         agent_id = clean_text(agent.get("agent_id") or agent.get("id"))
         enabled = not bool(agent.get("disabled"))
         components.append(
-            card(
-                agent.get("name") or "Unnamed agent",
+            _agent_card(
+                agent,
                 [
                     container(_agent_badges(agent), direction="row"),
                     text(agent.get("description") or "No description supplied."),
@@ -165,8 +190,8 @@ def _build_agent_detail(
     agent_id = clean_text(agent.get("agent_id") or agent.get("id"))
     components: list[ComponentView] = [
         back,
-        card(
-            agent.get("name") or "Unnamed agent",
+        _agent_card(
+            agent,
             [
                 container(_agent_badges(agent), direction="row"),
                 text(agent.get("description") or "No description supplied."),

@@ -723,10 +723,18 @@ struct ComponentView: View {
         )
         .accessibilityValue(ComponentAccessibility.buttonValue(pending: model.paramPickerPending(action: action)))
         .accessibilityAddTraits(compactSettings && compactChip == true ? .isSelected : [])
+        #if os(macOS)
+            let accessibleButton =
+                button
+                .accessibilityLabel(component.raw["aria-label"]?.stringValue ?? label)
+                .accessibilityIdentifier(component.raw["id"]?.stringValue ?? "")
+        #else
+            let accessibleButton = button
+        #endif
         if WorkspaceWelcome.isExample(component) {
-            button.buttonStyle(WelcomeExampleButtonStyle(palette: p))
+            accessibleButton.buttonStyle(WelcomeExampleButtonStyle(palette: p))
         } else {
-            button.buttonStyle(
+            accessibleButton.buttonStyle(
                 AstralButtonStyle(palette: p, variant: variant, chip: compactSettings ? compactChip : nil))
         }
     }

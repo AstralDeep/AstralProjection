@@ -727,6 +727,92 @@
                 tree.contains { $0.label == "magnifyingglass" || $0.label == "Search" && $0.role == "AXImage" })
         }
 
+        func testAgentDirectoryShowsTheTrustedMCPNoticeWithoutAnAgentListAndKeepsNativePeersUnflagged() async throws {
+            let message = "Astral permissions still apply. The provider controls its data handling."
+            let notice: JSONValue = .object([
+                "kind": .string("standard_mcp"), "title": .string("Standard MCP connection"),
+                "message": .string(message),
+            ])
+            let external = try SurfaceFixtures.replacing(
+                SurfaceFixtures.agent(
+                    "remote-mcp-1", name: "Remote MCP", description: "External tools", state: "ready"),
+                path: ["connection_security"], with: notice)
+            let native = SurfaceFixtures.agent(
+                "panatlas-1", name: "PanAtlas", description: "Native agent", state: "ready")
+            let (model, suite) = try SurfaceFixtures.model(menu: SurfaceFixtures.menu(agents: [external, native]))
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            XCTAssertTrue(model.agents.isEmpty)
+            let mount = SurfaceMount(
+                MacWorkbenchAgents(console: try XCTUnwrap(model.console)), model: model,
+                size: CGSize(width: 400, height: 360))
+            defer { mount.close() }
+            try await mount.settle()
+            let tree = try mount.accessibility
+            let warning = try XCTUnwrap(tree.first { $0.identifier == "agent-security-warning-remote-mcp-1" })
+            XCTAssertEqual(warning.label, "Standard MCP connection")
+            XCTAssertEqual(warning.role, "AXButton")
+            XCTAssertTrue(warning.enabled)
+            XCTAssertFalse(tree.contains { $0.identifier == "agent-security-warning-panatlas-1" })
+            let windows = Set(NSApp.windows.map(ObjectIdentifier.init))
+            XCTAssertTrue(
+                WorkbenchAccessibility.press(
+                    identifier: "agent-security-warning-remote-mcp-1", windowTitle: mount.window.title))
+            try await mount.settle()
+            let popover = try XCTUnwrap(
+                NSApp.windows.first {
+                    $0.isVisible && !windows.contains(ObjectIdentifier($0))
+                })
+            popover.title = "Agent security test \(UUID().uuidString)"
+            defer { popover.close() }
+            let content = try XCTUnwrap(WorkbenchAccessibility.snapshot(windowTitle: popover.title)).elements
+            XCTAssertTrue(content.contains { $0.label == message || $0.value == message })
+            XCTAssertTrue(
+                WorkbenchAccessibility.press(
+                    identifier: "agent-security-close-remote-mcp-1", windowTitle: popover.title))
+            try await mount.settle()
+            XCTAssertFalse(popover.isVisible)
+            model.agents = Agent.list(from: .array([external, native]))
+            let legacy = SurfaceMount(AgentsView(), model: model, size: CGSize(width: 500, height: 400))
+            defer { legacy.close() }
+            try await legacy.settle()
+            let legacyTree = try legacy.accessibility
+            XCTAssertTrue(legacyTree.contains { $0.identifier == "agent-security-warning-remote-mcp-1" })
+            XCTAssertFalse(legacyTree.contains { $0.identifier == "agent-security-warning-panatlas-1" })
+        }
+
+        func testServerAgentWarningRetainsItsAccessibleNameAndOpensTheNoticeSurface() async throws {
+            let (model, suite) = try SurfaceFixtures.model()
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            let raw: JSONValue = .object([
+                "type": .string("button"), "id": .string("agent-security-warning-remote-mcp-1"),
+                "label": .string("⚠"), "aria-label": .string("Standard MCP connection"),
+                "action": .string("chrome_open"), "variant": .string("ghost"),
+                "payload": .object([
+                    "surface": .string("remote_mcp"),
+                    "params": .object(["notice": .string("external_mcp_security")]),
+                ]),
+            ])
+            var frames: [JSONValue] = []
+            model.outboundTap = { frames.append(try! JSONValue.parse(Data($0.utf8))) }
+            let mount = SurfaceMount(
+                ComponentView(component: try XCTUnwrap(AstralComponent(json: raw))), model: model,
+                size: CGSize(width: 400, height: 120))
+            defer { mount.close() }
+            try await mount.settle()
+            let warning = try XCTUnwrap(
+                try mount.accessibility.first {
+                    $0.identifier == "agent-security-warning-remote-mcp-1"
+                })
+            XCTAssertEqual(warning.label, "Standard MCP connection")
+            XCTAssertTrue(
+                WorkbenchAccessibility.press(
+                    identifier: "agent-security-warning-remote-mcp-1", windowTitle: mount.window.title))
+            try await mount.settle()
+            XCTAssertEqual(frames.last?["action"], .string("chrome_open"))
+            XCTAssertEqual(frames.last?["payload"]?["surface"], .string("remote_mcp"))
+            XCTAssertEqual(frames.last?["payload"]?["params"]?["notice"], .string("external_mcp_security"))
+        }
+
         func testAgentDirectoryShowsNoMatchAndEmptyStatesAndOpensTheFirstMatchOnReturn() async throws {
             let (model, suite) = try SurfaceFixtures.model()
             defer { UserDefaults.standard.removePersistentDomain(forName: suite) }

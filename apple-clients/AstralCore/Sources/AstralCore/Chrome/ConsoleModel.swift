@@ -50,6 +50,7 @@ public struct ConsoleAgent: Equatable, Sendable, Identifiable {
     public let state: State
     public let owned: Bool
     public let availability: ChromeAvailability?
+    public let connectionSecurity: ConnectionSecurityNotice?
 }
 
 public struct ConsoleCatalog: Equatable, Sendable {
@@ -88,7 +89,8 @@ public struct ConsoleCatalog: Equatable, Sendable {
             agents.append(
                 ConsoleAgent(
                     id: id, name: name, description: description, state: state, owned: owned,
-                    availability: ChromeAvailability(json: row["availability"])))
+                    availability: ChromeAvailability(json: row["availability"]),
+                    connectionSecurity: ConnectionSecurityNotice(json: row["connection_security"])))
         }
         guard Set(scenarios.map(\.id)).count == scenarios.count,
             Set(agents.map(\.id)).count == agents.count

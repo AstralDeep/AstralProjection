@@ -71,6 +71,11 @@ private struct AgentCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain)
+                #if os(macOS)
+                    if let notice = agent.connectionSecurity {
+                        MacAgentSecurityWarning(agentID: agent.id, notice: notice)
+                    }
+                #endif
                 Toggle(
                     "",
                     isOn: Binding(
@@ -111,6 +116,43 @@ private struct AgentCard: View {
         .overlay(RoundedRectangle(cornerRadius: AstralRadius.lg).stroke(p.border))
     }
 }
+
+#if os(macOS)
+    struct MacAgentSecurityWarning: View {
+        @Environment(ThemeStore.self) private var theme
+        let agentID: String
+        let notice: ConnectionSecurityNotice
+        @State private var presented = false
+
+        var body: some View {
+            Button {
+                presented = true
+            } label: {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(theme.palette.warning).frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(notice.title)
+            .accessibilityHint("Shows the security boundary for this connection")
+            .accessibilityIdentifier("agent-security-warning-\(agentID)")
+            .help(notice.title)
+            .popover(isPresented: $presented, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(verbatim: notice.title).font(ConsoleTypography.headline)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(verbatim: notice.message).font(ConsoleTypography.body)
+                        .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                        .accessibilityIdentifier("agent-security-message-\(agentID)")
+                    Button("Close") { presented = false }
+                        .keyboardShortcut(.cancelAction)
+                        .accessibilityIdentifier("agent-security-close-\(agentID)")
+                }
+                .padding(20).frame(width: 360)
+                .foregroundStyle(theme.palette.text).background(theme.palette.surface)
+            }
+        }
+    }
+#endif
 
 struct AuditView: View {
     @Environment(AppModel.self) var model
