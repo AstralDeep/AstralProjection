@@ -257,8 +257,8 @@
                                     "\(job.status.capitalized) · \(job.scheduleKind.replacingOccurrences(of: "_", with: " "))"
                                 )
                                 .font(.caption).foregroundStyle(.secondary)
-                                if let next = job.nextRunAtMillis {
-                                    Text("Next \(Self.date(next))").font(.caption).foregroundStyle(.secondary)
+                                if let next = Self.nextRunDateText(for: job) {
+                                    Text("Next \(next)").font(.caption).foregroundStyle(.secondary)
                                 }
                             }
                             .tag(job.id)
@@ -330,7 +330,7 @@
                         LabeledContent("Schedule", value: job.scheduleKind.replacingOccurrences(of: "_", with: " "))
                         LabeledContent("Expression", value: job.scheduleExpression)
                         LabeledContent("Time zone", value: job.timezone)
-                        if let next = job.nextRunAtMillis { LabeledContent("Next run", value: Self.date(next)) }
+                        if let next = Self.nextRunDateText(for: job) { LabeledContent("Next run", value: next) }
                         if let last = job.lastRunAtMillis { LabeledContent("Last run", value: Self.date(last)) }
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Instruction").font(.headline)
@@ -364,6 +364,11 @@
             } else {
                 ContentUnavailableView("Select a schedule", systemImage: "calendar.badge.clock")
             }
+        }
+
+        static func nextRunDateText(for job: ScheduledWorkJob) -> String? {
+            guard job.status == "active", let next = job.nextRunAtMillis else { return nil }
+            return date(next)
         }
 
         private static func date(_ millis: Int64) -> String {

@@ -54,6 +54,26 @@
             ]).encoded()
         }
 
+        private func scheduleJob(status: String) throws -> ScheduledWorkJob {
+            try XCTUnwrap(
+                ScheduledWorkJob(
+                    json: .object([
+                        "id": .string(jobID), "name": .string("Daily research"),
+                        "instruction": .string("Review the latest results"), "status": .string(status),
+                        "schedule_kind": .string("cron"), "schedule_expr": .string("0 9 * * *"),
+                        "timezone": .string("America/New_York"), "consented_scopes": .array([]),
+                        "next_run_at": .number(1_800_000_000_000), "last_run_at": .null,
+                    ])))
+        }
+
+        func testNextRunDateIsPresentedOnlyForActiveSchedules() throws {
+            let active = try scheduleJob(status: "active")
+            let disabled = try scheduleJob(status: "disabled")
+
+            XCTAssertNotNil(MacScheduledWorkCenter.nextRunDateText(for: active))
+            XCTAssertNil(MacScheduledWorkCenter.nextRunDateText(for: disabled))
+        }
+
         func testUncertainRunReplaysSameSubmissionAndPersistsAcrossStoreRecreation() async throws {
             let suite = "MacScheduledWorkCenterTests." + UUID().uuidString
             let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
