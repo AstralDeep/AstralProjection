@@ -103,6 +103,7 @@
         @State private var selectedPane = MacWorkbenchPane.conversation
         @State private var commandsPresented = false
         @State private var activityPresented = false
+        @State private var workPresented = false
         @State private var agentsPresented = false
         @State private var paletteQuery = ""
         @State private var paletteChoice: MacPaletteAction?
@@ -234,6 +235,7 @@
             .sheet(isPresented: $commandsPresented, onDismiss: finishPalette) {
                 MacWorkbenchCommandPalette(context: paletteContext, query: $paletteQuery) { paletteChoice = $0 }
             }
+            .sheet(isPresented: $workPresented) { MacWorkCenterView(model: model) }
             .sheet(
                 isPresented: Binding(
                     get: { model.projectChooserPresented },
@@ -354,6 +356,10 @@
                 iconButton("waveform.path", label: "Activity") { activityPresented.toggle() }
                     .accessibilityValue(activityPresented ? "Shown" : "Hidden")
                     .accessibilityIdentifier("workbench-activity-toggle")
+                if !WorkReadRequest.watchControls(in: model.chromeMenu).isEmpty {
+                    iconButton("list.bullet.rectangle", label: "Work") { workPresented = true }
+                        .accessibilityIdentifier("workbench-work-toggle")
+                }
                 if model.macBrowser.isEnabled {
                     iconButton("globe", label: "Browser pane") { model.macBrowser.isPresented.toggle() }
                         .accessibilityValue(browserPresented ? "Shown" : "Hidden")

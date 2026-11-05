@@ -1,7 +1,7 @@
 // SwiftUI app entry point for the shared iOS/macOS AstralDeep client; selects a deterministic UI-test fixture
 // model over the real AppModel when running under XCTest.
 // On macOS it also starts the Sparkle updater, gates connecting on the signed minimum build, hosts Settings and
-// rechecks the server connection after wake or reactivation.
+// a menu bar companion, and rechecks the server connection after wake or reactivation.
 
 import AVFoundation
 import AstralCore
@@ -61,7 +61,7 @@ struct AstralApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup("AstralDeep", id: "main") {
             gatedRoot
                 .environment(model)
                 .font(ConsoleTypography.body)
@@ -197,6 +197,27 @@ struct AstralApp: App {
             }
         #endif
         #if os(macOS)
+            MenuBarExtra("AstralDeep", systemImage: "sparkles") {
+                MacMenuBarContent(model: model, updateRequired: updateRequirement != nil)
+            }
+            .menuBarExtraStyle(.menu)
+            Window("Quick Entry", id: "quick-entry") {
+                MacQuickEntryView(model: model, updateRequired: updateRequirement != nil)
+                    .environment(model.themeStore)
+                    .font(ConsoleTypography.body)
+                    .tint(model.themeStore.palette.primary)
+                    .preferredColorScheme(model.themeStore.colorScheme)
+            }
+            .defaultSize(width: 480, height: 260)
+            Window("Scheduled Work", id: "scheduled-work") {
+                MacScheduledWorkCenter(model: model, updateRequired: updateRequirement != nil)
+                    .environment(model)
+                    .environment(model.themeStore)
+                    .font(ConsoleTypography.body)
+                    .tint(model.themeStore.palette.primary)
+                    .preferredColorScheme(model.themeStore.colorScheme)
+            }
+            .defaultSize(width: 900, height: 600)
             Settings {
                 MacSettingsView(updates: updates)
                     .environment(model)
