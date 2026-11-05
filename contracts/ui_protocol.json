@@ -5296,12 +5296,22 @@
       "shape": {
         "event": "outcome_ack",
         "decision": "acknowledge | discard",
-        "incarnation_id": "canonical lowercase uuid4 matching the announced host incarnation"
+        "incarnation_id": "canonical lowercase uuid4 matching the announced host incarnation",
+        "success_receipt": {
+          "type": "computer_host",
+          "host_id": "the current registered host id",
+          "outcome_ack": {
+            "decision": "the audited decision",
+            "incarnation_id": "the acknowledged host incarnation",
+            "connection_generation": "canonical lowercase uuid4 for the current registered socket"
+          }
+        }
       },
       "carried_on": [
-        "ui_event.computer_event (event=outcome_ack)"
+        "ui_event.computer_event (event=outcome_ack)",
+        "computer_host (success receipt after audit acceptance)"
       ],
-      "scope": "One owner intent per outcome-unknown card, sent by the host that reported the retained jobs; acknowledge or discard resolves the earlier unknown result, while every new action stays reviewed and delegated as usual. Discard never cancels a different active chat because the retained job summary has no chat binding. Repeated intents for one card are refused by the sender; the card carries no authority of its own and the server records the decision without ever receiving job output.",
+      "scope": "One owner intent per outcome-unknown card, sent by the host that reported the retained jobs; acknowledge or discard resolves the earlier unknown result, while every new action stays reviewed and delegated as usual. The server sends the matching success receipt only after the audit write is accepted. A lost receipt is retried with the same decision and is idempotently replayed by the current socket; a conflicting decision is refused. The client keeps the card until a matching host, incarnation, decision and connection-generation receipt arrives, and makes a missing receipt retryable after a bounded timeout. Discard never cancels a different active chat because the retained job summary has no chat binding. The card carries no authority of its own and the server records the decision without ever receiving job output.",
       "introduced_by": "macOS retained-host-job outcome reporting",
       "contract": "accept_actions.computer_event"
     },

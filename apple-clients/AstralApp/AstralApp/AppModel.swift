@@ -623,8 +623,11 @@ final class AppModel: NSObject {
     @ObservationIgnored private var conversationNavigationGeneration = 0
     @ObservationIgnored private var conversationResumeStore: ConversationResumeStore
     @ObservationIgnored private var outcomeUnknownStore: OutcomeUnknownStore
+    @ObservationIgnored var outcomeAckWait: @Sendable () async -> Void = {
+        try? await Task.sleep(nanoseconds: 5_000_000_000)
+    }
     @ObservationIgnored private var conversationAccount: ConversationAccount?
-    @ObservationIgnored private var continuity = ConversationContinuityReducer()
+    @ObservationIgnored var continuity = ConversationContinuityReducer()
     private(set) var viewportRefreshFailed = false
     private var viewportSnapshotSupported = false
     private var pendingViewportDevice: DeviceDescriptor?
@@ -772,6 +775,10 @@ final class AppModel: NSObject {
         super.init()
         #if os(macOS)
             macComputerHost.bypassDidEnable = { [weak self] host in self?.withdrawLocalComputerReviews(host) }
+            macComputerHost.outcomeDecisionAcknowledged = { [weak self] host, incarnation, decision, generation in
+                self?.confirmOutcomeUnknown(
+                    hostId: host, incarnationId: incarnation, decision: decision, connectionGeneration: generation)
+            }
             projects.onReconciled = { [weak self] ids in
                 guard let self else { return }
                 try self.macComputerHost.reconcileProjects(ids)
@@ -4398,6 +4405,7 @@ final class AppModel: NSObject {
             let jobs: [OutcomeUnknownRecordJob]
             var decision: String?
             var delivery: Delivery = .pending
+            var decisionConnectionGeneration: String? = nil
             let restored: Bool
             var id: String { hostId + "/" + incarnationId }
         }
@@ -4416,6 +4424,8 @@ final class AppModel: NSObject {
                 outcomeUnknownCard?.decision == nil
             else { return }
             outcomeUnknownCard?.decision = decision
+            let generation = continuity.connectionGeneration
+            outcomeUnknownCard?.decisionConnectionGeneration = generation
             macComputerHost.sendOutcomeDecision(decision)
             let owner = downloadOwner
             let connection = continuity.connectionGeneration
@@ -4428,8 +4438,10 @@ final class AppModel: NSObject {
                         self.outcomeUnknownCard?.incarnationId == incarnation,
                         self.outcomeUnknownCard?.decision == decision
                     else { return }
-                    if delivered, self.connected {
-                        self.clearOutcomeUnknownCard()
+                    if delivered, self.connected, let generation {
+                        self.scheduleOutcomeAckTimeout(
+                            hostId: self.outcomeUnknownCard?.hostId ?? "", incarnationId: incarnation ?? "",
+                            decision: decision, owner: owner, connectionGeneration: generation)
                     } else {
                         self.outcomeUnknownCard?.delivery = .failed
                     }
@@ -4441,6 +4453,9 @@ final class AppModel: NSObject {
             guard let decision = outcomeUnknownCard?.decision,
                 outcomeUnknownCard?.delivery == .failed, outcomeUnknownCardActionable
             else { return }
+            outcomeUnknownCard?.delivery = .pending
+            let generation = continuity.connectionGeneration
+            outcomeUnknownCard?.decisionConnectionGeneration = generation
             macComputerHost.sendOutcomeDecision(decision)
             let owner = downloadOwner
             let connection = continuity.connectionGeneration
@@ -4450,10 +4465,13 @@ final class AppModel: NSObject {
                 let delivered = await self.macComputerHost.flushCurrentSends()
                 await MainActor.run {
                     guard self.downloadOwner == owner, self.continuity.connectionGeneration == connection,
-                        self.outcomeUnknownCard?.incarnationId == incarnation
+                        self.outcomeUnknownCard?.incarnationId == incarnation,
+                        self.outcomeUnknownCard?.decision == decision
                     else { return }
-                    if delivered, self.connected {
-                        self.clearOutcomeUnknownCard()
+                    if delivered, self.connected, let generation {
+                        self.scheduleOutcomeAckTimeout(
+                            hostId: self.outcomeUnknownCard?.hostId ?? "", incarnationId: incarnation ?? "",
+                            decision: decision, owner: owner, connectionGeneration: generation)
                     } else {
                         self.outcomeUnknownCard?.delivery = .failed
                     }
@@ -4467,6 +4485,37 @@ final class AppModel: NSObject {
             }
             outcomeUnknownCard = nil
             macComputerHost.clearUncertainJobs()
+        }
+
+        private func confirmOutcomeUnknown(
+            hostId: String, incarnationId: String, decision: String, connectionGeneration: String
+        ) {
+            guard let card = outcomeUnknownCard, !card.restored, card.hostId == hostId,
+                card.incarnationId == incarnationId, card.decision == decision, card.delivery == .pending,
+                card.decisionConnectionGeneration == connectionGeneration,
+                continuity.connectionGeneration == connectionGeneration,
+                signedIn, card.ownerScope == outcomeOwnerScope(),
+                card.hostId == macComputerHost.hostIdentifier, card.incarnationId == macComputerHost.incarnationId
+            else { return }
+            clearOutcomeUnknownCard()
+        }
+
+        private func scheduleOutcomeAckTimeout(
+            hostId: String, incarnationId: String, decision: String, owner: DownloadOwner?,
+            connectionGeneration: String
+        ) {
+            let wait = outcomeAckWait
+            Task { [weak self] in
+                await wait()
+                guard let self, self.downloadOwner == owner,
+                    self.outcomeUnknownCard?.hostId == hostId,
+                    self.outcomeUnknownCard?.incarnationId == incarnationId,
+                    self.outcomeUnknownCard?.decision == decision,
+                    self.outcomeUnknownCard?.decisionConnectionGeneration == connectionGeneration,
+                    self.outcomeUnknownCard?.delivery == .pending
+                else { return }
+                self.outcomeUnknownCard?.delivery = .failed
+            }
         }
 
         private func outcomeOwnerScope() -> String? {

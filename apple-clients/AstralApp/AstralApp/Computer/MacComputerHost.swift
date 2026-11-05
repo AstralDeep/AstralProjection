@@ -152,6 +152,7 @@
         @ObservationIgnored private let appActivator: @MainActor () -> Void
         nonisolated let incarnationId = UUID().uuidString.lowercased()
         private(set) var uncertainJobs: [ComputerHostRetainedJob] = []
+        var outcomeDecisionAcknowledged: ((String, String, String, String) -> Void)?
         @ObservationIgnored weak var browser: (any MacBrowserVerbHandling)?
         @ObservationIgnored private var auxiliary: [UUID: (task: Task<Void, Never>, command: Bool)] = [:]
         @ObservationIgnored private var browserTail: Task<Void, Never>?
@@ -1070,6 +1071,17 @@
                 if frame.payload["host_id"]?.stringValue == hostId {
                     reconcileBypass(frame.payload["bypass"]?.boolValue)
                     if let ack = frame.payload["project_manifest_ack"] { acceptManifest(ack) }
+                    if let ack = frame.payload["outcome_ack"], let values = ack.objectValue,
+                        Set(values.keys) == ["decision", "incarnation_id", "connection_generation"],
+                        let decision = ack["decision"]?.stringValue,
+                        ["acknowledge", "discard"].contains(decision),
+                        let incarnation = ack["incarnation_id"]?.stringValue,
+                        UUID(uuidString: incarnation)?.uuidString.lowercased() == incarnation,
+                        let generation = ack["connection_generation"]?.stringValue,
+                        UUID(uuidString: generation)?.uuidString.lowercased() == generation
+                    {
+                        outcomeDecisionAcknowledged?(hostId, incarnation, decision, generation)
+                    }
                 }
                 return true
             }

@@ -81,6 +81,7 @@
         }
 
         private func reconnect(_ fixture: Fixture, _ model: AppModel) {
+            _ = model.continuity.beginConnection(UUID().uuidString.lowercased())
             model.connected = true
             fixture.host.bind(owner: "outcome-owner") { fixture.channel.send($0) }
         }
@@ -116,6 +117,20 @@
                 "controller_label": .string("Outcome controller"),
             ])
             return try XCTUnwrap(InboundFrame.parse(String(decoding: json.encoded(), as: UTF8.self)))
+        }
+
+        private func receiveOutcomeAck(
+            _ fixture: Fixture, _ model: AppModel, decision: String, incarnation: String? = nil,
+            connection: String? = nil
+        ) {
+            model.handleFrame(InboundFrame(name: "computer_host", payload: .object([
+                "host_id": .string(fixture.host.hostIdentifier),
+                "outcome_ack": .object([
+                    "decision": .string(decision),
+                    "incarnation_id": .string(incarnation ?? fixture.host.incarnationId),
+                    "connection_generation": .string(connection ?? model.continuity.connectionGeneration ?? ""),
+                ]),
+            ])))
         }
 
         private func account(_ subject: String) throws -> ConversationAccount {
@@ -212,13 +227,28 @@
             XCTAssertEqual(stored.jobs.map(\.id), [job])
             reconnect(fixture, model)
             model.decideOutcomeUnknown("acknowledge")
-            let acknowledged = try await waitUntil(model.outcomeUnknownCard == nil)
-            XCTAssertTrue(acknowledged)
+            let sent = try await waitUntil(
+                model.outcomeUnknownCard?.decision == "acknowledge"
+                    && model.outcomeUnknownCard?.delivery == .pending && fixture.channel.decisions().count == 1)
+            XCTAssertTrue(sent)
+            XCTAssertNotNil(model.outcomeUnknownCard)
+            XCTAssertNotNil(fixture.store.load(key: OutcomeUnknownStore.key(scope: scope(model, owner))))
             let decisions = fixture.channel.decisions()
             XCTAssertEqual(decisions.count, 1)
             XCTAssertEqual(decisions.first?["decision"], .string("acknowledge"))
             XCTAssertEqual(decisions.first?["incarnation_id"], .string(fixture.host.incarnationId))
             for payload in decisions { assertClosedIntent(payload) }
+            receiveOutcomeAck(fixture, model, decision: "discard")
+            XCTAssertNotNil(model.outcomeUnknownCard, "a conflicting receipt cannot clear the pending decision")
+            receiveOutcomeAck(fixture, model, decision: "acknowledge", incarnation: UUID().uuidString.lowercased())
+            XCTAssertNotNil(model.outcomeUnknownCard, "a receipt for another incarnation cannot clear the card")
+            receiveOutcomeAck(
+                fixture, model, decision: "acknowledge",
+                connection: UUID().uuidString.lowercased())
+            XCTAssertNotNil(model.outcomeUnknownCard, "a receipt from another connection cannot clear the card")
+            receiveOutcomeAck(fixture, model, decision: "acknowledge")
+            let acknowledged = try await waitUntil(model.outcomeUnknownCard == nil)
+            XCTAssertTrue(acknowledged)
             XCTAssertNil(fixture.store.load(key: OutcomeUnknownStore.key(scope: scope(model, owner))))
             XCTAssertTrue(fixture.host.uncertainJobs.isEmpty)
             model.decideOutcomeUnknown("discard")
@@ -235,6 +265,11 @@
             await model.handle(.disconnected(reason: "server restart"))
             reconnect(fixture, model)
             model.decideOutcomeUnknown("discard")
+            let sent = try await waitUntil(
+                model.outcomeUnknownCard?.decision == "discard"
+                    && model.outcomeUnknownCard?.delivery == .pending && fixture.channel.decisions().count == 1)
+            XCTAssertTrue(sent)
+            receiveOutcomeAck(fixture, model, decision: "discard")
             let discarded = try await waitUntil(model.outcomeUnknownCard == nil)
             XCTAssertTrue(discarded)
             let decisions = fixture.channel.decisions()
@@ -261,11 +296,47 @@
             XCTAssertNotNil(fixture.store.load(key: OutcomeUnknownStore.key(scope: scope(model, owner))))
             reconnect(fixture, model)
             model.retryOutcomeUnknown()
+            let sent = try await waitUntil(
+                model.outcomeUnknownCard?.decision == "acknowledge"
+                    && model.outcomeUnknownCard?.delivery == .pending && fixture.channel.decisions().count == 1)
+            XCTAssertTrue(sent)
+            receiveOutcomeAck(fixture, model, decision: "acknowledge")
             let retried = try await waitUntil(model.outcomeUnknownCard == nil)
             XCTAssertTrue(retried)
             XCTAssertEqual(fixture.channel.decisions().count, 1)
             XCTAssertNil(fixture.store.load(key: OutcomeUnknownStore.key(scope: scope(model, owner))))
             XCTAssertTrue(fixture.host.uncertainJobs.isEmpty)
+        }
+
+        func testMissingServerReceiptKeepsDecisionRetryableUntilReceiptArrives() async throws {
+            let fixture = try fixture()
+            defer { fixture.close() }
+            let owner = try account("owner-a")
+            let model = boundModel(fixture, owner)
+            fixture.host.consume(try session(on: fixture))
+            _ = try await startBackgroundJob(fixture)
+            await model.handle(.disconnected(reason: "server restart"))
+            reconnect(fixture, model)
+            let timeout = AsyncStream<Void>.makeStream()
+            model.outcomeAckWait = {
+                for await _ in timeout.stream { break }
+            }
+            model.decideOutcomeUnknown("discard")
+            let sent = try await waitUntil(
+                model.outcomeUnknownCard?.decision == "discard"
+                    && model.outcomeUnknownCard?.delivery == .pending && fixture.channel.decisions().count == 1)
+            XCTAssertTrue(sent)
+            timeout.continuation.yield(())
+            let timedOut = try await waitUntil(model.outcomeUnknownCard?.delivery == .failed)
+            XCTAssertTrue(timedOut)
+            XCTAssertNotNil(fixture.store.load(key: OutcomeUnknownStore.key(scope: scope(model, owner))))
+            model.retryOutcomeUnknown()
+            let retried = try await waitUntil(fixture.channel.decisions().count == 2)
+            XCTAssertTrue(retried)
+            XCTAssertNotNil(model.outcomeUnknownCard)
+            receiveOutcomeAck(fixture, model, decision: "discard")
+            XCTAssertNil(model.outcomeUnknownCard)
+            XCTAssertNil(fixture.store.load(key: OutcomeUnknownStore.key(scope: scope(model, owner))))
         }
 
         func testCardControlsExposeAccessibleNamesAndStableIdentifiers() async throws {
