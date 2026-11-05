@@ -64,6 +64,12 @@
             XCTAssertTrue(io.runningApplications().allSatisfy { $0.pid > 0 })
             XCTAssertNil(io.applicationURL(bundleIdentifier: "fixture.missing." + UUID().uuidString))
         }
+        func testRunningApplicationIdentityRejectsInvalidAndTerminatedProcesses() {
+            XCTAssertTrue(MacComputerLiveSystem.hasLiveProcess(pid: 1, isTerminated: false))
+            XCTAssertFalse(MacComputerLiveSystem.hasLiveProcess(pid: 0, isTerminated: false))
+            XCTAssertFalse(MacComputerLiveSystem.hasLiveProcess(pid: -1, isTerminated: false))
+            XCTAssertFalse(MacComputerLiveSystem.hasLiveProcess(pid: 1, isTerminated: true))
+        }
         func testNonexistentApplicationCannotActivateOrAcceptAXMutation() {
             let io = MacComputerLiveSystem.shared
             XCTAssertNil(io.bundleIdentifier(for: pid_t.max))
