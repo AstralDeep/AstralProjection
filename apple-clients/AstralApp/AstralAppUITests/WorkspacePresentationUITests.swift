@@ -399,7 +399,11 @@ final class WorkspacePresentationUITests: XCTestCase {
 
         let composer = app.descendants(matching: .any).matching(identifier: "chat-composer-input").firstMatch
         XCTAssertTrue(composer.exists)
-        composer.press()
+        #if os(macOS)
+            app.typeKey(.tab, modifierFlags: [])
+        #else
+            composer.press()
+        #endif
         composer.typeText("Second line")
         XCTAssertTrue((composer.value as? String ?? "").contains("Second line"))
         let attachment = XCTAttachment(screenshot: app.screenshot())
