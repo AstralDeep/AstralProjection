@@ -745,6 +745,9 @@ struct InputBar: View {
             if !model.staged.isEmpty {
                 AttachmentChips(staged: model.staged) { model.removeAttachment($0) }
             }
+            #if os(macOS)
+                MacReferenceComposerSection(references: model.composerReferences, input: $input)
+            #endif
             if let selection = model.turnSelection, let summary = model.console?.selectionSummary(selection) {
                 selectionSummary(summary)
             }
@@ -885,7 +888,13 @@ struct InputBar: View {
             .submitLabel(.send).onSubmit(composerPrimarySend)
             .disabled(model.mutationsLocked).focused($focused)
             #if os(macOS)
-                .onExitCommand { model.cancelTurnRestoringQueue() }
+                .onExitCommand {
+                    if model.composerReferences.query != nil {
+                        model.composerReferences.dismiss()
+                    } else {
+                        model.cancelTurnRestoringQueue()
+                    }
+                }
             #endif
     }
 

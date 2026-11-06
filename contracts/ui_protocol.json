@@ -3885,6 +3885,49 @@
         "queue_items": 16,
         "skipped_calls": 50
       }
+    },
+    "composer_references_v1": {
+      "version": 1,
+      "scope": "Owner-typed @-references in the macOS DirectDownload composer over the active project's locally granted folders, token chips with previews, and the project instructions indicator with its per-project ingestion toggle; every other client and every server without the capability keeps the ordinary composer behavior unchanged.",
+      "negotiation": "Authenticated register_ui capabilities includes composer_references_v1, device.composer_references_v1 is exactly true, and the device type is macos with the console contract. The server acknowledges only in the rote_config device profile described below; without that acknowledgment the instructions indicator reports the feature as unavailable and the composer keeps its existing behavior.",
+      "acknowledgment": "rote_config.device_profile.console.composer_references = {version:1, instructions_reporting:bool, ingestion_control:bool}. instructions_reporting false means the server reports no instruction files and the indicator says so; ingestion_control false keeps the toggle disabled.",
+      "clients": {
+        "macos": "@-completion over granted folders, reference chips with previews, project instructions indicator, read-only viewer, per-project ingestion toggle",
+        "browser": "compatible legacy composer",
+        "windows": "compatible legacy composer",
+        "android": "compatible legacy composer",
+        "ios": "compatible legacy composer",
+        "watch": "compatible legacy composer"
+      },
+      "tokens": {
+        "syntax": "@file:<path>, @folder:<path> and @diff:<path> inside the owner-typed message text; each token is delimited by whitespace and carries no whitespace or @ inside <path>",
+        "path": "<root-name>[/<subpath>] where <root-name> matches exactly one root name published in the project manifest and no component is . or ..; at most 1024 Unicode scalar values",
+        "diff": "@diff requests the working-tree diff of the granted folder named by <path>; the server resolves it at send time",
+        "resolution": "The server resolves every token through audited host reads under the same identity-bound grants and exclusions as the other file verbs; an unresolvable or excluded token is refused for that turn and never silently dropped. Tokens are owner gestures, never model choices."
+      },
+      "completion": "Completion is a client-side gesture aid over the active project's granted folders only, equivalent to the host's list_dir boundary: excluded and protected names are never offered even when typed in full. When the host is offline or the project grant is revoked the composer shows a clear unavailable state and the message can still be sent without chips.",
+      "instructions_report": {
+        "transport": "Bearer REST GET api/projects/{project_id}/instructions with the same device and connection headers as the project catalog",
+        "shape": {
+          "project_id": "canonical lowercase UUID",
+          "enabled": "whether the server ingests the project's instruction files",
+          "revision": "positive safe JSON integer fencing the toggle",
+          "files": [
+            {
+              "path": "<root-name>[/<subpath>] matching the token path space, at most 1024 Unicode scalar values",
+              "sha256": "lowercase hex SHA-256 of the loaded file bytes, as shown in the turn guidance digest",
+              "bytes": "non-negative safe JSON integer at most 4000000"
+            }
+          ]
+        },
+        "bounds": "at most 32 files with unique paths; the read-only viewer reads the owner's local granted copy bounded to 262144 bytes",
+        "unavailable": "The server refuses the read with a refused detail code and message; 404 or any failure before acknowledgment leaves the indicator in its unavailable state."
+      },
+      "ingestion_toggle": {
+        "transport": "Bearer REST PUT api/projects/{project_id}/instructions with body {enabled:bool, revision:<report revision>}",
+        "response": "the full instructions_report shape after the change; a stale revision is refused with a mismatch detail",
+        "authority": "Only a server that acknowledged ingestion_control accepts the toggle; the server authorizes it against the project catalog authority and audits the change. The client enables the control only after that acknowledgment."
+      }
     }
   },
   "frame_contracts": {
