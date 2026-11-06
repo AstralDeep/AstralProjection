@@ -80,8 +80,27 @@
                             .foregroundStyle(theme.palette.muted)
                             .accessibilityIdentifier("settings-notification-status")
                     }
+                    Picker("Alerts", selection: modeBinding) {
+                        Text("Never").tag(MacWorkNotificationMode.never)
+                        Text("Only in background").tag(MacWorkNotificationMode.onlyInBackground)
+                        Text("Always").tag(MacWorkNotificationMode.always)
+                    }
+                    .pickerStyle(.radioGroup)
+                    .accessibilityIdentifier("settings-notification-mode")
+                    Toggle("Approval needed", isOn: kindBinding(.approval))
+                        .accessibilityIdentifier("settings-notification-approval")
+                    Toggle("Questions", isOn: kindBinding(.question))
+                        .accessibilityIdentifier("settings-notification-question")
+                    Toggle("Turn finished", isOn: kindBinding(.finished))
+                        .accessibilityIdentifier("settings-notification-finished")
+                    Toggle("Turn failed", isOn: kindBinding(.failed))
+                        .accessibilityIdentifier("settings-notification-failed")
+                    Toggle("Include the chat title", isOn: chatTitleBinding)
+                        .accessibilityIdentifier("settings-notification-chat-title")
                     Text(
-                        "Generic alerts for pending approvals and chat turns lasting at least 30 seconds. Alert text never includes chat content."
+                        "Alerts name only the event kind and never include tool arguments or output. The chat title "
+                            + "appears only when you turn it on above. Question alerts wait for the background so they "
+                            + "never repeat the in-app banner."
                     )
                     .font(ConsoleTypography.caption).foregroundStyle(theme.palette.muted)
                     HStack {
@@ -148,6 +167,40 @@
             case .denied: return "Off in System Settings"
             case .notDetermined: return "Off"
             }
+        }
+
+        private var modeBinding: Binding<MacWorkNotificationMode> {
+            Binding(
+                get: { model.macWorkNotificationSettings.mode },
+                set: {
+                    var settings = model.macWorkNotificationSettings
+                    settings.mode = $0
+                    model.macWorkNotificationSettings = settings
+                })
+        }
+
+        private func kindBinding(_ kind: MacWorkNotificationKind) -> Binding<Bool> {
+            Binding(
+                get: { model.macWorkNotificationSettings.isEnabled(kind) },
+                set: {
+                    var settings = model.macWorkNotificationSettings
+                    if $0 {
+                        settings.enabledKinds.insert(kind)
+                    } else {
+                        settings.enabledKinds.remove(kind)
+                    }
+                    model.macWorkNotificationSettings = settings
+                })
+        }
+
+        private var chatTitleBinding: Binding<Bool> {
+            Binding(
+                get: { model.macWorkNotificationSettings.includeChatTitle },
+                set: {
+                    var settings = model.macWorkNotificationSettings
+                    settings.includeChatTitle = $0
+                    model.macWorkNotificationSettings = settings
+                })
         }
 
         private func refreshNotificationAuthorization() async {
