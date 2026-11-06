@@ -64,7 +64,7 @@ final class ComposerReferencesFrameTests: XCTestCase {
     }
 
     func testReportDecodesPathsHashesAndBounds() throws {
-        let decoded = try XCTUnwrap(ProjectInstructionsReport(json: report()))
+        let decoded = try ProjectInstructionsReport(json: report())
         XCTAssertEqual(decoded.projectId, projectId)
         XCTAssertTrue(decoded.enabled)
         XCTAssertEqual(decoded.revision, 3)
@@ -73,13 +73,17 @@ final class ComposerReferencesFrameTests: XCTestCase {
         XCTAssertEqual(decoded.files.map(\.bytes), [2048])
 
         let hex64 = String(repeating: "a", count: 64)
-        XCTAssertNil(ProjectInstructionsReport(json: report(files: [file("a.md", String(repeating: "A", count: 64))])))
-        XCTAssertNil(ProjectInstructionsReport(json: report(files: [file("a.md", String(repeating: "a", count: 63))])))
-        XCTAssertNil(ProjectInstructionsReport(json: report(files: [file("/absolute/a.md", hex64)])))
-        XCTAssertNil(ProjectInstructionsReport(json: report(files: [file("../a.md", hex64)])))
-        XCTAssertNil(ProjectInstructionsReport(json: report(files: [file("a.md", hex64, bytes: -1)])))
-        XCTAssertNil(ProjectInstructionsReport(json: report(revision: 0)))
-        XCTAssertNil(ProjectInstructionsReport(json: report(extra: true)))
+        let digits = String(repeating: "0", count: 64)
+        XCTAssertNoThrow(try ProjectInstructionsReport(json: report(files: [file("a.md", digits)])))
+        XCTAssertThrowsError(
+            try ProjectInstructionsReport(json: report(files: [file("a.md", String(repeating: "A", count: 64))])))
+        XCTAssertThrowsError(
+            try ProjectInstructionsReport(json: report(files: [file("a.md", String(repeating: "a", count: 63))])))
+        XCTAssertThrowsError(try ProjectInstructionsReport(json: report(files: [file("/absolute/a.md", hex64)])))
+        XCTAssertThrowsError(try ProjectInstructionsReport(json: report(files: [file("../a.md", hex64)])))
+        XCTAssertThrowsError(try ProjectInstructionsReport(json: report(files: [file("a.md", hex64, bytes: -1)])))
+        XCTAssertThrowsError(try ProjectInstructionsReport(json: report(revision: 0)))
+        XCTAssertThrowsError(try ProjectInstructionsReport(json: report(extra: true)))
     }
 
     func testReportTransportUsesBearerProjectsPathAndParsesTheResponse() async throws {

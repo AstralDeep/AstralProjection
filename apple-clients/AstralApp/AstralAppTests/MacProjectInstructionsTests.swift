@@ -60,19 +60,22 @@
             ]))
         }
 
-        private func reportJSON(enabled: Bool, revision: UInt64, path: String = "demo/AGENTS.md") -> JSONValue {
-            .object([
+        private func file(_ path: String, _ hash: String, bytes: Double = 1) -> JSONValue {
+            .object(["path": .string(path), "sha256": .string(hash), "bytes": .number(bytes)])
+        }
+
+        private func reportJSON(
+            enabled: Bool, revision: UInt64, files: [JSONValue]? = nil, extraKey: Bool = false
+        ) -> JSONValue {
+            var object: [String: JSONValue] = [
                 "project_id": .string(project),
                 "enabled": .bool(enabled),
                 "revision": .number(Double(revision)),
-                "files": .array([
-                    .object([
-                        "path": .string(path),
-                        "sha256": .string(String(repeating: "a", count: 64)),
-                        "bytes": .number(512),
-                    ])
-                ]),
-            ])
+                "files": .array(
+                    files ?? [file("demo/AGENTS.md", String(repeating: "a", count: 64), bytes: 512)]),
+            ]
+            if extraKey { object["surprise"] = .bool(true) }
+            return .object(object)
         }
 
         func testAcknowledgmentRequiresVersionOneAndExactKeys() {
@@ -89,24 +92,19 @@
                 ])))
         }
 
-        func testReportDecodingRejectsBadHashesDuplicatePathsAndWrongKeys() {
-            XCTAssertNotNil(ProjectInstructionsReport(json: reportJSON(enabled: true, revision: 3)))
-            var broken = reportJSON(enabled: true, revision: 3)
-            broken["files"] = .array([
-                .object(["path": .string("demo/AGENTS.md"), "sha256": .string("abc"), "bytes": .number(1)])
-            ])
-            XCTAssertNil(ProjectInstructionsReport(json: broken))
-            var duplicated = reportJSON(enabled: true, revision: 3)
-            func entry(_ hash: String) -> JSONValue {
-                .object(["path": .string("a.md"), "sha256": .string(hash), "bytes": .number(1)])
-            }
-            duplicated["files"] = .array([
-                entry(String(repeating: "a", count: 64)), entry(String(repeating: "b", count: 64)),
-            ])
-            XCTAssertNil(ProjectInstructionsReport(json: duplicated))
-            var extra = reportJSON(enabled: true, revision: 3)
-            extra["surprise"] = .bool(true)
-            XCTAssertNil(ProjectInstructionsReport(json: extra))
+        func testReportDecodingRejectsBadHashesDuplicatePathsAndWrongKeys() throws {
+            XCTAssertNoThrow(try ProjectInstructionsReport(json: reportJSON(enabled: true, revision: 3)))
+            XCTAssertThrowsError(
+                try ProjectInstructionsReport(
+                    json: reportJSON(enabled: true, revision: 3, files: [file("demo/AGENTS.md", "abc")])))
+            XCTAssertThrowsError(
+                try ProjectInstructionsReport(
+                    json: reportJSON(enabled: true, revision: 3, files: [
+                        file("a.md", String(repeating: "a", count: 64)),
+                        file("a.md", String(repeating: "b", count: 64)),
+                    ])))
+            XCTAssertThrowsError(
+                try ProjectInstructionsReport(json: reportJSON(enabled: true, revision: 3, extraKey: true)))
         }
 
         func testRoteConfigAcknowledgmentWiresTheIndicatorAndLegacyServersStayIdle() {
