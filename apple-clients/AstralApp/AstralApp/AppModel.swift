@@ -2944,11 +2944,7 @@ final class AppModel: NSObject {
             ["ui_render", "ui_update", "ui_upsert", "ui_append", "ui_stream_data"]
                 .contains(frame.name)
         {
-            if frame.name == "ui_render", frame.payload["request_generation"] == nil {
-                showAlertSentOutsideATurn(frame)
-            } else {
-                reduceTransient(frame)
-            }
+            reduceTransient(frame)
             return
         }
         switch frame.name {
@@ -3646,7 +3642,9 @@ final class AppModel: NSObject {
     }
 
     private func showAlertSentOutsideATurn(_ frame: InboundFrame) {
-        guard frame.renderTarget == "chat", frame.chatId == nil || frame.chatId == activeChatId,
+        guard frame.name == "ui_render", frame.renderTarget == "chat",
+            frame.chatId == nil || frame.chatId == activeChatId,
+            frame.payload["connection_generation"]?.stringValue == continuity.connectionGeneration,
             let alert = frame.renderComponents.first(where: { $0.type == "alert" }),
             let message = alert.raw["message"]?.stringValue, !message.isEmpty
         else { return }
@@ -3655,7 +3653,11 @@ final class AppModel: NSObject {
     }
 
     private func reduceTransient(_ frame: InboundFrame) {
-        guard viewportRequest == nil, continuity.acceptTransient(frame) else { return }
+        guard viewportRequest == nil else { return }
+        guard continuity.acceptTransient(frame) else {
+            showAlertSentOutsideATurn(frame)
+            return
+        }
         acceptingTransientNavigationRender = true
         defer { acceptingTransientNavigationRender = false }
         switch frame.name {

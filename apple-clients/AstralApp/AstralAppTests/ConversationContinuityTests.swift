@@ -265,28 +265,33 @@ final class ConversationContinuityTests: XCTestCase {
         XCTAssertEqual(model.visibleCanvas.map(\.fallbackText), ["Committed next"])
     }
 
-    func testAnAlertSentOutsideATurnReachesTheBannerWithoutTouchingTheConversation() {
+    private func staleFenceAlert(target: String = "chat", connection stamped: String? = nil) -> InboundFrame {
+        inbound(
+            """
+            {"type":"ui_render","target":"\(target)","chat_id":"\(chat)",
+            "connection_generation":"\(stamped ?? connection)","request_generation":"\(commit)",
+            "base_render_revision":0,"frame_sequence":9,
+            "components":[{"type":"alert","message":"Scheduled","variant":"success"}]}
+            """)
+    }
+
+    func testAnAlertSentAfterATurnReachesTheBannerWithoutTouchingTheConversation() {
         let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
         XCTAssertTrue(model.beginConversationConnection(connection))
         model.activeChatId = chat
-        model.handleFrame(
-            inbound(
-                #"{"type":"ui_render","target":"chat","components":[{"type":"alert","message":"Scheduled","variant":"success"}]}"#
-            ))
+        model.handleFrame(staleFenceAlert())
         XCTAssertEqual(model.errorBanner, "Scheduled")
         XCTAssertFalse(model.bannerIsError)
         XCTAssertTrue(model.turns.isEmpty)
         XCTAssertTrue(model.transientTurns.isEmpty)
     }
 
-    func testAnUnfencedCanvasRenderIsStillIgnored() {
+    func testAStaleFrameThatIsNotAChatAlertForThisConnectionIsStillIgnored() {
         let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
         XCTAssertTrue(model.beginConversationConnection(connection))
         model.activeChatId = chat
-        model.handleFrame(
-            inbound(
-                #"{"type":"ui_render","target":"canvas","components":[{"type":"alert","message":"Late","variant":"error"}]}"#
-            ))
+        model.handleFrame(staleFenceAlert(target: "canvas"))
+        model.handleFrame(staleFenceAlert(connection: "66666666-6666-4666-8666-666666666666"))
         XCTAssertNil(model.errorBanner)
         XCTAssertTrue(model.canvas.isEmpty)
     }
