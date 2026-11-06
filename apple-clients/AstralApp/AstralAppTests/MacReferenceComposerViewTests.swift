@@ -104,12 +104,19 @@
             model.bindConversationAccount(
                 try XCTUnwrap(ConversationAccount(issuer: "https://iam.example.test", subject: "reference-owner")))
             model.chromeMenu = try XCTUnwrap(ChromeMenuModel.fromJSON(SurfaceFixtures.json("chrome-console")))
+            let page = Data(
+                """
+                {"projects":[{"project_id":"\(project)","name":"Research","position":0,
+                 "revision":1,"created_at":1,"updated_at":1}],"next_cursor":null}
+                """.utf8)
             model.projects.bind(
                 scope: "owner",
                 client: RestClient(
                     serverBase: URL(string: "https://example.test")!, tokenProvider: { nil },
-                    transport: { _ in (200, Data(#"{"projects":[],"next_cursor":null}"#.utf8)) }))
+                    transport: { _ in (200, page) }))
             model.projects.negotiate(true)
+            await model.projects.refresh()
+            model.projects.select(project)
             suites.append(suite)
 
             let mount = mount(

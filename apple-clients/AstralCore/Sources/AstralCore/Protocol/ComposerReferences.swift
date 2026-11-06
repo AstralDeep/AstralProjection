@@ -65,8 +65,8 @@ public struct ProjectInstructionsReport: Sendable, Equatable {
             let revision = ProjectIdentity.integer(object["revision"], positive: true),
             let items = object["files"]?.arrayValue, items.count <= ProjectInstructionsFile.maximumFiles
         else { return nil }
-        let decoded = try? items.map { file -> ProjectInstructionsFile in
-            guard let file = ProjectInstructionsFile(json: $0) else { throw ProjectAPIError.invalidResponse }
+        let decoded = try? items.map { item -> ProjectInstructionsFile in
+            guard let file = ProjectInstructionsFile(json: item) else { throw ProjectAPIError.invalidResponse }
             return file
         }
         guard let files = decoded, Set(files.map(\.path)).count == files.count else { return nil }

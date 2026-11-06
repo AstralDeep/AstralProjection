@@ -274,23 +274,26 @@
         let openViewer: (String) -> Void
         private var p: AstralPalette { theme.palette }
 
+        private var includedBinding: Binding<Bool> {
+            Binding(
+                get: {
+                    if case .loaded(let report) = model.projectInstructions.state { return report.enabled }
+                    return false
+                },
+                set: { enabled in Task { await model.projectInstructions.setEnabled(enabled) } })
+        }
+
         var body: some View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text("Project instructions")
                         .font(ConsoleTypography.headline).foregroundStyle(p.text)
                     Spacer()
-                    Toggle("Included", isOn: Binding(
-                        get: {
-                            if case .loaded(let report) = model.projectInstructions.state { return report.enabled }
-                            return false
-                        },
-                        set: { enabled in Task { await model.projectInstructions.setEnabled(enabled) } }
-                    ))
-                    .toggleStyle(.switch).controlSize(.small)
-                    .disabled(!model.projectInstructions.ingestionControlled || model.projectInstructions.working)
-                    .accessibilityLabel("Include project instructions")
-                    .accessibilityIdentifier("project-instructions-toggle")
+                    Toggle("Included", isOn: includedBinding)
+                        .toggleStyle(.switch).controlSize(.small)
+                        .disabled(!model.projectInstructions.ingestionControlled || model.projectInstructions.working)
+                        .accessibilityLabel("Include project instructions")
+                        .accessibilityIdentifier("project-instructions-toggle")
                 }
                 content.frame(maxWidth: 380, alignment: .leading)
             }

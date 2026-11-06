@@ -12,6 +12,38 @@
         static let unavailableDetail =
             #"{"detail":{"code":"project_instructions_unavailable","message":"The project folders are not readable."}}"#
 
+        private actor CallCounter {
+            private(set) var count = 0
+            func hit() { count += 1 }
+        }
+
+        private actor RequestRecorder {
+            let payload: Data
+            private(set) var requests: [URLRequest] = []
+            init(payload: Data) { self.payload = payload }
+            func respond(_ request: URLRequest) -> (Int, Data) {
+                requests.append(request)
+                return (200, payload)
+            }
+        }
+
+        private actor ToggleRecorder {
+            let initial: Data
+            let after: Data
+            private(set) var bodies: [Data] = []
+            init(initial: Data, after: Data) {
+                self.initial = initial
+                self.after = after
+            }
+            func respond(_ request: URLRequest) -> (Int, Data) {
+                if request.httpMethod == "PUT" {
+                    bodies.append(request.body ?? Data())
+                    return (200, after)
+                }
+                return (200, initial)
+            }
+        }
+
         private func acknowledgement(
             reporting: Bool = true, control: Bool = true
         ) -> ComposerReferencesAcknowledgement {
@@ -100,45 +132,40 @@
         }
 
         func testWithoutNegotiationTheModelStaysIdleAndNeverCallsTheServer() async {
-            var requests = 0
-            let model = MacProjectInstructions()
-            model.bind(
-                scope: "owner",
-                client: RestClient(
-                    serverBase: URL(string: "https://example.test")!, tokenProvider: { "token" },
-                    transport: { _ in
-                        requests += 1
-                        return (200, Data())
-                    }))
-            model.acknowledge(nil)
-            await model.refresh()
-            await model.setEnabled(false)
-            XCTAssertEqual(model.state, .idle)
-            XCTAssertEqual(requests, 0)
-            XCTAssertFalse(model.ingestionControlled)
-        }
-
-        func testRefreshLoadsTheServerReportAndFailuresReportTheRefusal() async throws {
-            var requests: [URLRequest] = []
-            let body = try JSONEncoder().encode(reportJSON(enabled: true, revision: 7))
+            let counter = CallCounter()
             let model = MacProjectInstructions()
             model.bind(
                 scope: "owner",
                 client: RestClient(
                     serverBase: URL(string: "https://example.test")!, tokenProvider: { "token" },
                     transport: { request in
-                        requests.append(request)
-                        if request.url?.path.hasSuffix("/instructions") == true, request.httpMethod == "GET" {
-                            return (200, body)
-                        }
-                        return (404, Data())
+                        await counter.hit()
+                        return (200, Data())
                     }))
+            model.acknowledge(nil)
+            await model.refresh()
+            await model.setEnabled(false)
+            XCTAssertEqual(model.state, .idle)
+            let calls = await counter.count
+            XCTAssertEqual(calls, 0)
+            XCTAssertFalse(model.ingestionControlled)
+        }
+
+        func testRefreshLoadsTheServerReportAndFailuresReportTheRefusal() async throws {
+            let recorder = RequestRecorder(payload: try JSONEncoder().encode(reportJSON(enabled: true, revision: 7)))
+            let model = MacProjectInstructions()
+            model.bind(
+                scope: "owner",
+                client: RestClient(
+                    serverBase: URL(string: "https://example.test")!, tokenProvider: { "token" },
+                    transport: { await recorder.respond($0) }))
             model.acknowledge(acknowledgement())
             model.select(project: project)
             await model.refresh()
             guard case .loaded(let report) = model.state else { return XCTFail("expected a loaded report") }
             XCTAssertEqual(report.files.map(\.path), ["demo/AGENTS.md"])
             XCTAssertEqual(report.revision, 7)
+            let requests = await recorder.requests
             XCTAssertEqual(requests.count, 1)
             XCTAssertTrue(requests[0].url?.path.hasSuffix("api/projects/\(project)/instructions") == true)
             XCTAssertEqual(requests[0].value(forHTTPHeaderField: "Authorization"), "Bearer token")
@@ -165,30 +192,27 @@
         }
 
         func testToggleNeedsIngestionControlAndSendsTheFencedRevision() async throws {
-            var bodies: [Data] = []
-            let initial = try JSONEncoder().encode(reportJSON(enabled: true, revision: 7))
-            let after = try JSONEncoder().encode(reportJSON(enabled: false, revision: 8))
+            let recorder = ToggleRecorder(
+                initial: try JSONEncoder().encode(reportJSON(enabled: true, revision: 7)),
+                after: try JSONEncoder().encode(reportJSON(enabled: false, revision: 8)))
             let model = MacProjectInstructions()
             model.bind(
                 scope: "owner",
                 client: RestClient(
                     serverBase: URL(string: "https://example.test")!, tokenProvider: { "token" },
-                    transport: { request in
-                        if request.httpMethod == "PUT" {
-                            bodies.append(request.body ?? Data())
-                            return (200, after)
-                        }
-                        return (200, initial)
-                    }))
+                    transport: { await recorder.respond($0) }))
             model.acknowledge(acknowledgement(reporting: true, control: false))
             model.select(project: project)
             await model.refresh()
             guard case .loaded = model.state else { return XCTFail("expected a loaded report") }
             await model.setEnabled(false)
-            XCTAssertTrue(bodies.isEmpty, "the toggle must not call the server without the ingestion acknowledgment")
+            let missedBodies = await recorder.bodies
+            XCTAssertTrue(
+                missedBodies.isEmpty, "the toggle must not call the server without the ingestion acknowledgment")
 
             model.acknowledge(acknowledgement(reporting: true, control: true))
             await model.setEnabled(false)
+            let bodies = await recorder.bodies
             XCTAssertEqual(bodies.count, 1)
             let sent = try XCTUnwrap(JSONValue.parse(bodies[0]).objectValue)
             XCTAssertEqual(sent["enabled"], .bool(false))

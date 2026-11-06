@@ -156,9 +156,8 @@
                     failure = failure ?? "The project folder \(rootName) is no longer available."
                     continue
                 }
-                let under =
-                    directory.lowercased() == rootName.lowercased()
-                    ? "" : String(directory.dropFirst(rootName.count + 1))
+                let isRoot = directory.lowercased() == rootName.lowercased()
+                let under = isRoot ? "" : String(directory.dropFirst(rootName.count + 1))
                 let target = under.isEmpty ? root : root + "/" + under
                 do {
                     let listing = try workspace.list(target)
