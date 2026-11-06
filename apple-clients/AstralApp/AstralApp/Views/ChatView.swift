@@ -953,6 +953,23 @@ struct InputBar: View {
                     .accessibilityIdentifier("composer-side-question-open")
                     .help("Ask a side question (Command-;)")
                 }
+                if model.planInteractionAvailable {
+                    Button {
+                        model.togglePlanMode()
+                    } label: {
+                        Image(systemName: "list.clipboard").font(.system(size: 18))
+                            .foregroundStyle(model.planModeActive ? p.primary : p.muted)
+                            .frame(width: 44, height: 44)
+                            .background(
+                                model.planModeActive ? p.primary.opacity(0.16) : .clear,
+                                in: RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Plan mode")
+                    .accessibilityValue(model.planModeActive ? "On" : "Off")
+                    .accessibilityIdentifier("composer-plan-toggle")
+                    .help("Plan with the agent before it acts; the server confirms the mode")
+                }
             #endif
             VoiceComposerControls()
             if let console = model.console {

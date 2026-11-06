@@ -106,9 +106,9 @@ final class ManifestDriftTests: XCTestCase {
             Set(manifest.componentTypes),
             Set(ClientDispositions.allComponentTypes),
             "component_types drift — update Dispositions.swift + parity matrix")
-        XCTAssertEqual(manifest.pushTypes.count, 78)
+        XCTAssertEqual(manifest.pushTypes.count, 83)
         XCTAssertEqual(manifest.componentTypes.count, 43)
-        XCTAssertEqual(manifest.acceptActions.count, 180)
+        XCTAssertEqual(manifest.acceptActions.count, 186)
         XCTAssertTrue(Set(manifest.acceptActions).isSuperset(of: ["chrome_work_result_save", "chrome_job_stop"]))
         XCTAssertTrue(
             Set(manifest.acceptActions).isSuperset(of: [
@@ -317,6 +317,47 @@ final class ManifestDriftTests: XCTestCase {
 
     func testWatchHandlesNotificationForBackgroundContinuity() {
         XCTAssertEqual(ClientDispositions.watch.frames["notification"], .handled)
+    }
+
+    func testPlanInteractionFramesAreMacOnlyWithClosedActionInventory() throws {
+        let manifest = try loadManifest()
+        let planFrames = Set([
+            "plan_mode_state", "plan_proposal", "plan_mode_notice",
+            "question_request", "question_resolved",
+        ])
+        XCTAssertTrue(planFrames.isSubset(of: Set(manifest.pushTypes.map(\.name))))
+        let planActions = Set(manifest.acceptActions.filter { $0.hasPrefix("plan_") || $0.hasPrefix("question_") })
+        XCTAssertEqual(
+            planActions,
+            Set([
+                "plan_approve", "plan_approve_review", "plan_mode_set",
+                "plan_revise", "question_skip", "question_submit",
+            ]))
+        XCTAssertEqual(ClientDispositions.macos.frames["plan_mode_state"], .handled)
+        XCTAssertEqual(ClientDispositions.macos.frames["question_request"], .handled)
+        for client in [ClientDispositions.ios, ClientDispositions.watch] {
+            for frame in planFrames {
+                guard case .ignored = client.frames[frame] else {
+                    return XCTFail("\(client.client) must ignore macOS-only plan frame \(frame)")
+                }
+            }
+        }
+        let macDevice = DeviceDescriptor.macos(viewportWidth: 1200, viewportHeight: 800)
+        macDevice.planInteractionSupported = true
+        let registration = try JSONValue.parse(
+            Data(
+                Outbound.registerUI(
+                    token: "test", sessionId: nil, device: macDevice,
+                    resumed: false, planInteractionSupported: true).utf8))
+        XCTAssertEqual(registration["device"]?["plan_interaction_v1"], .bool(true))
+        XCTAssertTrue(registration["capabilities"]?.arrayValue?.contains(.string("plan_interaction_v1")) == true)
+        let plain = try JSONValue.parse(
+            Data(
+                Outbound.registerUI(
+                    token: "test", sessionId: nil,
+                    device: DeviceDescriptor.ios(viewportWidth: 390, viewportHeight: 844),
+                    resumed: false).utf8))
+        XCTAssertFalse(plain["capabilities"]?.arrayValue?.contains(.string("plan_interaction_v1")) == true)
     }
 
     func testCredentialRefreshPushesAreMacOnly() {

@@ -430,4 +430,112 @@ final class WorkspacePresentationUITests: XCTestCase {
         screenshot.lifetime = .keepAlways
         add(screenshot)
     }
+
+    #if os(macOS)
+        func testPlanToggleShowsServerConfirmedBadgeAndRefusalsAsNotice() {
+            let app = XCUIApplication()
+            app.launchArguments = ["--astral-ui-test-first-login", "plan-interaction"]
+            app.launchEnvironment["ASTRAL_UI_TESTING"] = "1"
+            app.launch()
+            defer { app.terminate() }
+
+            let toggle = app.buttons["composer-plan-toggle"]
+            XCTAssertTrue(toggle.waitForExistence(timeout: 10))
+            XCTAssertEqual(toggle.value as? String, "Off")
+            XCTAssertFalse(app.descendants(matching: .any)["chat-mode-badge"].exists)
+
+            toggle.press()
+            let badge = app.descendants(matching: .any)["chat-mode-badge"]
+            XCTAssertTrue(badge.waitForExistence(timeout: 5), "the badge appears only after the server confirms")
+            XCTAssertEqual(toggle.value as? String, "On")
+            XCTAssertTrue(app.buttons["plan-approve"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.buttons["plan-revise"].exists)
+            XCTAssertTrue(app.buttons["plan-approve-review"].exists)
+
+            let composer = app.descendants(matching: .any).matching(identifier: "chat-composer-input").firstMatch
+            XCTAssertTrue(composer.waitForExistence(timeout: 5))
+            composer.press()
+            composer.typeText("delete the staging cluster now")
+            app.buttons["Send message"].press()
+
+            let notice = app.descendants(matching: .any)["plan-mode-notice"]
+            XCTAssertTrue(
+                notice.waitForExistence(timeout: 5),
+                "the server's plan-mode refusal appears as a notice, not an error banner")
+            XCTAssertTrue(
+                notice.label.contains("not applied"),
+                "the refusal text is a plan-mode notice, not an error")
+            XCTAssertFalse(app.buttons["Dismiss"].exists)
+
+            app.buttons["plan-approve"].press()
+            XCTAssertFalse(badge.waitForExistence(timeout: 5), "approving returns to execute mode")
+            let cardTitle = app.descendants(matching: .any)["plan-card-title"]
+            XCTAssertTrue(cardTitle.waitForExistence(timeout: 5))
+            XCTAssertTrue(
+                (cardTitle.label as String).contains("Approved"),
+                "the plan card shows the server's approved status")
+        }
+
+        func testPlanReviseSendsFeedbackAndQuestionPanelSubmitsSkipsAndTimesOut() {
+            let app = XCUIApplication()
+            app.launchArguments = ["--astral-ui-test-first-login", "plan-questions"]
+            app.launchEnvironment["ASTRAL_UI_TESTING"] = "1"
+            app.launch()
+            defer { app.terminate() }
+
+            let toggle = app.buttons["composer-plan-toggle"]
+            XCTAssertTrue(toggle.waitForExistence(timeout: 10))
+            toggle.press()
+            XCTAssertTrue(app.buttons["plan-revise"].waitForExistence(timeout: 5))
+            app.buttons["plan-revise"].press()
+
+            let feedback = app.descendants(matching: .any).matching(identifier: "plan-revise-feedback").firstMatch
+            XCTAssertTrue(feedback.waitForExistence(timeout: 5))
+            feedback.press()
+            feedback.typeText("Move the rollback before cutover")
+            app.buttons["plan-revise-send"].press()
+            XCTAssertTrue(
+                app.staticTexts["Replicate the schema with the rollback stage moved before cutover"]
+                    .waitForExistence(timeout: 5),
+                "the server supersedes the plan with version 2")
+
+            let submit = app.buttons["question-submit"]
+            XCTAssertTrue(app.buttons["question-option-1-2"].waitForExistence(timeout: 5))
+            XCTAssertFalse(submit.isEnabled, "Return and Submit stay disabled until every question has an answer")
+            app.buttons["question-option-1-2"].press()
+            XCTAssertTrue(submit.waitForExistence(timeout: 2))
+            XCTAssertTrue(submit.isEnabled)
+            submit.press()
+            XCTAssertTrue(
+                app.staticTexts["Replicate the schema with the rollback stage moved before cutover"]
+                    .waitForExistence(timeout: 5))
+
+            let skip = app.buttons["question-skip"]
+            XCTAssertTrue(skip.waitForExistence(timeout: 5))
+            skip.press()
+            let blocked = app.descendants(matching: .any)["question-blocked"]
+            XCTAssertTrue(
+                blocked.waitForExistence(timeout: 10),
+                "after the server timeout the panel closes with the blocked state shown")
+            XCTAssertFalse(app.buttons["question-submit"].exists)
+        }
+
+        func testQuestionPanelAddressedToAnotherChatNeverShowsHere() {
+            let app = XCUIApplication()
+            app.launchArguments = ["--astral-ui-test-first-login", "plan-interaction"]
+            app.launchEnvironment["ASTRAL_UI_TESTING"] = "1"
+            app.launch()
+            defer { app.terminate() }
+
+            let toggle = app.buttons["composer-plan-toggle"]
+            XCTAssertTrue(toggle.waitForExistence(timeout: 10))
+            toggle.press()
+            XCTAssertTrue(app.buttons["plan-approve"].waitForExistence(timeout: 5))
+            XCTAssertFalse(
+                app.buttons["question-submit"].exists,
+                "the fixture addresses its question_request to another chat")
+            XCTAssertFalse(app.buttons["question-skip"].exists)
+            XCTAssertFalse(app.descendants(matching: .any)["question-blocked"].exists)
+        }
+    #endif
 }

@@ -176,6 +176,9 @@
                                     .allowsHitTesting(layout.canvasVisible).accessibilityHidden(!layout.canvasVisible)
                             }
                             .frame(maxHeight: .infinity)
+                            if model.planInteractionNegotiated {
+                                PlanInteractionDock()
+                            }
                             InputBar(
                                 input: Binding(get: { model.composerDraft }, set: { model.composerDraft = $0 }),
                                 workbenchStyle: true
@@ -317,6 +320,7 @@
                 Text(title).font(ConsoleTypography.subheadline.weight(.semibold)).lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .help(title)
+                PlanModeBadge()
                 if hasCanvas && !(layout.conversationVisible && layout.canvasVisible) {
                     Menu {
                         Button("Conversation") {

@@ -58,6 +58,15 @@ public struct ClientDispositions: Sendable {
         "chat_queue_updated": "macOS-only turn_steer_v1 queue chips; other clients keep the legacy composer",
         "chat_steer_recorded": "macOS-only turn_steer_v1 steer receipt; other clients keep the legacy composer",
         "chat_steer_refused": "macOS-only turn_steer_v1 steer refusal; other clients keep the legacy composer",
+        "plan_mode_notice": "macOS-only plan_interaction_v1 refusal notice; other clients keep the legacy composer",
+        "plan_mode_state":
+            "macOS-only plan_interaction_v1 mode and plan state; other clients keep the legacy composer",
+        "plan_proposal":
+            "macOS-only plan_interaction_v1 plan proposal card; other clients keep the legacy composer",
+        "question_request":
+            "macOS-only plan_interaction_v1 docked question panel; other clients keep the legacy composer",
+        "question_resolved":
+            "macOS-only plan_interaction_v1 question resolution; other clients keep the legacy composer",
         "computer_host":
             "076 presence of another of the owner's computers — surface refresh pending the Apple follow-up",
         "computer_request":
@@ -119,6 +128,8 @@ public struct ClientDispositions: Sendable {
             "chat_queue_updated": .handled, "chat_steer_recorded": .handled,
             "chat_steer_refused": .handled, "side_question_result": .handled,
             "ui_auth_refresh_ready": .handled, "ui_auth_refreshed": .handled,
+            "plan_mode_state": .handled, "plan_proposal": .handled, "plan_mode_notice": .handled,
+            "question_request": .handled, "question_resolved": .handled,
         ]) { _, new in new },
         components: fullComponentSet(fallbacks: [
             "audio": "web-only media, server degrade ladder (044 channel decision)",
@@ -210,6 +221,7 @@ public struct ClientDispositions: Sendable {
         "rote_config", "saved_components_list", "side_question_result", "stream_data", "stream_error",
         "stream_list", "stream_subscribed", "stream_unsubscribed",
         "system_config", "task_completed", "task_started", "tool_progress",
+        "plan_mode_notice", "plan_mode_state", "plan_proposal", "question_request", "question_resolved",
         "ui_append", "ui_auth_refresh_ready", "ui_auth_refreshed", "ui_render", "ui_stream_data", "ui_update",
         "ui_upsert",
         "user_message_acked", "user_preferences", "voice_announcement_media", "voice_local_announcement",

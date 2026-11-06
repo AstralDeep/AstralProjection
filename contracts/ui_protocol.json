@@ -3885,6 +3885,138 @@
         "queue_items": 16,
         "skipped_calls": 50
       }
+    },
+    "plan_interaction_v1": {
+      "version": 1,
+      "scope": "Owner-controlled plan mode, the plan proposal card, and the ask_user question panel docked above the macOS DirectDownload composer. The client only renders server-owned state and sends owner events; every other client and every server without the capability keeps the ordinary composer behavior unchanged.",
+      "negotiation": "Authenticated register_ui capabilities includes plan_interaction_v1, device.plan_interaction_v1 is exactly true, and the device type is macos with the console contract. The server acknowledges only in the rote_config device profile described below; without that acknowledgment the composer behaves exactly as it does today.",
+      "acknowledgment": "rote_config.device_profile.console.plan_interaction = {version:1}. The Mac composer shows the Plan toggle, plan card and question panel only after that acknowledgment; mode, plan state and answer validity are server decisions.",
+      "clients": {
+        "macos": "Plan toggle in the composer with a header mode badge, plan proposal card with Approve, Revise and Approve with manual review, docked ask_user question panel with numbered options, free text, Submit and Skip",
+        "browser": "compatible legacy composer",
+        "windows": "compatible legacy composer",
+        "android": "compatible legacy composer",
+        "ios": "compatible legacy composer",
+        "watch": "compatible legacy composer"
+      },
+      "client_actions": {
+        "plan_mode_set": {
+          "exact_fields": [
+            "enabled"
+          ],
+          "enabled": "boolean owner toggle request; the badge changes only when the server confirms with plan_mode_state"
+        },
+        "plan_approve": {
+          "exact_fields": [
+            "plan_id",
+            "version"
+          ]
+        },
+        "plan_approve_review": {
+          "exact_fields": [
+            "plan_id",
+            "version"
+          ],
+          "meaning": "approve the plan and require the owner's manual review of each subsequent mutating action; it never approves any action card"
+        },
+        "plan_revise": {
+          "exact_fields": [
+            "plan_id",
+            "version",
+            "feedback"
+          ],
+          "feedback": "1-20000 Unicode scalar values after trimming; owner-typed text only"
+        },
+        "question_submit": {
+          "exact_fields": [
+            "question_id",
+            "answers"
+          ],
+          "answers": "object with exactly one entry per question id in the request; each value is the chosen option text or owner-typed free text, 1-2000 Unicode scalar values after trimming"
+        },
+        "question_skip": {
+          "exact_fields": [
+            "question_id"
+          ]
+        }
+      },
+      "server_events": {
+        "plan_mode_state": {
+          "fields": [
+            "chat_id",
+            "mode",
+            "plan_status",
+            "plan_version",
+            "review"
+          ],
+          "mode": "plan | execute; the authoritative mode the badge renders",
+          "plan_status": "none | proposed | approved",
+          "plan_version": "positive integer plan version or null when none",
+          "review": "auto | manual; manual means the owner reviews each subsequent mutating action"
+        },
+        "plan_proposal": {
+          "fields": [
+            "chat_id",
+            "plan_id",
+            "version",
+            "steps",
+            "assumptions",
+            "files",
+            "apps"
+          ],
+          "plan_id": "canonical lowercase UUIDv4",
+          "version": "positive integer; a revision supersedes the previous version",
+          "steps": "1-50 non-empty strings; the ordered plan steps",
+          "assumptions": "0-50 non-empty strings",
+          "files": "0-100 non-empty strings; repository or document paths the plan expects to touch",
+          "apps": "0-50 non-empty strings; applications the plan expects to drive"
+        },
+        "plan_mode_notice": {
+          "fields": [
+            "chat_id",
+            "code",
+            "message"
+          ],
+          "codes": [
+            "plan_mode_active",
+            "plan_not_approved",
+            "plan_stale",
+            "invalid_input"
+          ],
+          "message": "1-2000 Unicode scalar values; the composer renders it as a plan-mode notice, never as an error banner"
+        },
+        "question_request": {
+          "fields": [
+            "chat_id",
+            "question_id",
+            "questions",
+            "timeout_ms"
+          ],
+          "question_id": "canonical lowercase UUIDv4",
+          "questions": "1-3 objects with exactly {id, prompt, options}; id canonical lowercase UUIDv4, prompt 1-500 Unicode scalar values, options 0-8 non-empty strings of 1-200 Unicode scalar values each; zero options means free text only",
+          "timeout_ms": "1000-600000; after the server times out it sends question_resolved with disposition timed_out"
+        },
+        "question_resolved": {
+          "fields": [
+            "chat_id",
+            "question_id",
+            "disposition"
+          ],
+          "disposition": "answered | skipped | timed_out | superseded; timed_out closes the panel with the blocked state shown"
+        }
+      },
+      "approval_isolation": "Approving a plan never approves an action card, and answering a question never answers an approval banner; each still requires its own authorize_action or remote_op_decision control. A plan-mode notice is a notice, not an error banner.",
+      "routing": "Frames carry chat_id; a chat's plan card, mode badge and question panel render only for the currently open chat, so a panel addressed to another chat never shows in the current chat.",
+      "identity": "Every client action carries submission_id and request_generation from the standard ui_event envelope plus its client_message_id, so plan and question events correlate with the owner gesture in the audit chain.",
+      "bounds": {
+        "questions_per_request": 3,
+        "options_per_question": 8,
+        "plan_steps": 50,
+        "plan_files": 100,
+        "plan_apps": 50,
+        "message_scalars": 20000,
+        "timeout_ms_max": 600000
+      }
     }
   },
   "frame_contracts": {
@@ -4720,6 +4852,26 @@
       "category": "operations"
     },
     {
+      "name": "plan_mode_notice",
+      "category": "chat"
+    },
+    {
+      "name": "plan_mode_state",
+      "category": "chat"
+    },
+    {
+      "name": "plan_proposal",
+      "category": "chat"
+    },
+    {
+      "name": "question_request",
+      "category": "chat"
+    },
+    {
+      "name": "question_resolved",
+      "category": "chat"
+    },
+    {
       "name": "rote_config",
       "category": "bootstrap"
     },
@@ -5006,6 +5158,12 @@
     "get_saved_components",
     "load_chat",
     "new_chat",
+    "plan_approve",
+    "plan_approve_review",
+    "plan_mode_set",
+    "plan_revise",
+    "question_skip",
+    "question_submit",
     "register_external_agent",
     "remote_op_decision",
     "revision_apply",
