@@ -342,11 +342,12 @@ final class ManifestDriftTests: XCTestCase {
                 }
             }
         }
+        let macDevice = DeviceDescriptor.macos(viewportWidth: 1200, viewportHeight: 800)
+        macDevice.planInteractionSupported = true
         let registration = try JSONValue.parse(
             Data(
                 Outbound.registerUI(
-                    token: "test", sessionId: nil,
-                    device: DeviceDescriptor.macos(viewportWidth: 1200, viewportHeight: 800),
+                    token: "test", sessionId: nil, device: macDevice,
                     resumed: false, planInteractionSupported: true).utf8))
         XCTAssertEqual(registration["device"]?["plan_interaction_v1"], .bool(true))
         XCTAssertTrue(registration["capabilities"]?.arrayValue?.contains(.string("plan_interaction_v1")) == true)

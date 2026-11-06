@@ -350,7 +350,9 @@
                 } else {
                     model.handleFrame(
                         InboundFrame.parse(
-                            """{"type":"chat_status","chat_id":"\(planChatId)","status":"done","message":"Done"}"""
+                            """
+                            {"type":"chat_status","chat_id":"\(planChatId)","status":"done","message":"Done"}
+                            """
                         )!)
                 }
             case "plan_approve":
