@@ -243,10 +243,9 @@ public struct QuestionResolution: Sendable, Equatable {
 }
 
 public enum PlanInteractionOutbound {
-    static let maximumMessageScalars = 20_000
     static let maximumAnswerScalars = 2_000
 
-    static func ownerText(_ text: String, limit: Int = maximumMessageScalars) -> String? {
+    static func ownerText(_ text: String, limit: Int = 20_000) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= limit else { return nil }
         return trimmed
@@ -264,13 +263,13 @@ public enum PlanInteractionOutbound {
     }
 
     static func planAction(
-        _ action: String, planId: String, version: Int, sessionId: String?,
+        _ decision: String, planId: String, version: Int, sessionId: String?,
         submissionId: String = UUID().uuidString.lowercased(),
         requestGeneration: String = UUID().uuidString.lowercased()
     ) -> String? {
         guard continuityUUID4(planId) != nil, version > 0 else { return nil }
         return action(
-            action,
+            decision,
             ["plan_id": .string(planId), "version": .number(Double(version))],
             sessionId: sessionId, submissionId: submissionId, requestGeneration: requestGeneration)
     }

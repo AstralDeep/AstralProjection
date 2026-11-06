@@ -364,7 +364,10 @@
             XCTAssertEqual(actions(sent()), ["plan_approve"])
             model.handleFrame(planState("execute", status: "approved", version: 1, review: "manual"))
             try await mount.settle()
-            XCTAssertTrue((try mount.accessibility).contains { $0.identifier == "plan-status-approved" })
+            let title = (try mount.accessibility).first { $0.identifier == "plan-card-title" }
+            XCTAssertTrue(
+                title?.label.contains("Approved") == true,
+                "the combined card title shows the approved status")
         }
     }
 #endif

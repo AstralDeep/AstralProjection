@@ -107,7 +107,8 @@
                     .accessibilityIdentifier("plan-card-title")
                     ScrollView {
                         VStack(alignment: .leading, spacing: 8) {
-                            section("Steps") {
+                            VStack(alignment: .leading, spacing: 4) {
+                                sectionHeader("Steps")
                                 ForEach(Array(proposal.steps.enumerated()), id: \.offset) { index, step in
                                     HStack(alignment: .top, spacing: 6) {
                                         Text("\(index + 1).").font(ConsoleTypography.caption.weight(.semibold))
@@ -118,21 +119,24 @@
                                 }
                             }
                             if !proposal.assumptions.isEmpty {
-                                section("Assumptions") {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    sectionHeader("Assumptions")
                                     ForEach(proposal.assumptions, id: \.self) { assumption in
                                         bullet(assumption)
                                     }
                                 }
                             }
                             if !proposal.files.isEmpty {
-                                section("Files it expects to touch") {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    sectionHeader("Files it expects to touch")
                                     ForEach(proposal.files, id: \.self) { file in
                                         bullet(file)
                                     }
                                 }
                             }
                             if !proposal.apps.isEmpty {
-                                section("Apps it expects to drive") {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    sectionHeader("Apps it expects to drive")
                                     ForEach(proposal.apps, id: \.self) { app in
                                         bullet(app)
                                     }
@@ -248,13 +252,9 @@
                 .isEmpty
         }
 
-        private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title.uppercased()).font(ConsoleTypography.caption2.weight(.bold))
-                    .foregroundStyle(p.muted)
-                content()
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        private func sectionHeader(_ title: String) -> some View {
+            Text(title.uppercased()).font(ConsoleTypography.caption2.weight(.bold))
+                .foregroundStyle(p.muted)
         }
 
         private func bullet(_ text: String) -> some View {
@@ -365,8 +365,20 @@
                 Text(prompt.prompt).font(ConsoleTypography.caption.weight(.medium)).foregroundStyle(p.text)
                     .accessibilityIdentifier("question-prompt-\(index + 1)")
                 if !prompt.options.isEmpty {
-                    FlowLayoutOrRow(options: prompt.options) { optionIndex, option in
-                        optionButton(index: index, prompt: prompt, optionIndex: optionIndex, option: option)
+                    if prompt.options.count <= 3 {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(Array(prompt.options.enumerated()), id: \.offset) { optionIndex, option in
+                                optionButton(index: index, prompt: prompt, optionIndex: optionIndex, option: option)
+                            }
+                        }
+                    } else {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(Array(prompt.options.enumerated()), id: \.offset) { optionIndex, option in
+                                    optionButton(index: index, prompt: prompt, optionIndex: optionIndex, option: option)
+                                }
+                            }
+                        }
                     }
                 }
                 TextField(
@@ -414,29 +426,6 @@
         private func freeText(for prompt: QuestionPrompt) -> String {
             guard let answer = model.questionAnswer(for: prompt) else { return "" }
             return prompt.options.contains(answer) ? "" : answer
-        }
-    }
-
-    private struct FlowLayoutOrRow<Content: View>: View {
-        let options: [String]
-        @ViewBuilder let content: (Int, String) -> Content
-
-        var body: some View {
-            if options.count <= 3 {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(Array(options.enumerated()), id: \.offset) { index, option in
-                        content(index, option)
-                    }
-                }
-            } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(Array(options.enumerated()), id: \.offset) { index, option in
-                            content(index, option)
-                        }
-                    }
-                }
-            }
         }
     }
 

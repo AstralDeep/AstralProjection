@@ -329,7 +329,10 @@ final class ManifestDriftTests: XCTestCase {
         let planActions = Set(manifest.acceptActions.filter { $0.hasPrefix("plan_") || $0.hasPrefix("question_") })
         XCTAssertEqual(
             planActions,
-            ["plan_approve", "plan_approve_review", "plan_mode_set", "plan_revise", "question_skip", "question_submit"])
+            Set([
+                "plan_approve", "plan_approve_review", "plan_mode_set",
+                "plan_revise", "question_skip", "question_submit",
+            ]))
         XCTAssertEqual(ClientDispositions.macos.frames["plan_mode_state"], .handled)
         XCTAssertEqual(ClientDispositions.macos.frames["question_request"], .handled)
         for client in [ClientDispositions.ios, ClientDispositions.watch] {
@@ -342,14 +345,16 @@ final class ManifestDriftTests: XCTestCase {
         let registration = try JSONValue.parse(
             Data(
                 Outbound.registerUI(
-                    token: "test", sessionId: nil, device: DeviceDescriptor.macos(viewportWidth: 1200, viewportHeight: 800),
+                    token: "test", sessionId: nil,
+                    device: DeviceDescriptor.macos(viewportWidth: 1200, viewportHeight: 800),
                     resumed: false, planInteractionSupported: true).utf8))
         XCTAssertEqual(registration["device"]?["plan_interaction_v1"], .bool(true))
         XCTAssertTrue(registration["capabilities"]?.arrayValue?.contains(.string("plan_interaction_v1")) == true)
         let plain = try JSONValue.parse(
             Data(
                 Outbound.registerUI(
-                    token: "test", sessionId: nil, device: DeviceDescriptor.ios(viewportWidth: 390, viewportHeight: 844),
+                    token: "test", sessionId: nil,
+                    device: DeviceDescriptor.ios(viewportWidth: 390, viewportHeight: 844),
                     resumed: false).utf8))
         XCTAssertFalse(plain["capabilities"]?.arrayValue?.contains(.string("plan_interaction_v1")) == true)
     }

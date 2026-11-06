@@ -59,10 +59,14 @@ public struct ClientDispositions: Sendable {
         "chat_steer_recorded": "macOS-only turn_steer_v1 steer receipt; other clients keep the legacy composer",
         "chat_steer_refused": "macOS-only turn_steer_v1 steer refusal; other clients keep the legacy composer",
         "plan_mode_notice": "macOS-only plan_interaction_v1 refusal notice; other clients keep the legacy composer",
-        "plan_mode_state": "macOS-only plan_interaction_v1 mode and plan state; other clients keep the legacy composer",
-        "plan_proposal": "macOS-only plan_interaction_v1 plan proposal card; other clients keep the legacy composer",
-        "question_request": "macOS-only plan_interaction_v1 docked question panel; other clients keep the legacy composer",
-        "question_resolved": "macOS-only plan_interaction_v1 question resolution; other clients keep the legacy composer",
+        "plan_mode_state":
+            "macOS-only plan_interaction_v1 mode and plan state; other clients keep the legacy composer",
+        "plan_proposal":
+            "macOS-only plan_interaction_v1 plan proposal card; other clients keep the legacy composer",
+        "question_request":
+            "macOS-only plan_interaction_v1 docked question panel; other clients keep the legacy composer",
+        "question_resolved":
+            "macOS-only plan_interaction_v1 question resolution; other clients keep the legacy composer",
         "computer_host":
             "076 presence of another of the owner's computers — surface refresh pending the Apple follow-up",
         "computer_request":

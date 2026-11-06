@@ -345,11 +345,13 @@
                             {"type":"plan_mode_notice","chat_id":"\(planChatId)",
                              "code":"plan_mode_active",
                              "message":"Plan mode is on, so that change was not applied. Approve the plan first."}
-                            """ )!)
+                            """
+                            )!)
                 } else {
                     model.handleFrame(
                         InboundFrame.parse(
-                            """{"type":"chat_status","chat_id":"\(planChatId)","status":"done","message":"Done"}""" )!)
+                            """{"type":"chat_status","chat_id":"\(planChatId)","status":"done","message":"Done"}"""
+                        )!)
                 }
             case "plan_approve":
                 state.planMode = false
@@ -367,7 +369,8 @@
                         """
                         {"type":"question_resolved","chat_id":"\(planChatId)",
                          "question_id":"\(questionId)","disposition":"answered"}
-                        """ )!)
+                        """
+                        )!)
                 model.handleFrame(
                     questionRequest(chatId: planChatId, prompt: "Should the old cluster stay up for a week?"))
             case "question_skip":
@@ -376,7 +379,8 @@
                         """
                         {"type":"question_resolved","chat_id":"\(planChatId)",
                          "question_id":"\(questionId)","disposition":"skipped"}
-                        """ )!)
+                        """
+                        )!)
                 model.handleFrame(
                     questionRequest(chatId: planChatId, prompt: "Which maintenance window should we book?"))
                 Task { @MainActor in
@@ -386,7 +390,8 @@
                             """
                             {"type":"question_resolved","chat_id":"\(planChatId)",
                              "question_id":"\(questionId)","disposition":"timed_out"}
-                            """ )!)
+                            """
+                            )!)
                 }
             default:
                 break
@@ -401,7 +406,8 @@
                 {"type":"plan_mode_state","chat_id":"\(planChatId)","mode":"\(mode)",
                  "plan_status":"\(status)","plan_version":\(version.map(String.init) ?? "null"),
                  "review":"\(review)"}
-                """ )!
+                """
+                )!
         }
 
         private static func planProposal(version: Int) -> InboundFrame {
@@ -414,7 +420,8 @@
                  "assumptions":["The staging cluster mirrors production capacity"],
                  "files":["db/migrations/0042_cluster_switch.sql","docs/runbooks/cutover.md"],
                  "apps":["pgAdmin"]}
-                """ )!
+                """
+                )!
         }
 
         private static func questionRequest(
@@ -426,7 +433,8 @@
                  "questions":[{"id":"\(promptId)","prompt":"\(prompt)",
                    "options":["Cluster A","Cluster B","Defer the decision"]}],
                  "timeout_ms":120000}
-                """ )!
+                """
+                )!
         }
 
         private static var workbenchConsoleProfile: InboundFrame {
@@ -447,7 +455,8 @@
                     "composer_max_width":860,"transcript_max_width":720},
                   "turn_steer":{"version":1,"queue_capable":true},
                   "plan_interaction":{"version":1}}}}
-                """ )!
+                """
+                )!
         }
 
         private static var planChromeMenu: InboundFrame {
@@ -457,7 +466,8 @@
                   "topbar":[{"key":"export","kind":"workspace_action","label":"Export page","icon":"download","operation":"export_canvas","context":"live_canvas"}],
                   "menu":[{"key":"account","label":"Account","items":[{"key":"theme","label":"Appearance","surface":"theme"}]}],
                   "signout":{"label":"Sign out"}}}
-                """ )!
+                """
+                )!
         }
 
         @MainActor
