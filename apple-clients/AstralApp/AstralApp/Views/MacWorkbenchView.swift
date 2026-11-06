@@ -374,6 +374,7 @@
                             .accessibilityIdentifier("workbench-stop")
                     }
                 }
+                MacProjectInstructionsIndicator()
                 iconButton("magnifyingglass", label: "Search commands (⌘K)") { presentPalette(query: "") }
                     .disabled(model.mandatorySurface)
             }

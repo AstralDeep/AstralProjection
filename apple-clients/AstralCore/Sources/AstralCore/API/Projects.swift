@@ -156,7 +156,7 @@ extension RestClient {
         }
         return id
     }
-    private func requireProject(_ id: String, _ revision: UInt64 = 1) throws {
+    func requireProject(_ id: String, _ revision: UInt64 = 1) throws {
         guard ProjectIdentity.valid(id), (1...9_007_199_254_740_991).contains(revision) else {
             throw ProjectAPIError.invalidResponse
         }
@@ -169,7 +169,7 @@ extension RestClient {
         if let cursor { result.append(URLQueryItem(name: "cursor", value: cursor)) }
         return result
     }
-    private func projectRequest(
+    func projectRequest(
         _ method: String, _ path: String, body: JSONValue? = nil,
         queryItems: [URLQueryItem] = []
     ) async throws -> JSONValue {
