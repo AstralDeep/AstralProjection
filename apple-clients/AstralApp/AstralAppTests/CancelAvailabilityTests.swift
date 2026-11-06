@@ -85,6 +85,52 @@
             XCTAssertEqual(cancels(sent()).count, 1)
         }
 
+        func testATurnThatEndsWhileAnotherChatIsOpenStopsShowingAsActiveThere() throws {
+            let (model, _) = try model()
+            model.sendChat("A slow question")
+            let turn = try XCTUnwrap(model.localOperationSubmissions.values.first { $0.action == "chat_message" })
+            XCTAssertEqual(turn.chatId, chat)
+            model.activeChatId = other
+            model.statusText = "Accepted"
+            model.handleFrame(
+                try status(
+                    turn.requestGeneration, action: "chat_message", state: "completed", terminal: true, sequence: 1,
+                    chat: chat))
+            XCTAssertTrue(model.localOperationSubmissions.isEmpty)
+            XCTAssertNil(model.statusText)
+            XCTAssertFalse(model.statusShowsActivity)
+        }
+
+        func testASubmissionInAnotherChatIsNotReportedAsActivityHere() throws {
+            let (model, _) = try model()
+            model.sendChat("A slow question")
+            let turn = try XCTUnwrap(model.localOperationSubmissions.values.first { $0.action == "chat_message" })
+            model.activeChatId = other
+            model.turnActive = false
+            model.statusText = "Opening"
+            XCTAssertFalse(model.statusShowsActivity)
+            XCTAssertNotNil(model.localOperationSubmissions[turn.submissionId])
+        }
+
+        func testAnEndOfTurnFrameFromAnotherConnectionLeavesTheSubmissionInPlace() throws {
+            let (model, _) = try model()
+            model.sendChat("A slow question")
+            let turn = try XCTUnwrap(model.localOperationSubmissions.values.first { $0.action == "chat_message" })
+            model.activeChatId = other
+            model.handleFrame(
+                try XCTUnwrap(
+                    InboundFrame.parse(
+                        """
+                        {"type":"operation_status","operation_id":"\(operation)","action":"chat_message",
+                         "surface":"operation","chat_id":"\(chat)",
+                         "connection_generation":"66666666-6666-4666-8666-666666666666",
+                         "request_generation":"\(turn.requestGeneration)","sequence":1,"state":"completed",
+                         "phase":"completed","label":"completed","terminal":true,"retryable":false,"error":null,
+                         "retry_after_ms":null,"updated_at":"2026-10-27T12:00:01Z"}
+                        """)))
+            XCTAssertNotNil(model.localOperationSubmissions[turn.submissionId])
+        }
+
         func testRunningToolRowsAreCancellableButAWaitingApprovalIsNot() throws {
             let (model, sent) = try model()
             model.handleFrame(ActivityFrames.step("s1", chat: chat, status: "in_progress", arguments: #"{"x":1}"#))
