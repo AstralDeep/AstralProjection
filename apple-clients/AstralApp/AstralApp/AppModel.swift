@@ -2809,7 +2809,12 @@ final class AppModel: NSObject {
             retireOrdinarySurfaceRequests(preservingReadIntent: true)
             voice.controlTransportDisconnected()
             clearPendingOperationSubmissions()
-            restoreUnsettledChatSend()
+            if turnActive {
+                restoreUnsettledChatSend(
+                    "The connection dropped before this message finished. Review it and send it again.")
+            } else {
+                unsettledChatSend = nil
+            }
             turnActive = false
             pendingReplace = false
             pendingCanvas = []
@@ -3256,16 +3261,21 @@ final class AppModel: NSObject {
             let ownsActiveChatTurn = operationOwnsActiveChatTurn(
                 action: status.action,
                 requestGeneration: status.requestGeneration)
-            if status.state != "completed" {
-                _ = continuity.retireUncommittedCommit(requestGeneration: status.requestGeneration)
-            }
+            let nothingSaved =
+                pendingCommitRequestGeneration == status.requestGeneration
+                || continuity.requestGeneration == status.requestGeneration
+                && status.state != "completed"
+                && continuity.retireUncommittedCommit(requestGeneration: status.requestGeneration)
+            let restored =
+                ownsActiveChatTurn && nothingSaved && ["failed", "retryable"].contains(status.state)
+                && restoreFailedChatSend(requestGeneration: status.requestGeneration)
             clearLocalOperationSubmission(requestGeneration: status.requestGeneration)
             if ownsActiveChatTurn {
                 settleActiveChatTurn(
                     requestGeneration: status.requestGeneration,
                     discardUncommitted: status.state != "completed")
             }
-            if let message = status.error.objectValue?["message"]?.stringValue {
+            if !restored, let message = status.error.objectValue?["message"]?.stringValue {
                 bannerIsError = true
                 errorBanner = message
                 transientTurns = []
@@ -6763,17 +6773,26 @@ final class AppModel: NSObject {
         unsettledChatSend?.transmitted = true
     }
 
-    private func restoreUnsettledChatSend() {
+    @discardableResult
+    private func restoreUnsettledChatSend(_ notice: String) -> Bool {
         defer { unsettledChatSend = nil }
-        guard turnActive, let send = unsettledChatSend, send.transmitted,
+        guard let send = unsettledChatSend, send.transmitted,
             transientTurns.contains(where: { $0.role == "user" })
-        else { return }
+        else { return false }
         if composerDraft.isEmpty {
             composerDraft = send.text
             if staged.isEmpty { staged = send.attachments }
         }
         bannerIsError = true
-        errorBanner = "The connection dropped before this message finished. Review it and send it again."
+        errorBanner = notice
+        return true
+    }
+
+    private func restoreFailedChatSend(requestGeneration: String) -> Bool {
+        guard let send = unsettledChatSend,
+            localOperationSubmissions[send.submissionId]?.requestGeneration == requestGeneration
+        else { return false }
+        return restoreUnsettledChatSend("This message didn't go through. Review it and send it again.")
     }
 
     private func restoreUnsentQuery(_ text: String, navigation: Int, chatId: String?) {
