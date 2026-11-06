@@ -265,6 +265,32 @@ final class ConversationContinuityTests: XCTestCase {
         XCTAssertEqual(model.visibleCanvas.map(\.fallbackText), ["Committed next"])
     }
 
+    func testAnAlertSentOutsideATurnReachesTheBannerWithoutTouchingTheConversation() {
+        let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
+        XCTAssertTrue(model.beginConversationConnection(connection))
+        model.activeChatId = chat
+        model.handleFrame(
+            inbound(
+                #"{"type":"ui_render","target":"chat","components":[{"type":"alert","message":"Scheduled","variant":"success"}]}"#
+            ))
+        XCTAssertEqual(model.errorBanner, "Scheduled")
+        XCTAssertFalse(model.bannerIsError)
+        XCTAssertTrue(model.turns.isEmpty)
+        XCTAssertTrue(model.transientTurns.isEmpty)
+    }
+
+    func testAnUnfencedCanvasRenderIsStillIgnored() {
+        let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
+        XCTAssertTrue(model.beginConversationConnection(connection))
+        model.activeChatId = chat
+        model.handleFrame(
+            inbound(
+                #"{"type":"ui_render","target":"canvas","components":[{"type":"alert","message":"Late","variant":"error"}]}"#
+            ))
+        XCTAssertNil(model.errorBanner)
+        XCTAssertTrue(model.canvas.isEmpty)
+    }
+
     func testCommitReadyPreludeFencesDetachedCommitAndRejectsWrongScope() {
         let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
         XCTAssertTrue(model.beginConversationConnection(connection))

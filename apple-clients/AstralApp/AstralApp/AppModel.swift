@@ -2944,7 +2944,11 @@ final class AppModel: NSObject {
             ["ui_render", "ui_update", "ui_upsert", "ui_append", "ui_stream_data"]
                 .contains(frame.name)
         {
-            reduceTransient(frame)
+            if frame.name == "ui_render", frame.payload["request_generation"] == nil {
+                showAlertSentOutsideATurn(frame)
+            } else {
+                reduceTransient(frame)
+            }
             return
         }
         switch frame.name {
@@ -3639,6 +3643,15 @@ final class AppModel: NSObject {
         components.filter {
             !isReasoning($0) && !isDocCard($0.componentId) && !isSkeleton($0)
         }
+    }
+
+    private func showAlertSentOutsideATurn(_ frame: InboundFrame) {
+        guard frame.renderTarget == "chat", frame.chatId == nil || frame.chatId == activeChatId,
+            let alert = frame.renderComponents.first(where: { $0.type == "alert" }),
+            let message = alert.raw["message"]?.stringValue, !message.isEmpty
+        else { return }
+        errorBanner = message
+        bannerIsError = alert.raw["variant"]?.stringValue != "success"
     }
 
     private func reduceTransient(_ frame: InboundFrame) {
