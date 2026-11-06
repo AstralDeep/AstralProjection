@@ -3649,7 +3649,7 @@ final class AppModel: NSObject {
             let message = alert.raw["message"]?.stringValue, !message.isEmpty
         else { return }
         errorBanner = message
-        bannerIsError = alert.raw["variant"]?.stringValue != "success"
+        bannerIsError = ["error", "warning"].contains(alert.raw["variant"]?.stringValue)
     }
 
     private func reduceTransient(_ frame: InboundFrame) {

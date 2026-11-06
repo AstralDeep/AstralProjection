@@ -265,13 +265,15 @@ final class ConversationContinuityTests: XCTestCase {
         XCTAssertEqual(model.visibleCanvas.map(\.fallbackText), ["Committed next"])
     }
 
-    private func staleFenceAlert(target: String = "chat", connection stamped: String? = nil) -> InboundFrame {
+    private func staleFenceAlert(
+        target: String = "chat", connection stamped: String? = nil, variant: String = "success"
+    ) -> InboundFrame {
         inbound(
             """
             {"type":"ui_render","target":"\(target)","chat_id":"\(chat)",
             "connection_generation":"\(stamped ?? connection)","request_generation":"\(commit)",
             "base_render_revision":0,"frame_sequence":9,
-            "components":[{"type":"alert","message":"Scheduled","variant":"success"}]}
+            "components":[{"type":"alert","message":"Scheduled","variant":"\(variant)"}]}
             """)
     }
 
@@ -284,6 +286,16 @@ final class ConversationContinuityTests: XCTestCase {
         XCTAssertFalse(model.bannerIsError)
         XCTAssertTrue(model.turns.isEmpty)
         XCTAssertTrue(model.transientTurns.isEmpty)
+    }
+
+    func testOnlyErrorAndWarningAlertsSentAfterATurnLookLikeFailures() {
+        let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
+        XCTAssertTrue(model.beginConversationConnection(connection))
+        model.activeChatId = chat
+        model.handleFrame(staleFenceAlert(variant: "info"))
+        XCTAssertFalse(model.bannerIsError)
+        model.handleFrame(staleFenceAlert(variant: "warning"))
+        XCTAssertTrue(model.bannerIsError)
     }
 
     func testAStaleFrameThatIsNotAChatAlertForThisConnectionIsStillIgnored() {
