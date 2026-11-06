@@ -162,6 +162,11 @@ import SwiftUI
                 if let branch = turn.branch, branch.count > 1 {
                     branchSwitcher(turn, branch: branch)
                 }
+                if let change = turn.memoryChange {
+                    MacLearnedChipView(
+                        turnId: turn.id, change: change, display: model.memoryChipDisplay(change),
+                        pending: model.chatMemorySnapshot(for: model.activeChatId)?.pending ?? 0)
+                }
             }
             .frame(maxWidth: .infinity, alignment: isOwner ? .trailing : .leading)
             .onHover { hovering in
@@ -324,6 +329,108 @@ import SwiftUI
             Task { @MainActor in
                 await Task.yield()
                 proxy.scrollTo("workbench-latest", anchor: .bottom)
+            }
+        }
+    }
+
+    struct MacLearnedChipView: View {
+        @Environment(AppModel.self) private var model
+        @Environment(ThemeStore.self) private var theme
+        let turnId: String
+        let change: MemoryChange
+        let display: AppModel.MemoryChipDisplay
+        let pending: Int
+        @State private var expanded = false
+        private var p: AstralPalette { theme.palette }
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 6) {
+                Button {
+                    expanded.toggle()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "sparkles")
+                        Text("Learned")
+                        Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                    }
+                    .font(ConsoleTypography.caption.weight(.semibold))
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(chipTint.opacity(0.16), in: Capsule())
+                    .overlay(Capsule().stroke(chipTint.opacity(0.4)))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(chipTint)
+                .help("This turn changed your memory")
+                .accessibilityLabel(accessibilitySummary)
+                .accessibilityHint(expanded ? "Collapse memory change" : "Expand memory change")
+                .accessibilityIdentifier("conversation-memory-chip-\(turnId)")
+                if expanded {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(verbatim: change.summary)
+                            .font(ConsoleTypography.caption)
+                            .accessibilityIdentifier("conversation-memory-summary-\(turnId)")
+                        HStack(spacing: 10) {
+                            switch display {
+                            case .pending:
+                                Text("Working…").font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                                    .accessibilityIdentifier("conversation-memory-pending-\(turnId)")
+                            case .conflict:
+                                Text("The server has newer memory changes.")
+                                    .font(ConsoleTypography.caption).foregroundStyle(p.warning)
+                                    .accessibilityIdentifier("conversation-memory-conflict-\(turnId)")
+                                Button("Refresh") { model.refreshChatMemory() }
+                                    .buttonStyle(.plain).foregroundStyle(p.accent)
+                                    .accessibilityLabel("Refresh memory changes")
+                                    .accessibilityIdentifier("conversation-memory-refresh-\(turnId)")
+                            case .idle:
+                                if change.state == .staged {
+                                    Button("Approve") { model.decideMemoryChange(change, approve: true) }
+                                        .buttonStyle(.plain).foregroundStyle(p.success)
+                                        .accessibilityLabel("Approve this memory change")
+                                        .accessibilityIdentifier("conversation-memory-approve-\(turnId)")
+                                    Button("Reject", role: .destructive) {
+                                        model.decideMemoryChange(change, approve: false)
+                                    }
+                                    .buttonStyle(.plain).foregroundStyle(p.error)
+                                    .accessibilityLabel("Reject this memory change")
+                                    .accessibilityIdentifier("conversation-memory-reject-\(turnId)")
+                                } else {
+                                    Button("Undo", role: .destructive) { model.undoMemoryChange(change) }
+                                        .buttonStyle(.plain).foregroundStyle(p.error)
+                                        .accessibilityLabel("Undo this memory change")
+                                        .accessibilityIdentifier("conversation-memory-undo-\(turnId)")
+                                }
+                            }
+                            if pending > 0 {
+                                Button("\(pending) awaiting review") { model.openPersonalization() }
+                                    .buttonStyle(.plain).foregroundStyle(p.accent)
+                                    .accessibilityLabel("Review pending memory, \(pending) awaiting decision")
+                                    .accessibilityIdentifier("conversation-memory-personalization-\(turnId)")
+                            }
+                        }
+                    }
+                    .padding(10)
+                    .background(p.surface.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(p.border))
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("conversation-memory-detail-\(turnId)")
+                }
+            }
+        }
+
+        private var chipTint: Color {
+            switch display {
+            case .conflict: return p.warning
+            case .pending: return p.muted
+            case .idle: return change.state == .staged ? p.warning : p.success
+            }
+        }
+
+        private var accessibilitySummary: String {
+            switch display {
+            case .conflict: return "Learned, change is out of date"
+            case .pending: return "Learned, working"
+            case .idle: return change.state == .staged ? "Learned, awaiting your decision" : "Learned"
             }
         }
     }

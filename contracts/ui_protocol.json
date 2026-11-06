@@ -3885,6 +3885,113 @@
         "queue_items": 16,
         "skipped_calls": 50
       }
+    },
+    "chat_memory_v1": {
+      "version": 1,
+      "scope": "Owner per-chat memory switches (use, learn, forget) and per-turn Learned chips with undo and staged decisions on the macOS DirectDownload client; every other client and every server without the capability keeps the ordinary conversation behavior unchanged.",
+      "negotiation": "Authenticated register_ui capabilities includes chat_memory_v1, device.chat_memory_v1 is exactly true, and the device type is macos with the console contract. The server acknowledges only in the rote_config device profile described below; without that acknowledgment the sidebar and header keep exactly today's items and no chip is rendered.",
+      "acknowledgment": "rote_config.device_profile.console.chat_memory = {version:1}. Without the acknowledgment the client treats per-chat memory as unavailable.",
+      "clients": {
+        "macos": "per-chat memory switches in the chat context and chat header menus, compact Learned chips hydrated from the server, undo and staged approve/reject from the chip, pending count linking to the server-rendered personalization surface",
+        "browser": "compatible legacy conversation",
+        "windows": "compatible legacy conversation",
+        "android": "compatible legacy conversation",
+        "ios": "compatible legacy conversation",
+        "watch": "compatible legacy conversation"
+      },
+      "client_actions": {
+        "chat_memory_use": {
+          "exact_fields": [
+            "chat_id",
+            "enabled",
+            "client_message_id"
+          ],
+          "chat_id": "exact existing chat identity; the server verifies ownership before applying",
+          "enabled": "boolean; the switch the owner chose"
+        },
+        "chat_memory_learn": {
+          "exact_fields": [
+            "chat_id",
+            "enabled",
+            "client_message_id"
+          ],
+          "chat_id": "exact existing chat identity; the server verifies ownership before applying",
+          "enabled": "boolean; the switch the owner chose"
+        },
+        "chat_memory_forget": {
+          "exact_fields": [
+            "chat_id",
+            "client_message_id"
+          ],
+          "chat_id": "exact existing chat identity; the server forgets what this chat taught after its own confirmation-free gate, the client always asks first"
+        },
+        "chat_memory_undo": {
+          "exact_fields": [
+            "chat_id",
+            "change_id",
+            "expected_revision",
+            "client_message_id"
+          ],
+          "change_id": "canonical lowercase UUIDv4 of the change the chip is showing",
+          "expected_revision": "the change revision the chip was showing; a mismatch is refused with code stale_revision"
+        },
+        "chat_memory_decide": {
+          "exact_fields": [
+            "chat_id",
+            "change_id",
+            "decision",
+            "expected_revision",
+            "client_message_id"
+          ],
+          "decision": "approve | reject; only offered while the server marks the change staged",
+          "change_id": "canonical lowercase UUIDv4 of the staged change",
+          "expected_revision": "the staged revision the chip was showing; a mismatch is refused with code stale_revision"
+        }
+      },
+      "server_events": {
+        "chat_memory_state": {
+          "fields": [
+            "chat_id",
+            "use",
+            "learn",
+            "pending"
+          ],
+          "timing": "sent after registration and hydration for the negotiated connection, and after every accepted chat_memory_use, chat_memory_learn and chat_memory_forget intent; the switches reflect the server state after relaunch",
+          "pending": "count of staged changes awaiting an owner decision across this chat"
+        },
+        "memory_change_recorded": {
+          "fields": [
+            "chat_id",
+            "message_id",
+            "change"
+          ],
+          "change": "the authoritative chip state {change_id, state, summary, revision}; state is applied | staged, summary is bounded safe server text, and with PHI protection on the summary never contains raw memory content",
+          "timing": "the reply that settles an undo or decision intent; a duplicate tap before it arrives has no second wire effect"
+        },
+        "memory_change_refused": {
+          "fields": [
+            "chat_id",
+            "code",
+            "message",
+            "change_id?"
+          ],
+          "codes": [
+            "stale_revision",
+            "not_found",
+            "phi_protected",
+            "unavailable"
+          ],
+          "stale_revision": "the target changed since the chip was rendered; the chip shows the conflict and offers a refresh"
+        }
+      },
+      "chip_field": "The optional transcript message field memory_change (see additive_fields) carries the same {change_id, state, summary, revision} shape so chips rehydrate after relaunch; pushes settle live actions.",
+      "personalization_link": "The pending count opens the server-rendered personalization surface with the ordinary chrome_open personalization action; the client never renders memory management itself.",
+      "audit": "Every accepted intent produces the matching server memory.* or skill.* event with the intent's client_message_id in the audit row; the app keeps no local learning log.",
+      "identity": "Every client action carries submission_id and request_generation from the standard ui_event envelope plus its client_message_id, so memory intents correlate with the owner action in the audit chain.",
+      "bounds": {
+        "summary_scalars": 512,
+        "pending": "0-99"
+      }
     }
   },
   "frame_contracts": {
@@ -4603,6 +4710,10 @@
       "category": "chat"
     },
     {
+      "name": "chat_memory_state",
+      "category": "chat"
+    },
+    {
       "name": "chat_queue_updated",
       "category": "chat"
     },
@@ -4710,6 +4821,14 @@
     {
       "name": "llm_usage_report",
       "category": "llm"
+    },
+    {
+      "name": "memory_change_recorded",
+      "category": "chat"
+    },
+    {
+      "name": "memory_change_refused",
+      "category": "chat"
     },
     {
       "name": "notification",
@@ -4855,6 +4974,11 @@
     "chat_archive",
     "chat_branch_select",
     "chat_fork",
+    "chat_memory_decide",
+    "chat_memory_forget",
+    "chat_memory_learn",
+    "chat_memory_undo",
+    "chat_memory_use",
     "chat_message",
     "chat_pin",
     "chat_queue_edit",
@@ -5540,6 +5664,16 @@
       ],
       "scope": "Optional per-transcript-message sibling disclosure for the active branch path; absent on every message of an unbranched chat and on legacy snapshots. Sibling identifiers let the Mac offer branch switching, and the server keeps branch state across relaunch and reconnect \u2014 the client persists none of it.",
       "contract": "additive turn-intent fields gated by the register_ui chat_branches_v1 capability"
+    },
+    {
+      "field": "memory_change",
+      "shape": "object {change_id: canonical lowercase UUID4, state: applied | staged, summary: 1-512 Unicode scalar values of bounded safe server text, revision: positive safe JSON integer}",
+      "carried_on": [
+        "conversation_snapshot.transcript[]"
+      ],
+      "scope": "Optional per-transcript-message Learned chip disclosure for negotiated macOS chat_memory_v1 connections; absent on every message of every other chat and on legacy snapshots. The server owns the change record and renders the PHI-safe summary, and the client persists none of it.",
+      "introduced_by": "AstralProjection issue: Mac per-chat memory switches and a Learned notice with Undo",
+      "contract": "presentation_contracts.chat_memory_v1"
     }
   ],
   "component_types": [

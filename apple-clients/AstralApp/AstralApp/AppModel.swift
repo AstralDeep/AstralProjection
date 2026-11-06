@@ -82,19 +82,22 @@ final class AppModel: NSObject {
         let text: String
         let components: [AstralComponent]
         let branch: ConversationMessageBranch?
+        let memoryChange: MemoryChange?
 
         init(
             id: String,
             role: String,
             text: String,
             components: [AstralComponent] = [],
-            branch: ConversationMessageBranch? = nil
+            branch: ConversationMessageBranch? = nil,
+            memoryChange: MemoryChange? = nil
         ) {
             self.id = id
             self.role = role
             self.text = text
             self.components = components
             self.branch = branch
+            self.memoryChange = memoryChange
         }
     }
 
@@ -460,6 +463,24 @@ final class AppModel: NSObject {
         var sideQuestionAnswer: String?
         @ObservationIgnored private var sideQuestionRequestId: String?
         @ObservationIgnored private var composerReturnBindingStored: ComposerReturnBinding
+        @ObservationIgnored private var chatMemoryAck: ChatMemoryAcknowledgement?
+        @ObservationIgnored private var chatMemoryByChat: [String: ChatMemorySnapshot] = [:]
+        @ObservationIgnored private var chatMemoryIntentsInFlight: [String: String] = [:]
+        @ObservationIgnored private var memoryChipPending: Set<String> = []
+        @ObservationIgnored private var memoryChipConflicts: Set<String> = []
+        var chatMemoryForgetRequest: ChatMemoryForgetRequest?
+        struct ChatMemorySnapshot: Equatable {
+            let useMemory: Bool
+            let learnFromChat: Bool
+            let pending: Int
+        }
+        struct ChatMemoryForgetRequest: Equatable, Identifiable {
+            let chat: ChatSummary
+            var id: String { chat.id }
+        }
+        enum MemoryChipDisplay: Equatable {
+            case idle, pending, conflict
+        }
         struct QueueSnapshot: Equatable {
             let revision: Int
             var items: [QueuedFollowUpItem]
@@ -1527,6 +1548,13 @@ final class AppModel: NSObject {
                 #else
                     return false
                 #endif
+            }(),
+            chatMemorySupported: {
+                #if os(macOS)
+                    return true
+                #else
+                    return false
+                #endif
             }())
     }
 
@@ -2399,6 +2427,7 @@ final class AppModel: NSObject {
             descriptor.macWorkbenchSupported = true
             descriptor.projectWorkspacesSupported = true
             descriptor.turnSteerSupported = true
+            descriptor.chatMemorySupported = true
         #else
             let size = UIScreen.main.bounds.size
             let (w, h) = lastReportedViewport ?? (Int(size.width), Int(size.height))
@@ -2498,6 +2527,13 @@ final class AppModel: NSObject {
             if !turnSteerNegotiated {
                 queueByChat.removeAll()
                 pendingSteerTexts.removeAll()
+            }
+            chatMemoryAck = ChatMemoryAcknowledgement.fromRoteConfig(frame.payload)
+            if !chatMemoryNegotiated {
+                chatMemoryByChat.removeAll()
+                chatMemoryIntentsInFlight.removeAll()
+                memoryChipPending.removeAll()
+                memoryChipConflicts.removeAll()
             }
         #endif
         viewportSnapshotSupported = frame.payload["viewport_snapshot_supported"]?.boolValue == true
@@ -3066,6 +3102,8 @@ final class AppModel: NSObject {
         #if os(macOS)
             case "chat_steer_recorded", "chat_steer_refused", "chat_queue_updated", "side_question_result":
                 reduceTurnSteer(frame)
+            case "chat_memory_state", "memory_change_recorded", "memory_change_refused":
+                reduceChatMemory(frame)
         #endif
         case "error":
             let admissionRefused = reduceAdmissionRefusal(frame)
@@ -3576,7 +3614,7 @@ final class AppModel: NSObject {
                 guard let message = snapshot.messages.first(where: { $0.messageId == turn.id }) else { return turn }
                 return ChatTurn(
                     id: turn.id, role: turn.role, text: turn.text, components: message.components,
-                    branch: message.branch)
+                    branch: message.branch, memoryChange: message.memoryChange)
             }
             return
         }
@@ -3597,7 +3635,8 @@ final class AppModel: NSObject {
                 role: message.role,
                 text: text,
                 components: message.components,
-                branch: message.branch)
+                branch: message.branch,
+                memoryChange: message.memoryChange)
         }
         activeChatId = snapshot.chatId
         turns = restoredTurns
@@ -4049,6 +4088,9 @@ final class AppModel: NSObject {
     }
 
     private func reduceError(_ frame: InboundFrame) {
+        #if os(macOS)
+            settleChatMemoryFailure(submissionId: frame.payload["submission_id"]?.stringValue)
+        #endif
         let code = frame.payload["code"]?.stringValue
         let safeErrorClasses: Set<String> = [
             "auth_failed", "model_not_found", "transport_error",
@@ -4398,6 +4440,136 @@ final class AppModel: NSObject {
             sideQuestionAnswer = nil
             sideQuestionRequestId = nil
             sideQuestionSheetVisible = true
+        }
+
+        var chatMemoryNegotiated: Bool { chatMemoryAck != nil }
+        var chatMemoryControlsAvailable: Bool {
+            chatMemoryNegotiated && signedIn && connected && !mandatorySurface && !mutationsLocked
+        }
+
+        func chatMemorySnapshot(for chatId: String?) -> ChatMemorySnapshot? {
+            guard let chatId else { return nil }
+            return chatMemoryByChat[chatId]
+        }
+
+        func memoryChipDisplay(_ change: MemoryChange) -> MemoryChipDisplay {
+            if memoryChipConflicts.contains(change.changeId) { return .conflict }
+            if memoryChipPending.contains(change.changeId) { return .pending }
+            return .idle
+        }
+
+        func setChatMemoryUse(_ chatId: String, enabled: Bool) {
+            sendChatMemoryToggle("use", chatId: chatId, enabled: enabled)
+        }
+
+        func setChatMemoryLearn(_ chatId: String, enabled: Bool) {
+            sendChatMemoryToggle("learn", chatId: chatId, enabled: enabled)
+        }
+
+        private func sendChatMemoryToggle(_ kind: String, chatId: String, enabled: Bool) {
+            guard chatMemoryControlsAvailable, chatMemoryIntentsInFlight["\(kind)-\(chatId)"] == nil,
+                let frame = kind == "use"
+                    ? ChatMemoryOutbound.chatMemoryUse(chatId, enabled: enabled, sessionId: activeChatId)
+                    : ChatMemoryOutbound.chatMemoryLearn(chatId, enabled: enabled, sessionId: activeChatId)
+            else { return }
+            chatMemoryIntentsInFlight["\(kind)-\(chatId)"] = submissionId(of: frame)
+            rawSend(frame)
+        }
+
+        func requestChatMemoryForget(_ chat: ChatSummary) {
+            guard chatMemoryControlsAvailable else { return }
+            chatMemoryForgetRequest = ChatMemoryForgetRequest(chat: chat)
+        }
+
+        func cancelChatMemoryForget() { chatMemoryForgetRequest = nil }
+
+        func confirmChatMemoryForget() {
+            defer { chatMemoryForgetRequest = nil }
+            guard chatMemoryControlsAvailable, chatMemoryIntentsInFlight["forget"] == nil,
+                let request = chatMemoryForgetRequest,
+                let frame = ChatMemoryOutbound.chatMemoryForget(request.chat.id, sessionId: activeChatId)
+            else { return }
+            chatMemoryIntentsInFlight["forget"] = submissionId(of: frame)
+            rawSend(frame)
+        }
+
+        func undoMemoryChange(_ change: MemoryChange) {
+            guard chatMemoryControlsAvailable, let chat = activeChatId,
+                memoryChipDisplay(change) == .idle,
+                let frame = ChatMemoryOutbound.chatMemoryUndo(
+                    chat, changeId: change.changeId, expectedRevision: change.revision, sessionId: chat)
+            else { return }
+            memoryChipPending.insert(change.changeId)
+            rawSend(frame)
+        }
+
+        func decideMemoryChange(_ change: MemoryChange, approve: Bool) {
+            guard chatMemoryControlsAvailable, let chat = activeChatId,
+                memoryChipDisplay(change) == .idle,
+                let frame = ChatMemoryOutbound.chatMemoryDecide(
+                    chat, changeId: change.changeId, decisionApproves: approve,
+                    expectedRevision: change.revision, sessionId: chat)
+            else { return }
+            memoryChipPending.insert(change.changeId)
+            rawSend(frame)
+        }
+
+        func openPersonalization() {
+            guard chatMemoryControlsAvailable else { return }
+            openSurface("personalization")
+        }
+
+        func refreshChatMemory() {
+            guard let chat = activeChatId else { return }
+            openChat(chat)
+        }
+
+        private func submissionId(of frameText: String) -> String {
+            let frame = (try? JSONValue.parse(Data(frameText.utf8))) ?? .null
+            return frame["submission_id"]?.stringValue ?? ""
+        }
+
+        private func reduceChatMemory(_ frame: InboundFrame) {
+            switch frame.name {
+            case "chat_memory_state":
+                guard let state = ChatMemoryState(frame: frame) else { return }
+                chatMemoryByChat[state.chatId] = ChatMemorySnapshot(
+                    useMemory: state.useMemory, learnFromChat: state.learnFromChat, pending: state.pending)
+                chatMemoryIntentsInFlight.removeValue(forKey: "use-\(state.chatId)")
+                chatMemoryIntentsInFlight.removeValue(forKey: "learn-\(state.chatId)")
+                chatMemoryIntentsInFlight.removeValue(forKey: "forget")
+            case "memory_change_recorded":
+                guard let recorded = MemoryChangeRecorded(frame: frame) else { return }
+                memoryChipPending.remove(recorded.change.changeId)
+                memoryChipConflicts.remove(recorded.change.changeId)
+                applyMemoryChange(recorded.messageId, recorded.change)
+            case "memory_change_refused":
+                guard let refused = MemoryChangeRefused(frame: frame) else { return }
+                guard let changeId = refused.changeId else { return }
+                memoryChipPending.remove(changeId)
+                if refused.code == .staleRevision {
+                    memoryChipConflicts.insert(changeId)
+                } else {
+                    bannerIsError = true
+                    errorBanner = refused.message
+                }
+            default:
+                break
+            }
+        }
+
+        private func applyMemoryChange(_ messageId: String, _ change: MemoryChange) {
+            guard let index = turns.firstIndex(where: { $0.id == messageId }) else { return }
+            turns[index] = ChatTurn(
+                id: turns[index].id, role: turns[index].role, text: turns[index].text,
+                components: turns[index].components, branch: turns[index].branch, memoryChange: change)
+        }
+
+        func settleChatMemoryFailure(submissionId: String?) {
+            guard let submissionId, !submissionId.isEmpty else { return }
+            if let key = chatMemoryIntentsInFlight.first(where: { $0.value == submissionId })?.key {
+                chatMemoryIntentsInFlight.removeValue(forKey: key)
+            }
         }
     #endif
 
@@ -5492,6 +5664,10 @@ final class AppModel: NSObject {
             sideQuestionDraft = ""
             sideQuestionAnswer = nil
             sideQuestionRequestId = nil
+            chatMemoryForgetRequest = nil
+            chatMemoryIntentsInFlight.removeAll()
+            memoryChipPending.removeAll()
+            memoryChipConflicts.removeAll()
         #endif
         turns = []
         canvas = []

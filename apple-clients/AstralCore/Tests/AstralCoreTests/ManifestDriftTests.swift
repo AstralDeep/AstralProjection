@@ -106,9 +106,14 @@ final class ManifestDriftTests: XCTestCase {
             Set(manifest.componentTypes),
             Set(ClientDispositions.allComponentTypes),
             "component_types drift — update Dispositions.swift + parity matrix")
-        XCTAssertEqual(manifest.pushTypes.count, 78)
+        XCTAssertEqual(manifest.pushTypes.count, 81)
         XCTAssertEqual(manifest.componentTypes.count, 43)
-        XCTAssertEqual(manifest.acceptActions.count, 180)
+        XCTAssertEqual(manifest.acceptActions.count, 185)
+        XCTAssertTrue(
+            Set(manifest.acceptActions).isSuperset(of: [
+                "chat_memory_decide", "chat_memory_forget", "chat_memory_learn", "chat_memory_undo",
+                "chat_memory_use",
+            ]))
         XCTAssertTrue(Set(manifest.acceptActions).isSuperset(of: ["chrome_work_result_save", "chrome_job_stop"]))
         XCTAssertTrue(
             Set(manifest.acceptActions).isSuperset(of: [
