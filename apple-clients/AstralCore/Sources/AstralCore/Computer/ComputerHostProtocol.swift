@@ -175,6 +175,7 @@ public struct ComputerHostSession: Sendable, Equatable {
     public let state: String
     public let controller: String
     public let bypass: Bool?
+    public let autonomy: ComputerAutonomyState?
     public let projectContext: ComputerProjectContext?
     public init(json: JSONValue) throws {
         guard let id = json["session_id"]?.stringValue, computerUUID(id),
@@ -186,6 +187,7 @@ public struct ComputerHostSession: Sendable, Equatable {
         self.state = state
         controller = String((json["controller_label"]?.stringValue ?? "your device").prefix(100))
         bypass = json["bypass"]?.boolValue
+        autonomy = json["computer_mode"].flatMap { try? ComputerAutonomyState(json: $0) }
         projectContext = try json["project_context"].map(ComputerProjectContext.init(json:))
     }
 }
@@ -699,8 +701,9 @@ public enum ComputerHostOutbound {
         guard let frame = try? JSONValue.parse(Data(frameText.utf8)), frame["type"] == .string("ui_event") else {
             return false
         }
-        return ["computer_event", "computer_response", "chrome_computer_bypass_set"].contains(
-            frame["action"]?.stringValue ?? "")
+        return [
+            "computer_event", "computer_response", "chrome_computer_bypass_set", "chrome_computer_mode_set",
+        ].contains(frame["action"]?.stringValue ?? "")
     }
     public static func bindToConnection(
         _ text: String, connectionGeneration: String,
@@ -776,6 +779,13 @@ public enum ComputerHostOutbound {
         if json["action"] == .string("chrome_computer_bypass_set") {
             return Set(payload.keys) == ["host_id", "enabled"] && payload["enabled"]?.boolValue != nil
                 && payload["host_id"]?.stringValue.map(computerUUID) == true
+        }
+        if json["action"] == .string("chrome_computer_mode_set") {
+            guard Set(payload.keys) == ["host_id", "mode"],
+                let host = payload["host_id"]?.stringValue, computerUUID(host),
+                let mode = payload["mode"]?.stringValue
+            else { return false }
+            return ComputerAutonomyMode(rawValue: mode) != nil
         }
         guard json["action"] == .string("computer_event"), let host = payload["host_id"]?.stringValue,
             computerUUID(host), let event = payload["event"]?.stringValue

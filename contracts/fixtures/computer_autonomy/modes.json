@@ -1,0 +1,151 @@
+{
+  "version": 1,
+  "modes": ["ask", "auto_review", "bypass"],
+  "supported_frames": {
+    "auto_review": {
+      "type": "computer_session",
+      "session_id": "11111111-1111-4111-8111-111111111111",
+      "host_id": "77777777-7777-4777-8777-777777777777",
+      "state": "active",
+      "controller_label": "Synthetic controller",
+      "bypass": false,
+      "computer_mode": {
+        "mode": "auto_review",
+        "supported": ["ask", "auto_review", "bypass"]
+      }
+    },
+    "legacy": {
+      "type": "computer_session",
+      "session_id": "11111111-1111-4111-8111-111111111111",
+      "host_id": "77777777-7777-4777-8777-777777777777",
+      "state": "active",
+      "controller_label": "Synthetic controller",
+      "bypass": false
+    },
+    "breaker_open": {
+      "type": "computer_host",
+      "host_id": "77777777-7777-4777-8777-777777777777",
+      "bypass": false,
+      "computer_mode": {
+        "mode": "ask",
+        "supported": ["ask", "auto_review", "bypass"],
+        "breaker": {
+          "open": true,
+          "reason": "Five reviewer denials in a row for this host."
+        }
+      }
+    }
+  },
+  "verdict_frames": {
+    "allow": {
+      "type": "chat_step",
+      "chat_id": "audit-chat",
+      "step": {
+        "id": "step-allow",
+        "chat_id": "audit-chat",
+        "kind": "tool_call",
+        "name": "click",
+        "status": "completed",
+        "review_verdict": {
+          "event_id": "review.auto.1b6f4c2e-8a41-4c2e-9b6f-4c2e8a411b6f",
+          "decision": "allow",
+          "reason": "Within the granted workspace.",
+          "card_raised": false
+        }
+      }
+    },
+    "deny": {
+      "type": "chat_step",
+      "chat_id": "audit-chat",
+      "step": {
+        "id": "step-deny",
+        "chat_id": "audit-chat",
+        "kind": "tool_call",
+        "name": "run_command",
+        "status": "errored",
+        "review_verdict": {
+          "event_id": "review.auto.2c7a5d3f-9b52-4d3f-ac7a-5d3f9b522c7a",
+          "decision": "deny",
+          "reason": "Command leaves the granted folders.",
+          "card_raised": false
+        }
+      }
+    },
+    "escalate": {
+      "type": "chat_step",
+      "chat_id": "audit-chat",
+      "step": {
+        "id": "step-escalate",
+        "chat_id": "audit-chat",
+        "kind": "tool_call",
+        "name": "type_text",
+        "status": "in_progress",
+        "review_verdict": {
+          "event_id": "review.auto.3d8b6e4a-ac63-4e4a-bd8b-6e4aac633d8b",
+          "decision": "escalate",
+          "reason": "Reviewer could not verify the target window.",
+          "card_raised": true
+        }
+      }
+    }
+  },
+  "client_actions": {
+    "chrome_computer_mode_set": {
+      "type": "ui_event",
+      "action": "chrome_computer_mode_set",
+      "payload": {
+        "host_id": "77777777-7777-4777-8777-777777777777",
+        "mode": "auto_review"
+      }
+    },
+    "chrome_computer_review_retry": {
+      "type": "ui_event",
+      "action": "chrome_computer_review_retry",
+      "payload": {
+        "chat_id": "audit-chat",
+        "event_id": "review.auto.2c7a5d3f-9b52-4d3f-ac7a-5d3f9b522c7a",
+        "client_message_id": "4e9c7f5b-bd74-4f5b-be9c-7f5bbd744e9c"
+      }
+    }
+  },
+  "invalid": {
+    "unknown_mode": {
+      "type": "computer_session",
+      "session_id": "11111111-1111-4111-8111-111111111111",
+      "host_id": "77777777-7777-4777-8777-777777777777",
+      "state": "active",
+      "computer_mode": {
+        "mode": "yolo",
+        "supported": ["ask", "yolo"]
+      }
+    },
+    "breaker_not_ask": {
+      "type": "computer_session",
+      "session_id": "11111111-1111-4111-8111-111111111111",
+      "host_id": "77777777-7777-4777-8777-777777777777",
+      "state": "active",
+      "computer_mode": {
+        "mode": "auto_review",
+        "supported": ["ask", "auto_review"],
+        "breaker": {
+          "open": true,
+          "reason": "Trip."
+        }
+      }
+    },
+    "verdict_without_event": {
+      "type": "chat_step",
+      "chat_id": "audit-chat",
+      "step": {
+        "id": "step-bad",
+        "kind": "tool_call",
+        "name": "click",
+        "status": "completed",
+        "review_verdict": {
+          "decision": "allow",
+          "card_raised": false
+        }
+      }
+    }
+  }
+}

@@ -43,7 +43,7 @@ struct RootView: View {
                     get: { model.macComputerHost.controlsPresented },
                     set: { model.macComputerHost.controlsPresented = $0 })
             ) {
-                MacComputerControls(host: model.macComputerHost).environment(theme)
+                MacComputerControls(host: model.macComputerHost).environment(model).environment(theme)
             }
         #endif
         .sheet(

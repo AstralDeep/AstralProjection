@@ -1,5 +1,6 @@
-// Coordinates the direct-download Mac's explicit consent, current host session, physical queue and command executor.
-// AppModel supplies an owner-fenced live channel; native controls can revoke authority without waiting for OS work.
+// Coordinates the direct-download Mac's explicit consent, confirmed autonomy mode and breaker notice, current host
+// session, physical queue and command executor. AppModel supplies an owner-fenced live channel; native controls can
+// revoke authority without waiting for OS work.
 
 #if os(macOS)
     import AppKit
@@ -72,7 +73,7 @@
     }
 
     enum MacBypassOrigin: Equatable {
-        case controls, settings, palette
+        case controls, settings, palette, footer
     }
 
     @MainActor @Observable
@@ -98,6 +99,9 @@
         private(set) var bypass = false
         private(set) var bypassSaved = false
         private(set) var automatedRestore = false
+        private(set) var autonomy: ComputerAutonomyState?
+        private(set) var pendingModeRequest: ComputerAutonomyMode?
+        private(set) var breakerNotice: String?
         static let automatedRearmKey = "computer.allowAutomatedRearm"
         var bypassConfirmation: MacBypassOrigin?
         let files: MacComputerFiles
@@ -126,6 +130,7 @@
         @ObservationIgnored private var bypassRestorePending = false
         @ObservationIgnored private var bypassRetryTask: Task<Void, Never>?
         @ObservationIgnored private var bypassRetryAttempt = 0
+        @ObservationIgnored private var modeRequestTimeout: Task<Void, Never>?
         @ObservationIgnored var bypassRetryDelays: [Duration] = [.seconds(2), .seconds(4), .seconds(8), .seconds(16)]
         @ObservationIgnored private var localResume: @MainActor () -> Bool = { false }
         @ObservationIgnored private let system: any MacComputerSystemIO
@@ -489,6 +494,10 @@
             self.owner = owner
             activityTimeline.bind(owner: owner)
             self.sender = sender
+            autonomy = nil
+            pendingModeRequest = nil
+            breakerNotice = nil
+            modeRequestTimeout?.cancel()
             bypassSaved = available && bypassKey.map { defaults.bool(forKey: $0) } == true
             bypassRestorePending = bypassSaved
             bypassRetryTask?.cancel()
@@ -518,6 +527,9 @@
         private func disconnect(epoch: UUID) {
             localInput?.invalidate()
             bypassConfirmation = nil
+            pendingModeRequest = nil
+            breakerNotice = nil
+            modeRequestTimeout?.cancel()
             if bypass {
                 bypassReleaseOwed = true
                 turnBypassOff()
@@ -832,6 +844,87 @@
             lastError = nil
             bypassConfirmation = origin
         }
+
+        var modeAware: Bool { autonomy != nil }
+        var confirmedMode: ComputerAutonomyMode { autonomy?.mode ?? (bypass ? .bypass : .ask) }
+        var supportedModes: [ComputerAutonomyMode] { autonomy?.supported ?? [.ask, .bypass] }
+        var modeWaitingConfirmation: Bool { pendingModeRequest != nil && pendingModeRequest != confirmedMode }
+
+        func requestAutonomyMode(_ mode: ComputerAutonomyMode, from origin: MacBypassOrigin) {
+            switch mode {
+            case .bypass:
+                requestBypass(true, from: origin)
+            case .ask:
+                if bypass || bypassSaved { requestBypass(false, from: .controls) }
+                requestModeFrame(.ask)
+            case .autoReview:
+                guard modeAware, autonomy?.offersAutoReview == true else {
+                    lastError = "The server does not offer Auto-review for this Mac."
+                    return
+                }
+                guard available, enabled, owner != nil, sender != nil else {
+                    lastError = "Allow computer tasks on this Mac before switching modes."
+                    return
+                }
+                guard breakerNotice == nil else {
+                    lastError = "The review circuit breaker is open, so the server keeps this Mac in Ask."
+                    return
+                }
+                if bypass || bypassSaved { requestBypass(false, from: .controls) }
+                requestModeFrame(.autoReview)
+            }
+        }
+
+        private func requestModeFrame(_ mode: ComputerAutonomyMode) {
+            guard modeAware, breakerNotice == nil, confirmedMode != mode || pendingModeRequest != nil,
+                pendingModeRequest != mode
+            else { return }
+            pendingModeRequest = mode
+            send(autonomyModeFrame(hostId: hostId, mode: mode))
+            scheduleModeRequestTimeout()
+        }
+
+        private func scheduleModeRequestTimeout() {
+            modeRequestTimeout?.cancel()
+            modeRequestTimeout = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(10))
+                guard !Task.isCancelled else { return }
+                self?.expireModeRequest()
+            }
+        }
+
+        private func expireModeRequest() {
+            guard pendingModeRequest != nil else { return }
+            pendingModeRequest = nil
+            lastError = "The server did not confirm the mode change. It still shows its last confirmed mode."
+        }
+
+        private func autonomyModeFrame(_ mode: ComputerAutonomyMode) -> String {
+            ComputerHostOutbound.autonomyModeFrame(hostId: hostId, mode: mode)
+        }
+
+        private func reconcileAutonomy(_ state: ComputerAutonomyState?) {
+            guard let state else { return }
+            autonomy = state
+            if state.breakerOpen {
+                let reason = state.breakerReason ?? "The review circuit breaker dropped this Mac back to Ask."
+                if breakerNotice != reason { announcer(reason) }
+                breakerNotice = reason
+                if pendingModeRequest != nil {
+                    pendingModeRequest = nil
+                    modeRequestTimeout?.cancel()
+                }
+            } else if breakerNotice != nil {
+                breakerNotice = nil
+                announcer("The review circuit breaker closed; you can switch modes again")
+            }
+            if pendingModeRequest == state.mode {
+                pendingModeRequest = nil
+                modeRequestTimeout?.cancel()
+            }
+            reconcileBypass(state.mode == .bypass)
+        }
+
         func confirmBypass() {
             guard bypassConfirmation != nil else { return }
             bypassConfirmation = nil
@@ -1070,6 +1163,7 @@
             if frame.name == "computer_host" {
                 if frame.payload["host_id"]?.stringValue == hostId {
                     reconcileBypass(frame.payload["bypass"]?.boolValue)
+                    reconcileAutonomy(frame.payload["computer_mode"].flatMap { try? ComputerAutonomyState(json: $0) })
                     if let ack = frame.payload["project_manifest_ack"] { acceptManifest(ack) }
                     if let ack = frame.payload["outcome_ack"], let values = ack.objectValue,
                         Set(values.keys) == ["decision", "incarnation_id", "connection_generation"],
@@ -1090,6 +1184,7 @@
                     return true
                 }
                 reconcileBypass(incoming.bypass)
+                reconcileAutonomy(incoming.autonomy)
                 if incoming.state == "ended" {
                     if session?.id == incoming.id {
                         activityTimeline.record(.stop, state: "stopped")

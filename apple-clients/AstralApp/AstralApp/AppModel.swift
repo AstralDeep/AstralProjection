@@ -150,6 +150,16 @@ final class AppModel: NSObject {
         var thumbnail: Data?
         var position: Int
         var arguments: String
+        var verdict: ComputerReviewVerdict?
+
+        var verdictLabel: String? {
+            guard let verdict else { return nil }
+            switch verdict.decision {
+            case .allow: return "Reviewer allowed"
+            case .deny: return verdict.cardRaised ? "Reviewer raised a card" : "Reviewer blocked"
+            case .escalate: return "Reviewer raised a card"
+            }
+        }
 
         var approvalLabel: String? {
             switch approval {
@@ -182,6 +192,10 @@ final class AppModel: NSObject {
             if approval != .none && state != .completed { parts.append(stateLabel) }
             if !result.isEmpty && result != parts.last { parts.append(result) }
             if thumbnail != nil { parts.append("Screenshot") }
+            if let verdict {
+                parts.append(verdictLabel ?? "")
+                if !verdict.reason.isEmpty { parts.append(verdict.reason) }
+            }
             return parts.joined(separator: ", ")
         }
     }
@@ -380,6 +394,28 @@ final class AppModel: NSObject {
     var bannerIsError = true
     private var warningBannerText: String?
     var bannerIsWarning: Bool { errorBanner != nil && errorBanner == warningBannerText }
+    #if os(macOS)
+        struct BlockedComputerAction: Equatable, Identifiable {
+            enum Retry: Equatable {
+                case available
+                case sent
+                case unavailable(String)
+            }
+            let eventId: String
+            let chatId: String
+            let tool: String
+            let summary: String
+            let reason: String
+            let connection: String?
+            let receivedAt: Date
+            var retry: Retry = .available
+            var id: String { eventId }
+        }
+
+        static let maximumBlockedActions = 40
+        static let blockedRetryWindow: Duration = .seconds(3_600)
+        private(set) var recentlyBlocked: [BlockedComputerAction] = []
+    #endif
     var stepTrail: [String] = []
     private(set) var activityLog: [String: [ActivityRow]] = [:]
     @ObservationIgnored private var activityAliases: [String: String] = [:]
@@ -4878,6 +4914,7 @@ final class AppModel: NSObject {
         let status = step["status"]?.stringValue ?? "in_progress"
         let arguments = step["args_truncated"]?.stringValue ?? ""
         let position = activityPosition(chatId)
+        let verdict = step["review_verdict"].flatMap { ComputerReviewVerdict(json: $0) }
         updateActivity(chatId) { rows in
             var index = rows.firstIndex { $0.id == (activityAliases[stepId] ?? stepId) }
             if index == nil,
@@ -4898,6 +4935,7 @@ final class AppModel: NSObject {
                 index = rows.count - 1
             }
             guard let index else { return }
+            if let verdict { rows[index].verdict = verdict }
             switch status {
             case "completed":
                 let outcome = Self.activityResult(step["result_summary"]?.stringValue)
@@ -4918,7 +4956,65 @@ final class AppModel: NSObject {
                 rows[index].state = .running
             }
         }
+        #if os(macOS)
+            if let verdict { recordBlockedAction(verdict, chatId: chatId, tool: tool, arguments: arguments) }
+        #endif
     }
+
+    #if os(macOS)
+        private func recordBlockedAction(
+            _ verdict: ComputerReviewVerdict, chatId: String?, tool: String, arguments: String
+        ) {
+            guard verdict.blocked else { return }
+            var entry = BlockedComputerAction(
+                eventId: verdict.eventId, chatId: chatId ?? activeChatId ?? "", tool: tool,
+                summary: activityLine(
+                    [Self.activityAction(tool), Self.activityTarget(arguments)].filter { !$0.isEmpty }
+                        .joined(separator: " "), limit: 160),
+                reason: verdict.reason, connection: continuity.connectionGeneration, receivedAt: Date())
+            if let existing = recentlyBlocked.first(where: { $0.eventId == entry.eventId }) {
+                entry.retry = existing.retry
+                recentlyBlocked.removeAll { $0.eventId == entry.eventId }
+            }
+            recentlyBlocked.insert(entry, at: 0)
+            if recentlyBlocked.count > Self.maximumBlockedActions {
+                recentlyBlocked.removeLast(recentlyBlocked.count - Self.maximumBlockedActions)
+            }
+        }
+
+        func blockedRetryRefusal(_ entry: BlockedComputerAction) -> String? {
+            switch entry.retry {
+            case .sent: return "You already approved a retry for this action."
+            case .unavailable(let reason): return reason
+            case .available: break
+            }
+            guard entry.chatId == activeChatId else {
+                return "Open the chat that raised this block to retry it."
+            }
+            guard entry.connection == continuity.connectionGeneration else {
+                return "The connection changed since this block, so it can no longer be retried."
+            }
+            guard Date().timeIntervalSince(entry.receivedAt) < Self.blockedRetryWindow.timeInterval else {
+                return "This blocked action expired; ask for it again."
+            }
+            return nil
+        }
+
+        func retryBlockedAction(_ entry: BlockedComputerAction) {
+            guard let index = recentlyBlocked.firstIndex(where: { $0.id == entry.id }) else { return }
+            if let refusal = blockedRetryRefusal(entry) {
+                recentlyBlocked[index].retry = .unavailable(refusal)
+                return
+            }
+            emit(
+                "chrome_computer_review_retry",
+                payload: [
+                    "chat_id": .string(entry.chatId), "event_id": .string(entry.eventId),
+                    "client_message_id": .string(UUID().uuidString.lowercased()),
+                ])
+            recentlyBlocked[index].retry = .sent
+        }
+    #endif
 
     private func recordActivityProgress(_ frame: InboundFrame, percent: String) {
         guard let tool = frame.payload["tool_name"]?.stringValue, !tool.isEmpty, tool.count <= 128 else { return }
@@ -5397,6 +5493,9 @@ final class AppModel: NSObject {
         submittedApprovals = [:]
         approvalRows = [:]
         approvalOrigins = [:]
+        #if os(macOS)
+            recentlyBlocked = []
+        #endif
         approvalHosts = [:]
         #if os(macOS)
             syncMacNotificationBadge()

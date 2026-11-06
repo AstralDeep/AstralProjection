@@ -404,6 +404,14 @@ import SwiftUI
             }
         }
         private var detail: String { row.result.isEmpty ? row.stateLabel : row.result }
+        private var verdictTint: Color {
+            guard let verdict = row.verdict else { return p.muted }
+            switch verdict.decision {
+            case .allow: return p.success
+            case .deny: return verdict.cardRaised ? p.warning : p.error
+            case .escalate: return p.warning
+            }
+        }
 
         var body: some View {
             HStack(alignment: compact ? .center : .top, spacing: 10) {
@@ -443,11 +451,31 @@ import SwiftUI
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(tint.opacity(0.16), in: Capsule())
                 }
+                if let label = row.verdictLabel {
+                    Text(label).font(ConsoleTypography.caption2.weight(.semibold))
+                        .lineLimit(1).fixedSize()
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(verdictTint.opacity(0.16), in: Capsule())
+                        .accessibilityIdentifier("activity-verdict-\(row.id)")
+                }
                 if row.approval == .none || !row.result.isEmpty {
                     Text(detail).font(ConsoleTypography.caption).foregroundStyle(p.muted)
                         .lineLimit(compact ? 1 : 3)
                 }
             }
+            if let verdict = row.verdict, !compact, (!verdict.reason.isEmpty || verdict.cardRaised) {
+                Text(verdictReasonLine(verdict))
+                    .font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("activity-verdict-reason-\(row.id)")
+            }
+        }
+
+        private func verdictReasonLine(_ verdict: ComputerReviewVerdict) -> String {
+            var parts: [String] = []
+            if verdict.cardRaised { parts.append("Approval card raised instead") }
+            if !verdict.reason.isEmpty { parts.append(verdict.reason) }
+            return parts.joined(separator: " — ")
         }
     }
 
