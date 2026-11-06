@@ -1223,8 +1223,8 @@
       "sourceBlob": "9f2387fe8fbf12e09002646daca304e6141d8e0e",
       "sourceMode": "100644",
       "task": "T060/T015",
-      "reason": "Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Bind offered conversation navigation to the accepted owner, connection, request and render source, and use normal chat hydration while preserving current workbench presentation and existing legacy dispatch.",
-      "resultSha256": "fd145565eabc34b932b234b5dd57dc5f943f58f4921678ee26e550508e867ea3"
+      "reason": "Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Bind offered conversation navigation to the accepted owner, connection, request and render source, and use normal chat hydration while preserving current workbench presentation and existing legacy dispatch. Cover alerts the server sends after a turn has finished.",
+      "resultSha256": "9809502d9447b3a807f41db7e6afce76760b7ca65612a31606be2c4975e4bc7f"
     },
     {
       "path": "apple-clients/AstralApp/AstralAppTests/LLMFirstLoginOperationTests.swift",
