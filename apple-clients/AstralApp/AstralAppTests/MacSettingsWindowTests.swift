@@ -71,6 +71,31 @@
             XCTAssertEqual(MacSettingsPane.resolve("", updatesEnabled: false), .account)
         }
 
+        func testThisMacRendersNotificationModesKindTogglesAndPermissionState() async throws {
+            let model = try model()
+            var settings = model.macWorkNotificationSettings
+            settings.mode = .always
+            settings.enabledKinds.remove(.finished)
+            model.macWorkNotificationSettings = settings
+            let mount = SurfaceMount(
+                MacSettingsThisMac(
+                    host: MacComputerHost(
+                        available: false, defaults: try defaults(),
+                        permissionProvider: {
+                            MacComputerPermissions(accessibility: false, screen: false, monitoring: false)
+                        })),
+                model: model, size: CGSize(width: 460, height: 620))
+            defer { mount.close() }
+            try await mount.settle()
+            let text = try mount.text()
+            for kept in [
+                "Notifications", "Never", "Only in background", "Always", "Approval needed", "Questions",
+                "Turn finished", "Turn failed", "Include the chat title", "Enable notifications",
+            ] {
+                XCTAssertTrue(text.contains(kept), "missing \(kept): \(text)")
+            }
+        }
+
         func testEveryPaneRendersInEachTheme() async throws {
             for preset in SurfaceFixtures.presets {
                 for pane in MacSettingsPane.allCases {

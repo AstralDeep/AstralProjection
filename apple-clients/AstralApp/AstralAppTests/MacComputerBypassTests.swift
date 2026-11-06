@@ -396,7 +396,7 @@
             host.consume(try session(host, id, bypass: true))
             XCTAssertTrue(host.bypass)
             let on = MacStatusFooterModel.items(
-                connection: .connected, usage: LLMUsageTally(), approvals: 0,
+                connection: .connected, usage: LLMUsageTally(), approvals: 0, keepingMacAwake: false,
                 computer: .init(
                     enabled: host.enabled, sessionState: host.session?.state, statusLabel: host.statusLabel,
                     bypass: host.bypass))
@@ -416,7 +416,7 @@
             XCTAssertEqual(announced.last, "Approval bypass is off")
             XCTAssertNil(
                 MacStatusFooterModel.items(
-                    connection: .connected, usage: LLMUsageTally(), approvals: 0,
+                    connection: .connected, usage: LLMUsageTally(), approvals: 0, keepingMacAwake: false,
                     computer: .init(enabled: true, sessionState: "active", statusLabel: "", bypass: host.bypass)
                 ).first { $0.kind == .bypass })
             try await banner.settle()

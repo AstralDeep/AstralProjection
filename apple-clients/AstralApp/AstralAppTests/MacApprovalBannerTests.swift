@@ -340,7 +340,8 @@
             XCTAssertTrue(prompt.summary.hasPrefix("Open https://docs.example.com/start in the Astral browser pane"))
             XCTAssertEqual(model.waitingApprovals, 1)
             let footer = MacStatusFooterModel.items(
-                connection: .connected, usage: LLMUsageTally(), approvals: model.waitingApprovals, computer: nil)
+                connection: .connected, usage: LLMUsageTally(), approvals: model.waitingApprovals, keepingMacAwake: false,
+                computer: nil)
             XCTAssertEqual(footer.last?.text, "1 approval waiting")
             model.decideApproval(prompt, allow: true)
             let decided = try XCTUnwrap(decisions(sent()).last)

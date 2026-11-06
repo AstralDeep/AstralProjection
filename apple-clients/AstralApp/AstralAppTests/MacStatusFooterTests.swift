@@ -68,7 +68,8 @@
             XCTAssertEqual(
                 MacStatusFooterModel.connection(connected: false, everConnected: false, failed: false), .connecting)
             let items = [MacStatusFooterModel.Connection.connected, .connecting, .reconnecting, .offline].map {
-                MacStatusFooterModel.items(connection: $0, usage: LLMUsageTally(), approvals: 0, computer: nil)
+                MacStatusFooterModel.items(
+                    connection: $0, usage: LLMUsageTally(), approvals: 0, keepingMacAwake: false, computer: nil)
             }
             XCTAssertTrue(
                 items.allSatisfy { $0.count == 1 && $0[0].kind == .connection && $0[0].label == "Connection" })
@@ -80,7 +81,7 @@
         func testUsageApprovalsAndComputerItemsAppearOnlyWithTheirState() {
             let tally = usage([Self.dispatch])
             let items = MacStatusFooterModel.items(
-                connection: .connected, usage: tally, approvals: 2,
+                connection: .connected, usage: tally, approvals: 2, keepingMacAwake: false,
                 computer: .init(enabled: true, sessionState: "paused", statusLabel: "Computer task paused"))
             XCTAssertEqual(items.map(\.kind), [.connection, .model, .tokens, .approvals, .computer])
             XCTAssertEqual(items[1].text, "test-model")
@@ -97,7 +98,7 @@
                 ]
             ])
             let single = MacStatusFooterModel.items(
-                connection: .connected, usage: titleOnly, approvals: 1,
+                connection: .connected, usage: titleOnly, approvals: 1, keepingMacAwake: false,
                 computer: .init(enabled: false, sessionState: nil, statusLabel: "Computer access is off"))
             XCTAssertEqual(single[2].text, "80 tokens")
             XCTAssertEqual(single[2].value, "80 tokens this session")
@@ -106,16 +107,17 @@
             XCTAssertFalse(single[4].attention)
             let modelOnly = usage([["model": .string("m"), "outcome": .string("failure")]])
             XCTAssertEqual(
-                MacStatusFooterModel.items(connection: .connected, usage: modelOnly, approvals: 0, computer: nil)
+                MacStatusFooterModel.items(
+                    connection: .connected, usage: modelOnly, approvals: 0, keepingMacAwake: false, computer: nil)
                     .map(\.kind), [.connection, .model])
             XCTAssertEqual(
                 MacStatusFooterModel.items(
-                    connection: .connected, usage: LLMUsageTally(), approvals: 0,
+                    connection: .connected, usage: LLMUsageTally(), approvals: 0, keepingMacAwake: false,
                     computer: .init(enabled: true, sessionState: "active", statusLabel: "Computer task active")
                 ).last?.text, "Computer active")
             XCTAssertEqual(
                 MacStatusFooterModel.items(
-                    connection: .connected, usage: LLMUsageTally(), approvals: 0,
+                    connection: .connected, usage: LLMUsageTally(), approvals: 0, keepingMacAwake: false,
                     computer: .init(enabled: true, sessionState: nil, statusLabel: "on")
                 ).last?.text, "Computer on")
         }
@@ -125,6 +127,24 @@
                 [0, 950, 1_000, 1_234, 9_999, 12_400, 999_999, 1_250_000, 12_000_000].map(
                     MacStatusFooterModel.compact),
                 ["0", "950", "1k", "1.2k", "9.9k", "12k", "999k", "1.2M", "12M"])
+        }
+
+        func testKeepingMacAwakeItemAppearsOnlyWhileTheActiveActivityIsHeld() throws {
+            let tally = usage([Self.dispatch])
+            let awake = MacStatusFooterModel.items(
+                connection: .connected, usage: tally, approvals: 1, keepingMacAwake: true,
+                computer: .init(enabled: true, sessionState: "active", statusLabel: "Computer task active"))
+            let item = try XCTUnwrap(awake.first { $0.kind == .awake })
+            XCTAssertEqual(item.text, "Keeping Mac awake")
+            XCTAssertEqual(item.label, "Power")
+            XCTAssertEqual(item.value, "Keeping this Mac awake while work runs")
+            XCTAssertEqual(item.symbol, "bolt.fill")
+            XCTAssertFalse(item.attention)
+            XCTAssertEqual(awake.map(\.kind), [.connection, .model, .tokens, .approvals, .awake, .computer])
+
+            let idle = MacStatusFooterModel.items(
+                connection: .connected, usage: LLMUsageTally(), approvals: 0, keepingMacAwake: false, computer: nil)
+            XCTAssertNil(idle.first { $0.kind == .awake })
         }
 
         func testUsageReportsFeedTheMacModelAndSignOutClearsThem() async throws {

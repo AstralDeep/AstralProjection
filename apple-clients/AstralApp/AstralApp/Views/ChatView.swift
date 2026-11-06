@@ -613,6 +613,12 @@ private struct ChatList: View {
             .accessibilityIdentifier("conversation-message-scroll")
             .scrollDismissesKeyboard(.immediately)
             .onChange(of: visible.count) { oldCount, newCount in
+                #if os(macOS)
+                    if let reveal = model.macNotificationReveal {
+                        revealApprovalCard(reveal, proxy: proxy)
+                        return
+                    }
+                #endif
                 guard newCount > oldCount, let lastID = visible.last?.id else { return }
                 Task { @MainActor in
                     await Task.yield()
@@ -620,8 +626,24 @@ private struct ChatList: View {
                     proxy.scrollTo(lastID, anchor: .bottom)
                 }
             }
+            #if os(macOS)
+                .onChange(of: model.macNotificationReveal) { _, reveal in
+                    guard let reveal else { return }
+                    revealApprovalCard(reveal, proxy: proxy)
+                }
+            #endif
         }
     }
+
+    #if os(macOS)
+        private func revealApprovalCard(
+            _ reveal: MacNotificationReveal, proxy: ScrollViewProxy
+        ) {
+            guard let turnId = model.turnIdForApprovalCard(reveal.requestId) else { return }
+            proxy.scrollTo(turnId, anchor: .center)
+            model.consumeMacNotificationReveal(reveal)
+        }
+    #endif
 }
 
 struct StatusLine: View {

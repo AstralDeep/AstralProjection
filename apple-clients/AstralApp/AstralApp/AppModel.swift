@@ -361,9 +361,9 @@ final class AppModel: NSObject {
     var pendingCanvas: [AstralComponent] = []
     var turnActive = false
     #if os(macOS)
-        @ObservationIgnored var macWorkNotificationService = MacWorkNotificationService()
-        @ObservationIgnored private var macTurnNotificationStartedAt: Date?
+        @ObservationIgnored var macWorkNotificationService: MacWorkNotificationService
         @ObservationIgnored private var macTurnNotificationEventId: String?
+        var macNotificationReveal: MacNotificationReveal?
     #endif
     var pendingReplace = false
     var liveOpsThisTurn = false
@@ -483,6 +483,11 @@ final class AppModel: NSObject {
                 composerReturnBindingStored = newValue
                 defaults.set(newValue.rawValue, forKey: Self.composerReturnBindingKey)
             }
+        }
+
+        var macWorkNotificationSettings: MacWorkNotificationSettings {
+            get { macWorkNotificationService.settings }
+            set { macWorkNotificationService.updateSettings(newValue) }
         }
     #endif
 
@@ -739,6 +744,10 @@ final class AppModel: NSObject {
         self.outcomeUnknownStore = outcomeUnknownStore
         self.defaults = defaults
         #if os(macOS)
+            macWorkNotificationService = MacWorkNotificationService(defaults: defaults)
+            macWorkNotificationService.tapHandler = { [weak self] chatId, requestId in
+                self?.openMacWorkNotification(chatId: chatId, requestId: requestId)
+            }
             if let stored = defaults.string(forKey: Self.composerReturnBindingKey),
                 let binding = ComposerReturnBinding(rawValue: stored)
             {
@@ -2965,7 +2974,6 @@ final class AppModel: NSObject {
             if let chatId = nestedChatId(frame) { adoptChat(chatId) }
             turnActive = true
             #if os(macOS)
-                macTurnNotificationStartedAt = Date()
                 macTurnNotificationEventId = UUID().uuidString.lowercased()
             #endif
             pendingReplace = true
@@ -2985,14 +2993,15 @@ final class AppModel: NSObject {
             if ["done", "idle"].contains(frame.payload["status"]?.stringValue ?? "") {
                 finishActivityProgress()
                 #if os(macOS)
-                    if let startedAt = macTurnNotificationStartedAt, let eventID = macTurnNotificationEventId {
+                    if let eventID = macTurnNotificationEventId {
                         let ownerScope = macNotificationOwnerScope
+                        let chatId = activeChatId
+                        let chatTitle = macNotificationChatTitle(for: chatId)
                         Task {
                             await macWorkNotificationService.workFinished(
-                                eventID: eventID, ownerScope: ownerScope, startedAt: startedAt)
+                                eventID: eventID, ownerScope: ownerScope, chatId: chatId, chatTitle: chatTitle)
                         }
                     }
-                    macTurnNotificationStartedAt = nil
                     macTurnNotificationEventId = nil
                 #endif
             }
@@ -3032,6 +3041,9 @@ final class AppModel: NSObject {
                 statusText = nil
                 bannerIsError = true
                 errorBanner = frame.errorMessage
+                #if os(macOS)
+                    if turnActive { emitMacTurnFailed() }
+                #endif
             } else {
                 applyCanvasOps(streamErrorOps(frame))
             }
@@ -3121,6 +3133,9 @@ final class AppModel: NSObject {
                 bannerIsError = frame.payload["level"]?.stringValue == "error"
                 warningBannerText = frame.payload["level"]?.stringValue == "warning" ? text : nil
                 errorBanner = text
+                #if os(macOS)
+                    emitMacQuestionNotification(frame)
+                #endif
             }
             if let chatId = nestedChatId(frame), chatId == activeChatId {
                 refreshActiveChat()
@@ -3315,6 +3330,9 @@ final class AppModel: NSObject {
             settleActiveChatTurn(
                 requestGeneration: submission.requestGeneration,
                 discardUncommitted: true)
+            #if os(macOS)
+                emitMacTurnFailed()
+            #endif
         }
         _ = continuity.retireUncommittedCommit(requestGeneration: submission.requestGeneration)
         statusText = latestActiveOperationStatusText()
@@ -4049,6 +4067,7 @@ final class AppModel: NSObject {
     }
 
     private func reduceError(_ frame: InboundFrame) {
+        let turnWasActive = turnActive
         let code = frame.payload["code"]?.stringValue
         let safeErrorClasses: Set<String> = [
             "auth_failed", "model_not_found", "transport_error",
@@ -4075,6 +4094,9 @@ final class AppModel: NSObject {
         auditLoading = false
         statusText = nil
         asyncDetached = false
+        #if os(macOS)
+            if turnWasActive { emitMacTurnFailed() }
+        #endif
         if code == "chat_not_found" || code == "conversation_not_found" {
             let deletedChat = nestedChatId(frame) ?? activeChatId
             if let deletedChat {
@@ -5364,9 +5386,10 @@ final class AppModel: NSObject {
         #if os(macOS)
             syncMacNotificationBadge()
             if let ownerScope = macNotificationOwnerScope {
+                let chatTitle = macNotificationChatTitle(for: chatId)
                 Task {
                     await macWorkNotificationService.approvalRequired(
-                        eventID: approval.requestId, ownerScope: ownerScope)
+                        eventID: approval.requestId, ownerScope: ownerScope, chatId: chatId, chatTitle: chatTitle)
                 }
             }
         #endif
@@ -5422,6 +5445,61 @@ final class AppModel: NSObject {
         private func syncMacNotificationBadge() {
             macWorkNotificationService.setPendingApprovals(
                 signedIn ? waitingApprovals : 0, ownerScope: signedIn ? macNotificationOwnerScope : nil)
+        }
+
+        private func macNotificationChatTitle(for chatId: String?) -> String? {
+            guard let chatId else { return nil }
+            if chatId == activeChatId, !canvasLabel.isEmpty { return canvasLabel }
+            return history.first(where: { $0.id == chatId })?.title
+        }
+
+        private func emitMacQuestionNotification(_ frame: InboundFrame) {
+            let chatId = nestedChatId(frame)
+            let title = frame.payload["title"]?.stringValue ?? ""
+            let body = frame.payload["body"]?.stringValue ?? ""
+            let level = frame.payload["level"]?.stringValue ?? ""
+            guard !title.isEmpty || !body.isEmpty else { return }
+            let ownerScope = macNotificationOwnerScope
+            let chatTitle = macNotificationChatTitle(for: chatId)
+            let eventID = MacWorkNotificationService.stableEventID(
+                chatId: chatId, level: level, title: title, body: body)
+            Task {
+                await macWorkNotificationService.questionRequired(
+                    eventID: eventID, ownerScope: ownerScope, chatId: chatId, chatTitle: chatTitle)
+            }
+        }
+
+        private func emitMacTurnFailed() {
+            let eventID = macTurnNotificationEventId ?? UUID().uuidString.lowercased()
+            macTurnNotificationEventId = nil
+            let ownerScope = macNotificationOwnerScope
+            let chatId = activeChatId
+            let chatTitle = macNotificationChatTitle(for: chatId)
+            Task {
+                await macWorkNotificationService.turnFailed(
+                    eventID: eventID, ownerScope: ownerScope, chatId: chatId, chatTitle: chatTitle)
+            }
+        }
+
+        func openMacWorkNotification(chatId: String, requestId: String?) {
+            guard signedIn else { return }
+            if let requestId, !requestId.isEmpty {
+                macNotificationReveal = MacNotificationReveal(requestId: requestId, token: UUID())
+            }
+            if chatId != activeChatId { openChat(chatId) }
+        }
+
+        func consumeMacNotificationReveal(_ reveal: MacNotificationReveal) {
+            if macNotificationReveal == reveal { macNotificationReveal = nil }
+        }
+
+        func turnIdForApprovalCard(_ requestId: String) -> String? {
+            for turn in visibleTurns.reversed() {
+                if Self.approvalCards(in: turn.components).contains(where: { $0.approval.requestId == requestId }) {
+                    return turn.id
+                }
+            }
+            return nil
         }
     #endif
 

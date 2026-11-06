@@ -7,7 +7,7 @@
     import SwiftUI
 
     struct MacStatusItem: Identifiable, Equatable {
-        enum Kind: String { case connection, model, tokens, approvals, computer, bypass }
+        enum Kind: String { case connection, model, tokens, approvals, awake, computer, bypass }
 
         let kind: Kind
         let symbol: String
@@ -36,7 +36,7 @@
         }
 
         static func items(
-            connection: Connection, usage: LLMUsageTally, approvals: Int, computer: Computer?
+            connection: Connection, usage: LLMUsageTally, approvals: Int, keepingMacAwake: Bool, computer: Computer?
         ) -> [MacStatusItem] {
             var items = [connectionItem(connection)]
             if let model = usage.model {
@@ -66,6 +66,12 @@
                     MacStatusItem(
                         kind: .approvals, symbol: "hand.raised.fill", text: text, label: "Approvals", value: text,
                         tone: .warning))
+            }
+            if keepingMacAwake {
+                items.append(
+                    MacStatusItem(
+                        kind: .awake, symbol: "bolt.fill", text: "Keeping Mac awake", label: "Power",
+                        value: "Keeping this Mac awake while work runs", tone: .info))
             }
             if let computer { items.append(computerItem(computer)) }
             if computer?.bypass == true {
@@ -129,6 +135,7 @@
                     failed: model.initialConnectionFailed),
                 usage: model.llmUsage,
                 approvals: model.waitingApprovals,
+                keepingMacAwake: model.connectionActivityLevel == .active,
                 computer: host.available
                     ? MacStatusFooterModel.Computer(
                         enabled: host.enabled, sessionState: host.session?.state, statusLabel: host.statusLabel,
