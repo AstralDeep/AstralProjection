@@ -158,7 +158,7 @@ public enum ChatMemoryOutbound {
         submissionId: String = UUID().uuidString.lowercased(),
         requestGeneration: String = UUID().uuidString.lowercased()
     ) -> String? {
-        guard chatMemoryUUID(chatId) != nil else { return nil }
+        guard continuityUUID4(chatId) != nil else { return nil }
         return action(
             "chat_memory_use",
             ["chat_id": .string(chatId), "enabled": .bool(enabled)],
@@ -170,7 +170,7 @@ public enum ChatMemoryOutbound {
         submissionId: String = UUID().uuidString.lowercased(),
         requestGeneration: String = UUID().uuidString.lowercased()
     ) -> String? {
-        guard chatMemoryUUID(chatId) != nil else { return nil }
+        guard continuityUUID4(chatId) != nil else { return nil }
         return action(
             "chat_memory_learn",
             ["chat_id": .string(chatId), "enabled": .bool(enabled)],
@@ -182,7 +182,7 @@ public enum ChatMemoryOutbound {
         submissionId: String = UUID().uuidString.lowercased(),
         requestGeneration: String = UUID().uuidString.lowercased()
     ) -> String? {
-        guard chatMemoryUUID(chatId) != nil else { return nil }
+        guard continuityUUID4(chatId) != nil else { return nil }
         return action(
             "chat_memory_forget", ["chat_id": .string(chatId)],
             sessionId: sessionId, submissionId: submissionId, requestGeneration: requestGeneration)
@@ -193,7 +193,7 @@ public enum ChatMemoryOutbound {
         submissionId: String = UUID().uuidString.lowercased(),
         requestGeneration: String = UUID().uuidString.lowercased()
     ) -> String? {
-        guard chatMemoryUUID(chatId) != nil, chatMemoryUUID(changeId) != nil, expectedRevision > 0
+        guard continuityUUID4(chatId) != nil, continuityUUID4(changeId) != nil, expectedRevision > 0
         else { return nil }
         return action(
             "chat_memory_undo",
@@ -210,7 +210,7 @@ public enum ChatMemoryOutbound {
         submissionId: String = UUID().uuidString.lowercased(),
         requestGeneration: String = UUID().uuidString.lowercased()
     ) -> String? {
-        guard chatMemoryUUID(chatId) != nil, chatMemoryUUID(changeId) != nil, expectedRevision > 0
+        guard continuityUUID4(chatId) != nil, continuityUUID4(changeId) != nil, expectedRevision > 0
         else { return nil }
         return action(
             "chat_memory_decide",

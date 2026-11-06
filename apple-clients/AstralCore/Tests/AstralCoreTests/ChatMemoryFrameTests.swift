@@ -191,7 +191,8 @@ final class ChatMemoryFrameTests: XCTestCase {
 
         let forget = ChatMemoryOutbound.chatMemoryForget(chat, sessionId: chat)
         XCTAssertEqual(action(forget!), "chat_memory_forget")
-        XCTAssertEqual(Set(payload(forget!)?.objectValue?.keys ?? []), ["chat_id", "client_message_id"])
+        let forgetPayload = payload(forget!)?.objectValue ?? [:]
+        XCTAssertEqual(Set(forgetPayload.keys), ["chat_id", "client_message_id"])
 
         let undo = ChatMemoryOutbound.chatMemoryUndo(chat, changeId: change, expectedRevision: 4, sessionId: chat)
         XCTAssertEqual(action(undo!), "chat_memory_undo")

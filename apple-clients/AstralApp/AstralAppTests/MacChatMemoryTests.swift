@@ -140,7 +140,7 @@
             model.setChatMemoryUse(chat, enabled: false)
             model.setChatMemoryLearn(chat, enabled: false)
             model.openPersonalization()
-            XCTAssertEqual(sent.count, 0)
+            XCTAssertEqual(sent().count, 0)
         }
 
         func testUseToggleSendsOneIntentAndIgnoresASecondTap() throws {
@@ -185,12 +185,12 @@
                 ChatSummary(json: .object(["id": .string(chat), "title": .string("Research notes")])))
 
             model.requestChatMemoryForget(summary)
-            XCTAssertEqual(sent.count, 0)
+            XCTAssertEqual(sent().count, 0)
             XCTAssertEqual(model.chatMemoryForgetRequest?.chat.id, chat)
 
             model.cancelChatMemoryForget()
             XCTAssertNil(model.chatMemoryForgetRequest)
-            XCTAssertEqual(sent.count, 0)
+            XCTAssertEqual(sent().count, 0)
 
             model.requestChatMemoryForget(summary)
             model.confirmChatMemoryForget()
