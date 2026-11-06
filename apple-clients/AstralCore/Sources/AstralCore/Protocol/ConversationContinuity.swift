@@ -150,12 +150,20 @@ public struct ConversationMessage: Sendable, Equatable {
     public let parts: [ConversationPart]
     public let attachments: [JSONValue]
     public let branch: ConversationMessageBranch?
+    public let memoryChange: MemoryChange?
 
     init?(json: JSONValue) {
         guard let object = json.objectValue,
             Set(object.keys) == ["message_id", "role", "created_at", "parts", "attachments"]
                 || Set(object.keys)
-                    == ["message_id", "role", "created_at", "parts", "attachments", "branch"],
+                    == ["message_id", "role", "created_at", "parts", "attachments", "branch"]
+                || Set(object.keys)
+                    == ["message_id", "role", "created_at", "parts", "attachments", "memory_change"]
+                || Set(object.keys)
+                    == [
+                        "message_id", "role", "created_at", "parts", "attachments", "branch",
+                        "memory_change",
+                    ],
             let messageId = object["message_id"]?.stringValue,
             !messageId.isEmpty,
             let role = object["role"]?.stringValue,
@@ -170,6 +178,11 @@ public struct ConversationMessage: Sendable, Equatable {
         if object["branch"] != nil, ConversationMessageBranch(json: object["branch"], messageId: messageId) == nil {
             return nil
         }
+        var memoryChange: MemoryChange?
+        if object["memory_change"] != nil {
+            guard let change = MemoryChange(json: object["memory_change"]) else { return nil }
+            memoryChange = change
+        }
         let parts = rawParts.compactMap(ConversationPart.init(json:))
         guard parts.count == rawParts.count else { return nil }
         self.messageId = messageId
@@ -178,6 +191,7 @@ public struct ConversationMessage: Sendable, Equatable {
         self.parts = parts
         self.attachments = attachments
         self.branch = object["branch"].flatMap { ConversationMessageBranch(json: $0, messageId: messageId) }
+        self.memoryChange = memoryChange
     }
 
     public var visibleText: String {

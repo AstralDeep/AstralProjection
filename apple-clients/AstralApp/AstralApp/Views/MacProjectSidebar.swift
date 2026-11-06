@@ -113,6 +113,27 @@
                                         Button("Delete conversation", role: .destructive) {
                                             model.requestChatDeletion(chat)
                                         }
+                                        if model.chatMemoryControlsAvailable {
+                                            Divider()
+                                            Button("Use memory in this chat") {
+                                                model.setChatMemoryUse(
+                                                    chat.id,
+                                                    enabled: !(model.chatMemorySnapshot(for: chat.id)?.useMemory
+                                                        ?? false))
+                                            }
+                                            .accessibilityIdentifier("chat-memory-use-\(chat.id)")
+                                            Button("Learn from this chat") {
+                                                model.setChatMemoryLearn(
+                                                    chat.id,
+                                                    enabled: !(model.chatMemorySnapshot(for: chat.id)?.learnFromChat
+                                                        ?? false))
+                                            }
+                                            .accessibilityIdentifier("chat-memory-learn-\(chat.id)")
+                                            Button("Forget what this chat taught…", role: .destructive) {
+                                                model.requestChatMemoryForget(chat)
+                                            }
+                                            .accessibilityIdentifier("chat-memory-forget-\(chat.id)")
+                                        }
                                     }
                                 }
                                 if search.isEmpty {
@@ -157,6 +178,21 @@
             } message: { project in
                 Text(
                     "“\(project.name)” and all chats under this project will be deleted. Audit logs and local folders will be kept."
+                )
+            }
+            .alert(
+                "Forget what this chat taught?",
+                isPresented: Binding(
+                    get: { model.chatMemoryForgetRequest != nil },
+                    set: { if !$0 { model.cancelChatMemoryForget() } }),
+                presenting: model.chatMemoryForgetRequest
+            ) { request in
+                Button("Cancel", role: .cancel) { model.cancelChatMemoryForget() }
+                Button("Forget", role: .destructive) { model.confirmChatMemoryForget() }
+                    .accessibilityIdentifier("chat-memory-forget-confirm")
+            } message: { request in
+                Text(
+                    "“\(request.chat.displayTitle)” will stop contributing to your memory, and what it already taught will be forgotten. Other chats are unchanged."
                 )
             }
         }

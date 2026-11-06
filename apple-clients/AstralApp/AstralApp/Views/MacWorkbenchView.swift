@@ -235,6 +235,21 @@
             .sheet(isPresented: $commandsPresented, onDismiss: finishPalette) {
                 MacWorkbenchCommandPalette(context: paletteContext, query: $paletteQuery) { paletteChoice = $0 }
             }
+            .alert(
+                "Forget what this chat taught?",
+                isPresented: Binding(
+                    get: { model.chatMemoryForgetRequest != nil },
+                    set: { if !$0 { model.cancelChatMemoryForget() } }),
+                presenting: model.chatMemoryForgetRequest
+            ) { request in
+                Button("Cancel", role: .cancel) { model.cancelChatMemoryForget() }
+                Button("Forget", role: .destructive) { model.confirmChatMemoryForget() }
+                    .accessibilityIdentifier("workbench-chat-memory-forget-confirm")
+            } message: { request in
+                Text(
+                    "“\(request.chat.displayTitle)” will stop contributing to your memory, and what it already taught will be forgotten. Other chats are unchanged."
+                )
+            }
             .sheet(isPresented: $workPresented) { MacWorkCenterView(model: model) }
             .sheet(
                 isPresented: Binding(
@@ -344,6 +359,7 @@
                         }
                     }
                     if model.chromeMenu?.topbarActions.contains(where: { $0.action != nil }) == true { Divider() }
+                    chatMemoryMenuItems
                     Button(model.consoleLabel("agent_directory")) { agentsPresented = true }
                 } label: {
                     Image(systemName: "ellipsis").frame(width: 36, height: 40)
@@ -386,6 +402,38 @@
                 Image(systemName: icon).frame(width: 36, height: 40).contentShape(Rectangle())
             }
             .buttonStyle(.plain).foregroundStyle(p.muted).help(label).accessibilityLabel(label)
+        }
+
+        @ViewBuilder private var chatMemoryMenuItems: some View {
+            if let chat = model.activeChatId, model.chatMemoryControlsAvailable {
+                let snapshot = model.chatMemorySnapshot(for: chat)
+                Divider()
+                Button("Use memory in this chat") {
+                    model.setChatMemoryUse(chat, enabled: !(snapshot?.useMemory ?? false))
+                }
+                .accessibilityIdentifier("workbench-chat-memory-use")
+                Button("Learn from this chat") {
+                    model.setChatMemoryLearn(chat, enabled: !(snapshot?.learnFromChat ?? false))
+                }
+                .accessibilityIdentifier("workbench-chat-memory-learn")
+                if let summary = chatSummary(for: chat) {
+                    Button("Forget what this chat taught…", role: .destructive) {
+                        model.requestChatMemoryForget(summary)
+                    }
+                    .accessibilityIdentifier("workbench-chat-memory-forget")
+                }
+                if let pending = snapshot?.pending, pending > 0 {
+                    Button("Review pending memory (\(pending))") { model.openPersonalization() }
+                        .accessibilityIdentifier("workbench-chat-memory-pending")
+                        .accessibilityLabel("Review pending memory, \(pending) awaiting decision")
+                }
+                Divider()
+            }
+        }
+
+        private func chatSummary(for chatId: String) -> ChatSummary? {
+            model.history.first { $0.id == chatId }
+                ?? ChatSummary(json: .object(["id": .string(chatId)]))
         }
 
         private var paletteContext: MacPaletteContext {

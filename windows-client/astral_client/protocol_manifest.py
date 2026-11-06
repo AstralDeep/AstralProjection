@@ -87,6 +87,9 @@ CLASSIFICATION: dict[str, str] = {
     "chat_steer_recorded": IGNORED,
     "chat_steer_refused": IGNORED,
     "side_question_result": IGNORED,
+    "chat_memory_state": IGNORED,
+    "memory_change_recorded": IGNORED,
+    "memory_change_refused": IGNORED,
     "notification": HANDLED,
     "error": HANDLED,
 }
