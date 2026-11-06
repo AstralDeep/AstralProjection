@@ -1,5 +1,5 @@
 // REST client shared by the Apple targets: chat list/detail/creation, operation reconciliation,
-// canvas/component export and download, agent permissions, audit, and attributed sign-out. Used throughout
+// canvas/component export and download, agent permissions, and attributed sign-out. Used throughout
 // AppModel and the Views layer.
 
 import Foundation
@@ -455,17 +455,6 @@ public struct RestClient: Sendable {
             ]))
         let ok = json["revoked"]?.boolValue == true || json["queued"]?.boolValue == true
         return status == 200 && ok
-    }
-
-    public func audit() async -> [AuditEvent] {
-        var req = NoStoreHTTP.request(url: serverBase.appendingPathComponent("api/audit"))
-        if let token = await tokenProvider() {
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
-        guard let (data, response) = try? await NoStoreHTTP.session.data(for: req),
-            (response as? HTTPURLResponse)?.statusCode == 200
-        else { return [] }
-        return AuditEvent.parse(data)
     }
 
     public func uploadAttachment(
