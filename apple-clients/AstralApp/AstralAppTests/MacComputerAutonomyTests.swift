@@ -59,6 +59,7 @@
         private func modeFrame(
             _ host: MacComputerHost, mode: String, supported: [String], breaker: [String: JSONValue]? = nil
         ) throws -> InboundFrame {
+            let frameHostId = try XCTUnwrap(host.descriptor).hostId
             var computerMode: [String: JSONValue] = [
                 "mode": .string(mode), "supported": .array(supported.map(JSONValue.string)),
             ]
@@ -66,17 +67,18 @@
             return InboundFrame(
                 name: "computer_session",
                 payload: .object([
-                    "type": .string("computer_session"), "host_id": .string(try XCTUnwrap(host.descriptor).hostId),
+                    "type": .string("computer_session"), "host_id": .string(frameHostId),
                     "session_id": .string(sessionId), "state": .string("active"),
                     "controller_label": .string("Autonomy test"), "computer_mode": .object(computerMode),
                 ]))
         }
 
         private func legacyFrame(_ host: MacComputerHost) throws -> InboundFrame {
-            InboundFrame(
+            let frameHostId = try XCTUnwrap(host.descriptor).hostId
+            return InboundFrame(
                 name: "computer_session",
                 payload: .object([
-                    "type": .string("computer_session"), "host_id": .string(try XCTUnwrap(host.descriptor).hostId),
+                    "type": .string("computer_session"), "host_id": .string(frameHostId),
                     "session_id": .string(sessionId), "state": .string("active"),
                     "controller_label": .string("Autonomy test"),
                 ]))
@@ -226,13 +228,14 @@
             model.outboundTap = { emitted.append($0) }
             model.retryBlockedAction(entry)
             XCTAssertEqual(model.recentlyBlocked.first?.retry, .sent)
-            let frame = try XCTUnwrap(JSONValue.parse(Data(try XCTUnwrap(emitted.last).utf8)))
+            let emittedFrame = try XCTUnwrap(emitted.last)
+            let frame = try XCTUnwrap(JSONValue.parse(Data(emittedFrame.utf8)))
             XCTAssertEqual(frame["action"], .string("chrome_computer_review_retry"))
-            XCTAssertEqual(frame["payload"]?["chat_id"], .string("audit-chat"))
-            XCTAssertEqual(
-                frame["payload"]?["event_id"], .string("review.auto.2c7a5d3f-9b52-4d3f-ac7a-5d3f9b522c7a"))
-            XCTAssertNotNil(frame["payload"]?["client_message_id"]?.stringValue)
-            XCTAssertTrue(continuityUUID4(try XCTUnwrap(frame["payload"]?["client_message_id"]?.stringValue)))
+            let retryPayload = frame["payload"]?.objectValue ?? [:]
+            XCTAssertEqual(retryPayload["chat_id"], .string("audit-chat"))
+            XCTAssertEqual(retryPayload["event_id"], .string("review.auto.2c7a5d3f-9b52-4d3f-ac7a-5d3f9b522c7a"))
+            let clientMessageId = try XCTUnwrap(retryPayload["client_message_id"]?.stringValue)
+            XCTAssertTrue(continuityUUID4(clientMessageId))
         }
 
         func testARepeatDenyKeepsOneEntryAndItsRetryState() throws {
@@ -382,7 +385,8 @@
                     id: "step-deny-zoom", name: "zoom", status: "errored", decision: "deny", chat: "other-chat",
                     eventId: "review.auto.3d8b6e4a-ac63-4e4a-bd8b-6e4aac633d8b"))
             try await mount.settle()
-            XCTAssertTrue(try mount.accessibility.compactMap(\.identifier).contains("mac-computer-blocked-retry"))
+            let withRetry = try mount.accessibility.compactMap(\.identifier)
+            XCTAssertTrue(withRetry.contains("mac-computer-blocked-retry"))
             model.retryBlockedAction(try XCTUnwrap(model.recentlyBlocked.first))
             try await mount.settle()
             let unavailable = try mount.accessibility.compactMap(\.identifier)

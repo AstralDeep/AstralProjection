@@ -48,14 +48,17 @@ public struct ComputerAutonomyState: Sendable, Equatable {
         if let breaker = object["breaker"] {
             guard let breakerObject = breaker.objectValue,
                 breakerObject["open"]?.boolValue == true, mode == .ask,
-                breakerObject["reason"]?.stringValue.map({
-                    $0.unicodeScalars.count <= Self.maximumBreakerReason
-                        && !$0.unicodeScalars.contains(where: { $0.value == 0 })
-                }) ?? true,
                 Set(breakerObject.keys).isSubset(of: ["open", "reason"])
             else { throw ComputerHostError("out_of_range", "The autonomy mode state is invalid.") }
+            var trippedReason: String?
+            if let reason = breakerObject["reason"]?.stringValue {
+                guard reason.unicodeScalars.count <= Self.maximumBreakerReason,
+                    !reason.unicodeScalars.contains(where: { $0.value == 0 })
+                else { throw ComputerHostError("out_of_range", "The autonomy mode state is invalid.") }
+                trippedReason = reason
+            }
             breakerOpen = true
-            breakerReason = breakerObject["reason"]?.stringValue
+            breakerReason = trippedReason
         } else {
             breakerOpen = false
             breakerReason = nil

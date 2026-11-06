@@ -4914,7 +4914,7 @@ final class AppModel: NSObject {
         let status = step["status"]?.stringValue ?? "in_progress"
         let arguments = step["args_truncated"]?.stringValue ?? ""
         let position = activityPosition(chatId)
-        let verdict = step["review_verdict"].flatMap(ComputerReviewVerdict.init)
+        let verdict = step["review_verdict"].flatMap { ComputerReviewVerdict(json: $0) }
         updateActivity(chatId) { rows in
             var index = rows.firstIndex { $0.id == (activityAliases[stepId] ?? stepId) }
             if index == nil,

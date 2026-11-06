@@ -185,7 +185,8 @@ final class ComputerHostAutonomyTests: XCTestCase {
             "bypass": .bool(true),
         ])
         XCTAssertEqual(decoded.autonomy?.mode, .bypass)
-        XCTAssertEqual(decoded.autonomy?.supported, [.ask, .bypass])
+        let decodedSupported = decoded.autonomy?.supported ?? []
+        XCTAssertEqual(decodedSupported, [.ask, .bypass])
         XCTAssertEqual(decoded.bypass, true)
         XCTAssertNil(try sessionFrame(["computer_mode": modeJSON(mode: "yolo", supported: ["yolo"])]).autonomy)
     }
@@ -195,26 +196,20 @@ final class ComputerHostAutonomyTests: XCTestCase {
         let root = try JSONValue.parse(data)
         let contract = try XCTUnwrap(root["presentation_contracts"]?["computer_autonomy_v1"]?.objectValue)
         XCTAssertEqual(contract["version"], .number(1))
-        XCTAssertEqual(
-            Set(contract["modes"]?.objectValue?.keys ?? []),
-            ["ask", "auto_review", "bypass"])
-        XCTAssertEqual(
-            Set(contract["clients"]?.objectValue?.keys ?? []),
-            ["macos", "browser", "windows", "android", "ios", "watch"])
-        let actions = Set(root["accept_actions"]?.arrayValue?.compactMap(\.stringValue) ?? [])
+        let contractModes = contract["modes"]?.objectValue ?? [:]
+        XCTAssertEqual(Set(contractModes.keys), ["ask", "auto_review", "bypass"])
+        let contractClients = contract["clients"]?.objectValue ?? [:]
+        XCTAssertEqual(Set(contractClients.keys), ["macos", "browser", "windows", "android", "ios", "watch"])
+        let manifestActions = root["accept_actions"]?.arrayValue ?? []
+        let actionSet = Set(manifestActions.compactMap(\.stringValue))
         for action in ["chrome_computer_mode_set", "chrome_computer_review_retry"] {
-            XCTAssertTrue(actions.contains(action), action)
+            XCTAssertTrue(actionSet.contains(action), action)
             XCTAssertNotNil(contract["client_actions"]?[action])
         }
-        let modeField = try XCTUnwrap(
-            root["additive_fields"]?.arrayValue?.first {
-                $0["field"] == .string("computer_mode")
-            })
+        let additiveFields = root["additive_fields"]?.arrayValue ?? []
+        let modeField = try XCTUnwrap(additiveFields.first { $0["field"] == .string("computer_mode") })
         XCTAssertEqual(modeField["carried_on"], .array([.string("computer_host"), .string("computer_session")]))
-        let verdictField = try XCTUnwrap(
-            root["additive_fields"]?.arrayValue?.first {
-                $0["field"] == .string("review_verdict")
-            })
+        let verdictField = try XCTUnwrap(additiveFields.first { $0["field"] == .string("review_verdict") })
         XCTAssertEqual(verdictField["carried_on"], .array([.string("chat_step step (tool_call)")]))
         XCTAssertEqual(
             verdictField["contract"], .string("accept_actions.chrome_computer_review_retry"))
@@ -230,16 +225,18 @@ final class ComputerHostAutonomyTests: XCTestCase {
             }
             dir.deleteLastPathComponent()
         }
-        let fixture = try JSONValue.parse(Data(contentsOf: try XCTUnwrap(fixtureURL)))
+        let resolvedFixtureURL = try XCTUnwrap(fixtureURL)
+        let fixture = try JSONValue.parse(Data(contentsOf: resolvedFixtureURL))
         XCTAssertEqual(fixture["version"], .number(1))
-        XCTAssertEqual(
-            Set(fixture["modes"]?.arrayValue?.compactMap(\.stringValue) ?? []),
-            ["ask", "auto_review", "bypass"])
+        let fixtureModes = fixture["modes"]?.arrayValue ?? []
+        XCTAssertEqual(Set(fixtureModes.compactMap(\.stringValue)), ["ask", "auto_review", "bypass"])
         let frames = try XCTUnwrap(fixture["supported_frames"]?.objectValue)
         XCTAssertEqual(frames["legacy"]?["computer_mode"], nil)
-        let confirmed = try ComputerAutonomyState(json: XCTUnwrap(frames["auto_review"]?["computer_mode"]))
+        let confirmedJSON = try XCTUnwrap(frames["auto_review"]?["computer_mode"])
+        let confirmed = try ComputerAutonomyState(json: confirmedJSON)
         XCTAssertEqual(confirmed.supported, [.ask, .autoReview, .bypass])
-        let breaker = try ComputerAutonomyState(json: XCTUnwrap(frames["breaker_open"]?["computer_mode"]))
+        let breakerJSON = try XCTUnwrap(frames["breaker_open"]?["computer_mode"])
+        let breaker = try ComputerAutonomyState(json: breakerJSON)
         XCTAssertTrue(breaker.breakerTripped)
         let verdictFrames = try XCTUnwrap(fixture["verdict_frames"]?.objectValue)
         for (name, expected) in [
@@ -247,17 +244,20 @@ final class ComputerHostAutonomyTests: XCTestCase {
             ("deny", ComputerReviewVerdict.Decision.deny),
             ("escalate", ComputerReviewVerdict.Decision.escalate),
         ] {
-            let verdict = try XCTUnwrap(
-                ComputerReviewVerdict(json: XCTUnwrap(verdictFrames[name]?["step"]?["review_verdict"])))
+            let verdictJSON = try XCTUnwrap(verdictFrames[name]?["step"]?["review_verdict"])
+            let verdict = try XCTUnwrap(ComputerReviewVerdict(json: verdictJSON))
             XCTAssertEqual(verdict.decision, expected, name)
             XCTAssertEqual(verdict.cardRaised, expected == .escalate, name)
         }
-        for invalid in fixture["invalid"]?.objectValue?.values ?? [] {
+        let invalidFrames = fixture["invalid"]?.objectValue?.values ?? []
+        for invalid in invalidFrames {
             if invalid["computer_mode"] != nil {
-                XCTAssertThrowsError(try ComputerAutonomyState(json: XCTUnwrap(invalid["computer_mode"])))
+                let modeValue = try XCTUnwrap(invalid["computer_mode"])
+                XCTAssertThrowsError(try ComputerAutonomyState(json: modeValue))
             }
             if let step = invalid["step"] {
-                XCTAssertNil(ComputerReviewVerdict(json: XCTUnwrap(step["review_verdict"])))
+                let verdictValue = try XCTUnwrap(step["review_verdict"])
+                XCTAssertNil(ComputerReviewVerdict(json: verdictValue))
             }
         }
     }
