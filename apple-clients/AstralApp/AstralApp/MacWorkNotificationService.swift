@@ -109,7 +109,7 @@
         private var pendingEvents: Set<String> = []
         private var eventOrder: [String] = []
         private var pendingApprovalCount = 0
-        var tapHandler: ((chatId: String, requestId: String?) -> Void)?
+        var tapHandler: ((String, String?) -> Void)?
 
         convenience init() {
             self.init(system: .live, defaults: .standard)

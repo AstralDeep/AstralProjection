@@ -256,7 +256,7 @@
             XCTAssertTrue(recorder.delegate === service)
 
             var taps: [(chatId: String, requestId: String?)] = []
-            service.tapHandler = { taps.append($0) }
+            service.tapHandler = { chatId, requestId in taps.append((chatId: chatId, requestId: requestId)) }
             service.handleTap(userInfo: ["chat_id": "chat-1", "request_id": "approval-1"])
             service.handleTap(userInfo: ["chat_id": "chat-2"])
             service.handleTap(userInfo: ["request_id": "approval-1"])
