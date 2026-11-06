@@ -1,4 +1,4 @@
-// Decodes agent permissions and trusted server connection notices. Screens and the console directory render these models.
+// Decodes agent permissions and trusted server connection notices for the console directory and screens.
 
 import Foundation
 
@@ -101,5 +101,3 @@ public struct Agent: Equatable, Sendable, Identifiable {
         return out
     }
 }
-
-

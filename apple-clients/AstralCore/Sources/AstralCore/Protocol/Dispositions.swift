@@ -54,7 +54,7 @@ public struct ClientDispositions: Sendable {
         "agent_stop": "BYO host frame — Apple clients never host a user agent (matches Android)",
         "agent_tunnel":
             "BYO agent frames — relayed only by a hosting desktop; author-only clients ignore (matches Android)",
-        "audit_append": "audit history stays on the server-rendered audit surface (044); natives open it with chrome_open",
+        "audit_append": "audit stays on the server-rendered audit surface (044); natives open it via chrome_open",
         "chat_queue_updated": "macOS-only turn_steer_v1 queue chips; other clients keep the legacy composer",
         "chat_steer_recorded": "macOS-only turn_steer_v1 steer receipt; other clients keep the legacy composer",
         "chat_steer_refused": "macOS-only turn_steer_v1 steer refusal; other clients keep the legacy composer",
