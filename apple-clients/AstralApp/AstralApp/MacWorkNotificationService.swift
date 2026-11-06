@@ -1,6 +1,6 @@
 // Delivers privacy-safe macOS work notifications and a pending-approval badge for AppModel.
 // Alerts carry kind-only text plus opaque ids, never approve or deny actions, tool arguments or output.
-// All event admission is based on host-authorized model state, persisted owner settings and injected system capabilities.
+// All event admission is based on host-authorized model state, persisted settings and injected capabilities.
 #if os(macOS)
     import AppKit
     import CryptoKit
@@ -111,7 +111,7 @@
         private var pendingApprovalCount = 0
         var tapHandler: ((String, String?) -> Void)?
 
-        convenience init() {
+        override convenience init() {
             self.init(system: .live, defaults: .standard)
         }
 
@@ -125,7 +125,7 @@
                     settings.mode = mode
                 }
                 if let stored = defaults.stringArray(forKey: Self.kindsKey) {
-                    settings.enabledKinds = Set(stored.compactMap(MacWorkNotificationKind.init(rawValue:)))
+                    settings.enabledKinds = Set(stored.compactMap { MacWorkNotificationKind(rawValue: $0) })
                 }
                 settings.includeChatTitle = defaults.bool(forKey: Self.chatTitleKey)
             }
@@ -216,13 +216,13 @@
             let key = Self.eventKey(ownerScope: ownerScope, eventID: eventID, kind: kind)
             guard !deliveredEvents.contains(key), pendingEvents.insert(key).inserted else { return }
             defer { pendingEvents.remove(key) }
-            guard await system.authorization() == .authorized, self.ownerScope == ownerScope, admits(kind: kind)
-            else { return }
+            let authorized = await system.authorization()
+            guard authorized == .authorized, self.ownerScope == ownerScope, admits(kind: kind) else { return }
             let content = UNMutableNotificationContent()
             content.title = Self.alertTitle(kind: kind, chatTitle: chatTitle, settings: settings)
             content.body = kind.body
             content.sound = .default
-            var userInfo: [String: String] = ["kind": kind.rawValue]
+            var userInfo: [AnyHashable: Any] = ["kind": kind.rawValue]
             if let chatId, !chatId.isEmpty { userInfo["chat_id"] = chatId }
             if kind == .approval { userInfo["request_id"] = eventID }
             content.userInfo = userInfo

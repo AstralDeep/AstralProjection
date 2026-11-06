@@ -77,24 +77,22 @@
                 ]))
         }
 
+        private static let notificationFrame =
+            #"{"type":"notification","level":"info","chat_id":"chat-notify-1","title":"Which mailbox?",""#
+                + #"body":"Pick one to continue."}"#
+
         func testNotificationFrameRaisesOnePrivacySafeQuestionAlert() async throws {
             let (model, recorder) = try recorderModel()
-            reduce(
-                model,
-                #"{"type":"notification","level":"info","chat_id":"44444444-4444-4444-8444-444444444445","title":"Which mailbox?","body":"Pick one to continue."}"#
-            )
+            reduce(model, Self.notificationFrame)
             try await waitFor(recorder.requests.count == 1)
             let content = recorder.requests[0].content
             XCTAssertEqual(content.title, "AstralDeep has a question")
             XCTAssertEqual(content.body, "Open AstralDeep to read and answer it.")
-            XCTAssertEqual(content.userInfo["chat_id"] as? String, "44444444-4444-4444-8444-444444444445")
+            XCTAssertEqual(content.userInfo["chat_id"] as? String, "chat-notify-1")
             XCTAssertFalse(content.title.contains("mailbox"))
             XCTAssertFalse(content.body.contains("mailbox"))
 
-            reduce(
-                model,
-                #"{"type":"notification","level":"info","chat_id":"44444444-4444-4444-8444-444444444445","title":"Which mailbox?","body":"Pick one to continue."}"#
-            )
+            reduce(model, Self.notificationFrame)
             try await waitFor(recorder.requests.count == 1)
         }
 
@@ -163,7 +161,9 @@
             XCTAssertNil(model.turnIdForApprovalCard(requestId))
 
             model.transientTurns = [
-                AppModel.ChatTurn(id: "assistant-0", role: "assistant", text: "", components: [approvalCard(requestId: requestId)])
+                AppModel.ChatTurn(
+                    id: "assistant-0", role: "assistant", text: "",
+                    components: [approvalCard(requestId: requestId)]),
             ]
             XCTAssertEqual(model.turnIdForApprovalCard(requestId), "assistant-0")
 
