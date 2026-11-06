@@ -3261,11 +3261,12 @@ final class AppModel: NSObject {
             let ownsActiveChatTurn = operationOwnsActiveChatTurn(
                 action: status.action,
                 requestGeneration: status.requestGeneration)
-            let nothingSaved =
-                pendingCommitRequestGeneration == status.requestGeneration
-                || continuity.requestGeneration == status.requestGeneration
-                && status.state != "completed"
-                && continuity.retireUncommittedCommit(requestGeneration: status.requestGeneration)
+            var nothingSaved = pendingCommitRequestGeneration == status.requestGeneration
+            if status.state != "completed",
+                continuity.retireUncommittedCommit(requestGeneration: status.requestGeneration)
+            {
+                nothingSaved = true
+            }
             let restored =
                 ownsActiveChatTurn && nothingSaved && ["failed", "retryable"].contains(status.state)
                 && restoreFailedChatSend(requestGeneration: status.requestGeneration)
