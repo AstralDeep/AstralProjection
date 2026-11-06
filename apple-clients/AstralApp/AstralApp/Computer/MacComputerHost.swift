@@ -855,7 +855,7 @@
             case .bypass:
                 requestBypass(true, from: origin)
             case .ask:
-                if bypass || bypassSaved { requestBypass(false) }
+                if bypass || bypassSaved { requestBypass(false, from: .controls) }
                 requestModeFrame(.ask)
             case .autoReview:
                 guard modeAware, autonomy?.offersAutoReview == true else {
@@ -870,7 +870,7 @@
                     lastError = "The review circuit breaker is open, so the server keeps this Mac in Ask."
                     return
                 }
-                if bypass || bypassSaved { requestBypass(false) }
+                if bypass || bypassSaved { requestBypass(false, from: .controls) }
                 requestModeFrame(.autoReview)
             }
         }

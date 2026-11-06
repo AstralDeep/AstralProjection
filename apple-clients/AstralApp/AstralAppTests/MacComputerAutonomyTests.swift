@@ -377,13 +377,17 @@
             let after = try mount.accessibility.compactMap(\.identifier)
             XCTAssertTrue(after.contains("mac-computer-blocked-sent"))
             XCTAssertFalse(after.contains("mac-computer-blocked-retry"))
-            let stale = AppModel.BlockedComputerAction(
-                eventId: "review.auto.3d8b6e4a-ac63-4e4a-bd8b-6e4aac633d8b", chatId: "other-chat", tool: "zoom",
-                summary: "zoom", reason: "outside the grant", connection: nil, receivedAt: Date())
-            model.recentlyBlocked.insert(stale, at: 0)
+            model.handleFrame(
+                try stepFrame(
+                    id: "step-deny-zoom", name: "zoom", status: "errored", decision: "deny", chat: "other-chat",
+                    eventId: "review.auto.3d8b6e4a-ac63-4e4a-bd8b-6e4aac633d8b"))
             try await mount.settle()
-            let refused = try mount.accessibility.compactMap(\.identifier)
-            XCTAssertTrue(refused.contains("mac-computer-blocked-refusal"))
+            XCTAssertTrue(try mount.accessibility.compactMap(\.identifier).contains("mac-computer-blocked-retry"))
+            model.retryBlockedAction(try XCTUnwrap(model.recentlyBlocked.first))
+            try await mount.settle()
+            let unavailable = try mount.accessibility.compactMap(\.identifier)
+            XCTAssertTrue(unavailable.contains("mac-computer-blocked-refusal"))
+            XCTAssertFalse(unavailable.contains("mac-computer-blocked-retry"))
         }
 
         func testTheFooterShowsTheModeSelectorAndBreakerItems() throws {
@@ -447,7 +451,10 @@
             return model
         }
 
-        private func stepFrame(id: String, name: String, status: String, decision: String) throws -> InboundFrame {
+        private func stepFrame(
+            id: String, name: String, status: String, decision: String, chat: String = "audit-chat",
+            eventId: String? = nil
+        ) throws -> InboundFrame {
             let eventIds = [
                 "allow": "review.auto.1b6f4c2e-8a41-4c2e-9b6f-4c2e8a411b6f",
                 "deny": "review.auto.2c7a5d3f-9b52-4d3f-ac7a-5d3f9b522c7a",
@@ -461,12 +468,12 @@
             return InboundFrame(
                 name: "chat_step",
                 payload: .object([
-                    "type": .string("chat_step"), "chat_id": .string("audit-chat"),
+                    "type": .string("chat_step"), "chat_id": .string(chat),
                     "step": .object([
-                        "id": .string(id), "chat_id": .string("audit-chat"), "kind": .string("tool_call"),
+                        "id": .string(id), "chat_id": .string(chat), "kind": .string("tool_call"),
                         "name": .string(name), "status": .string(status),
                         "review_verdict": .object([
-                            "event_id": .string(try XCTUnwrap(eventIds[decision])),
+                            "event_id": .string(try XCTUnwrap(eventId ?? eventIds[decision])),
                             "decision": .string(decision),
                             "reason": .string(try XCTUnwrap(reasons[decision])),
                             "card_raised": .bool(decision == "escalate"),

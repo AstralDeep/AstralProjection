@@ -230,7 +230,7 @@
         }
 
         private func modeRow(_ mode: ComputerAutonomyMode) -> some View {
-            let selected = host.confirmedMode == mode && !host.modeWaitingConfirmation
+            let selected = host.confirmedMode == mode
             let refused = host.breakerNotice != nil && mode != .ask
             return Button {
                 host.requestAutonomyMode(mode, from: .controls)

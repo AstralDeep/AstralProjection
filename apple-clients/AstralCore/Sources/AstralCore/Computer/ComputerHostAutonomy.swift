@@ -98,8 +98,8 @@ public struct ComputerReviewVerdict: Sendable, Equatable {
     public var blocked: Bool { decision == .deny && !cardRaised }
 }
 
-public extension ComputerHostOutbound {
-    static func autonomyModeFrame(hostId: String, mode: ComputerAutonomyMode) -> String {
+extension ComputerHostOutbound {
+    public static func autonomyModeFrame(hostId: String, mode: ComputerAutonomyMode) -> String {
         frame(action: "chrome_computer_mode_set", payload: ["host_id": .string(hostId), "mode": .string(mode.rawValue)])
     }
 }
