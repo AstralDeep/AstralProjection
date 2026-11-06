@@ -447,6 +447,9 @@
             case .toggleArchive:
                 guard let chat = paletteContext.chat else { return }
                 model.emit(chat.archived ? "chat_unarchive" : "chat_archive", payload: ["chat_id": .string(chat.id)])
+            case .chatAudit:
+                guard let chat = paletteContext.chat else { return }
+                model.openChatAudit(chat.id)
             case .composer(let key):
                 guard let control = model.console?.composerActions.first(where: { $0.key == key }) else { return }
                 if control.kind == .toggle {

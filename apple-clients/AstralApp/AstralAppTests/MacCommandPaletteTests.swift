@@ -65,7 +65,7 @@
                 [
                     "app/new-chat", "app/sidebar", "app/activity", "app/browser", "app/computer", "app/agents",
                     "app/updates", "app/settings", "app/cancel-turn", "app/sign-out", "chat/rename", "chat/pin",
-                    "chat/archive", "composer/background",
+                    "chat/archive", "chat/audit", "composer/background",
                     "composer/advanced", "composer/timeline", "composer/pulse", "composer/work", "account/agents",
                     "account/llm", "account/personalization", "account/audit", "account/theme", "account/guidance",
                     "help/guide",
@@ -79,7 +79,7 @@
                 Set(rows.filter { !$0.enabled }.map(\.id)),
                 [
                     "app/browser", "app/computer", "app/updates", "app/cancel-turn", "chat/rename", "chat/pin",
-                    "chat/archive",
+                    "chat/archive", "chat/audit",
                 ])
             XCTAssertEqual(
                 Array(Set(rows.map(\.section))).sorted(), ["Account", "Actions", "Chat", "Composer", "Help"])
@@ -167,20 +167,21 @@
             let rows = MacCommandPaletteModel.rows(context: context, menu: menu, query: "").filter {
                 $0.section == "Chat"
             }
-            XCTAssertEqual(rows.map(\.title), ["Rename Chat…", "Unpin Chat", "Unarchive Chat"])
+            XCTAssertEqual(
+                rows.map(\.title), ["Rename Chat…", "Unpin Chat", "Unarchive Chat", "Audit for This Chat"])
             XCTAssertTrue(rows.allSatisfy(\.enabled))
             context.chat = MacPaletteChat(id: "c1", title: "Roll notes", pinned: false, archived: false)
             XCTAssertEqual(
                 MacCommandPaletteModel.rows(context: context, menu: menu, query: "").filter { $0.section == "Chat" }
                     .map(\.title),
-                ["Rename Chat…", "Pin Chat", "Archive Chat"])
+                ["Rename Chat…", "Pin Chat", "Archive Chat", "Audit for This Chat"])
             for blocked in [
                 MacPaletteContext(connected: false, chat: context.chat),
                 MacPaletteContext(canNavigate: false, chat: context.chat),
                 MacPaletteContext(chat: context.chat, signedIn: false),
                 MacPaletteContext(),
             ] {
-                for action in [MacPaletteAction.renameChat, .togglePin, .toggleArchive] {
+                for action in [MacPaletteAction.renameChat, .togglePin, .toggleArchive, .chatAudit] {
                     XCTAssertFalse(MacCommandPaletteModel.runnable(action, context: blocked, menu: menu), "\(action)")
                 }
             }
