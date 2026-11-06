@@ -2962,7 +2962,10 @@ final class AppModel: NSObject {
         case "chat_created":
             if let chatId = nestedChatId(frame) { adoptChat(chatId) }
         case "user_message_acked":
-            if let chatId = nestedChatId(frame) { adoptChat(chatId) }
+            if let chatId = nestedChatId(frame) {
+                guard activeChatId == nil || activeChatId == chatId else { break }
+                adoptChat(chatId)
+            }
             turnActive = true
             #if os(macOS)
                 macTurnNotificationStartedAt = Date()
