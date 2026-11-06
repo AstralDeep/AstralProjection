@@ -1,4 +1,4 @@
-// Decodes agent permissions, trusted server connection notices and audit events. Screens and the console directory render these models.
+// Decodes agent permissions and trusted server connection notices. Screens and the console directory render these models.
 
 import Foundation
 
@@ -102,64 +102,4 @@ public struct Agent: Equatable, Sendable, Identifiable {
     }
 }
 
-public struct AuditEvent: Equatable, Sendable {
-    public let id: String?
-    public let eventClass: String?
-    public let action: String?
-    public let outcome: String?
-    public let recordedAt: String?
-    public let outcomeDetail: String?
-    public let detail: String?
 
-    public var identity: String { id ?? "\(eventClass ?? "")-\(action ?? "")-\(recordedAt ?? "")" }
-
-    public init(
-        id: String?, eventClass: String?, action: String?, outcome: String?,
-        recordedAt: String?, outcomeDetail: String? = nil, detail: String? = nil
-    ) {
-        self.id = id
-        self.eventClass = eventClass
-        self.action = action
-        self.outcome = outcome
-        self.recordedAt = recordedAt
-        self.outcomeDetail = outcomeDetail
-        self.detail = detail
-    }
-
-    public static func parse(_ data: Data) -> [AuditEvent] {
-        guard let root = try? JSONValue.parse(data) else { return [] }
-        let arr: [JSONValue]
-        if let a = root.arrayValue {
-            arr = a
-        } else {
-            arr = root["events"]?.arrayValue ?? root["items"]?.arrayValue ?? root["data"]?.arrayValue ?? []
-        }
-        return arr.compactMap { o in
-            guard o.objectValue != nil else { return nil }
-            func pick(_ keys: [String]) -> String? {
-                for k in keys { if let v = o[k]?.stringValue { return v } }
-                return nil
-            }
-            return AuditEvent(
-                id: pick(["id", "event_id"]),
-                eventClass: pick(["event_class", "class"]),
-                action: pick(["action_type", "action"]),
-                outcome: pick(["outcome", "result"]),
-                recordedAt: pick(["recorded_at", "created_at", "timestamp"]),
-                outcomeDetail: pick(["outcome_detail"]),
-                detail: metaSummary(o))
-        }
-    }
-
-    private static func metaSummary(_ o: JSONValue) -> String? {
-        var parts: [String] = []
-        if let inputs = o["inputs_meta"]?.objectValue, !inputs.isEmpty {
-            parts.append("inputs: \(inputs.count) field(s)")
-        }
-        if let outputs = o["outputs_meta"]?.objectValue, !outputs.isEmpty {
-            parts.append("outputs: \(outputs.count) field(s)")
-        }
-        let joined = parts.joined(separator: "\n")
-        return joined.isEmpty ? nil : joined
-    }
-}
