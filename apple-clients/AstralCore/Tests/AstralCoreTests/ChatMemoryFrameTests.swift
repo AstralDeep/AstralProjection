@@ -68,7 +68,8 @@ final class ChatMemoryFrameTests: XCTestCase {
                     #"{"type":"chat_memory_state","chat_id":"\#(chat)","use":"yes","learn":false,"pending":0}"#)!))
         XCTAssertNil(
             ChatMemoryState(
-                frame: parse(#"{"type":"chat_memory_snapshot","chat_id":"\#(chat)","use":true,"learn":false,"pending":0}"#)!))
+                frame: parse(
+                    #"{"type":"chat_memory_snapshot","chat_id":"\#(chat)","use":true,"learn":false,"pending":0}"#)!))
     }
 
     func testMemoryChangeParsesAppliedAndStagedSummaries() {
@@ -175,18 +176,21 @@ final class ChatMemoryFrameTests: XCTestCase {
 
     func testOutboundIntentsCarryExactFieldsAndFences() {
         let use = ChatMemoryOutbound.chatMemoryUse(chat, enabled: false, sessionId: chat)
-        XCTAssertEqual(
-            use,
-            ChatMemoryOutbound.chatMemoryUse(
-                chat, enabled: false, sessionId: chat, submissionId: submissionId(use!),
-                requestGeneration: requestGeneration(use!)))
-        XCTAssertEqual(payload(use!)["chat_id"], .string(chat))
-        XCTAssertEqual(payload(use!)["enabled"], .bool(false))
+        let repeated = ChatMemoryOutbound.chatMemoryUse(
+            chat, enabled: false, sessionId: chat, submissionId: submissionId(use!),
+            requestGeneration: requestGeneration(use!))
+        XCTAssertNotEqual(use, repeated)
+        XCTAssertEqual(submissionId(use!), submissionId(repeated))
+        XCTAssertEqual(requestGeneration(use!), requestGeneration(repeated))
+        XCTAssertEqual(payload(use!)?["chat_id"], .string(chat))
+        XCTAssertEqual(payload(use!)?["enabled"], .bool(false))
         XCTAssertEqual(action(use!), "chat_memory_use")
-        XCTAssertNotNil(continuityUUID4(payload(use!)["client_message_id"]?.stringValue))
+        XCTAssertNotNil(continuityUUID4(payload(use!)?["client_message_id"]?.stringValue))
+        XCTAssertNotNil(continuityUUID4(submissionId(use!)))
+        XCTAssertNotNil(continuityUUID4(requestGeneration(use!)))
 
         let learn = ChatMemoryOutbound.chatMemoryLearn(chat, enabled: true, sessionId: chat)
-        XCTAssertEqual(payload(learn!)["enabled"], .bool(true))
+        XCTAssertEqual(payload(learn!)?["enabled"], .bool(true))
         XCTAssertEqual(action(learn!), "chat_memory_learn")
 
         let forget = ChatMemoryOutbound.chatMemoryForget(chat, sessionId: chat)
@@ -196,16 +200,16 @@ final class ChatMemoryFrameTests: XCTestCase {
 
         let undo = ChatMemoryOutbound.chatMemoryUndo(chat, changeId: change, expectedRevision: 4, sessionId: chat)
         XCTAssertEqual(action(undo!), "chat_memory_undo")
-        XCTAssertEqual(payload(undo!)["change_id"], .string(change))
-        XCTAssertEqual(payload(undo!)["expected_revision"], .number(4))
+        XCTAssertEqual(payload(undo!)?["change_id"], .string(change))
+        XCTAssertEqual(payload(undo!)?["expected_revision"], .number(4))
 
         let approve = ChatMemoryOutbound.chatMemoryDecide(
             chat, changeId: change, decisionApproves: true, expectedRevision: 2, sessionId: chat)
         XCTAssertEqual(action(approve!), "chat_memory_decide")
-        XCTAssertEqual(payload(approve!)["decision"], .string("approve"))
+        XCTAssertEqual(payload(approve!)?["decision"], .string("approve"))
         let reject = ChatMemoryOutbound.chatMemoryDecide(
             chat, changeId: change, decisionApproves: false, expectedRevision: 2, sessionId: chat)
-        XCTAssertEqual(payload(reject!)["decision"], .string("reject"))
+        XCTAssertEqual(payload(reject!)?["decision"], .string("reject"))
     }
 
     func testOutboundIntentsRejectMalformedIdentitiesAndRevisions() {
