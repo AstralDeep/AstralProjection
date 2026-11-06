@@ -3885,6 +3885,60 @@
         "queue_items": 16,
         "skipped_calls": 50
       }
+    },
+    "computer_autonomy_v1": {
+      "version": 1,
+      "scope": "Owner-chosen Mac computer autonomy modes (ask, auto_review, bypass), server reviewer verdicts on ordinary tool steps, a recently blocked list with one exact-action human retry and the review circuit-breaker notice on the macOS DirectDownload client; every other client and every server without the capability keeps exactly today's ask-or-bypass behavior.",
+      "modes": {
+        "ask": "every action that needs authority raises the ordinary approval card; the default",
+        "auto_review": "a no-tools server reviewer first allows, denies or escalates each action that would otherwise raise a card; a denial raises no card and is retriable once by the owner; an escalation raises the ordinary card",
+        "bypass": "today's standing consent; keeps its owner-only, per-Mac enablement, confirmation sheet and legacy chrome_computer_bypass_set flag"
+      },
+      "negotiation": "A server offering the stage carries computer_mode on computer_host or computer_session presence for this owner, host and connection; a wholly absent field, or supported without auto_review, means no auto-review stage and the client shows only ask and bypass. The client requests modes with ui_event chrome_computer_mode_set {host_id, mode}; only a server-sent computer_mode settles the selector, and a request never changes it optimistically.",
+      "clients": {
+        "macos": "three-way selector in Computer controls and the status footer, verdict rows on activity, recently blocked with one exact-action approve-and-retry, breaker notice, pending-until-confirmed mode display",
+        "browser": "compatible legacy behavior",
+        "windows": "compatible legacy behavior",
+        "android": "compatible legacy behavior",
+        "ios": "compatible legacy behavior",
+        "watch": "compatible legacy behavior"
+      },
+      "client_actions": {
+        "chrome_computer_mode_set": {
+          "exact_fields": [
+            "host_id",
+            "mode"
+          ],
+          "host_id": "the current registered host id",
+          "mode": "ask | auto_review | bypass; bypass keeps the ordinary bypass confirmation sheet and the legacy chrome_computer_bypass_set flag"
+        },
+        "chrome_computer_review_retry": {
+          "exact_fields": [
+            "chat_id",
+            "event_id",
+            "client_message_id"
+          ],
+          "chat_id": "the chat that raised the block",
+          "event_id": "the review.auto.* audit event id the verdict row carries",
+          "client_message_id": "canonical lowercase UUIDv4 generated once per owner action and never reused"
+        }
+      },
+      "server_state": {
+        "computer_mode": "the authoritative {mode, supported, breaker?} object defined in additive_fields; absence is legacy ask-or-bypass behavior",
+        "review_verdict": "the {event_id, decision, reason, card_raised} object on chat_step tool_call steps defined in additive_fields"
+      },
+      "confirmation": "The selector displays the server's confirmed mode, shows a bounded pending state while a request is in flight and falls back to the confirmed mode when the server confirms a different one; disconnect, replacement or withdrawal clears pending requests and the breaker notice. Selecting bypass always runs the local owner-only confirmation sheet and existing bypass flow unchanged.",
+      "retry": "Approve and retry sends chrome_computer_review_retry for the exact blocked event; the server then raises the ordinary approval card for that exact action and approval runs through the normal banner, authorize_action decision and normal receipt, executing the action once. One retry per event id; the server refuses unknown, stale, expired or already-retried event ids with an ordinary error frame, and a client retires the affordance when the block predates the current connection, another verdict superseded it, the entry was already retried or the bound chat is no longer active.",
+      "breaker": "computer_mode.breaker.open true pins the confirmed mode to ask, and the client shows a visible notice naming the server's reason until the server clears it; the selector shows ask while the breaker is open.",
+      "audit": "Verdict rows carry the server's review.auto.* event ids so the owner can open the matching audit entry; a retry produces a normal approval receipt with its own audit row.",
+      "identity": "chrome_computer_mode_set binds to the current host and connection like the legacy bypass flag; chrome_computer_review_retry carries submission_id and request_generation from the standard ui_event envelope plus its client_message_id, so the retry correlates with the owner action in the audit chain.",
+      "bounds": {
+        "event_id_scalars": 200,
+        "reason_scalars": 1000,
+        "breaker_reason_scalars": 300,
+        "blocked_entries": 40
+      },
+      "fixture": "contracts/fixtures/computer_autonomy/modes.json"
     }
   },
   "frame_contracts": {
@@ -4902,6 +4956,8 @@
     "chrome_computer_bypass_set",
     "chrome_computer_forget",
     "chrome_computer_grant_revoke",
+    "chrome_computer_mode_set",
+    "chrome_computer_review_retry",
     "chrome_computer_session_pause",
     "chrome_computer_session_resume",
     "chrome_computer_session_start",
@@ -5425,6 +5481,41 @@
       "scope": "Standing consent for supported computer/browser/app operations on this same authenticated host. Both confirmation gates execute or directly refuse without constructing approval cards. Exact single-use session/window/application-bound terminal permits remain required. Privilege escalation, secure-input, sign-in automation, Astral account/permission controls, human Pause/Stop and missing native authority are direct denials. Audit and results retain approval_source bypass. Host disconnect, replacement, withdrawal or bypass-off revokes it; project manifest updates preserve bypass on the same connection.",
       "introduced_by": "macOS live findings, Deep server contracts",
       "contract": "accept_actions.chrome_computer_bypass_set"
+    },
+    {
+      "field": "computer_mode",
+      "shape": {
+        "mode": "ask | auto_review | bypass: the server's confirmed authoritative autonomy mode for this host; never a client guess",
+        "supported": [
+          "closed subset of ask | auto_review | bypass: every mode the server offers this owner, host and connection; ask is always available"
+        ],
+        "breaker": {
+          "open": "true exactly when the review circuit breaker dropped the chat back to ask",
+          "reason": "bounded safe server text naming why the breaker opened"
+        }
+      },
+      "carried_on": [
+        "computer_host",
+        "computer_session"
+      ],
+      "scope": "Mode-aware server presence: the owner chooses among the supported modes with ui_event chrome_computer_mode_set {host_id, mode} and only a server-sent computer_mode settles the selector. Bypass keeps its owner-only, per-Mac enablement and the legacy boolean flag; a mode-aware server reflects standing bypass as mode bypass. supported without auto_review, or a wholly absent field, means the server offers no auto-review stage and the client shows only ask and bypass. breaker.open true pins the confirmed mode to ask until the server clears it.",
+      "introduced_by": "macOS DirectDownload autonomy modes, Deep server contracts",
+      "contract": "accept_actions.chrome_computer_mode_set"
+    },
+    {
+      "field": "review_verdict",
+      "shape": {
+        "event_id": "the server audit event identity of the auto-review decision: review.auto. plus 1-192 printable non-control Unicode scalar values",
+        "decision": "allow | deny | escalate",
+        "reason": "0-1000 Unicode scalar values of safe server text naming why the reviewer decided",
+        "card_raised": "true exactly when the reviewer escalated and the ordinary approval card was raised instead of running the action"
+      },
+      "carried_on": [
+        "chat_step step (tool_call)"
+      ],
+      "scope": "Auto-review stage verdicts for the step's action, sent only by servers offering the stage. An allow ran the action; a deny without a raised card is the exact blocked action a recently blocked list offers to retry once with ui_event chrome_computer_review_retry {chat_id, event_id, client_message_id}; escalate or card_raised true means the ordinary approval card was raised and the retry action is unavailable. Verdict rows display decision, reason and whether a card was raised, and carry event_id so the owner can open the matching audit entry. The server refuses unknown, stale, expired or already-retried event ids with an ordinary error frame.",
+      "introduced_by": "macOS DirectDownload autonomy modes, Deep server contracts",
+      "contract": "accept_actions.chrome_computer_review_retry"
     },
     {
       "field": "pinned, archived",

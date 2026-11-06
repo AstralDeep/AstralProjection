@@ -1,13 +1,13 @@
 // One quiet status line under the Mac workbench composer: connection, model, token use, waiting approvals, this
-// Mac's computer-host state and a bypassed-approvals warning, each with a glyph and words. MacWorkbenchView places
-// it and supplies the actions.
+// Mac's computer-host state with its autonomy-mode selector and breaker or bypassed-approvals warnings, each
+// with a glyph and words. MacWorkbenchView places it and supplies the actions.
 
 #if os(macOS)
     import AstralCore
     import SwiftUI
 
     struct MacStatusItem: Identifiable, Equatable {
-        enum Kind: String { case connection, model, tokens, approvals, computer, bypass }
+        enum Kind: String { case connection, model, tokens, approvals, computer, mode, breaker, bypass }
 
         let kind: Kind
         let symbol: String
@@ -29,6 +29,10 @@
             let sessionState: String?
             let statusLabel: String
             var bypass = false
+            var mode = ComputerAutonomyMode.ask
+            var modeAware = false
+            var pendingMode: Bool = false
+            var breaker: Bool = false
         }
 
         static func connection(connected: Bool, everConnected: Bool, failed: Bool) -> Connection {
@@ -67,7 +71,24 @@
                         kind: .approvals, symbol: "hand.raised.fill", text: text, label: "Approvals", value: text,
                         tone: .warning))
             }
-            if let computer { items.append(computerItem(computer)) }
+            if let computer {
+                items.append(computerItem(computer))
+                items.append(
+                    MacStatusItem(
+                        kind: .mode, symbol: "switch.2", text: "Mode: \(Self.modeName(computer.mode))",
+                        label: "Autonomy mode",
+                        value: computer.pendingMode
+                            ? "\(Self.modeName(computer.mode)) — waiting for the server to confirm"
+                            : "\(Self.modeName(computer.mode)) — confirmed by the server",
+                        tone: computer.breaker ? .warning : .neutral))
+                if computer.breaker {
+                    items.append(
+                        MacStatusItem(
+                            kind: .breaker, symbol: "exclamationmark.triangle.fill",
+                            text: "Circuit breaker open — back to Ask", label: "Review circuit breaker",
+                            value: "The review circuit breaker dropped this Mac back to Ask", tone: .warning))
+                }
+            }
             if computer?.bypass == true {
                 items.append(
                     MacStatusItem(
@@ -103,6 +124,14 @@
                 kind: .connection, symbol: symbol, text: text, label: "Connection", value: text, tone: tone)
         }
 
+        static func modeName(_ mode: ComputerAutonomyMode) -> String {
+            switch mode {
+            case .ask: return "Ask"
+            case .autoReview: return "Auto-review"
+            case .bypass: return "Bypass"
+            }
+        }
+
         private static func computerItem(_ computer: Computer) -> MacStatusItem {
             let (symbol, text, tone): (String, String, MacStatusItem.Tone) =
                 switch (computer.sessionState, computer.enabled) {
@@ -121,18 +150,23 @@
         @Environment(ThemeStore.self) private var theme
         let showActivity: () -> Void
 
+        private var host: MacComputerHost { model.macComputerHost }
+
         private var items: [MacStatusItem] {
-            let host = model.macComputerHost
+            let computerHost = model.macComputerHost
             return MacStatusFooterModel.items(
                 connection: MacStatusFooterModel.connection(
                     connected: model.connected, everConnected: model.everConnected,
                     failed: model.initialConnectionFailed),
                 usage: model.llmUsage,
                 approvals: model.waitingApprovals,
-                computer: host.available
+                computer: computerHost.available
                     ? MacStatusFooterModel.Computer(
-                        enabled: host.enabled, sessionState: host.session?.state, statusLabel: host.statusLabel,
-                        bypass: host.bypass)
+                        enabled: computerHost.enabled, sessionState: computerHost.session?.state,
+                        statusLabel: computerHost.statusLabel, bypass: computerHost.bypass,
+                        mode: computerHost.confirmedMode, modeAware: computerHost.modeAware,
+                        pendingMode: computerHost.modeWaitingConfirmation,
+                        breaker: computerHost.breakerNotice != nil)
                     : nil)
         }
 
@@ -141,7 +175,8 @@
                 ForEach(items) { item in
                     switch item.kind {
                     case .approvals: button(item, action: showActivity)
-                    case .computer, .bypass: button(item) { model.macComputerHost.showControls() }
+                    case .mode: modeMenu(item)
+                    case .computer, .breaker, .bypass: button(item) { host.showControls() }
                     default: label(item, identifier: "workbench-status-\(item.id)")
                     }
                 }
@@ -154,6 +189,36 @@
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Status")
             .accessibilityIdentifier("workbench-status-footer")
+            .bypassConfirmation(host: host, origin: .footer)
+        }
+
+        @ViewBuilder
+        private func modeMenu(_ item: MacStatusItem) -> some View {
+            if host.available {
+                Menu {
+                    ForEach(host.supportedModes, id: \.self) { mode in
+                        Button {
+                            host.requestAutonomyMode(mode, from: .footer)
+                        } label: {
+                            if host.confirmedMode == mode {
+                                Label(MacComputerControls.modeTitle(mode), systemImage: "checkmark")
+                            } else {
+                                Text(MacComputerControls.modeTitle(mode))
+                            }
+                        }
+                        .disabled(host.breakerNotice != nil && mode != .ask)
+                        .accessibilityIdentifier("workbench-status-mode-\(mode.rawValue)")
+                    }
+                } label: {
+                    label(item).contentShape(Rectangle())
+                }
+                .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
+                .accessibilityLabel(item.label)
+                .accessibilityValue(item.value)
+                .accessibilityIdentifier("workbench-status-mode")
+            } else {
+                button(item) { host.showControls() }
+            }
         }
 
         private func label(_ item: MacStatusItem, identifier: String? = nil) -> some View {

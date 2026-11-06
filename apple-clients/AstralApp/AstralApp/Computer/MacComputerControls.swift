@@ -1,4 +1,5 @@
-// Presents explicit Mac permissions, workspace grants with their excluded patterns, and the persisted
+// Presents explicit Mac permissions, workspace grants with their excluded patterns, the server-confirmed
+// autonomy-mode selector, reviewer verdicts with the recently blocked exact-action retry, and the persisted
 // bypass-approvals switch separately from server-owned product settings. The session panel and the bypass
 // confirmation sheet act on the same host authority.
 
@@ -44,8 +45,26 @@
 
     struct MacComputerControls: View {
         @Bindable var host: MacComputerHost
+        @Environment(AppModel.self) private var model: AppModel?
         @Environment(ThemeStore.self) private var theme: ThemeStore?
         private var palette: AstralPalette { theme?.palette ?? .graphite }
+
+        static func modeTitle(_ mode: ComputerAutonomyMode) -> String {
+            switch mode {
+            case .ask: return "Ask"
+            case .autoReview: return "Auto-review"
+            case .bypass: return "Bypass"
+            }
+        }
+
+        static func modeDetail(_ mode: ComputerAutonomyMode) -> String {
+            switch mode {
+            case .ask: return "Every action raises an approval card."
+            case .autoReview: return "A no-tools reviewer allows, denies or escalates actions first."
+            case .bypass: return "Run without approval cards until you turn this off."
+            }
+        }
+
         var body: some View {
             SettingsSheetChrome(
                 "Computer access on this Mac", identifier: "mac-computer-controls",
@@ -74,8 +93,7 @@
                         isOn: MacComputerControlCommand.enabledBinding(on: host)
                     )
                     .disabled(!host.available).accessibilityIdentifier("mac-computer-consent")
-                    MacBypassToggle(host: host, origin: .controls)
-                        .accessibilityIdentifier("mac-computer-bypass")
+                    autonomySection
                     if host.bypass && host.bypassSaved {
                         Label("Approvals bypassed on this Mac (persisted)", systemImage: "exclamationmark.shield.fill")
                             .font(ConsoleTypography.caption).foregroundStyle(palette.warning)
@@ -146,6 +164,7 @@
                     Divider().overlay(palette.border)
                     MacComputerActivitySection(timeline: host.activityTimeline)
                 }
+                blockedSection
                 if host.available {
                     Divider().overlay(palette.border)
                     VStack(alignment: .leading, spacing: 10) {
@@ -177,6 +196,107 @@
                 Spacer()
                 Button(allowed ? "Review" : "Grant access", action: command.action(on: host)).disabled(!host.available)
             }
+        }
+
+        private var autonomySection: some View {
+            VStack(alignment: .leading, spacing: 8) {
+                SettingsSectionTitle("Autonomy")
+                if let notice = host.breakerNotice {
+                    Label(notice, systemImage: "exclamationmark.triangle.fill")
+                        .font(ConsoleTypography.caption).foregroundStyle(palette.warning)
+                        .accessibilityIdentifier("mac-computer-breaker-notice")
+                }
+                if host.modeAware {
+                    if host.modeWaitingConfirmation, let requested = host.pendingModeRequest {
+                        Label(
+                            "Waiting for the server to confirm \(Self.modeTitle(requested))…",
+                            systemImage: "clock")
+                            .font(ConsoleTypography.caption).foregroundStyle(palette.muted)
+                            .accessibilityIdentifier("mac-computer-mode-pending")
+                    }
+                    ForEach(host.supportedModes, id: \.self) { mode in
+                        modeRow(mode)
+                    }
+                } else {
+                    MacBypassToggle(host: host, origin: .controls)
+                        .accessibilityIdentifier("mac-computer-bypass")
+                    Text("This server does not offer Auto-review.")
+                        .font(ConsoleTypography.caption).foregroundStyle(palette.muted)
+                        .accessibilityIdentifier("mac-computer-mode-unavailable")
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("mac-computer-autonomy")
+        }
+
+        private func modeRow(_ mode: ComputerAutonomyMode) -> some View {
+            let selected = host.confirmedMode == mode && !host.modeWaitingConfirmation
+            let refused = host.breakerNotice != nil && mode != .ask
+            return Button {
+                host.requestAutonomyMode(mode, from: .controls)
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+                        .foregroundStyle(selected ? palette.primary : palette.muted)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(Self.modeTitle(mode))
+                        Text(Self.modeDetail(mode))
+                            .font(ConsoleTypography.caption).foregroundStyle(palette.muted)
+                    }
+                    Spacer(minLength: 4)
+                    if host.pendingModeRequest == mode && host.modeWaitingConfirmation {
+                        ProgressView().controlSize(.small).accessibilityHidden(true)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(!host.available || refused)
+            .accessibilityLabel("\(Self.modeTitle(mode)): \(Self.modeDetail(mode))")
+            .accessibilityValue(
+                selected ? "Selected" : refused ? "Unavailable while the circuit breaker is open" : "Not selected")
+            .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+            .accessibilityIdentifier("mac-computer-mode-\(mode.rawValue)")
+        }
+
+        @ViewBuilder
+        private var blockedSection: some View {
+            if let model, !model.recentlyBlocked.isEmpty {
+                Divider().overlay(palette.border)
+                VStack(alignment: .leading, spacing: 8) {
+                    SettingsSectionTitle("Recently blocked")
+                    ForEach(model.recentlyBlocked) { entry in
+                        blockedRow(entry)
+                    }
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("mac-computer-blocked")
+            }
+        }
+
+        private func blockedRow(_ entry: AppModel.BlockedComputerAction) -> some View {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(entry.summary.isEmpty ? entry.tool : entry.summary)
+                    .font(ConsoleTypography.caption.weight(.semibold)).lineLimit(2)
+                    .accessibilityIdentifier("mac-computer-blocked-summary")
+                if !entry.reason.isEmpty {
+                    Text(entry.reason).font(ConsoleTypography.caption).foregroundStyle(palette.muted)
+                        .accessibilityIdentifier("mac-computer-blocked-reason")
+                }
+                switch entry.retry {
+                case .available:
+                    Button("Approve and retry") { model?.retryBlockedAction(entry) }
+                        .accessibilityIdentifier("mac-computer-blocked-retry")
+                case .sent:
+                    Text("Retry sent; approve it in the approval banner when the server raises the card.")
+                        .font(ConsoleTypography.caption).foregroundStyle(palette.muted)
+                        .accessibilityIdentifier("mac-computer-blocked-sent")
+                case .unavailable(let reason):
+                    Text(reason).font(ConsoleTypography.caption).foregroundStyle(palette.warning)
+                        .accessibilityIdentifier("mac-computer-blocked-refusal")
+                }
+            }
+            .padding(.vertical, 2)
+            .accessibilityElement(children: .contain)
         }
     }
 
