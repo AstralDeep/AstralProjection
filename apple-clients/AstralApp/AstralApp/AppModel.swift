@@ -484,6 +484,37 @@ final class AppModel: NSObject {
                 defaults.set(newValue.rawValue, forKey: Self.composerReturnBindingKey)
             }
         }
+        var planInteractionAck: PlanInteractionAcknowledgement?
+        struct PlanInteractionState: Equatable {
+            var mode: PlanModeState.Mode = .execute
+            var status: PlanModeState.Status = .none
+            var planVersion: Int?
+            var review: PlanModeState.Review = .auto
+            var proposal: PlanProposal?
+            var notice: String?
+            var question: QuestionRequest?
+            var questionAnswers: [String: String] = [:]
+            var questionSubmitted = false
+            var blocked: String?
+            var reviseActive = false
+            var reviseDraft = ""
+        }
+        var planInteractionByChat: [String: PlanInteractionState] = [:]
+        var planInteractionNegotiated: Bool { planInteractionAck != nil }
+        var activePlanInteraction: PlanInteractionState? {
+            activeChatId.flatMap { planInteractionByChat[$0] }
+        }
+        var planModeActive: Bool { activePlanInteraction?.mode == .plan }
+        var planInteractionAvailable: Bool {
+            planInteractionNegotiated && signedIn && connected && !mutationsLocked && !isViewingHistory
+        }
+        var activeQuestionComplete: Bool {
+            guard let state = activePlanInteraction, let request = state.question else { return false }
+            return request.prompts.allSatisfy { prompt in
+                guard let answer = state.questionAnswers[prompt.id] else { return false }
+                return !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+        }
     #endif
 
     var pendingSurfaceRequestGenerations: Set<String> {
@@ -1527,6 +1558,13 @@ final class AppModel: NSObject {
                 #else
                     return false
                 #endif
+            }(),
+            planInteractionSupported: {
+                #if os(macOS)
+                    return true
+                #else
+                    return false
+                #endif
             }())
     }
 
@@ -2399,6 +2437,7 @@ final class AppModel: NSObject {
             descriptor.macWorkbenchSupported = true
             descriptor.projectWorkspacesSupported = true
             descriptor.turnSteerSupported = true
+            descriptor.planInteractionSupported = true
         #else
             let size = UIScreen.main.bounds.size
             let (w, h) = lastReportedViewport ?? (Int(size.width), Int(size.height))
@@ -2495,6 +2534,7 @@ final class AppModel: NSObject {
             macComputerHost.workspaceNegotiated(projects: accepted)
             if accepted, connected { Task { await projects.refresh() } }
             turnSteerAck = TurnSteerAcknowledgement.fromRoteConfig(frame.payload)
+            planInteractionAck = PlanInteractionAcknowledgement.fromRoteConfig(frame.payload)
             if !turnSteerNegotiated {
                 queueByChat.removeAll()
                 pendingSteerTexts.removeAll()
@@ -3066,6 +3106,8 @@ final class AppModel: NSObject {
         #if os(macOS)
             case "chat_steer_recorded", "chat_steer_refused", "chat_queue_updated", "side_question_result":
                 reduceTurnSteer(frame)
+            case "plan_mode_state", "plan_proposal", "plan_mode_notice", "question_request", "question_resolved":
+                reducePlanInteraction(frame)
         #endif
         case "error":
             let admissionRefused = reduceAdmissionRefusal(frame)
@@ -3703,6 +3745,9 @@ final class AppModel: NSObject {
                 for: account,
                 chatId: chatId)
         }
+        #if os(macOS)
+            planInteractionByChat.removeValue(forKey: chatId)
+        #endif
         activityLog.removeValue(forKey: chatId)
         activityOrder.removeAll { $0 == chatId }
         guard activeChatId == chatId else { return }
@@ -4398,6 +4443,182 @@ final class AppModel: NSObject {
             sideQuestionAnswer = nil
             sideQuestionRequestId = nil
             sideQuestionSheetVisible = true
+        }
+
+        private func mutatePlanState(_ chatId: String?, _ mutate: (inout PlanInteractionState) -> Void) {
+            guard let chatId else { return }
+            var state = planInteractionByChat[chatId] ?? PlanInteractionState()
+            mutate(&state)
+            planInteractionByChat[chatId] = state
+        }
+
+        private func reducePlanInteraction(_ frame: InboundFrame) {
+            switch frame.name {
+            case "plan_mode_state":
+                guard let state = PlanModeState(frame: frame) else { return }
+                let chat = state.chatId ?? activeChatId
+                mutatePlanState(chat) {
+                    $0.mode = state.mode
+                    $0.status = state.status
+                    $0.planVersion = state.planVersion
+                    $0.review = state.review
+                    if state.status != .proposed {
+                        $0.reviseActive = false
+                        $0.reviseDraft = ""
+                    }
+                    $0.notice = nil
+                }
+            case "plan_proposal":
+                guard let proposal = PlanProposal(frame: frame) else { return }
+                let chat = proposal.chatId ?? activeChatId
+                mutatePlanState(chat) {
+                    $0.proposal = proposal
+                    $0.planVersion = proposal.version
+                    $0.status = .proposed
+                    $0.notice = nil
+                    $0.reviseActive = false
+                    $0.reviseDraft = ""
+                }
+            case "plan_mode_notice":
+                guard let notice = PlanModeNotice(frame: frame) else { return }
+                mutatePlanState(notice.chatId ?? activeChatId) { $0.notice = notice.message }
+            case "question_request":
+                guard let request = QuestionRequest(frame: frame) else { return }
+                mutatePlanState(request.chatId ?? activeChatId) {
+                    $0.question = request
+                    $0.questionAnswers = [:]
+                    $0.questionSubmitted = false
+                    $0.blocked = nil
+                }
+            case "question_resolved":
+                guard let resolution = QuestionResolution(frame: frame) else { return }
+                let chat = resolution.chatId ?? activeChatId
+                mutatePlanState(chat) {
+                    guard $0.question?.questionId == resolution.questionId else { return }
+                    $0.question = nil
+                    $0.questionAnswers = [:]
+                    $0.questionSubmitted = false
+                    switch resolution.disposition {
+                    case .timedOut:
+                        $0.blocked =
+                            "The question timed out before an answer was recorded. Ask the agent to continue when ready."
+                    case .superseded:
+                        $0.blocked = "This question was superseded by a newer request."
+                    case .answered, .skipped:
+                        break
+                    }
+                }
+            default:
+                break
+            }
+        }
+
+        func togglePlanMode() {
+            guard planInteractionAvailable, let chat = activeChatId else { return }
+            let enabled = planInteractionByChat[chat]?.mode != .plan
+            rawSend(PlanInteractionOutbound.planModeSet(enabled: enabled, sessionId: chat))
+        }
+
+        func approvePlan() {
+            sendPlanDecision {
+                PlanInteractionOutbound.planApprove(
+                    planId: $0.planId, version: $0.version, sessionId: activeChatId)
+            }
+        }
+
+        func approvePlanWithReview() {
+            sendPlanDecision {
+                PlanInteractionOutbound.planApproveReview(
+                    planId: $0.planId, version: $0.version, sessionId: activeChatId)
+            }
+        }
+
+        func beginPlanRevision() {
+            guard activePlanInteraction?.proposal != nil else { return }
+            mutatePlanState(activeChatId) { $0.reviseActive = true }
+        }
+
+        func cancelPlanRevision() {
+            mutatePlanState(activeChatId) {
+                $0.reviseActive = false
+                $0.reviseDraft = ""
+            }
+        }
+
+        func setPlanReviseDraft(_ text: String) {
+            mutatePlanState(activeChatId) { $0.reviseDraft = text }
+        }
+
+        func sendPlanRevision() {
+            guard let state = activePlanInteraction, let proposal = state.proposal else { return }
+            let feedback = state.reviseDraft
+            guard let frame = PlanInteractionOutbound.planRevise(
+                planId: proposal.planId, version: proposal.version, feedback: feedback, sessionId: activeChatId)
+            else { return }
+            mutatePlanState(activeChatId) {
+                $0.reviseActive = false
+                $0.reviseDraft = ""
+                $0.notice = nil
+            }
+            rawSend(frame)
+        }
+
+        private func sendPlanDecision(_ build: (PlanProposal) -> String?) {
+            guard planInteractionAvailable, let proposal = activePlanInteraction?.proposal else { return }
+            guard let frame = build(proposal) else { return }
+            mutatePlanState(activeChatId) { $0.notice = nil }
+            rawSend(frame)
+        }
+
+        func questionAnswer(for prompt: QuestionPrompt) -> String? {
+            guard let state = activePlanInteraction, let request = state.question,
+                request.prompts.contains(where: { $0.id == prompt.id })
+            else { return nil }
+            return state.questionAnswers[prompt.id]
+        }
+
+        func selectQuestionOption(_ prompt: QuestionPrompt, optionIndex: Int) {
+            guard planInteractionAvailable, let state = activePlanInteraction,
+                let request = state.question, request.prompts.contains(where: { $0.id == prompt.id }),
+                optionIndex >= 0, optionIndex < prompt.options.count, !state.questionSubmitted
+            else { return }
+            let option = prompt.options[optionIndex]
+            mutatePlanState(activeChatId) { $0.questionAnswers[prompt.id] = option }
+        }
+
+        func setQuestionFreeText(_ prompt: QuestionPrompt, _ text: String) {
+            guard planInteractionAvailable, let state = activePlanInteraction,
+                let request = state.question, request.prompts.contains(where: { $0.id == prompt.id }),
+                !state.questionSubmitted
+            else { return }
+            mutatePlanState(activeChatId) { $0.questionAnswers[prompt.id] = text }
+        }
+
+        func submitQuestionAnswers() {
+            guard planInteractionAvailable, activeQuestionComplete, let state = activePlanInteraction,
+                let request = state.question, !state.questionSubmitted
+            else { return }
+            guard let frame = PlanInteractionOutbound.questionSubmit(
+                questionId: request.questionId, answers: state.questionAnswers, sessionId: activeChatId)
+            else { return }
+            mutatePlanState(activeChatId) {
+                $0.questionSubmitted = true
+                $0.blocked = nil
+            }
+            rawSend(frame)
+        }
+
+        func skipQuestions() {
+            guard planInteractionAvailable, let state = activePlanInteraction,
+                let request = state.question, !state.questionSubmitted,
+                let frame = PlanInteractionOutbound.questionSkip(
+                    questionId: request.questionId, sessionId: activeChatId)
+            else { return }
+            mutatePlanState(activeChatId) {
+                $0.questionSubmitted = true
+                $0.blocked = nil
+            }
+            rawSend(frame)
         }
     #endif
 

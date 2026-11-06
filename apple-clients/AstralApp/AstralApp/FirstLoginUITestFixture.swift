@@ -28,11 +28,18 @@
             case voiceTerminal = "voice-terminal"
             case continuitySeed = "continuity-seed"
             case continuityResume = "continuity-resume"
+            case planInteraction = "plan-interaction"
+            case planQuestions = "plan-questions"
         }
 
         private static let launchFlag = "--astral-ui-test-first-login"
         private static let connectionGeneration = "11111111-1111-4111-8111-111111111111"
         private static let operationId = "22222222-2222-4222-8222-222222222222"
+        private static let planChatId = "33333333-3333-4333-8333-333333333333"
+        private static let otherChatId = "44444444-4444-4444-8444-444444444444"
+        private static let planId = "55555555-5555-4555-8555-555555555555"
+        private static let questionId = "66666666-6666-4666-8666-666666666666"
+        private static let promptId = "77777777-7777-4777-8777-777777777777"
 
         static func requestedScenario(
             arguments: [String] = ProcessInfo.processInfo.arguments
@@ -156,6 +163,15 @@
                 return
             }
 
+            if scenario == .planInteraction {
+                installPlanInteraction(on: model)
+                return
+            }
+            if scenario == .planQuestions {
+                installPlanQuestions(on: model)
+                return
+            }
+
             switch scenario {
             case .continuitySeed, .continuityResume:
                 installContinuity(scenario, on: model)
@@ -266,6 +282,185 @@
         }
 
         @MainActor
+        private static func installPlanInteraction(on model: AppModel) {
+            model.screen = .chat
+            model.activeChatId = planChatId
+            model.workspaceStarted = true
+            model.turns = [
+                AppModel.ChatTurn(id: "plan-seed", role: "assistant", text: "Ready to plan the migration.")
+            ]
+            model.handleFrame(workbenchConsoleProfile)
+            model.handleFrame(planChromeMenu)
+            model.handleFrame(questionRequest(chatId: otherChatId))
+            installPlanEcho(on: model)
+        }
+
+        @MainActor
+        private static func installPlanQuestions(on model: AppModel) {
+            installPlanInteraction(on: model)
+            model.handleFrame(questionRequest(chatId: planChatId, prompt: "Which cluster should the migration target?"))
+        }
+
+        @MainActor
+        private static func installPlanEcho(on model: AppModel) {
+            let state = PlanEchoState()
+            model.outboundTap = { [weak model] text in
+                guard let model, let event = try? JSONValue.parse(Data(text.utf8)),
+                    let action = event["action"]?.stringValue
+                else { return }
+                let payload = event["payload"] ?? .null
+                Task { @MainActor [weak model] in
+                    try? await Task.sleep(nanoseconds: 40_000_000)
+                    guard let model else { return }
+                    planEcho(action: action, payload: payload, state: state, model: model)
+                }
+            }
+        }
+
+        private final class PlanEchoState {
+            var planMode = false
+        }
+
+        @MainActor
+        private static func planEcho(
+            action: String, payload: JSONValue, state: PlanEchoState, model: AppModel
+        ) {
+            switch action {
+            case "plan_mode_set":
+                state.planMode = payload["enabled"]?.boolValue == true
+                model.handleFrame(
+                    planModeState(
+                        mode: state.planMode ? "plan" : "execute",
+                        status: state.planMode ? "proposed" : "none",
+                        version: state.planMode ? 1 : nil,
+                        review: "auto"))
+                if state.planMode {
+                    model.handleFrame(planProposal(version: 1))
+                }
+            case "chat_message":
+                if state.planMode {
+                    model.handleFrame(
+                        InboundFrame.parse(
+                            """
+                            {"type":"plan_mode_notice","chat_id":"\(planChatId)",
+                             "code":"plan_mode_active",
+                             "message":"Plan mode is on, so that change was not applied. Approve the plan first."}
+                            """ )!)
+                } else {
+                    model.handleFrame(
+                        InboundFrame.parse(
+                            """{"type":"chat_status","chat_id":"\(planChatId)","status":"done","message":"Done"}""" )!)
+                }
+            case "plan_approve":
+                state.planMode = false
+                model.handleFrame(
+                    planModeState(mode: "execute", status: "approved", version: 1, review: "auto"))
+            case "plan_approve_review":
+                state.planMode = false
+                model.handleFrame(
+                    planModeState(mode: "execute", status: "approved", version: 1, review: "manual"))
+            case "plan_revise":
+                model.handleFrame(planProposal(version: 2))
+            case "question_submit":
+                model.handleFrame(
+                    InboundFrame.parse(
+                        """
+                        {"type":"question_resolved","chat_id":"\(planChatId)",
+                         "question_id":"\(questionId)","disposition":"answered"}
+                        """ )!)
+                model.handleFrame(
+                    questionRequest(chatId: planChatId, prompt: "Should the old cluster stay up for a week?"))
+            case "question_skip":
+                model.handleFrame(
+                    InboundFrame.parse(
+                        """
+                        {"type":"question_resolved","chat_id":"\(planChatId)",
+                         "question_id":"\(questionId)","disposition":"skipped"}
+                        """ )!)
+                model.handleFrame(
+                    questionRequest(chatId: planChatId, prompt: "Which maintenance window should we book?"))
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                    model.handleFrame(
+                        InboundFrame.parse(
+                            """
+                            {"type":"question_resolved","chat_id":"\(planChatId)",
+                             "question_id":"\(questionId)","disposition":"timed_out"}
+                            """ )!)
+                }
+            default:
+                break
+            }
+        }
+
+        private static func planModeState(
+            mode: String, status: String, version: Int?, review: String
+        ) -> InboundFrame {
+            InboundFrame.parse(
+                """
+                {"type":"plan_mode_state","chat_id":"\(planChatId)","mode":"\(mode)",
+                 "plan_status":"\(status)","plan_version":\(version.map(String.init) ?? "null"),
+                 "review":"\(review)"}
+                """ )!
+        }
+
+        private static func planProposal(version: Int) -> InboundFrame {
+            let suffix = version > 1 ? " with the rollback stage moved before cutover" : ""
+            return InboundFrame.parse(
+                """
+                {"type":"plan_proposal","chat_id":"\(planChatId)","plan_id":"\(planId)",
+                 "version":\(version),
+                 "steps":["Snapshot the current database","Replicate the schema\(suffix)","Switch the read path","Verify billing totals"],
+                 "assumptions":["The staging cluster mirrors production capacity"],
+                 "files":["db/migrations/0042_cluster_switch.sql","docs/runbooks/cutover.md"],
+                 "apps":["pgAdmin"]}
+                """ )!
+        }
+
+        private static func questionRequest(
+            chatId: String, prompt: String = "Which cluster should the migration target?"
+        ) -> InboundFrame {
+            InboundFrame.parse(
+                """
+                {"type":"question_request","chat_id":"\(chatId)","question_id":"\(questionId)",
+                 "questions":[{"id":"\(promptId)","prompt":"\(prompt)",
+                   "options":["Cluster A","Cluster B","Defer the decision"]}],
+                 "timeout_ms":120000}
+                """ )!
+        }
+
+        private static var workbenchConsoleProfile: InboundFrame {
+            InboundFrame.parse(
+                """
+                {"type":"rote_config","device_profile":{"console":{
+                  "version":2,"navigation_mode":"sidebar","sidebar_width":350,
+                  "content_padding":{"top":32,"right":48,"bottom":32,"left":48},
+                  "composer_padding":{"top":18,"right":48,"bottom":18,"left":48},
+                  "scenario_columns":2,"settings_presentation":"dialog",
+                  "settings_navigation_axis":"vertical","settings_width":940,"dialog_width":640,
+                  "settings_max_height":774.0,"settings_navigation_width":216,
+                  "result_preview_max_height":440,"result_body_max_height":380,
+                  "fullscreen_inset":0,"minimum_control_height":0,
+                  "mac_workbench":{"version":1,
+                    "with_sidebar":{"split":true,"conversation_width":468.7,"compact_toolbar":false},
+                    "without_sidebar":{"split":true,"conversation_width":520,"compact_toolbar":false},
+                    "composer_max_width":860,"transcript_max_width":720},
+                  "turn_steer":{"version":1,"queue_capable":true},
+                  "plan_interaction":{"version":1}}}}
+                """ )!
+        }
+
+        private static var planChromeMenu: InboundFrame {
+            InboundFrame.parse(
+                """
+                {"type":"chrome_menu","model":{"version":2,
+                  "topbar":[{"key":"export","kind":"workspace_action","label":"Export page","icon":"download","operation":"export_canvas","context":"live_canvas"}],
+                  "menu":[{"key":"account","label":"Account","items":[{"key":"theme","label":"Appearance","surface":"theme"}]}],
+                  "signout":{"label":"Sign out"}}}
+                """ )!
+        }
+
+        @MainActor
         private static func respond(
             to scenario: Scenario,
             submissionId: String,
@@ -348,6 +543,8 @@
             case .voiceComposer:
                 break
             case .voiceTerminal:
+                break
+            case .planInteraction, .planQuestions:
                 break
             case .continuitySeed, .continuityResume:
                 break

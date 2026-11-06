@@ -87,6 +87,11 @@ CLASSIFICATION: dict[str, str] = {
     "chat_steer_recorded": IGNORED,
     "chat_steer_refused": IGNORED,
     "side_question_result": IGNORED,
+    "plan_mode_notice": IGNORED,
+    "plan_mode_state": IGNORED,
+    "plan_proposal": IGNORED,
+    "question_request": IGNORED,
+    "question_resolved": IGNORED,
     "notification": HANDLED,
     "error": HANDLED,
 }
