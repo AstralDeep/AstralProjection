@@ -265,6 +265,49 @@ final class ConversationContinuityTests: XCTestCase {
         XCTAssertEqual(model.visibleCanvas.map(\.fallbackText), ["Committed next"])
     }
 
+    private func staleFenceAlert(
+        target: String = "chat", connection stamped: String? = nil, variant: String = "success"
+    ) -> InboundFrame {
+        inbound(
+            """
+            {"type":"ui_render","target":"\(target)","chat_id":"\(chat)",
+            "connection_generation":"\(stamped ?? connection)","request_generation":"\(commit)",
+            "base_render_revision":0,"frame_sequence":9,
+            "components":[{"type":"alert","message":"Scheduled","variant":"\(variant)"}]}
+            """)
+    }
+
+    func testAnAlertSentAfterATurnReachesTheBannerWithoutTouchingTheConversation() {
+        let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
+        XCTAssertTrue(model.beginConversationConnection(connection))
+        model.activeChatId = chat
+        model.handleFrame(staleFenceAlert())
+        XCTAssertEqual(model.errorBanner, "Scheduled")
+        XCTAssertFalse(model.bannerIsError)
+        XCTAssertTrue(model.turns.isEmpty)
+        XCTAssertTrue(model.transientTurns.isEmpty)
+    }
+
+    func testOnlyErrorAndWarningAlertsSentAfterATurnLookLikeFailures() {
+        let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
+        XCTAssertTrue(model.beginConversationConnection(connection))
+        model.activeChatId = chat
+        model.handleFrame(staleFenceAlert(variant: "info"))
+        XCTAssertFalse(model.bannerIsError)
+        model.handleFrame(staleFenceAlert(variant: "warning"))
+        XCTAssertTrue(model.bannerIsError)
+    }
+
+    func testAStaleFrameThatIsNotAChatAlertForThisConnectionIsStillIgnored() {
+        let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
+        XCTAssertTrue(model.beginConversationConnection(connection))
+        model.activeChatId = chat
+        model.handleFrame(staleFenceAlert(target: "canvas"))
+        model.handleFrame(staleFenceAlert(connection: "66666666-6666-4666-8666-666666666666"))
+        XCTAssertNil(model.errorBanner)
+        XCTAssertTrue(model.canvas.isEmpty)
+    }
+
     func testCommitReadyPreludeFencesDetachedCommitAndRejectsWrongScope() {
         let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
         XCTAssertTrue(model.beginConversationConnection(connection))

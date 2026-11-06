@@ -3641,8 +3641,23 @@ final class AppModel: NSObject {
         }
     }
 
+    private func showAlertSentOutsideATurn(_ frame: InboundFrame) {
+        guard frame.name == "ui_render", frame.renderTarget == "chat",
+            frame.chatId == nil || frame.chatId == activeChatId,
+            frame.payload["connection_generation"]?.stringValue == continuity.connectionGeneration,
+            let alert = frame.renderComponents.first(where: { $0.type == "alert" }),
+            let message = alert.raw["message"]?.stringValue, !message.isEmpty
+        else { return }
+        errorBanner = message
+        bannerIsError = ["error", "warning"].contains(alert.raw["variant"]?.stringValue)
+    }
+
     private func reduceTransient(_ frame: InboundFrame) {
-        guard viewportRequest == nil, continuity.acceptTransient(frame) else { return }
+        guard viewportRequest == nil else { return }
+        guard continuity.acceptTransient(frame) else {
+            showAlertSentOutsideATurn(frame)
+            return
+        }
         acceptingTransientNavigationRender = true
         defer { acceptingTransientNavigationRender = false }
         switch frame.name {
