@@ -4218,6 +4218,14 @@ final class AppModel: NSObject {
         let image: String?
     }
 
+    /// The composer's stop action: restores queued follow-ups where the server supports them.
+    func stopTurn() {
+        #if os(macOS)
+            if cancelTurnRestoringQueue() { return }
+        #endif
+        _ = cancelCurrentTurn()
+    }
+
     @discardableResult
     func cancelCurrentTurn() -> Bool {
         guard canCancelTurn else { return false }
