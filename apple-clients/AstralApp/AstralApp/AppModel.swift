@@ -2311,6 +2311,11 @@ final class AppModel: NSObject {
         wsTask = nil
         ws = nil
         if pendingSurfaceKey == "terminal" { closeSurface() }
+        pendingSurface = nil
+        pendingSurfaceKey = ""
+        pendingSurfaceParams = .object([:])
+        surfaceFailureMessage = nil
+        screen = .chat
         store.wipe()
         tokens = nil
         conversationAccount = nil
