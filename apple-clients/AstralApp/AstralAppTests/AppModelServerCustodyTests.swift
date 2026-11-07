@@ -96,6 +96,55 @@ import XCTest
         XCTAssertNil(try storage.load(session.scope.storageKey))
     }
 
+    func testLaunchWithoutTheServerKeepsTheSessionAndResumesWhenItReturns() async throws {
+        let (model, storage, session) = try model()
+        model.serverSessionRetryNanoseconds = 50_000_000
+        let server = RestoreServer()
+        let reply = ServerSessionReply(
+            body: .object([
+                "authenticated": .bool(true), "access_token": .string(session.accessToken),
+                "resumed": .bool(true), "user_id": .string(session.owner),
+            ]))
+        model.serverSessionTransport = { _ in
+            guard await server.answerAfterOneFailure() else { throw ServerSessionError.unavailable }
+            return reply
+        }
+        await model.bootstrap()
+        XCTAssertTrue(model.signedIn)
+        XCTAssertNil(model.signInError)
+        XCTAssertNotNil(try storage.load(session.scope.storageKey))
+        await model.signOut(revokeRemote: false)
+    }
+
+    func testServerStaysAwayWithoutPublishingOrLosingTheSession() async throws {
+        let (model, storage, session) = try model()
+        model.serverSessionRetryNanoseconds = 60_000_000_000
+        let attempted = expectation(description: "restore attempt")
+        model.serverSessionTransport = { _ in
+            attempted.fulfill()
+            throw ServerSessionError.unavailable
+        }
+        let restore = Task { await model.bootstrap() }
+        await fulfillment(of: [attempted], timeout: 5)
+        for _ in 0..<100 where model.signInError == nil { await Task.yield() }
+
+        XCTAssertFalse(model.signedIn)
+        XCTAssertFalse(model.connected)
+        XCTAssertEqual(model.signInError, "The server can't be reached. Your sign-in is saved. Retrying…")
+        XCTAssertNotNil(try storage.load(session.scope.storageKey))
+        restore.cancel()
+        await restore.value
+    }
+
+    func testARetiredSessionIsStillDeletedAtLaunch() async throws {
+        let (model, storage, session) = try model()
+        model.serverSessionTransport = { _ in throw ServerSessionError.retired }
+        await model.bootstrap()
+        XCTAssertFalse(model.signedIn)
+        XCTAssertEqual(model.signInError, "The saved server session could not be resumed. Sign in again.")
+        XCTAssertNil(try storage.load(session.scope.storageKey))
+    }
+
     func testRestoredOwnerPreservesProtectedKeyAndRetiresForeignScopes() async throws {
         let (model, _, session) = try model()
         let storage = InMemoryMeshKeyStorage()
@@ -209,6 +258,14 @@ import XCTest
             XCTAssertNotNil(UUID(uuidString: try XCTUnwrap(frame["submission_id"]?.stringValue)))
             XCTAssertNotNil(UUID(uuidString: try XCTUnwrap(frame["request_generation"]?.stringValue)))
             await model.signOut(revokeRemote: false)
+        }
+    }
+
+    private actor RestoreServer {
+        private var failed = false
+        func answerAfterOneFailure() -> Bool {
+            defer { failed = true }
+            return failed
         }
     }
 
