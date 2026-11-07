@@ -930,6 +930,7 @@ final class AppModel: NSObject {
         }
         conversationAccount = account
         activeChatId = conversationResumeStore.load(for: account)?.chatId
+        restoreUnsentMessage(for: account)
         #if os(macOS)
             restoreOutcomeUnknownCard()
         #endif
@@ -2311,6 +2312,7 @@ final class AppModel: NSObject {
         wsTask = nil
         ws = nil
         if pendingSurfaceKey == "terminal" { closeSurface() }
+        defaults.removeObject(forKey: Self.unsentMessageKey)
         store.wipe()
         tokens = nil
         conversationAccount = nil
@@ -3243,6 +3245,7 @@ final class AppModel: NSObject {
                 pendingChatRequestGenerations: pendingChatRequestGenerations,
                 pendingSurfaceRequestGenerations: pendingSurfaceRequestGenerations)
         else { return }
+        if status.terminal { clearUnsentMessage(requestGeneration: status.requestGeneration) }
         operationStatuses = statusLifecycle.operations
         if status.terminal {
             if status.state != "completed" {
@@ -3601,6 +3604,7 @@ final class AppModel: NSObject {
         }
         activeChatId = snapshot.chatId
         turns = restoredTurns
+        clearUnsentMessage(requestGeneration: snapshot.requestGeneration)
         #if os(macOS)
             turnEditor = nil
             pendingTurnDeparture = nil
@@ -5896,6 +5900,35 @@ final class AppModel: NSObject {
         }
     #endif
 
+    static let unsentMessageKey = "astral.unsentChatMessage.v1"
+
+    /// Keeps a sent message on disk until it settles, because quitting mid-turn otherwise loses it.
+    private func saveUnsentMessage(_ text: String, requestGeneration: String) {
+        guard let account = conversationAccount, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return }
+        defaults.set(
+            ["issuer": account.issuer, "subject": account.subject, "request": requestGeneration, "text": text],
+            forKey: Self.unsentMessageKey)
+    }
+
+    private func clearUnsentMessage(requestGeneration: String) {
+        guard let saved = defaults.dictionary(forKey: Self.unsentMessageKey) as? [String: String],
+            saved["request"] == requestGeneration
+        else { return }
+        defaults.removeObject(forKey: Self.unsentMessageKey)
+    }
+
+    private func restoreUnsentMessage(for account: ConversationAccount) {
+        guard let saved = defaults.dictionary(forKey: Self.unsentMessageKey) as? [String: String],
+            saved["issuer"] == account.issuer, saved["subject"] == account.subject,
+            let text = saved["text"], !text.isEmpty
+        else { return }
+        defaults.removeObject(forKey: Self.unsentMessageKey)
+        if composerDraft.isEmpty { composerDraft = text }
+        bannerIsError = false
+        errorBanner = "Your last message may not have reached AstralDeep before it closed, so it is back in the composer."
+    }
+
     func sendChat(_ text: String) {
         #if os(macOS)
             if projects.negotiating {
@@ -5972,6 +6005,7 @@ final class AppModel: NSObject {
             action: "chat_message",
             surface: "chat",
             chatId: activeChatId)
+        saveUnsentMessage(text, requestGeneration: request)
 
         var payload: [String: JSONValue] = ["message": .string(text)]
         if let turnSelection, !turnSelection.isEmpty { payload["selection"] = turnSelection.json }
