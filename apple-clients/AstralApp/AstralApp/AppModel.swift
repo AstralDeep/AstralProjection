@@ -381,8 +381,10 @@ final class AppModel: NSObject {
     private var warningBannerText: String?
     var bannerIsWarning: Bool { errorBanner != nil && errorBanner == warningBannerText }
     var stepTrail: [String] = []
-    // The server runs load_chat after the turn in progress, and that turn's frames carry no chat id.
+    // The server runs load_chat after the turn in progress and expires it if that takes over 30 seconds,
+    // and that turn's frames carry no chat id. So the load is held here until the turn ends.
     private var waitingForEarlierTurn = false
+    @ObservationIgnored private var heldChatLoad: (chatId: String, identity: ClientOperationIdentity)?
     var visibleStatusText: String? {
         waitingForEarlierTurn ? "Finishing the previous reply. This chat will open when it ends." : statusText
     }
@@ -3610,6 +3612,7 @@ final class AppModel: NSObject {
         }
         activeChatId = snapshot.chatId
         waitingForEarlierTurn = false
+        heldChatLoad = nil
         turns = restoredTurns
         #if os(macOS)
             turnEditor = nil
@@ -4076,7 +4079,7 @@ final class AppModel: NSObject {
             ? "\(message) (\(displayedCode!))" : message
         bannerIsError = true
         turnActive = false
-        waitingForEarlierTurn = false
+        finishWaitingForEarlierTurn()
         pendingReplace = false
         pendingCanvas = []
         transientTurns = []
@@ -4100,8 +4103,6 @@ final class AppModel: NSObject {
         let status = frame.payload["status"]?.stringValue
         let message = frame.payload["message"]?.stringValue
         let label = (message?.isEmpty == false) ? message : status
-        // "Cancelled" is sent at once; the server runs load_chat only after the turn unwinds.
-        if ["done", "idle"].contains(status ?? ""), message != "Cancelled" { waitingForEarlierTurn = false }
         switch status {
         case "done":
             if continuity.connectionGeneration == nil {
@@ -4125,6 +4126,7 @@ final class AppModel: NSObject {
         default:
             statusText = label
         }
+        if ["done", "idle"].contains(status ?? "") { finishWaitingForEarlierTurn() }
     }
 
     private func commitTurn() {
@@ -5494,6 +5496,7 @@ final class AppModel: NSObject {
         activityLog.removeValue(forKey: activityKey(nil))
         activeChatId = nil
         waitingForEarlierTurn = turnActive
+        heldChatLoad = nil
         voice.updateVisibleChatLocally(nil)
         #if os(macOS)
             turnEditor = nil
@@ -7129,7 +7132,9 @@ final class AppModel: NSObject {
             guard conversationResumeStore.save(chatId: chatId, for: account) else { return }
         }
         conversationNavigationGeneration += 1
-        let leavesRunningTurn = activeChatId != chatId && (turnActive || waitingForEarlierTurn)
+        let leavesRunningTurn =
+            continuity.connectionGeneration != nil && activeChatId != chatId
+            && (turnActive || waitingForEarlierTurn)
         activeChatId = chatId
         voice.updateVisibleChatLocally(chatId)
         let identity = ClientOperationIdentity.fresh()
@@ -7141,8 +7146,18 @@ final class AppModel: NSObject {
                     requestGeneration: request,
                     purpose: .hydration)
             else { return }
-            if leavesRunningTurn { showWaitingForEarlierTurn() }
         }
+        if leavesRunningTurn {
+            showWaitingForEarlierTurn()
+            heldChatLoad = (chatId, identity)
+        } else {
+            sendChatLoad(chatId, identity: identity)
+        }
+        screen = .chat
+        viewingIndex = nil
+    }
+
+    private func sendChatLoad(_ chatId: String, identity: ClientOperationIdentity) {
         beginLocalOperationSubmission(
             identity: identity,
             action: "load_chat",
@@ -7153,9 +7168,16 @@ final class AppModel: NSObject {
                 sessionId: chatId,
                 chatId: chatId,
                 submissionId: identity.submissionId,
-                requestGeneration: request))
-        screen = .chat
-        viewingIndex = nil
+                requestGeneration: identity.requestGeneration))
+    }
+
+    private func finishWaitingForEarlierTurn() {
+        waitingForEarlierTurn = false
+        guard let held = heldChatLoad else { return }
+        heldChatLoad = nil
+        if continuity.requestGeneration == held.identity.requestGeneration {
+            sendChatLoad(held.chatId, identity: held.identity)
+        }
     }
 
     private func showWaitingForEarlierTurn() {
