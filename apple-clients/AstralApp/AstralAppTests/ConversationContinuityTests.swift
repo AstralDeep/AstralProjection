@@ -651,4 +651,133 @@ final class ConversationContinuityTests: XCTestCase {
         }
     }
 
+    private func modelShowingChatWithTurnRunning() throws -> AppModel {
+        let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
+        model.bindConversationAccount(account)
+        model.signedIn = true
+        model.connected = true
+        XCTAssertTrue(model.beginConversationConnection(connection))
+        XCTAssertTrue(model.openConversationRequest(chatId: chat, requestGeneration: hydration, purpose: .hydration))
+        model.handleFrame(snapshot(canvasText: "First chat canvas"))
+        model.handleFrame(inbound(#"{"type":"chat_status","status":"thinking","message":"Working"}"#))
+        XCTAssertTrue(model.turnActive)
+        return model
+    }
+
+    func testOpeningAnotherChatDuringATurnHidesTheChatBeingLeft() throws {
+        let model = try modelShowingChatWithTurnRunning()
+        var sent: [JSONValue] = []
+        model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+        let target = "66666666-6666-4666-8666-666666666666"
+
+        model.openChat(target)
+
+        XCTAssertEqual(model.activeChatId, target)
+        XCTAssertTrue(model.turns.isEmpty)
+        XCTAssertTrue(model.canvas.isEmpty)
+        XCTAssertEqual(model.visibleStatusText, "Finishing the previous reply. This chat will open when it ends.")
+
+        model.handleFrame(inbound(#"{"type":"chat_status","status":"executing","message":"Old turn"}"#))
+        model.handleFrame(inbound(#"{"type":"chat_step","step":{"name":"Old step","status":"running"}}"#))
+        model.handleFrame(inbound(#"{"type":"tool_progress","tool_name":"old_tool","message":"Old"}"#))
+        XCTAssertEqual(model.visibleStatusText, "Finishing the previous reply. This chat will open when it ends.")
+        XCTAssertTrue(model.stepTrail.isEmpty)
+        XCTAssertTrue(model.turnActive, "Stop stays available for the turn still running.")
+        XCTAssertTrue(sent.isEmpty, "A load queued behind the turn would expire on the server.")
+
+        model.handleFrame(inbound(#"{"type":"chat_status","status":"done","message":""}"#))
+        let load = try XCTUnwrap(sent.last)
+        XCTAssertEqual(load["session_id"]?.stringValue, target)
+        var restored = snapshot(canvasText: "Target canvas").payload.objectValue!
+        restored["chat_id"] = .string(target)
+        restored["request_generation"] = load["request_generation"]
+        model.handleFrame(InboundFrame(name: "conversation_snapshot", payload: .object(restored)))
+        XCTAssertEqual(model.canvas.map(\.fallbackText), ["Target canvas"])
+        XCTAssertEqual(model.turns.map(\.id), ["u1", "a1"])
+
+        model.handleFrame(inbound(#"{"type":"chat_status","status":"thinking","message":"Next turn"}"#))
+        XCTAssertEqual(model.visibleStatusText, "Next turn")
+    }
+
+    func testCancelledTurnOpensTheWaitingChatOnceItHasUnwound() throws {
+        let model = try modelShowingChatWithTurnRunning()
+        var sent: [JSONValue] = []
+        model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+        model.openChat("66666666-6666-4666-8666-666666666666")
+
+        model.handleFrame(inbound(#"{"type":"chat_status","status":"done","message":"Cancelled"}"#))
+
+        XCTAssertTrue(sent.isEmpty, "The cancelled turn is still unwinding on the server.")
+        XCTAssertEqual(model.visibleStatusText, "Finishing the previous reply. This chat will open when it ends.")
+        XCTAssertTrue(model.activity.isEmpty, "The cancelled turn did not belong to the chat being opened.")
+
+        model.handleFrame(inbound(#"{"type":"chat_status","status":"done","message":""}"#))
+        XCTAssertEqual(sent.last?["action"]?.stringValue, "load_chat")
+    }
+
+    func testSendingWhileAChatWaitsToOpenKeepsTheTextInTheComposer() throws {
+        let model = try modelShowingChatWithTurnRunning()
+        model.openChat("66666666-6666-4666-8666-666666666666")
+        var sent: [JSONValue] = []
+        model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+
+        model.sendChat("Keep this until the chat opens")
+
+        XCTAssertTrue(sent.isEmpty)
+        XCTAssertEqual(model.composerDraft, "Keep this until the chat opens")
+    }
+
+    func testOnlyTheLastChatOpenedDuringATurnLoadsWhenItEnds() throws {
+        let model = try modelShowingChatWithTurnRunning()
+        var sent: [JSONValue] = []
+        model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+        model.openChat("66666666-6666-4666-8666-666666666666")
+        model.openChat("77777777-7777-4777-8777-777777777777")
+
+        model.handleFrame(inbound(#"{"type":"chat_status","status":"done","message":""}"#))
+
+        XCTAssertEqual(
+            sent.compactMap { $0["session_id"]?.stringValue }, ["77777777-7777-4777-8777-777777777777"])
+    }
+
+    func testATurnErrorStillOpensTheWaitingChat() throws {
+        let model = try modelShowingChatWithTurnRunning()
+        var sent: [JSONValue] = []
+        model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+        model.openChat("66666666-6666-4666-8666-666666666666")
+
+        model.handleFrame(inbound(#"{"type":"error","code":"internal","message":"Turn failed"}"#))
+
+        XCTAssertEqual(sent.last?["action"]?.stringValue, "load_chat")
+    }
+
+    func testOpeningTheSameChatDuringATurnKeepsItOnScreen() throws {
+        let model = try modelShowingChatWithTurnRunning()
+
+        model.openChat(chat)
+
+        XCTAssertEqual(model.turns.map(\.id), ["u1", "a1"])
+        XCTAssertNotEqual(model.visibleStatusText, "Finishing the previous reply. This chat will open when it ends.")
+    }
+
+    func testOpeningAnotherChatWhenIdleKeepsTheOldViewUntilTheSnapshot() throws {
+        let model = try modelShowingChatWithTurnRunning()
+        model.handleFrame(inbound(#"{"type":"chat_status","status":"done","message":""}"#))
+
+        model.openChat("66666666-6666-4666-8666-666666666666")
+
+        XCTAssertEqual(model.turns.map(\.id), ["u1", "a1"])
+        XCTAssertNotEqual(model.visibleStatusText, "Finishing the previous reply. This chat will open when it ends.")
+    }
+
+    func testNewChatDuringATurnDoesNotAdoptTheOldTurnsProgress() throws {
+        let model = try modelShowingChatWithTurnRunning()
+
+        model.newChat()
+        model.handleFrame(inbound(#"{"type":"chat_status","status":"thinking","message":"Old turn"}"#))
+        model.handleFrame(inbound(#"{"type":"chat_step","step":{"name":"Old step","status":"running"}}"#))
+
+        XCTAssertEqual(model.visibleStatusText, "Finishing the previous reply. This chat will open when it ends.")
+        XCTAssertTrue(model.stepTrail.isEmpty)
+    }
 }

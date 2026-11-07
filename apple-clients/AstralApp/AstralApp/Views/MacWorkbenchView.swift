@@ -706,7 +706,7 @@
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 12) {
-                            if let status = model.statusText {
+                            if let status = model.visibleStatusText {
                                 StatusLine(text: status, showsActivity: model.statusShowsActivity)
                             }
                             ForEach(model.activity) { row in
