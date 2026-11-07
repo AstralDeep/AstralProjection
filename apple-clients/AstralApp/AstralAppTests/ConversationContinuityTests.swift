@@ -709,6 +709,18 @@ final class ConversationContinuityTests: XCTestCase {
         XCTAssertTrue(model.activity.isEmpty, "The cancelled turn did not belong to the chat being opened.")
     }
 
+    func testSendingWhileAChatWaitsToOpenKeepsTheTextInTheComposer() throws {
+        let model = try modelShowingChatWithTurnRunning()
+        model.openChat("66666666-6666-4666-8666-666666666666")
+        var sent: [JSONValue] = []
+        model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+
+        model.sendChat("Keep this until the chat opens")
+
+        XCTAssertTrue(sent.isEmpty)
+        XCTAssertEqual(model.composerDraft, "Keep this until the chat opens")
+    }
+
     func testOpeningTheSameChatDuringATurnKeepsItOnScreen() throws {
         let model = try modelShowingChatWithTurnRunning()
 

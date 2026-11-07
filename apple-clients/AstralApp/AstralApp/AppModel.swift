@@ -5928,7 +5928,8 @@ final class AppModel: NSObject {
             }
         #endif
         if timelineReadOnly { return }
-        if mandatorySurface {
+        // A message queued behind the turn would outlast the server's 15-second sign-in check.
+        if mandatorySurface || waitingForEarlierTurn {
             composerDraft = text
             return
         }
