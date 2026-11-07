@@ -3599,10 +3599,18 @@ final class AppModel: NSObject {
                 components: message.components,
                 branch: message.branch)
         }
+        let sameChat = activeChatId == snapshot.chatId
+        let editedText = turns.first(where: { $0.id == turnEditor?.turnId })?.text
         activeChatId = snapshot.chatId
         turns = restoredTurns
         #if os(macOS)
-            turnEditor = nil
+            // A reconnect rehydrates the same chat unchanged; a branch switch changes the edited turn's text.
+            let editedTurnUnchanged =
+                editedText != nil
+                && restoredTurns.contains(where: { $0.id == turnEditor?.turnId && $0.text == editedText })
+            if !sameChat || !editedTurnUnchanged {
+                turnEditor = nil
+            }
             pendingTurnDeparture = nil
         #endif
         canvas = snapshot.canvasComponents
