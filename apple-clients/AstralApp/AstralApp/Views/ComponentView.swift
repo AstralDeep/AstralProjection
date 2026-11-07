@@ -99,7 +99,7 @@ struct ComponentView: View {
         guard slotWidth.isFinite, slotWidth > 0 else { return }
         if component.type == "grid" {
             model.canvasCapture.record(
-                captureNode, columns: fittedColumns(authored: max(1, Int(component.raw["columns"]?.numberValue ?? 2))))
+                captureNode, columns: fittedColumns(authored: RenderNumber.int(component.raw["columns"]?.numberValue ?? 2, in: 1...12)))
         } else if component.type == "container", component.raw["direction"]?.stringValue == "row" {
             model.canvasCapture.record(captureNode, columns: fittedColumns(authored: max(1, component.children.count)))
         }
@@ -350,7 +350,7 @@ struct ComponentView: View {
     }
 
     private var gridView: some View {
-        let authored = max(1, Int(component.raw["columns"]?.numberValue ?? 2))
+        let authored = RenderNumber.int(component.raw["columns"]?.numberValue ?? 2, in: 1...12)
         let count = fittedColumns(authored: authored)
         return VStack(alignment: .leading, spacing: 6) {
             titleLine
@@ -585,14 +585,15 @@ struct ComponentView: View {
 
     private var ratingView: some View {
         let rawValue = component.raw["value"]?.numberValue ?? 0
-        let value = Int(rawValue.rounded())
-        let maxValue = Int(component.raw["max_value"]?.numberValue ?? component.raw["max"]?.numberValue ?? 5)
+        let maxValue = RenderNumber.int(
+            component.raw["max_value"]?.numberValue ?? component.raw["max"]?.numberValue ?? 5, in: 1...10)
+        let value = RenderNumber.int(rawValue.rounded(), in: 0...maxValue)
         return VStack(alignment: .leading, spacing: 2) {
             if let label = component.label ?? component.title, !label.isEmpty {
                 markdown(label).font(ConsoleTypography.caption).foregroundStyle(p.muted)
             }
             HStack(spacing: 2) {
-                ForEach(0..<max(maxValue, 1), id: \.self) { i in
+                ForEach(0..<maxValue, id: \.self) { i in
                     Image(systemName: i < value ? "star.fill" : "star")
                         .foregroundStyle(p.accent)
                 }
@@ -969,7 +970,7 @@ struct ComponentView: View {
     }
 
     private var skeletonView: some View {
-        let count = max(1, min(Int(component.raw["count"]?.numberValue ?? 3), 6))
+        let count = RenderNumber.int(component.raw["count"]?.numberValue ?? 3, in: 1...6)
         return VStack(alignment: .leading, spacing: 6) {
             ForEach(0..<count, id: \.self) { _ in
                 RoundedRectangle(cornerRadius: AstralRadius.sm)
@@ -2067,19 +2068,21 @@ struct TableComponent: View {
     @ViewBuilder
     private var pager: some View {
         if let total = component.raw["total_rows"]?.numberValue,
-            let size = component.raw["page_size"]?.numberValue, size > 0
+            let size = component.raw["page_size"]?.numberValue, size > 0,
+            let range = RenderNumber.pagerRows(
+                offset: component.raw["page_offset"]?.numberValue ?? 0, size: size, total: total)
         {
             let offset = component.raw["page_offset"]?.numberValue ?? 0
-            let start = Int(offset) + 1
-            let end = min(Int(offset + size), Int(total))
+            let start = range.start
+            let end = range.end
             HStack {
                 Button("‹ Prev") { paginate(offset: max(offset - size, 0), size: size) }
                     .disabled(offset <= 0)
                 Spacer()
-                Text("rows \(start)–\(end) of \(Int(total))").font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                Text("rows \(start)–\(end) of \(range.total)").font(ConsoleTypography.caption).foregroundStyle(p.muted)
                 Spacer()
                 Button("Next ›") { paginate(offset: offset + size, size: size) }
-                    .disabled(end >= Int(total))
+                    .disabled(end >= range.total)
             }
             .font(ConsoleTypography.caption)
             .tint(p.readablePrimary)
