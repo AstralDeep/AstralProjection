@@ -100,7 +100,8 @@ struct ComponentView: View {
         if component.type == "grid" {
             model.canvasCapture.record(
                 captureNode,
-                columns: fittedColumns(authored: RenderNumber.int(component.raw["columns"]?.numberValue ?? 2, in: 1...12)))
+                columns: fittedColumns(
+                    authored: RenderNumber.int(component.raw["columns"]?.numberValue ?? 2, in: 1...12)))
         } else if component.type == "container", component.raw["direction"]?.stringValue == "row" {
             model.canvasCapture.record(captureNode, columns: fittedColumns(authored: max(1, component.children.count)))
         }
