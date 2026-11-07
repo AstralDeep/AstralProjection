@@ -1248,6 +1248,76 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
         }
     }
 
+    func testDisconnectAfterTransmittingATurnReturnsTheMessageToTheComposer() async throws {
+        try await withModel { model, peer, _, _ in
+            let original = try XCTUnwrap(peer.registrations.last).socket
+            let registered = peer.expectRegistration()
+            model.sendChat("Lost with the connection")
+            try await waitUntil { peer.events.contains { $0.frame.payload["action"] == .string("chat_message") } }
+            peer.disconnect(socket: original)
+            await fulfillment(of: [registered], timeout: 10)
+            try await waitUntil { model.composerDraft == "Lost with the connection" }
+            XCTAssertTrue(model.bannerIsError)
+            XCTAssertEqual(
+                model.errorBanner, "The connection dropped before this message finished. Review it and send it again.")
+            try await waitUntil { model.connected }
+            XCTAssertEqual(peer.events.filter { $0.frame.payload["action"] == .string("chat_message") }.count, 1)
+        }
+    }
+
+    private func sendTurnThatEnds(
+        _ state: String, model: AppModel, peer: SocketAuthenticationPeer
+    ) async throws {
+        model.activeChatId = "77777777-7777-4777-8777-777777777777"
+        model.sendChat("Lost in the queue")
+        try await waitUntil { peer.events.contains { $0.frame.payload["action"] == .string("chat_message") } }
+        let event = try XCTUnwrap(peer.events.last { $0.frame.payload["action"] == .string("chat_message") })
+        let request = try XCTUnwrap(event.frame.payload["request_generation"]?.stringValue)
+        let connection = try XCTUnwrap(peer.registrations.last { $0.socket == event.socket }?.generation)
+        peer.send(#"{"type":"chat_status","status":"done"}"#, socket: event.socket)
+        peer.send(
+            """
+            {"type":"operation_status","operation_id":"33333333-3333-4333-8333-333333333333",
+            "action":"chat_message","surface":"chat","chat_id":"77777777-7777-4777-8777-777777777777",
+            "connection_generation":"\(connection)","request_generation":"\(request)",
+            "sequence":1,"state":"\(state)","phase":"\(state)","label":"Ended",
+            "terminal":true,"retryable":false,"error":{"code":"operation_failed","message":"The operation could not be completed."},
+            "retry_after_ms":null,"updated_at":"2026-11-06T18:00:00Z"}
+            """, socket: event.socket)
+        try await waitUntil { model.operationStatuses["33333333-3333-4333-8333-333333333333"] != nil }
+    }
+
+    func testATurnThatFailsBeforeSavingReturnsTheMessageToTheComposer() async throws {
+        try await withModel { model, peer, _, _ in
+            try await sendTurnThatEnds("failed", model: model, peer: peer)
+            XCTAssertEqual(model.composerDraft, "Lost in the queue")
+            XCTAssertTrue(model.bannerIsError)
+            XCTAssertEqual(model.errorBanner, "This message didn't go through. Review it and send it again.")
+            XCTAssertTrue(model.transientTurns.isEmpty)
+        }
+    }
+
+    func testACancelledTurnDoesNotReturnTheMessageToTheComposer() async throws {
+        try await withModel { model, peer, _, _ in
+            try await sendTurnThatEnds("cancelled", model: model, peer: peer)
+            XCTAssertEqual(model.composerDraft, "")
+        }
+    }
+
+    func testDisconnectDuringATurnKeepsTheMessageAndANewerDraft() async throws {
+        try await withModel { model, peer, _, _ in
+            let original = try XCTUnwrap(peer.registrations.last).socket
+            let registered = peer.expectRegistration()
+            model.sendChat("Lost with the connection")
+            try await waitUntil { peer.events.contains { $0.frame.payload["action"] == .string("chat_message") } }
+            model.composerDraft = "A newer draft"
+            peer.disconnect(socket: original)
+            await fulfillment(of: [registered], timeout: 10)
+            try await waitUntil { model.errorBanner != nil }
+            XCTAssertEqual(model.composerDraft, "Lost with the connection\n\nA newer draft")
+        }
+    }
+
     func testIdleKeepaliveShowsTheTrueStateAndReconnectsWithoutASend() async throws {
         try await withModel(liveness: LivenessPolicy(interval: 0.2, timeout: 0.3, freshness: 0.1)) {
             model, peer, _, _ in
