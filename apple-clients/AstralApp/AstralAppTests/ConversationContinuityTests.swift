@@ -699,7 +699,7 @@ final class ConversationContinuityTests: XCTestCase {
         XCTAssertEqual(model.visibleStatusText, "Next turn")
     }
 
-    func testCancellingTheEarlierTurnOpensTheWaitingChat() throws {
+    func testCancelledTurnOpensTheWaitingChatOnceItHasUnwound() throws {
         let model = try modelShowingChatWithTurnRunning()
         var sent: [JSONValue] = []
         model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
@@ -707,9 +707,12 @@ final class ConversationContinuityTests: XCTestCase {
 
         model.handleFrame(inbound(#"{"type":"chat_status","status":"done","message":"Cancelled"}"#))
 
-        XCTAssertEqual(sent.last?["action"]?.stringValue, "load_chat")
-        XCTAssertNotNil(model.visibleStatusText)
+        XCTAssertTrue(sent.isEmpty, "The cancelled turn is still unwinding on the server.")
+        XCTAssertEqual(model.visibleStatusText, "Finishing the previous reply. This chat will open when it ends.")
         XCTAssertTrue(model.activity.isEmpty, "The cancelled turn did not belong to the chat being opened.")
+
+        model.handleFrame(inbound(#"{"type":"chat_status","status":"done","message":""}"#))
+        XCTAssertEqual(sent.last?["action"]?.stringValue, "load_chat")
     }
 
     func testSendingWhileAChatWaitsToOpenKeepsTheTextInTheComposer() throws {

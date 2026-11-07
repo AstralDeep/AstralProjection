@@ -4126,7 +4126,8 @@ final class AppModel: NSObject {
         default:
             statusText = label
         }
-        if ["done", "idle"].contains(status ?? "") { finishWaitingForEarlierTurn() }
+        // "Cancelled" is sent at once. The turn is over at the plain "done" it sends after unwinding.
+        if ["done", "idle"].contains(status ?? ""), message != "Cancelled" { finishWaitingForEarlierTurn() }
     }
 
     private func commitTurn() {
