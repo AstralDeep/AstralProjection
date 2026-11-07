@@ -5926,7 +5926,8 @@ final class AppModel: NSObject {
         defaults.removeObject(forKey: Self.unsentMessageKey)
         if composerDraft.isEmpty { composerDraft = text }
         bannerIsError = false
-        errorBanner = "Your last message may not have reached AstralDeep before it closed, so it is back in the composer."
+        errorBanner =
+            "Your last message may not have reached AstralDeep before it closed, so it is back in the composer."
     }
 
     func sendChat(_ text: String) {
