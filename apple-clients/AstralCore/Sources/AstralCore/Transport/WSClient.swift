@@ -446,6 +446,8 @@ public actor WSClient {
             var request = NoStoreHTTP.request(url: url)
             for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
             let task = NoStoreHTTP.session.webSocketTask(with: request)
+            // The server sends a whole conversation as one frame, and URLSession's 1 MiB default ends the socket.
+            task.maximumMessageSize = 64 * 1024 * 1024
             self.task = task
             established = false
             registeredConnectionGeneration = nil
