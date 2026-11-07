@@ -76,4 +76,21 @@ final class AppModelUnsentMessageTests: XCTestCase {
         XCTAssertNil(store.dictionary(forKey: AppModel.unsentMessageKey))
         XCTAssertEqual(launch(store, as: account).composerDraft, "")
     }
+
+    func testAFinishedMessageIsNotRestoredEvenAfterSwitchingChats() throws {
+        let store = try defaults()
+        let model = launch(store, as: account)
+        let request = try XCTUnwrap(sendMidTurn(model))
+        model.activeChatId = "33333333-3333-4333-8333-333333333333"
+        model.handleFrame(
+            InboundFrame.parse(
+                """
+                {"type":"operation_status","operation_id":"44444444-4444-4444-8444-444444444444",
+                 "action":"chat_message","surface":"chat","chat_id":"\(chat)",
+                 "connection_generation":"\(connection)","request_generation":"\(request)",
+                 "sequence":1,"state":"completed","phase":"completed","label":"Done","terminal":true,
+                 "retryable":false,"error":null,"retry_after_ms":null,"updated_at":"2026-11-07T20:00:01Z"}
+                """)!)
+        XCTAssertNil(store.dictionary(forKey: AppModel.unsentMessageKey))
+    }
 }

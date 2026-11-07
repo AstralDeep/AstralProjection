@@ -3236,6 +3236,10 @@ final class AppModel: NSObject {
     }
 
     private func reduceOperationStatus(_ frame: InboundFrame) {
+        if let status = OperationStatus(frame: frame), status.terminal {
+            // Authoritative for its own request even when another chat is open.
+            clearUnsentMessage(requestGeneration: status.requestGeneration)
+        }
         guard let status = OperationStatus(frame: frame),
             statusLifecycle.accept(
                 operation: status,
@@ -3245,7 +3249,6 @@ final class AppModel: NSObject {
                 pendingChatRequestGenerations: pendingChatRequestGenerations,
                 pendingSurfaceRequestGenerations: pendingSurfaceRequestGenerations)
         else { return }
-        if status.terminal { clearUnsentMessage(requestGeneration: status.requestGeneration) }
         operationStatuses = statusLifecycle.operations
         if status.terminal {
             if status.state != "completed" {
