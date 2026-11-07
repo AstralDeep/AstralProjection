@@ -1248,6 +1248,37 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
         }
     }
 
+    func testDisconnectAfterTransmittingATurnReturnsTheMessageToTheComposer() async throws {
+        try await withModel { model, peer, _, _ in
+            let original = try XCTUnwrap(peer.registrations.last).socket
+            let registered = peer.expectRegistration()
+            model.sendChat("Lost with the connection")
+            try await waitUntil { peer.events.contains { $0.frame.payload["action"] == .string("chat_message") } }
+            peer.disconnect(socket: original)
+            await fulfillment(of: [registered], timeout: 10)
+            try await waitUntil { model.composerDraft == "Lost with the connection" }
+            XCTAssertTrue(model.bannerIsError)
+            XCTAssertEqual(
+                model.errorBanner, "The connection dropped before this message finished. Review it and send it again.")
+            try await waitUntil { model.connected }
+            XCTAssertEqual(peer.events.filter { $0.frame.payload["action"] == .string("chat_message") }.count, 1)
+        }
+    }
+
+    func testDisconnectDuringATurnKeepsTheMessageAndANewerDraft() async throws {
+        try await withModel { model, peer, _, _ in
+            let original = try XCTUnwrap(peer.registrations.last).socket
+            let registered = peer.expectRegistration()
+            model.sendChat("Lost with the connection")
+            try await waitUntil { peer.events.contains { $0.frame.payload["action"] == .string("chat_message") } }
+            model.composerDraft = "A newer draft"
+            peer.disconnect(socket: original)
+            await fulfillment(of: [registered], timeout: 10)
+            try await waitUntil { model.errorBanner != nil }
+            XCTAssertEqual(model.composerDraft, "Lost with the connection\n\nA newer draft")
+        }
+    }
+
     func testIdleKeepaliveShowsTheTrueStateAndReconnectsWithoutASend() async throws {
         try await withModel(liveness: LivenessPolicy(interval: 0.2, timeout: 0.3, freshness: 0.1)) {
             model, peer, _, _ in

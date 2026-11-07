@@ -344,6 +344,8 @@ final class AppModel: NSObject {
             observeActivityComponents()
         }
     }
+    private var unsettledChatSend:
+        (submissionId: String, text: String, attachments: [StagedAttachment], transmitted: Bool)?
     var transientTurns: [ChatTurn] = [] {
         didSet {
             bindConversationNavigationRender("transient-transcript")
@@ -2807,6 +2809,7 @@ final class AppModel: NSObject {
             retireOrdinarySurfaceRequests(preservingReadIntent: true)
             voice.controlTransportDisconnected()
             clearPendingOperationSubmissions()
+            restoreUnsettledChatSend()
             turnActive = false
             pendingReplace = false
             pendingCanvas = []
@@ -5960,6 +5963,7 @@ final class AppModel: NSObject {
             canvas = canvas.dropWelcome()
         }
         pendingLabel = String((text.isEmpty ? (ready.first?.filename ?? "") : text).prefix(80))
+        unsettledChatSend = (identity.submissionId, text, ready, false)
         staged = []
         viewingIndex = nil
         statusText = nil
@@ -6654,8 +6658,9 @@ final class AppModel: NSObject {
                 }
                 if !sent && owner == downloadOwner { retireUnsentOperation(text) }
             } else {
-                _ = await socket.confirmLive()
+                let live = await socket.confirmLive()
                 await socket.send(text)
+                if live { markChatSendTransmitted(text) }
             }
         }
     }
@@ -6751,16 +6756,39 @@ final class AppModel: NSObject {
         return true
     }
 
+    private func markChatSendTransmitted(_ text: String) {
+        guard let submission = InboundFrame.parse(text)?.payload["submission_id"]?.stringValue,
+            unsettledChatSend?.submissionId == submission
+        else { return }
+        unsettledChatSend?.transmitted = true
+    }
+
+    private func restoreUnsettledChatSend() {
+        defer { unsettledChatSend = nil }
+        guard turnActive, let send = unsettledChatSend, send.transmitted,
+            transientTurns.contains(where: { $0.role == "user" })
+        else { return }
+        composerDraft = joinedWithDraft(send.text)
+        staged = send.attachments + staged
+        bannerIsError = true
+        errorBanner = "The connection dropped before this message finished. Review it and send it again."
+    }
+
     private func restoreUnsentQuery(_ text: String, navigation: Int, chatId: String?) {
         guard navigation == conversationNavigationGeneration, activeChatId == chatId, screen == .chat,
             let frame = InboundFrame.parse(text), frame.payload["action"]?.stringValue == "chat_message",
             let message = frame.payload["payload"]?["message"]?.stringValue
         else { return }
-        if composerDraft.isEmpty { composerDraft = message }
+        composerDraft = joinedWithDraft(message)
         turnActive = false
         statusText = nil
         bannerIsError = true
         errorBanner = "The message was not sent. Review it and try again after reconnecting."
+    }
+
+    /// A returned message goes ahead of anything typed since, so neither is lost.
+    private func joinedWithDraft(_ message: String) -> String {
+        composerDraft.isEmpty ? message : "\(message)\n\n\(composerDraft)"
     }
 
     @discardableResult
