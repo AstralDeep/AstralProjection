@@ -155,6 +155,15 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
         }
     #endif
 
+    func testOpeningAnotherWindowKeepsTheRegisteredSocket() async throws {
+        try await withModel { model, peer, _, _ in
+            await model.bootstrap()
+            try await Task.sleep(nanoseconds: 300_000_000)
+            XCTAssertEqual(peer.registrations.count, 1)
+            XCTAssertTrue(model.connected)
+        }
+    }
+
     func testRESTTokenRotationRenewsTheRegisteredSocket() async throws {
         try await withModel { model, peer, store, clock in
             clock.advance(7200)
