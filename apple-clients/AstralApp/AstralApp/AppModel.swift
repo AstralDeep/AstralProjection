@@ -381,6 +381,11 @@ final class AppModel: NSObject {
     private var warningBannerText: String?
     var bannerIsWarning: Bool { errorBanner != nil && errorBanner == warningBannerText }
     var stepTrail: [String] = []
+    // The server runs load_chat after the turn in progress, and that turn's frames carry no chat id.
+    private var waitingForEarlierTurn = false
+    var visibleStatusText: String? {
+        waitingForEarlierTurn ? "Finishing the previous reply. This chat will open when it ends." : statusText
+    }
     private(set) var activityLog: [String: [ActivityRow]] = [:]
     @ObservationIgnored private var activityAliases: [String: String] = [:]
     @ObservationIgnored private var activityOrder: [String] = []
@@ -472,7 +477,7 @@ final class AppModel: NSObject {
         }
         var composerSteeringApplies: Bool {
             turnSteerNegotiated && turnActive && signedIn && connected && !mutationsLocked
-                && !timelineReadOnly
+                && !timelineReadOnly && !waitingForEarlierTurn
         }
         var composerQueueApplies: Bool {
             turnQueueCapable && composerSteeringApplies
@@ -2979,7 +2984,9 @@ final class AppModel: NSObject {
             if let chatId = nestedChatId(frame) { clearConfirmedDeletion(chatId) }
         case "chat_status":
             if let target = frame.payload["chat_id"]?.stringValue, let active = activeChatId, target != active { break }
-            if frame.payload["status"]?.stringValue == "done", frame.payload["message"]?.stringValue == "Cancelled" {
+            if frame.payload["status"]?.stringValue == "done", frame.payload["message"]?.stringValue == "Cancelled",
+                !waitingForEarlierTurn
+            {
                 recordActivityCancellation(chatId: nestedChatId(frame) ?? activeChatId)
             }
             if ["done", "idle"].contains(frame.payload["status"]?.stringValue ?? "") {
@@ -3074,11 +3081,13 @@ final class AppModel: NSObject {
                 reduceError(frame)
             }
         case "chat_step":
+            if waitingForEarlierTurn { break }
             let step = frame.payload["step"]
             let name = step?["name"]?.stringValue ?? step?["kind"]?.stringValue
             stepTrail = trailUpsert(stepTrail, stepLine(name: name, status: step?["status"]?.stringValue))
             recordActivityStep(frame)
         case "tool_progress":
+            if waitingForEarlierTurn { break }
             let head = [frame.payload["tool_name"]?.stringValue, frame.payload["message"]?.stringValue]
                 .compactMap { $0 }.joined(separator: ": ")
             // Int(Double) traps out-of-range — bounds-check before converting
@@ -3600,6 +3609,7 @@ final class AppModel: NSObject {
                 branch: message.branch)
         }
         activeChatId = snapshot.chatId
+        waitingForEarlierTurn = false
         turns = restoredTurns
         #if os(macOS)
             turnEditor = nil
@@ -4066,6 +4076,7 @@ final class AppModel: NSObject {
             ? "\(message) (\(displayedCode!))" : message
         bannerIsError = true
         turnActive = false
+        waitingForEarlierTurn = false
         pendingReplace = false
         pendingCanvas = []
         transientTurns = []
@@ -4089,6 +4100,8 @@ final class AppModel: NSObject {
         let status = frame.payload["status"]?.stringValue
         let message = frame.payload["message"]?.stringValue
         let label = (message?.isEmpty == false) ? message : status
+        // "Cancelled" is sent at once; the server runs load_chat only after the turn unwinds.
+        if ["done", "idle"].contains(status ?? ""), message != "Cancelled" { waitingForEarlierTurn = false }
         switch status {
         case "done":
             if continuity.connectionGeneration == nil {
@@ -5480,6 +5493,7 @@ final class AppModel: NSObject {
         canvasCapture.clear()
         activityLog.removeValue(forKey: activityKey(nil))
         activeChatId = nil
+        waitingForEarlierTurn = turnActive
         voice.updateVisibleChatLocally(nil)
         #if os(macOS)
             turnEditor = nil
@@ -7114,6 +7128,7 @@ final class AppModel: NSObject {
             guard conversationResumeStore.save(chatId: chatId, for: account) else { return }
         }
         conversationNavigationGeneration += 1
+        let leavesRunningTurn = activeChatId != chatId && (turnActive || waitingForEarlierTurn)
         activeChatId = chatId
         voice.updateVisibleChatLocally(chatId)
         let identity = ClientOperationIdentity.fresh()
@@ -7125,6 +7140,7 @@ final class AppModel: NSObject {
                     requestGeneration: request,
                     purpose: .hydration)
             else { return }
+            if leavesRunningTurn { showWaitingForEarlierTurn() }
         }
         beginLocalOperationSubmission(
             identity: identity,
@@ -7139,6 +7155,20 @@ final class AppModel: NSObject {
                 requestGeneration: request))
         screen = .chat
         viewingIndex = nil
+    }
+
+    private func showWaitingForEarlierTurn() {
+        waitingForEarlierTurn = true
+        turns = []
+        canvas = []
+        pendingCanvas = []
+        canvasHistory = []
+        pendingReplace = false
+        stepTrail = []
+        #if os(macOS)
+            turnEditor = nil
+            pendingTurnDeparture = nil
+        #endif
     }
 
     func deleteChat(_ chatId: String) {

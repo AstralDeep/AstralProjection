@@ -63,7 +63,7 @@ import SwiftUI
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
-                        if let status = model.statusText {
+                        if let status = model.visibleStatusText {
                             StatusLine(text: status, showsActivity: model.statusShowsActivity)
                         }
                         Color.clear.frame(height: 1).id("workbench-latest")
@@ -94,7 +94,7 @@ import SwiftUI
                 }
                 .onChange(of: turns) { _, _ in if followsLatest { scrollToLatest(proxy) } }
                 .onChange(of: model.activity.count) { _, _ in if followsLatest { scrollToLatest(proxy) } }
-                .onChange(of: model.statusText) { _, _ in if followsLatest { scrollToLatest(proxy) } }
+                .onChange(of: model.visibleStatusText) { _, _ in if followsLatest { scrollToLatest(proxy) } }
             }
         }
 
@@ -550,7 +550,7 @@ struct ConsoleConversation: View {
                             }
                         }
                     }
-                    if let status = model.statusText {
+                    if let status = model.visibleStatusText {
                         StatusLine(text: status, showsActivity: model.statusShowsActivity)
                     }
                     if !model.workspaceCanvas.isEmpty || model.showSkeleton {
@@ -585,7 +585,7 @@ struct ConsoleConversation: View {
             .onChange(of: turns) { _, _ in scrollToLatest(proxy) }
             .onChange(of: model.workspaceCanvas) { _, _ in scrollToLatest(proxy) }
             .onChange(of: model.showSkeleton) { _, _ in scrollToLatest(proxy) }
-            .onChange(of: model.statusText) { _, _ in scrollToLatest(proxy) }
+            .onChange(of: model.visibleStatusText) { _, _ in scrollToLatest(proxy) }
         }
     }
 
