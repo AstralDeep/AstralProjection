@@ -6780,10 +6780,8 @@ final class AppModel: NSObject {
         guard let send = unsettledChatSend, send.transmitted,
             transientTurns.contains(where: { $0.role == "user" })
         else { return false }
-        if composerDraft.isEmpty {
-            composerDraft = send.text
-            if staged.isEmpty { staged = send.attachments }
-        }
+        composerDraft = joinedWithDraft(send.text)
+        staged = send.attachments + staged
         bannerIsError = true
         errorBanner = notice
         return true
@@ -6801,11 +6799,16 @@ final class AppModel: NSObject {
             let frame = InboundFrame.parse(text), frame.payload["action"]?.stringValue == "chat_message",
             let message = frame.payload["payload"]?["message"]?.stringValue
         else { return }
-        if composerDraft.isEmpty { composerDraft = message }
+        composerDraft = joinedWithDraft(message)
         turnActive = false
         statusText = nil
         bannerIsError = true
         errorBanner = "The message was not sent. Review it and try again after reconnecting."
+    }
+
+    /// A returned message goes ahead of anything typed since, so neither is lost.
+    private func joinedWithDraft(_ message: String) -> String {
+        composerDraft.isEmpty ? message : "\(message)\n\n\(composerDraft)"
     }
 
     @discardableResult

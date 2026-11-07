@@ -1304,7 +1304,7 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
         }
     }
 
-    func testDisconnectDuringATurnKeepsANewerDraft() async throws {
+    func testDisconnectDuringATurnKeepsTheMessageAndANewerDraft() async throws {
         try await withModel { model, peer, _, _ in
             let original = try XCTUnwrap(peer.registrations.last).socket
             let registered = peer.expectRegistration()
@@ -1314,7 +1314,7 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
             peer.disconnect(socket: original)
             await fulfillment(of: [registered], timeout: 10)
             try await waitUntil { model.errorBanner != nil }
-            XCTAssertEqual(model.composerDraft, "A newer draft")
+            XCTAssertEqual(model.composerDraft, "Lost with the connection\n\nA newer draft")
         }
     }
 
