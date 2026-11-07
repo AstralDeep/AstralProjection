@@ -102,6 +102,31 @@
             }
         }
 
+        func testARefusedApprovalClearsTheAcceptedStatus() throws {
+            let (model, connection, sent) = try model()
+            model.currentApprovalDecisionSendOverride = { _, _ in true }
+            model.canvas = [card()]
+            model.decideApproval(try XCTUnwrap(model.approvalPrompts.first), allow: true)
+            let decision = try XCTUnwrap(sent().first { $0["action"] == .string("remote_op_decision") })
+            let generation = try XCTUnwrap(decision["request_generation"]?.stringValue)
+            let accepted = try XCTUnwrap(
+                InboundFrame.parse(
+                    """
+                    {"type":"operation_status","operation_id":"44444444-4444-4444-8444-444444444444",
+                    "action":"remote_op_decision","surface":"operation","chat_id":"\(chat)",
+                    "connection_generation":"\(connection)","request_generation":"\(generation)",
+                    "sequence":1,"state":"accepted","phase":"accepted","label":"Accepted",
+                    "terminal":false,"retryable":false,"error":null,"retry_after_ms":null,
+                    "updated_at":"2026-11-06T18:00:00Z"}
+                    """))
+            model.handleFrame(accepted)
+            XCTAssertEqual(model.statusText, "Accepted")
+
+            model.handleFrame(receipt(connection, state: "expired", decision: "approve"))
+
+            XCTAssertNil(model.statusText)
+        }
+
         func testDecisionNotSentWithoutAUsableSocketSettlesAsUncertainWithoutReplay() throws {
             let (model, _, sent) = try model()
             model.canvas = [card()]

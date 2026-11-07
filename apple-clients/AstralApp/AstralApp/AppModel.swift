@@ -5607,7 +5607,11 @@ final class AppModel: NSObject {
     private func clearLocalOperationSubmission(submissionId: String) {
         guard let submission = localOperationSubmissions.removeValue(forKey: submissionId) else { return }
         componentPendingOperations.removeValue(forKey: submissionId)
-        if statusText == submission.label { statusText = latestActiveOperationStatusText() }
+        // The server's terminal status for this operation is no longer accepted once the submission is gone.
+        let shownByThisOperation = operationStatuses.values.contains {
+            $0.requestGeneration == submission.requestGeneration && $0.label == statusText
+        }
+        if statusText == submission.label || shownByThisOperation { statusText = latestActiveOperationStatusText() }
     }
 
     private func operationOwnsActiveChatTurn(
