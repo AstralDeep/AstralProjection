@@ -45,7 +45,8 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
 
     private func taskFrame(_ type: String, status: String, summary: String? = nil) -> String {
         let field = summary.map { #","summary":"\#($0)""# } ?? ""
-        return #"{"type":"\#(type)","payload":{"task_id":"t1","chat_id":"\#(liveChat)","status":"\#(status)"\#(field)}}"#
+        let task = #"{"task_id":"t1","chat_id":"\#(liveChat)","status":"\#(status)"\#(field)}"#
+        return #"{"type":"\#(type)","payload":\#(task)}"#
     }
 
     private func connectedModel() -> AppModel {

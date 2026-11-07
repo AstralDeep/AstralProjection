@@ -1152,7 +1152,7 @@
       "sourceMode": "100644",
       "task": "T060",
       "reason": "Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Complete owner/device/server-generation fenced mobile provider admission, conditional lifecycle cleanup, source navigation, registered UI presence and shared notification routing without a client-owned chrome catalog.",
-      "resultSha256": "a1b34ca7acfa040ea731e67031202177702211de28e01704de517625f5083699"
+      "resultSha256": "507763d923f7bd232ac260b1ac8fc92794cee91da6e84b84a1c05d61300d2679"
     },
     {
       "path": "apple-clients/AstralApp/AstralAppTests/AppModelChromeSurfaceTests.swift",
