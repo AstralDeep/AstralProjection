@@ -3641,6 +3641,17 @@ final class AppModel: NSObject {
         }
     }
 
+    /// Shows chat alerts in the banner, since the preview cannot render them. Returns true when the
+    /// frame held only alerts, so the caller leaves the existing preview in place.
+    private func showChatAlerts(_ components: [AstralComponent]) -> Bool {
+        let alerts = components.filter { $0.type == "alert" }
+        if let alert = alerts.last, let message = alert.raw["message"]?.stringValue, !message.isEmpty {
+            errorBanner = message
+            bannerIsError = ["error", "warning"].contains(alert.raw["variant"]?.stringValue)
+        }
+        return !alerts.isEmpty && alerts.count == components.count
+    }
+
     private func reduceTransient(_ frame: InboundFrame) {
         guard viewportRequest == nil, continuity.acceptTransient(frame) else { return }
         acceptingTransientNavigationRender = true
@@ -3649,6 +3660,7 @@ final class AppModel: NSObject {
         case "ui_render", "ui_update":
             let components = frame.renderComponents
             if frame.renderTarget == "chat" {
+                if showChatAlerts(components) { return }
                 let pendingUsers = transientTurns.filter { $0.role == "user" }
                 let response = chatPreviewTurn(components, frame: frame).map { [$0] } ?? []
                 transientTurns = pendingUsers + response
@@ -3658,6 +3670,7 @@ final class AppModel: NSObject {
         case "ui_append":
             let components = frame.renderComponents
             if frame.renderTarget == "chat" {
+                if showChatAlerts(components) { return }
                 if let turn = chatPreviewTurn(components, frame: frame) {
                     transientTurns.append(turn)
                 }
