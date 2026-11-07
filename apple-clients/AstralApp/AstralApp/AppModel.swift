@@ -576,6 +576,7 @@ final class AppModel: NSObject {
     @ObservationIgnored private var tokens: TokenSet?
     @ObservationIgnored private var serverSession: ServerSession?
     @ObservationIgnored private var restoringServerSession: ServerSession?
+    @ObservationIgnored var serverSessionRetryNanoseconds: UInt64 = 5_000_000_000
     @ObservationIgnored private var serverCustodyRequired = false
     @ObservationIgnored var serverSessionStorage: any MeshKeyStorage = KeychainMeshKeyStorage(
         service: "com.personalailabs.astraldeep.server-session")
@@ -1607,9 +1608,23 @@ final class AppModel: NSObject {
                     serverSession = refreshed
                     serverCustodyRequired = true
                     tokens = refreshed.tokenSet
+                    signInError = nil
                     enterSignedIn(resumedSession: true)
                     return
                 }
+            } catch ServerSessionError.unavailable {
+                guard !Task.isCancelled, generation == sessionGeneration, owner == downloadOwner,
+                    authentication === authSession
+                else { return }
+                // No answer from the server says nothing about the session: keep it, and stay signed out
+                // until the server confirms it.
+                signInError = "The server can't be reached. Your sign-in is saved. Retrying…"
+                try? await Task.sleep(nanoseconds: serverSessionRetryNanoseconds)
+                guard !Task.isCancelled, generation == sessionGeneration, owner == downloadOwner,
+                    authentication === authSession, !signedIn
+                else { return }
+                await bootstrap()
+                return
             } catch {
                 guard !Task.isCancelled, generation == sessionGeneration, owner == downloadOwner,
                     authentication === authSession
