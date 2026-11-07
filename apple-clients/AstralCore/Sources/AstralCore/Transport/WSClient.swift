@@ -162,6 +162,13 @@ public actor WSClient {
         continuation?.finish()
     }
 
+    /// Stops this client and returns the frames still waiting to be sent, so a replacement client can send them.
+    public func stopHandingOverQueue() -> [String] {
+        let waiting = queue.drainAll().map(\.text)
+        stop()
+        return waiting
+    }
+
     public func send(_ text: String) {
         guard !Self.claimsCurrentConnection(text) else {
             continuation?.yield(.sendRejected(action: Self.actionHint(text)))

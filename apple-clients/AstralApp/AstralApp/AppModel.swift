@@ -2678,14 +2678,16 @@ final class AppModel: NSObject {
                     await self?.serverSocketHeaders(url: socketURL, owner: socketOwner, server: socketServer)
                 })
         initialWebSocket = nil
-        if let previous = ws, previous !== client {
-            Task { await previous.stop() }
-        }
+        let previous = ws.flatMap { $0 !== client ? $0 : nil }
         ws = client
         let owner = downloadOwner
         let server = serverBase
         let resumeState = AppRegistrationResumeState(initial: initialResumed)
         wsTask = Task {
+            // Retry replaces the client; frames parked on the old one would otherwise be lost.
+            if let previous {
+                for text in await previous.stopHandingOverQueue() { await client.send(text) }
+            }
             let events = await client.events()
             #if os(macOS)
                 let onRegistration: (@Sendable (InboundFrame, String) async -> Bool)? = {
