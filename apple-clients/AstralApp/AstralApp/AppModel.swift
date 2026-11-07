@@ -3103,13 +3103,22 @@ final class AppModel: NSObject {
             if frameTargetsActiveChat(frame) {
                 if continuity.connectionGeneration == nil {
                     commitTurn()
-                    refreshActiveChat()
                 } else {
                     turnActive = false
+                    asyncDetached = false
                     statusText = nil
                 }
-                bannerIsError = false
-                errorBanner = "Background task finished"
+                // A revisit rebinds the chat, so the task's commit snapshot no longer reaches this socket.
+                refreshActiveChat()
+                let task = frame.payload["payload"]
+                let status = task?["status"]?.stringValue ?? "completed"
+                bannerIsError = !["completed", "cancelled"].contains(status)
+                switch status {
+                case "completed": errorBanner = "Background task finished"
+                case "cancelled": errorBanner = "Background task cancelled"
+                default:
+                    errorBanner = task?["summary"]?.stringValue ?? "The background task did not finish."
+                }
             }
         case "notification":
             var text = [frame.payload["title"]?.stringValue, frame.payload["body"]?.stringValue]
