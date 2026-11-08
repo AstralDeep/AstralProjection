@@ -291,32 +291,39 @@ final class ConversationContinuityTests: XCTestCase {
     }
 
     private func staleFenceAlert(
-        target: String = "chat", connection stamped: String? = nil, variant: String = "success"
+        target: String = "chat", connection stamped: String? = nil, request: String? = nil,
+        base: Int = 0, variant: String = "success"
     ) -> InboundFrame {
         inbound(
             """
             {"type":"ui_render","target":"\(target)","chat_id":"\(chat)",
-            "connection_generation":"\(stamped ?? connection)","request_generation":"\(commit)",
-            "base_render_revision":0,"frame_sequence":9,
+            "connection_generation":"\(stamped ?? connection)","request_generation":"\(request ?? commit)",
+            "base_render_revision":\(base),"frame_sequence":9,
             "components":[{"type":"alert","message":"Scheduled","variant":"\(variant)"}]}
             """)
     }
 
-    func testAnAlertSentAfterATurnReachesTheBannerWithoutTouchingTheConversation() {
+    private func modelAfterASettledTurn() -> AppModel {
         let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
         XCTAssertTrue(model.beginConversationConnection(connection))
-        model.activeChatId = chat
+        XCTAssertTrue(model.openConversationRequest(chatId: chat, requestGeneration: commit, purpose: .commit))
+        model.handleFrame(snapshot(request: commit, purpose: "commit", revision: 1))
+        XCTAssertEqual(model.turns.map(\.id), ["u1", "a1"])
+        return model
+    }
+
+    func testAnAlertSentAfterATurnReachesTheBannerWithoutTouchingTheConversation() {
+        let model = modelAfterASettledTurn()
         model.handleFrame(staleFenceAlert())
         XCTAssertEqual(model.errorBanner, "Scheduled")
         XCTAssertFalse(model.bannerIsError)
-        XCTAssertTrue(model.turns.isEmpty)
+        XCTAssertEqual(model.turns.map(\.id), ["u1", "a1"])
         XCTAssertTrue(model.transientTurns.isEmpty)
+        XCTAssertEqual(model.canvas.map(\.fallbackText), ["Restored canvas"])
     }
 
     func testOnlyErrorAndWarningAlertsSentAfterATurnLookLikeFailures() {
-        let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
-        XCTAssertTrue(model.beginConversationConnection(connection))
-        model.activeChatId = chat
+        let model = modelAfterASettledTurn()
         model.handleFrame(staleFenceAlert(variant: "info"))
         XCTAssertFalse(model.bannerIsError)
         model.handleFrame(staleFenceAlert(variant: "warning"))
@@ -324,13 +331,27 @@ final class ConversationContinuityTests: XCTestCase {
     }
 
     func testAStaleFrameThatIsNotAChatAlertForThisConnectionIsStillIgnored() {
-        let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
-        XCTAssertTrue(model.beginConversationConnection(connection))
-        model.activeChatId = chat
+        let model = modelAfterASettledTurn()
         model.handleFrame(staleFenceAlert(target: "canvas"))
         model.handleFrame(staleFenceAlert(connection: "66666666-6666-4666-8666-666666666666"))
         XCTAssertNil(model.errorBanner)
-        XCTAssertTrue(model.canvas.isEmpty)
+        XCTAssertEqual(model.canvas.map(\.fallbackText), ["Restored canvas"])
+    }
+
+    func testAnAlertFromAnEarlierTurnIsIgnoredAfterTheLatestTurnSettles() {
+        let model = modelAfterASettledTurn()
+        model.handleFrame(staleFenceAlert(request: hydration))
+        XCTAssertNil(model.errorBanner)
+        XCTAssertEqual(model.turns.map(\.id), ["u1", "a1"])
+    }
+
+    func testAnAlertOutsideTheOpenTurnIsIgnoredBeforeAnySnapshotSettles() {
+        let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
+        XCTAssertTrue(model.beginConversationConnection(connection))
+        XCTAssertTrue(model.openConversationRequest(chatId: chat, requestGeneration: commit, purpose: .commit))
+        model.handleFrame(staleFenceAlert(base: 3))
+        XCTAssertNil(model.errorBanner)
+        XCTAssertTrue(model.transientTurns.isEmpty)
     }
 
     func testCommitReadyPreludeFencesDetachedCommitAndRejectsWrongScope() {

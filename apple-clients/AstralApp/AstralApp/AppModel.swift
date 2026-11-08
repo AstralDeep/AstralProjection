@@ -3681,7 +3681,9 @@ final class AppModel: NSObject {
     private func showAlertSentOutsideATurn(_ frame: InboundFrame) {
         guard frame.name == "ui_render", frame.renderTarget == "chat",
             frame.chatId == nil || frame.chatId == activeChatId,
+            continuity.acceptedSnapshot != nil,
             frame.payload["connection_generation"]?.stringValue == continuity.connectionGeneration,
+            frame.payload["request_generation"]?.stringValue == continuity.requestGeneration,
             let alert = frame.renderComponents.first(where: { $0.type == "alert" }),
             let message = alert.raw["message"]?.stringValue, !message.isEmpty
         else { return }
