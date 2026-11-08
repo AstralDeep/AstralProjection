@@ -3124,13 +3124,13 @@ final class AppModel: NSObject {
             if frameTargetsActiveChat(frame) {
                 if continuity.connectionGeneration == nil {
                     commitTurn()
-                } else {
-                    turnActive = false
+                    refreshActiveChat()
+                } else if !turnActive, pendingCommitRequestGeneration == nil, transientTurns.isEmpty {
                     asyncDetached = false
                     statusText = nil
+                    // A revisit rebinds the chat, so the task's commit snapshot no longer reaches this socket.
+                    refreshActiveChat()
                 }
-                // A revisit rebinds the chat, so the task's commit snapshot no longer reaches this socket.
-                refreshActiveChat()
                 let task = frame.payload["payload"]
                 let status = task?["status"]?.stringValue ?? "completed"
                 bannerIsError = !["completed", "cancelled"].contains(status)
@@ -3138,7 +3138,8 @@ final class AppModel: NSObject {
                 case "completed": errorBanner = "Background task finished"
                 case "cancelled": errorBanner = "Background task cancelled"
                 default:
-                    errorBanner = task?["summary"]?.stringValue ?? "The background task did not finish."
+                    let summary = task?["summary"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    errorBanner = summary.isEmpty ? "The background task did not finish." : summary
                 }
             }
         case "notification":

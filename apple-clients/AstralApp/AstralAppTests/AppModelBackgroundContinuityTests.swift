@@ -88,6 +88,60 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
         XCTAssertTrue(model.bannerIsError)
     }
 
+    func testAnEmptyOrBlankSummaryFallsBackToTheFailureMessage() {
+        for summary in ["", "   "] {
+            let model = connectedModel()
+            reduce(model, taskFrame("task_completed", status: "failed", summary: summary))
+            XCTAssertEqual(model.errorBanner, "The background task did not finish.")
+            XCTAssertTrue(model.bannerIsError)
+        }
+    }
+
+    func testATaskEndingDuringALiveTurnKeepsThatTurnAndItsPreview() {
+        let model = connectedModel()
+        let log = record(model)
+        reduce(model, taskFrame("task_started", status: "running"))
+        model.sendChat("And the budget table?")
+        let preview = model.transientTurns
+        XCTAssertTrue(model.turnActive)
+        XCTAssertFalse(preview.isEmpty)
+        reduce(model, taskFrame("task_completed", status: "completed"))
+        XCTAssertEqual(loadChats(log), [])
+        XCTAssertTrue(model.turnActive)
+        XCTAssertEqual(model.transientTurns, preview)
+        XCTAssertEqual(model.errorBanner, "Background task finished")
+    }
+
+    func testEachSignOfALiveTurnSkipsTheReload() {
+        let signs: [(String, (AppModel) -> Void)] = [
+            ("turn active", { $0.turnActive = true }),
+            (
+                "live preview",
+                { $0.transientTurns = [AppModel.ChatTurn(id: "pending-user-1", role: "user", text: "Next")] }
+            ),
+            (
+                "pending commit",
+                { model in
+                    model.activeChatId = nil
+                    model.sendChat("Start a new chat")
+                    model.turnActive = false
+                    model.transientTurns = []
+                    model.activeChatId = self.liveChat
+                }
+            ),
+        ]
+        for (name, apply) in signs {
+            let model = connectedModel()
+            apply(model)
+            let log = record(model)
+            let turnActive = model.turnActive
+            reduce(model, taskFrame("task_completed", status: "completed"))
+            XCTAssertEqual(loadChats(log), [], name)
+            XCTAssertEqual(model.turnActive, turnActive, name)
+            XCTAssertEqual(model.errorBanner, "Background task finished", name)
+        }
+    }
+
     func testACancelledBackgroundTaskIsNotAnError() {
         let model = connectedModel()
         reduce(model, taskFrame("task_completed", status: "cancelled"))
