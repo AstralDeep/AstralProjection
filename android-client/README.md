@@ -140,9 +140,8 @@ pushes to `main` and pull requests that touch `android-client/` or the shared
 contracts, assets and scripts it consumes, nightly, and on demand: ktlint +
 Android Lint, `:core` + `:app` JVM unit tests, Kover coverage (at least 90% on
 `:core`), `:app:assembleDebug` (uploads the debug APK), and the emulator suite.
-Its `build-test`, `instrumented` and `android-required` jobs are required gates
-under Projection Constitution Principle X, and the coverage and lint floors are
-Principle IX; `next-major-readiness` is advisory.
+Its `build-test`, `instrumented` and `android-required` jobs are required gates,
+and so are the coverage and lint floors; `next-major-readiness` is advisory.
 
 ## Notes
 
@@ -152,8 +151,8 @@ Principle IX; `next-major-readiness` is advisory.
 - **Dependencies** (Compose/AndroidX, OkHttp, kotlinx.serialization, AppAuth,
   Coil) are declared in `gradle/libs.versions.toml` and pinned by the Gradle
   lockfiles and `gradle/verification-metadata.xml`; any dependency may be added
-  that way (Projection Constitution Principle XI).
-- Per the Projection constitution's Development Workflow, final correctness is
+  that way.
+- Final correctness is
   verified on a real device/emulator against the live backend — unit tests + the
   CI build are necessary but not sufficient.
 
