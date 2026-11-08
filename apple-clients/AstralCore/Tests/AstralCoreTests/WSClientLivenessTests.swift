@@ -132,6 +132,20 @@
             XCTAssertEqual(frames, 0)
         }
 
+        func testAReplacementClientSendsTheFramesTheOldClientWasHolding() async throws {
+            let peer = try LivenessPeer()
+            try await peer.start()
+            defer { peer.stop() }
+            let old = WSClient(url: try peer.url())
+            let message = frame("parked before Retry")
+            await old.send(message)
+            let handed = await old.stopHandingOverQueue()
+            XCTAssertEqual(handed, [message])
+            let (replacement, _) = try await start(peer, policy: nil) { _ in true }
+            for text in handed { await replacement.send(text) }
+            try await until { peer.texts(on: 0).contains(message) }
+        }
+
         func testASilentSocketIsAbandonedBeforeSendingAndTheFrameReplaysOnTheNextConnection() async throws {
             let peer = try LivenessPeer()
             try await peer.start()
