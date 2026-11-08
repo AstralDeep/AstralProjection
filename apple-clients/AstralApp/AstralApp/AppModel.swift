@@ -557,7 +557,7 @@ final class AppModel: NSObject {
     var mutationsLocked: Bool { timelineReadOnly }
     var statusShowsActivity: Bool {
         guard statusText != nil else { return false }
-        if localOperationSubmissions.values.contains(where: localSubmissionShowsActivity) {
+        if localOperationSubmissions.values.contains(where: localSubmissionShowsActivityHere) {
             return true
         }
         var pendingGenerations = pendingChatRequestGenerations.union(
@@ -2824,7 +2824,7 @@ final class AppModel: NSObject {
             if statusText == "Submitting…" {
                 statusText =
                     localOperationSubmissions.values.contains(
-                        where: localSubmissionShowsActivity) ? "Submitting…" : nil
+                        where: localSubmissionShowsActivityHere) ? "Submitting…" : nil
             }
             bannerIsError = true
             errorBanner = "Not sent while offline: \(replay.action) (\(reason))"
@@ -3234,7 +3234,8 @@ final class AppModel: NSObject {
     }
 
     private func reduceOperationStatus(_ frame: InboundFrame) {
-        guard let status = OperationStatus(frame: frame),
+        guard let status = OperationStatus(frame: frame) else { return }
+        guard
             statusLifecycle.accept(
                 operation: status,
                 connectionGeneration: continuity.connectionGeneration,
@@ -3242,7 +3243,10 @@ final class AppModel: NSObject {
                 activeChatId: activeChatId,
                 pendingChatRequestGenerations: pendingChatRequestGenerations,
                 pendingSurfaceRequestGenerations: pendingSurfaceRequestGenerations)
-        else { return }
+        else {
+            settleOperationInAnotherChat(status)
+            return
+        }
         operationStatuses = statusLifecycle.operations
         if status.terminal {
             if status.state != "completed" {
@@ -3288,8 +3292,19 @@ final class AppModel: NSObject {
         if let active {
             return active.label
         }
-        return localOperationSubmissions.values.contains(where: localSubmissionShowsActivity)
+        return localOperationSubmissions.values.contains(where: localSubmissionShowsActivityHere)
             ? "Submitting…" : nil
+    }
+
+    private func settleOperationInAnotherChat(_ status: OperationStatus) {
+        guard status.terminal, status.chatId != activeChatId,
+            localOperationSubmissions.values.contains(where: {
+                $0.requestGeneration == status.requestGeneration
+                    && $0.connectionGeneration == status.connectionGeneration
+            })
+        else { return }
+        clearLocalOperationSubmission(requestGeneration: status.requestGeneration)
+        statusText = latestActiveOperationStatusText()
     }
 
     private func reduceAgentLifecycle(_ frame: InboundFrame) {
@@ -5537,6 +5552,11 @@ final class AppModel: NSObject {
 
     private func localSubmissionShowsActivity(_ submission: LocalOperationSubmission) -> Bool {
         submission.action != "update_device" && submission.action != "chrome_llm_save"
+    }
+
+    private func localSubmissionShowsActivityHere(_ submission: LocalOperationSubmission) -> Bool {
+        localSubmissionShowsActivity(submission)
+            && (submission.chatId == nil || submission.chatId == activeChatId)
     }
 
     @discardableResult
