@@ -1,7 +1,8 @@
 // Actor-based WebSocket transport with the reconnect contract shared across Windows/Android/Apple clients:
 // capped exponential backoff, a bounded drop-oldest outbound queue, and sends fenced to the currently
 // established connection. A liveness policy pings a quiet socket and abandons one that stops answering, so the
-// loop reconnects and replays queued operations through the caller's fence.
+// loop reconnects and replays queued operations through the caller's fence. A client being replaced can hand its
+// unsent frames to the replacement, ahead of the replacement's own, and forwards anything it is sent afterwards.
 
 import Foundation
 
@@ -47,6 +48,15 @@ public struct BoundedQueue<Element>: Sendable where Element: Sendable {
             droppedCount += 1
         }
         elements.append(element)
+        return dropped
+    }
+
+    public mutating func prependReturningDropped(_ incoming: [Element]) -> [Element] {
+        elements.insert(contentsOf: incoming, at: 0)
+        let excess = max(0, elements.count - limit)
+        let dropped = Array(elements.prefix(excess))
+        elements.removeFirst(excess)
+        droppedCount += excess
         return dropped
     }
 
@@ -123,6 +133,7 @@ public actor WSClient {
     private let liveness: LivenessPolicy?
     private var lastInbound = ContinuousClock.now
     private var keepalive: Task<Void, Never>?
+    private var successor: WSClient?
 
     private let requestHeaders: @Sendable () async -> [String: String]?
 
@@ -146,7 +157,7 @@ public actor WSClient {
         onReplay: @escaping @Sendable (QueuedOperationReplay) async -> Bool = { _ in true },
         onRegistration: (@Sendable (InboundFrame, String) async -> Bool)? = nil
     ) {
-        guard !running else { return }
+        guard !running, successor == nil else { return }
         running = true
         self.onConnect = onConnect
         self.onReplay = onReplay
@@ -165,14 +176,19 @@ public actor WSClient {
         continuation?.finish()
     }
 
-    /// Stops this client and returns the frames still waiting to be sent, so a replacement client can send them.
-    public func stopHandingOverQueue() -> [String] {
-        let waiting = queue.drainAll().map(\.text)
+    public func handOverQueue(to replacement: WSClient) async {
+        let replacementRetired = replacement === self ? true : await replacement.retired
+        guard successor == nil else { return }
+        guard !replacementRetired else { return stop() }
+        successor = replacement
+        let waiting = queue.drainAll()
         stop()
-        return waiting
+        await replacement.inherit(waiting)
     }
 
-    public func send(_ text: String) {
+    private var retired: Bool { successor != nil }
+
+    public func send(_ text: String) async {
         guard !Self.claimsCurrentConnection(text) else {
             continuation?.yield(.sendRejected(action: Self.actionHint(text)))
             return
@@ -186,6 +202,7 @@ public actor WSClient {
             return
         }
         let queued = QueuedOutboundFrame(text: text, replay: replay)
+        if let successor { return await successor.inherit([queued]) }
         if established, let task, task.state == .running {
             transmit(queued, using: task)
         } else {
@@ -201,11 +218,14 @@ public actor WSClient {
             return
         }
         let queued = QueuedOutboundFrame(text: text, replay: replay)
+        if let successor { return await successor.inherit([queued]) }
         guard established, let current = task, current.state == .running else {
             retain(queued)
             return
         }
-        guard await onReplay?(replay) == true else {
+        let allowed = await onReplay?(replay) == true
+        if let successor { return await successor.inherit([queued]) }
+        guard allowed else {
             continuation?.yield(.queuedOperationDropped(replay, reason: "replay fence rejected"))
             return
         }
@@ -512,16 +532,7 @@ public actor WSClient {
                         backoff.reset()
                         startKeepalive(task)
                         continuation?.yield(.connected)
-                        for queued in queue.drainAll() {
-                            guard await onReplay?(queued.replay) == true else {
-                                continuation?.yield(
-                                    .queuedOperationDropped(
-                                        queued.replay,
-                                        reason: "replay fence rejected"))
-                                continue
-                            }
-                            transmit(queued, using: task)
-                        }
+                        await flush(queue.drainAll())
                     }
                     if let frame, !consumed { continuation?.yield(.frame(frame)) }
                 } catch {
@@ -552,16 +563,57 @@ public actor WSClient {
     ) {
         task.send(.string(queued.text)) { [weak self] error in
             guard error != nil else { return }
-            Task { await self?.retain(queued) }
+            Task { await self?.requeue(queued) }
         }
     }
 
+    private func requeue(_ queued: QueuedOutboundFrame) async {
+        if let successor { return await successor.inherit([queued]) }
+        retain(queued)
+    }
+
     private func retain(_ queued: QueuedOutboundFrame) {
-        if let dropped = queue.appendReturningDropped(queued) {
-            continuation?.yield(
-                .queuedOperationDropped(dropped.replay, reason: "offline queue full"))
-            continuation?.yield(.sendDropped(total: queue.droppedCount))
+        report(dropped: queue.appendReturningDropped(queued).map { [$0] } ?? [])
+    }
+
+    private func inherit(_ frames: [QueuedOutboundFrame]) async {
+        guard !frames.isEmpty else { return }
+        if let successor { return await successor.inherit(frames) }
+        if established, task?.state == .running {
+            await flush(frames)
+        } else {
+            report(dropped: queue.prependReturningDropped(frames))
         }
+    }
+
+    private func flush(_ frames: [QueuedOutboundFrame]) async {
+        var pending = frames[...]
+        while let queued = pending.first {
+            if let successor { return await successor.inherit(Array(pending)) }
+            guard established, let current = task, current.state == .running else {
+                return report(dropped: queue.prependReturningDropped(Array(pending)))
+            }
+            let allowed = await onReplay?(queued.replay) == true
+            if let successor { return await successor.inherit(Array(pending)) }
+            guard allowed else {
+                pending.removeFirst()
+                continuation?.yield(.queuedOperationDropped(queued.replay, reason: "replay fence rejected"))
+                continue
+            }
+            guard established, task === current, current.state == .running else {
+                return report(dropped: queue.prependReturningDropped(Array(pending)))
+            }
+            pending.removeFirst()
+            transmit(queued, using: current)
+        }
+    }
+
+    private func report(dropped: [QueuedOutboundFrame]) {
+        guard !dropped.isEmpty else { return }
+        for frame in dropped {
+            continuation?.yield(.queuedOperationDropped(frame.replay, reason: "offline queue full"))
+        }
+        continuation?.yield(.sendDropped(total: queue.droppedCount))
     }
 
     private static func actionHint(_ text: String) -> String {

@@ -1257,6 +1257,56 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
         }
     }
 
+    func testRetryDeliversTheMessageParkedOnTheSilentSocketExactlyOnce() async throws {
+        try await withModel(liveness: LivenessPolicy(interval: 3600, timeout: 0.5, freshness: 0)) {
+            model, peer, _, clock in
+            let original = try XCTUnwrap(peer.registrations.last).socket
+            try await parkMessageOnSilentSocket(model, peer: peer, clock: clock, text: "Parked before Retry")
+            let registered = peer.expectRegistration()
+            model.retryConnection()
+            peer.releaseRefresh()
+            await fulfillment(of: [registered], timeout: 10)
+            try await waitUntil { model.connected }
+            try await waitUntil { peer.events.contains { $0.frame.payload["action"] == .string("chat_message") } }
+            _ = try await model.rest.chats()
+            let sent = peer.events.filter { $0.frame.payload["action"] == .string("chat_message") }
+            XCTAssertEqual(sent.count, 1)
+            XCTAssertEqual(sent.first?.frame.payload["payload"]?["message"], .string("Parked before Retry"))
+            XCTAssertNotEqual(sent.first?.socket, original)
+            XCTAssertEqual(sent.first?.socket, peer.registrations.last?.socket)
+            XCTAssertEqual(peer.registrations.count, 2)
+        }
+    }
+
+    func testRetryForAnotherOwnerNeverReceivesTheParkedMessage() async throws {
+        try await withModel(liveness: LivenessPolicy(interval: 3600, timeout: 0.5, freshness: 0)) {
+            model, peer, _, clock in
+            try await parkMessageOnSilentSocket(model, peer: peer, clock: clock, text: "Parked for the previous owner")
+            let server = model.serverBaseText
+            model.serverBaseText = "http://127.0.0.1:9"
+            model.serverBaseText = server
+            let registered = peer.expectRegistration()
+            model.retryConnection()
+            peer.releaseRefresh()
+            await fulfillment(of: [registered], timeout: 10)
+            try await waitUntil { model.connected }
+            _ = try await model.rest.chats()
+            XCTAssertTrue(model.signedIn)
+            XCTAssertEqual(peer.registrations.count, 2)
+            XCTAssertFalse(peer.events.contains { $0.frame.payload["action"] == .string("chat_message") })
+        }
+    }
+
+    private func parkMessageOnSilentSocket(
+        _ model: AppModel, peer: SocketAuthenticationPeer, clock: CredentialTestClock, text: String
+    ) async throws {
+        peer.silence(socket: try XCTUnwrap(peer.registrations.last).socket)
+        model.sendChat(text)
+        try await waitUntil { !model.connected }
+        clock.advance(7200)
+        peer.holdRefresh()
+    }
+
     func testIdleKeepaliveShowsTheTrueStateAndReconnectsWithoutASend() async throws {
         try await withModel(liveness: LivenessPolicy(interval: 0.2, timeout: 0.3, freshness: 0.1)) {
             model, peer, _, _ in

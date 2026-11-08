@@ -585,6 +585,7 @@ final class AppModel: NSObject {
         try await ServerSessionHTTP.request($0)
     }
     @ObservationIgnored private var ws: WSClient?
+    @ObservationIgnored private var wsBinding: (socket: WSClient, owner: DownloadOwner, server: URL)?
     @ObservationIgnored private var initialWebSocket: WSClient?
     #if os(macOS)
         @ObservationIgnored var socketLiveness: LivenessPolicy? = .standard
@@ -2724,16 +2725,20 @@ final class AppModel: NSObject {
                 })
         initialWebSocket = nil
         let previous = ws.flatMap { $0 !== client ? $0 : nil }
+        let inheritsQueue =
+            previous != nil && wsBinding?.socket === previous && wsBinding?.owner == socketOwner
+            && wsBinding?.server == socketServer
+        wsBinding = (client, socketOwner, socketServer)
         ws = client
         let owner = downloadOwner
         let server = serverBase
         let resumeState = AppRegistrationResumeState(initial: initialResumed)
         wsTask = Task {
-            // Retry replaces the client; frames parked on the old one would otherwise be lost.
-            if let previous {
-                for text in await previous.stopHandingOverQueue() { await client.send(text) }
-            }
             let events = await client.events()
+            if let previous {
+                if inheritsQueue { await previous.handOverQueue(to: client) } else { await previous.stop() }
+            }
+            guard !Task.isCancelled, self.ws === client else { return }
             #if os(macOS)
                 let onRegistration: (@Sendable (InboundFrame, String) async -> Bool)? = {
                     [weak self] frame, generation in

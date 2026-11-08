@@ -1,5 +1,6 @@
 // Drives WSClient against a loopback WebSocket peer that can stop answering without closing.
-// Covers the pre-send probe, the idle keepalive, replay of queued frames on the next connection and the replay fence.
+// Covers the pre-send probe, the idle keepalive, replay of queued frames on the next connection or a replacement
+// client, and the replay fence.
 
 #if os(macOS)
     import Foundation
@@ -132,18 +133,58 @@
             XCTAssertEqual(frames, 0)
         }
 
-        func testAReplacementClientSendsTheFramesTheOldClientWasHolding() async throws {
+        func testAReplacementSendsTheOldClientsFramesFirstAndWhatTheOldClientIsSentLater() async throws {
             let peer = try LivenessPeer()
             try await peer.start()
             defer { peer.stop() }
             let old = WSClient(url: try peer.url())
-            let message = frame("parked before Retry")
-            await old.send(message)
-            let handed = await old.stopHandingOverQueue()
-            XCTAssertEqual(handed, [message])
-            let (replacement, _) = try await start(peer, policy: nil) { _ in true }
-            for text in handed { await replacement.send(text) }
-            try await until { peer.texts(on: 0).contains(message) }
+            let replacement = WSClient(url: try peer.url())
+            let parked = frame("parked before Retry")
+            let later = frame("sent right after Retry")
+            let late = frame("sent to the old client after the hand-over")
+            await old.send(parked)
+            await replacement.send(later)
+            await old.handOverQueue(to: replacement)
+            await old.send(late)
+            await old.start(onConnect: { #"{"type":"register_ui"}"# })
+            let log = EventLog()
+            let events = await replacement.events()
+            Task { for await event in events { await log.append(event) } }
+            addTeardownBlock { await replacement.stop() }
+            let replays = Counter()
+            await replacement.start(
+                onConnect: { #"{"type":"register_ui"}"# },
+                onReplay: { _ in
+                    replays.increment()
+                    return true
+                })
+            try await until { peer.texts(on: 0).count == 3 }
+            let texts = peer.texts(on: 0)
+            XCTAssertLessThan(try XCTUnwrap(texts.firstIndex(of: parked)), try XCTUnwrap(texts.firstIndex(of: later)))
+            XCTAssertEqual(Set(texts), [parked, later, late])
+            XCTAssertEqual(replays.value, 3)
+            XCTAssertEqual(peer.connectionCount, 1)
+            let connections = await log.connections
+            XCTAssertEqual(connections, 1)
+        }
+
+        func testFramesHandedToAnEstablishedReplacementStillPassItsFence() async throws {
+            let peer = try LivenessPeer()
+            try await peer.start()
+            defer { peer.stop() }
+            let refused = frame("refused by the replacement's fence")
+            let accepted = frame("accepted by the replacement's fence")
+            let (replacement, log) = try await start(peer, policy: nil) { replay in
+                replay.identity.submissionId != QueuedOperationReplay(frameText: refused)?.identity.submissionId
+            }
+            try await until { await log.connections == 1 }
+            let old = WSClient(url: try peer.url())
+            await old.send(refused)
+            await old.send(accepted)
+            await old.handOverQueue(to: replacement)
+            try await until { peer.texts(on: 0).contains(accepted) }
+            try await until { await log.dropped == 1 }
+            XCTAssertFalse(peer.texts(on: 0).contains(refused))
         }
 
         func testASilentSocketIsAbandonedBeforeSendingAndTheFrameReplaysOnTheNextConnection() async throws {
@@ -302,6 +343,7 @@
 
         func silence(connection index: Int) { queue.sync { _ = silent.insert(index) } }
         func texts(on index: Int) -> [String] { queue.sync { received[index] ?? [] } }
+        var connectionCount: Int { queue.sync { connections.count } }
         func pings(on index: Int) -> Int { queue.sync { pinged[index] ?? 0 } }
 
         func stop() {
