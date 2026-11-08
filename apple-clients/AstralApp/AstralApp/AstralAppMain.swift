@@ -1,7 +1,7 @@
 // SwiftUI app entry point for the shared iOS/macOS AstralDeep client; selects a deterministic UI-test fixture
 // model over the real AppModel when running under XCTest.
-// On macOS it also starts the Sparkle updater, gates connecting on the signed minimum build, hosts Settings and
-// a menu bar companion, and rechecks the server connection after wake or reactivation.
+// On macOS it also starts the Sparkle updater, gates connecting on the signed minimum build, and hosts Settings,
+// a menu bar companion and the Quick Entry and Scheduled Work windows; MacAppLifecycle handles wake, lock and quit.
 
 import AVFoundation
 import AstralCore
