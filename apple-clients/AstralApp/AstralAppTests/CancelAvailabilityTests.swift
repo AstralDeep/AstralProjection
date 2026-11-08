@@ -131,6 +131,18 @@
             XCTAssertNotNil(model.localOperationSubmissions[turn.submissionId])
         }
 
+        func testALateAcknowledgementForAnEarlierChatLeavesTheOpenChatInPlace() throws {
+            let (model, sent) = try model()
+            model.activeChatId = other
+            model.handleFrame(
+                try XCTUnwrap(
+                    InboundFrame.parse(#"{"type":"user_message_acked","chat_id":"\#(chat)"}"#)))
+            XCTAssertEqual(model.activeChatId, other)
+            XCTAssertFalse(model.turnActive)
+            model.sendChat("A question for the open chat")
+            XCTAssertEqual(sent().last?["session_id"], .string(other))
+        }
+
         func testRunningToolRowsAreCancellableButAWaitingApprovalIsNot() throws {
             let (model, sent) = try model()
             model.handleFrame(ActivityFrames.step("s1", chat: chat, status: "in_progress", arguments: #"{"x":1}"#))
