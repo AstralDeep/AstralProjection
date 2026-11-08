@@ -98,15 +98,11 @@ import XCTest
 
     func testLaunchWithoutTheServerKeepsTheSessionAndResumesWhenItReturns() async throws {
         let (model, storage, session) = try model()
-        model.serverSessionRetryNanoseconds = 50_000_000
+        model.serverSessionRetryBackoff = BackoffPolicy(base: 0.05, factor: 2, cap: 0.05)
         let server = RestoreServer()
-        let reply = ServerSessionReply(
-            body: .object([
-                "authenticated": .bool(true), "access_token": .string(session.accessToken),
-                "resumed": .bool(true), "user_id": .string(session.owner),
-            ]))
+        let reply = restoredReply(session)
         model.serverSessionTransport = { _ in
-            guard await server.answerAfterOneFailure() else { throw ServerSessionError.unavailable }
+            guard await server.answer() else { throw ServerSessionError.unavailable }
             return reply
         }
         await model.bootstrap()
@@ -118,7 +114,7 @@ import XCTest
 
     func testServerStaysAwayWithoutPublishingOrLosingTheSession() async throws {
         let (model, storage, session) = try model()
-        model.serverSessionRetryNanoseconds = 60_000_000_000
+        model.serverSessionRetryBackoff = BackoffPolicy(base: 60, factor: 2, cap: 60)
         let attempted = expectation(description: "restore attempt")
         model.serverSessionTransport = { _ in
             attempted.fulfill()
@@ -134,6 +130,98 @@ import XCTest
         XCTAssertNotNil(try storage.load(session.scope.storageKey))
         restore.cancel()
         await restore.value
+    }
+
+    func testUnavailableThenRejectedAtLaunchStillDeletesTheSession() async throws {
+        for answer in ["401", "unauthenticated"] {
+            let (model, storage, session) = try model()
+            model.serverSessionRetryBackoff = BackoffPolicy(base: 0.05, factor: 2, cap: 0.05)
+            let server = RestoreServer()
+            model.serverSessionTransport = { _ in
+                guard await server.answer() else { throw ServerSessionError.unavailable }
+                if answer == "401" { throw ServerSessionError.retired }
+                return ServerSessionReply(body: .object(["authenticated": .bool(false)]))
+            }
+            await model.bootstrap()
+            XCTAssertFalse(model.signedIn, answer)
+            XCTAssertFalse(model.connected, answer)
+            XCTAssertEqual(model.signInError, "The saved server session could not be resumed. Sign in again.", answer)
+            XCTAssertNil(try storage.load(session.scope.storageKey), answer)
+            let attempts = await server.attempts
+            XCTAssertEqual(attempts, 2, answer)
+        }
+    }
+
+    func testWindowsOpenedDuringARetryShareOneRestore() async throws {
+        let (model, storage, session) = try model()
+        model.serverSessionRetryBackoff = BackoffPolicy(base: 60, factor: 2, cap: 60)
+        let server = RestoreServer(failures: .max)
+        let attempted = expectation(description: "first restore attempt")
+        let repeated = expectation(description: "another window starts its own restore")
+        repeated.isInverted = true
+        model.serverSessionTransport = { _ in
+            _ = await server.answer()
+            if await server.attempts == 1 { attempted.fulfill() } else { repeated.fulfill() }
+            throw ServerSessionError.unavailable
+        }
+        let first = Task { await model.bootstrap() }
+        await fulfillment(of: [attempted], timeout: 5)
+        let second = Task { await model.bootstrap() }
+        await fulfillment(of: [repeated], timeout: 0.5)
+        XCTAssertFalse(model.signedIn)
+        XCTAssertNotNil(try storage.load(session.scope.storageKey))
+        second.cancel()
+        first.cancel()
+        await first.value
+        await second.value
+        let attempts = await server.attempts
+        XCTAssertEqual(attempts, 1)
+        XCTAssertNotNil(try storage.load(session.scope.storageKey))
+    }
+
+    func testClosingOneWindowKeepsTheSharedRestoreRunning() async throws {
+        let (model, storage, session) = try model()
+        model.serverSessionRetryBackoff = BackoffPolicy(base: 0.4, factor: 2, cap: 0.4)
+        let server = RestoreServer()
+        let reply = restoredReply(session)
+        let attempted = expectation(description: "first restore attempt")
+        model.serverSessionTransport = { _ in
+            guard await server.answer() else {
+                attempted.fulfill()
+                throw ServerSessionError.unavailable
+            }
+            return reply
+        }
+        let closed = Task { await model.bootstrap() }
+        let open = Task { await model.bootstrap() }
+        await fulfillment(of: [attempted], timeout: 5)
+        closed.cancel()
+        await open.value
+        await closed.value
+        XCTAssertTrue(model.signedIn)
+        XCTAssertNil(model.signInError)
+        XCTAssertNotNil(try storage.load(session.scope.storageKey))
+        let attempts = await server.attempts
+        XCTAssertEqual(attempts, 2)
+        await model.signOut(revokeRemote: false)
+    }
+
+    func testRestoreRetriesBackOffExponentiallyWithJitterUpToTheCap() throws {
+        var backoff = BackoffPolicy(base: 2, factor: 2, cap: 60)
+        let ceilings = (0..<7).map { _ in AppModel.serverSessionRetryDelay(&backoff, jitter: 1) }
+        XCTAssertEqual(ceilings, [2, 4, 8, 16, 32, 60, 60].map { UInt64($0) * 1_000_000_000 })
+        var halved = BackoffPolicy(base: 2, factor: 2, cap: 60)
+        XCTAssertEqual(AppModel.serverSessionRetryDelay(&halved, jitter: 0.5), 1_000_000_000)
+        let (model, _, _) = try model()
+        var jittered = model.serverSessionRetryBackoff
+        var ceiling = model.serverSessionRetryBackoff
+        for _ in 0..<10 {
+            let delay = AppModel.serverSessionRetryDelay(&jittered)
+            let top = AppModel.serverSessionRetryDelay(&ceiling, jitter: 1)
+            XCTAssertGreaterThanOrEqual(delay, top / 2)
+            XCTAssertLessThanOrEqual(delay, top)
+        }
+        XCTAssertEqual(AppModel.serverSessionRetryDelay(&ceiling, jitter: 1), 60_000_000_000)
     }
 
     func testARetiredSessionIsStillDeletedAtLaunch() async throws {
@@ -261,11 +349,21 @@ import XCTest
         }
     }
 
+    private func restoredReply(_ session: ServerSession) -> ServerSessionReply {
+        ServerSessionReply(
+            body: .object([
+                "authenticated": .bool(true), "access_token": .string(session.accessToken),
+                "resumed": .bool(true), "user_id": .string(session.owner),
+            ]))
+    }
+
     private actor RestoreServer {
-        private var failed = false
-        func answerAfterOneFailure() -> Bool {
-            defer { failed = true }
-            return failed
+        private let failures: Int
+        private(set) var attempts = 0
+        init(failures: Int = 1) { self.failures = failures }
+        func answer() -> Bool {
+            attempts += 1
+            return attempts > failures
         }
     }
 
