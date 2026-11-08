@@ -6,6 +6,25 @@
     import AppKit
     import SwiftUI
 
+    // openWindow(id:) on a WindowGroup always adds a window, and a hidden app reports its windows as not visible.
+    enum MacMainWindow {
+        static func reusable(in windows: [NSWindow], appHidden: Bool = false) -> NSWindow? {
+            windows.first {
+                $0.title == "AstralDeep" && $0.styleMask.contains(.titled)
+                    && ($0.isVisible || $0.isMiniaturized || appHidden)
+            }
+        }
+
+        @MainActor static func show(using openWindow: OpenWindowAction) {
+            if let window = reusable(in: NSApp.windows, appHidden: NSApp.isHidden) {
+                window.makeKeyAndOrderFront(nil)
+            } else {
+                openWindow(id: "main")
+            }
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
     struct MacMenuBarPresentation {
         let signedIn: Bool
         let connected: Bool
@@ -134,9 +153,6 @@
                 .accessibilityIdentifier("mac-menu-settings")
         }
 
-        private func showMainWindow() {
-            openWindow(id: "main")
-            NSApp.activate(ignoringOtherApps: true)
-        }
+        private func showMainWindow() { MacMainWindow.show(using: openWindow) }
     }
 #endif
