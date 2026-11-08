@@ -27,7 +27,6 @@ SHARED_FILES = {
     "uv.lock",
     "global.json",
     ".gitattributes",
-    ".specify/memory/constitution.md",
 }
 
 

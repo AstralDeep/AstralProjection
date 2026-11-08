@@ -321,6 +321,24 @@
             XCTAssertEqual(model.activeChatId, chat)
         }
 
+        func testAReconnectKeepsAnEditWhoseTurnIsStillThere() throws {
+            let model = model()
+            model.turns = [turn(mine, role: "user", text: "Revised wording")]
+            model.beginTurnEdit(turn(mine, role: "user", text: "Revised wording"))
+            model.turnEditor?.draft = "A long revision typed before the drop"
+            try hydrateBranchedTurns(model)
+            XCTAssertEqual(model.turnEditor?.draft, "A long revision typed before the drop")
+        }
+
+        func testAnEditIsDroppedWhenItsTurnIsGone() throws {
+            let model = model()
+            let gone = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+            model.turns = [turn(gone, role: "user", text: "Old")]
+            model.beginTurnEdit(turn(gone, role: "user", text: "Old"))
+            try hydrateBranchedTurns(model)
+            XCTAssertNil(model.turnEditor)
+        }
+
         func testEditedTurnClearedByBranchSwitchingSnapshotLeavesNoStaleEditor() throws {
             let model = model()
             model.turns = [turn(mine, role: "user", text: "Question")]
