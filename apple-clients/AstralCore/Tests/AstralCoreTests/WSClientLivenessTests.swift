@@ -110,6 +110,17 @@
             XCTAssertFalse(peer.texts(on: 0).contains(message))
         }
 
+        func testARegistrationReplyLargerThanOneMebibyteKeepsTheConnection() async throws {
+            let padding = String(repeating: "x", count: 2 * 1024 * 1024)
+            let peer = try LivenessPeer(registrationReply: #"{"type":"heartbeat","padding":"\#(padding)"}"#)
+            try await peer.start()
+            defer { peer.stop() }
+            let (_, log) = try await start(peer, policy: nil) { _ in true }
+            try await until { await log.frames == 1 }
+            let disconnections = await log.disconnections
+            XCTAssertEqual(disconnections, 0)
+        }
+
         func testASilentSocketIsAbandonedBeforeSendingAndTheFrameReplaysOnTheNextConnection() async throws {
             let peer = try LivenessPeer()
             try await peer.start()
