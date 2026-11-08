@@ -1275,7 +1275,7 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
     }
 
     private func sendTurnThatEnds(
-        _ state: String, model: AppModel, peer: SocketAuthenticationPeer
+        _ state: String, model: AppModel, peer: SocketAuthenticationPeer, savedFirst: Bool = false
     ) async throws {
         model.activeChatId = "77777777-7777-4777-8777-777777777777"
         model.sendChat("Lost in the queue")
@@ -1283,6 +1283,19 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
         let event = try XCTUnwrap(peer.events.last { $0.frame.payload["action"] == .string("chat_message") })
         let request = try XCTUnwrap(event.frame.payload["request_generation"]?.stringValue)
         let connection = try XCTUnwrap(peer.registrations.last { $0.socket == event.socket }?.generation)
+        if savedFirst {
+            peer.send(
+                """
+                {"type":"conversation_snapshot","schema_version":1,
+                 "snapshot_id":"99999999-9999-4999-8999-999999999999","chat_id":"77777777-7777-4777-8777-777777777777",
+                 "connection_generation":"\(connection)","request_generation":"\(request)",
+                 "snapshot_purpose":"commit","render_revision":1,"committed_at":"2026-11-06T18:00:00Z",
+                 "transcript":[{"message_id":"u1","role":"user","created_at":"2026-11-06T17:59:00Z",
+                  "parts":[{"type":"text","text":"Lost in the queue"}],"attachments":[]}],
+                 "canvas":{"target":"canvas","components":[]}}
+                """, socket: event.socket)
+            try await waitUntil { model.turns.contains { $0.text == "Lost in the queue" } }
+        }
         let error =
             state == "completed"
             ? "null" : #"{"code":"operation_failed","message":"The operation could not be completed."}"#
@@ -1304,8 +1317,19 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
             try await sendTurnThatEnds("failed", model: model, peer: peer)
             XCTAssertEqual(model.composerDraft, "Lost in the queue")
             XCTAssertTrue(model.bannerIsError)
-            XCTAssertEqual(model.errorBanner, "This message didn't go through. Review it and send it again.")
+            XCTAssertEqual(
+                model.errorBanner, "The operation could not be completed. Your message is back in the composer.")
             XCTAssertTrue(model.transientTurns.isEmpty)
+        }
+    }
+
+    func testATurnThatFailsAfterSavingTheMessageLeavesTheComposerEmpty() async throws {
+        try await withModel { model, peer, _, _ in
+            try await sendTurnThatEnds("failed", model: model, peer: peer, savedFirst: true)
+            XCTAssertEqual(model.composerDraft, "")
+            XCTAssertEqual(model.turns.filter { $0.text == "Lost in the queue" }.count, 1)
+            XCTAssertTrue(model.bannerIsError)
+            XCTAssertEqual(model.errorBanner, "The operation could not be completed.")
         }
     }
 

@@ -3292,16 +3292,17 @@ final class AppModel: NSObject {
             {
                 nothingSaved = true
             }
+            let failure = status.error.objectValue?["message"]?.stringValue
             let restored =
                 ownsActiveChatTurn && nothingSaved && ["failed", "retryable"].contains(status.state)
-                && restoreFailedChatSend(requestGeneration: status.requestGeneration)
+                && restoreFailedChatSend(requestGeneration: status.requestGeneration, failure: failure)
             clearLocalOperationSubmission(requestGeneration: status.requestGeneration)
             if ownsActiveChatTurn {
                 settleActiveChatTurn(
                     requestGeneration: status.requestGeneration,
                     discardUncommitted: status.state != "completed")
             }
-            if !restored, let message = status.error.objectValue?["message"]?.stringValue {
+            if !restored, let message = failure {
                 bannerIsError = true
                 errorBanner = message
                 transientTurns = []
@@ -6913,11 +6914,10 @@ final class AppModel: NSObject {
         return activeChatId == nil && pendingCommitRequestGeneration == send.requestGeneration
     }
 
-    private func restoreFailedChatSend(requestGeneration: String) -> Bool {
-        guard let send = unsettledChatSend,
-            localOperationSubmissions[send.submissionId]?.requestGeneration == requestGeneration
-        else { return false }
-        return restoreUnsettledChatSend("This message didn't go through. Review it and send it again.")
+    private func restoreFailedChatSend(requestGeneration: String, failure: String?) -> Bool {
+        guard unsettledChatSend?.requestGeneration == requestGeneration else { return false }
+        return restoreUnsettledChatSend(
+            [failure, "Your message is back in the composer."].compactMap { $0 }.joined(separator: " "))
     }
 
     private func restoreUnsentQuery(_ text: String, navigation: Int, chatId: String?) {
