@@ -2317,6 +2317,7 @@ final class AppModel: NSObject {
         pendingSurfaceKey = ""
         pendingSurfaceParams = .object([:])
         surfaceFailureMessage = nil
+        warningBannerText = nil
         screen = .chat
         store.wipe()
         tokens = nil
