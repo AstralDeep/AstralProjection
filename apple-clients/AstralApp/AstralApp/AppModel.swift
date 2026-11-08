@@ -1585,8 +1585,7 @@ final class AppModel: NSObject {
     }
 
     func bootstrap() async {
-        // Every window runs this as it opens, and all windows share this model. Reconnecting a live
-        // session here would cut off the turn it is running.
+        // Every window shares this model and bootstraps on open; reconnecting would cut off a running turn.
         guard wsTask == nil else { return }
         let generation = sessionGeneration
         let owner = downloadOwner
