@@ -41,6 +41,60 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
         XCTAssertFalse(model.bannerIsError)
     }
 
+    private let liveChat = "11111111-1111-4111-8111-111111111111"
+
+    private func taskFrame(_ type: String, status: String, summary: String? = nil) -> String {
+        let field = summary.map { #","summary":"\#($0)""# } ?? ""
+        let task = #"{"task_id":"t1","chat_id":"\#(liveChat)","status":"\#(status)"\#(field)}"#
+        return #"{"type":"\#(type)","payload":\#(task)}"#
+    }
+
+    private func connectedModel() -> AppModel {
+        let model = AppModel(tokenStore: InMemoryTokenStore())
+        model.bindConversationAccount(ConversationAccount(issuer: "https://test.invalid", subject: "background-owner")!)
+        model.signedIn = true
+        model.connected = true
+        XCTAssertTrue(model.beginConversationConnection(UUID().uuidString.lowercased()))
+        XCTAssertTrue(
+            model.openConversationRequest(
+                chatId: liveChat, requestGeneration: UUID().uuidString.lowercased(), purpose: .hydration))
+        model.activeChatId = liveChat
+        return model
+    }
+
+    func testTaskCompletedOnALiveConnectionReloadsTheOpenChat() {
+        let model = connectedModel()
+        let log = record(model)
+        reduce(model, taskFrame("task_started", status: "running"))
+        XCTAssertTrue(model.asyncDetached)
+        reduce(model, taskFrame("task_completed", status: "completed"))
+        XCTAssertEqual(loadChats(log), [liveChat])
+        XCTAssertFalse(model.asyncDetached)
+        XCTAssertEqual(model.errorBanner, "Background task finished")
+        XCTAssertFalse(model.bannerIsError)
+    }
+
+    func testAFailedBackgroundTaskShowsItsSummaryAsAnError() {
+        let model = connectedModel()
+        reduce(model, taskFrame("task_completed", status: "failed", summary: "The model was unavailable."))
+        XCTAssertEqual(model.errorBanner, "The model was unavailable.")
+        XCTAssertTrue(model.bannerIsError)
+    }
+
+    func testAFailedBackgroundTaskWithoutASummaryNeverSaysFinished() {
+        let model = connectedModel()
+        reduce(model, taskFrame("task_completed", status: "retryable"))
+        XCTAssertEqual(model.errorBanner, "The background task did not finish.")
+        XCTAssertTrue(model.bannerIsError)
+    }
+
+    func testACancelledBackgroundTaskIsNotAnError() {
+        let model = connectedModel()
+        reduce(model, taskFrame("task_completed", status: "cancelled"))
+        XCTAssertEqual(model.errorBanner, "Background task cancelled")
+        XCTAssertFalse(model.bannerIsError)
+    }
+
     func testTaskCompletedForOtherChatStaysQuietWithoutReload() {
         let model = AppModel(tokenStore: InMemoryTokenStore())
         model.activeChatId = "c1"
