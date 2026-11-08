@@ -750,6 +750,7 @@ public struct DeviceDescriptor: Equatable, Sendable {
     public var macWorkbenchSupported: Bool
     public var projectWorkspacesSupported: Bool = false
     public var turnSteerSupported: Bool = false
+    public var composerReferencesSupported: Bool = false
 
     public init(
         deviceType: String, viewportWidth: Int, viewportHeight: Int,
@@ -843,6 +844,7 @@ public struct DeviceDescriptor: Equatable, Sendable {
             if deviceType == "macos", macWorkbenchSupported { fields["mac_workbench_v1"] = .bool(true) }
             if deviceType == "macos", projectWorkspacesSupported { fields["project_workspaces_v1"] = .bool(true) }
             if deviceType == "macos", turnSteerSupported { fields["turn_steer_v1"] = .bool(true) }
+            if deviceType == "macos", composerReferencesSupported { fields["composer_references_v1"] = .bool(true) }
         }
         return .object(fields)
     }
@@ -888,7 +890,8 @@ public enum Outbound {
         macWorkbenchSupported: Bool = false,
         uiAuthRefreshSupported: Bool = false,
         chatBranchesSupported: Bool = false,
-        turnSteerSupported: Bool = false
+        turnSteerSupported: Bool = false,
+        composerReferencesSupported: Bool = false
     ) -> String {
         guard continuityUUID4(connectionGeneration) != nil else { return "{}" }
         let voiceCapable =
@@ -911,6 +914,9 @@ public enum Outbound {
         }
         if device.json["project_workspaces_v1"] == .bool(true) { capabilities.append("project_workspaces_v1") }
         if turnSteerSupported, device.json["turn_steer_v1"] == .bool(true) { capabilities.append("turn_steer_v1") }
+        if composerReferencesSupported, device.json["composer_references_v1"] == .bool(true) {
+            capabilities.append("composer_references_v1")
+        }
         var devicePayload = device.json.objectValue ?? [:]
         if workbench { devicePayload["mac_workbench_v1"] = .bool(true) }
         var frame: [String: JSONValue] = [

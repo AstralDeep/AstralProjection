@@ -205,6 +205,8 @@ final class AppModel: NSObject {
         let macComputerHost: MacComputerHost
         var llmUsage = LLMUsageTally()
         let macBrowser: MacBrowserDriver
+        let composerReferences: MacComposerReferences
+        let projectInstructions = MacProjectInstructions()
     #else
         typealias LocalComputerHost = Never
     #endif
@@ -220,6 +222,7 @@ final class AppModel: NSObject {
                     retireProjectCatalog()
                     macComputerHost.signedOut()
                     macBrowser.bind(owner: nil)
+                    projectInstructions.bind(scope: nil, client: nil)
                 #endif
                 #if os(iOS)
                     configurePushNotifications()
@@ -477,6 +480,10 @@ final class AppModel: NSObject {
         var composerQueueApplies: Bool {
             turnQueueCapable && composerSteeringApplies
         }
+        var composerReferenceProject: String? {
+            guard projects.enabled else { return nil }
+            return activeChatId.flatMap { projects.project(for: $0) } ?? projects.selectedId
+        }
         var composerReturnBinding: ComposerReturnBinding {
             get { composerReturnBindingStored }
             set {
@@ -725,6 +732,8 @@ final class AppModel: NSObject {
             let host = computerHost ?? MacComputerHost()
             macComputerHost = host
             macBrowser = MacBrowserDriver(host: host, defaults: defaults)
+            composerReferences = MacComposerReferences(
+                grants: host.projectGrants, hostAvailable: { [weak host] in host?.available ?? false })
         #endif
         self.voice = voiceController ?? AppleVoiceSessionController()
         self.store = tokenStore
@@ -898,6 +907,7 @@ final class AppModel: NSObject {
                 releaseComputerBypass()
                 macComputerHost.signedOut()
                 macBrowser.bind(owner: nil)
+                projectInstructions.bind(scope: nil, client: nil)
                 clearOutcomeUnknownCard()
             #endif
             clearActivity()
@@ -1491,6 +1501,7 @@ final class AppModel: NSObject {
             projectCreationEpoch = UUID()
             cancelProjectDeletion()
             projects.bind(scope: hostScope, client: projectClient)
+            projectInstructions.bind(scope: hostScope, client: projectClient)
             let hostDescriptor: ComputerHostDescriptor? = nil
             let hostCapable = macComputerHost.available
             let macWorkbench = true
@@ -1522,6 +1533,13 @@ final class AppModel: NSObject {
                 #endif
             }(),
             turnSteerSupported: {
+                #if os(macOS)
+                    return true
+                #else
+                    return false
+                #endif
+            }(),
+            composerReferencesSupported: {
                 #if os(macOS)
                     return true
                 #else
@@ -2280,6 +2298,7 @@ final class AppModel: NSObject {
             releaseComputerBypass()
             macComputerHost.signedOut()
             macBrowser.bind(owner: nil)
+            projectInstructions.bind(scope: nil, client: nil)
             llmUsage = LLMUsageTally()
             clearOutcomeUnknownCard()
         #endif
@@ -2399,6 +2418,7 @@ final class AppModel: NSObject {
             descriptor.macWorkbenchSupported = true
             descriptor.projectWorkspacesSupported = true
             descriptor.turnSteerSupported = true
+            descriptor.composerReferencesSupported = true
         #else
             let size = UIScreen.main.bounds.size
             let (w, h) = lastReportedViewport ?? (Int(size.width), Int(size.height))
@@ -2495,6 +2515,10 @@ final class AppModel: NSObject {
             macComputerHost.workspaceNegotiated(projects: accepted)
             if accepted, connected { Task { await projects.refresh() } }
             turnSteerAck = TurnSteerAcknowledgement.fromRoteConfig(frame.payload)
+            projectInstructions.acknowledge(ComposerReferencesAcknowledgement.fromRoteConfig(frame.payload))
+            if projectInstructions.negotiated, connected {
+                Task { await projectInstructions.refresh() }
+            }
             if !turnSteerNegotiated {
                 queueByChat.removeAll()
                 pendingSteerTexts.removeAll()
