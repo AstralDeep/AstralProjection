@@ -344,8 +344,16 @@ final class AppModel: NSObject {
             observeActivityComponents()
         }
     }
-    private var unsettledChatSend:
-        (submissionId: String, text: String, attachments: [StagedAttachment], transmitted: Bool)?
+    private struct UnsettledChatSend {
+        let submissionId: String
+        let requestGeneration: String
+        var chatId: String?
+        let text: String
+        let attachments: [StagedAttachment]
+        var transmitted = false
+    }
+    @ObservationIgnored private var unsettledChatSend: UnsettledChatSend?
+    @ObservationIgnored private var restoredChatSubmissions: Set<String> = []
     var transientTurns: [ChatTurn] = [] {
         didSet {
             bindConversationNavigationRender("transient-transcript")
@@ -2843,6 +2851,7 @@ final class AppModel: NSObject {
                     localOperationSubmissions.values.contains(
                         where: localSubmissionShowsActivityHere) ? "Submitting…" : nil
             }
+            guard restoredChatSubmissions.remove(replay.identity.submissionId) == nil else { break }
             bannerIsError = true
             errorBanner = "Not sent while offline: \(replay.action) (\(reason))"
         case .sendRejected(let action):
@@ -3770,6 +3779,7 @@ final class AppModel: NSObject {
         activeChatId = chatId
         voice.updateVisibleChatLocally(chatId)
         guard let request = pendingCommitRequestGeneration else { return }
+        if unsettledChatSend?.requestGeneration == request { unsettledChatSend?.chatId = chatId }
         if openConversationRequest(
             chatId: chatId,
             requestGeneration: request,
@@ -5630,6 +5640,9 @@ final class AppModel: NSObject {
         chatId: String?,
         exposeStatus: Bool = true
     ) {
+        if action == "chat_message", unsettledChatSend?.submissionId != identity.submissionId {
+            unsettledChatSend = nil
+        }
         guard let connectionGeneration = continuity.connectionGeneration,
             let submission = LocalOperationSubmission(
                 identity: identity,
@@ -5654,6 +5667,7 @@ final class AppModel: NSObject {
 
     @discardableResult
     func replayQueuedOperation(_ replay: QueuedOperationReplay) -> Bool {
+        if restoredChatSubmissions.contains(replay.identity.submissionId) { return false }
         #if os(macOS)
             if projects.negotiating { return false }
             if projects.enabled, replay.conversationPurpose != nil, replay.chatId == nil {
@@ -5745,6 +5759,7 @@ final class AppModel: NSObject {
         liveOpsThisTurn = false
         stepTrail = []
         asyncDetached = false
+        unsettledChatSend = nil
         if discardUncommitted {
             pendingCanvas = []
             transientTurns = []
@@ -6077,7 +6092,9 @@ final class AppModel: NSObject {
             canvas = canvas.dropWelcome()
         }
         pendingLabel = String((text.isEmpty ? (ready.first?.filename ?? "") : text).prefix(80))
-        unsettledChatSend = (identity.submissionId, text, ready, false)
+        unsettledChatSend = UnsettledChatSend(
+            submissionId: identity.submissionId, requestGeneration: request, chatId: activeChatId, text: text,
+            attachments: ready)
         staged = []
         viewingIndex = nil
         statusText = nil
@@ -6880,14 +6897,20 @@ final class AppModel: NSObject {
     @discardableResult
     private func restoreUnsettledChatSend(_ notice: String) -> Bool {
         defer { unsettledChatSend = nil }
-        guard let send = unsettledChatSend, send.transmitted,
+        guard let send = unsettledChatSend, send.transmitted, unsettledChatSendBelongsHere(send),
             transientTurns.contains(where: { $0.role == "user" })
         else { return false }
+        restoredChatSubmissions.insert(send.submissionId)
         composerDraft = joinedWithDraft(send.text)
         staged = send.attachments + staged
         bannerIsError = true
         errorBanner = notice
         return true
+    }
+
+    private func unsettledChatSendBelongsHere(_ send: UnsettledChatSend) -> Bool {
+        if let chatId = send.chatId { return activeChatId == chatId }
+        return activeChatId == nil && pendingCommitRequestGeneration == send.requestGeneration
     }
 
     private func restoreFailedChatSend(requestGeneration: String) -> Bool {
@@ -6909,9 +6932,9 @@ final class AppModel: NSObject {
         errorBanner = "The message was not sent. Review it and try again after reconnecting."
     }
 
-    /// A returned message goes ahead of anything typed since, so neither is lost.
     private func joinedWithDraft(_ message: String) -> String {
-        composerDraft.isEmpty ? message : "\(message)\n\n\(composerDraft)"
+        if message.isEmpty { return composerDraft }
+        return composerDraft.isEmpty ? message : "\(message)\n\n\(composerDraft)"
     }
 
     @discardableResult

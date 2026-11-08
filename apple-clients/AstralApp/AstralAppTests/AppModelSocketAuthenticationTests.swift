@@ -1283,6 +1283,9 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
         let event = try XCTUnwrap(peer.events.last { $0.frame.payload["action"] == .string("chat_message") })
         let request = try XCTUnwrap(event.frame.payload["request_generation"]?.stringValue)
         let connection = try XCTUnwrap(peer.registrations.last { $0.socket == event.socket }?.generation)
+        let error =
+            state == "completed"
+            ? "null" : #"{"code":"operation_failed","message":"The operation could not be completed."}"#
         peer.send(#"{"type":"chat_status","status":"done"}"#, socket: event.socket)
         peer.send(
             """
@@ -1290,7 +1293,7 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
             "action":"chat_message","surface":"chat","chat_id":"77777777-7777-4777-8777-777777777777",
             "connection_generation":"\(connection)","request_generation":"\(request)",
             "sequence":1,"state":"\(state)","phase":"\(state)","label":"Ended",
-            "terminal":true,"retryable":false,"error":{"code":"operation_failed","message":"The operation could not be completed."},
+            "terminal":true,"retryable":false,"error":\(error),
             "retry_after_ms":null,"updated_at":"2026-11-06T18:00:00Z"}
             """, socket: event.socket)
         try await waitUntil { model.operationStatuses["33333333-3333-4333-8333-333333333333"] != nil }
@@ -1324,6 +1327,90 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
             await fulfillment(of: [registered], timeout: 10)
             try await waitUntil { model.errorBanner != nil }
             XCTAssertEqual(model.composerDraft, "Lost with the connection\n\nA newer draft")
+        }
+    }
+
+    private func dropConnection(_ model: AppModel, peer: SocketAuthenticationPeer) async throws {
+        let original = try XCTUnwrap(peer.registrations.last).socket
+        let registered = peer.expectRegistration()
+        peer.disconnect(socket: original)
+        await fulfillment(of: [registered], timeout: 10)
+        try await waitUntil { model.connected }
+    }
+
+    private func chatMessages(_ peer: SocketAuthenticationPeer) -> [SocketAuthenticationPeer.Event] {
+        peer.events.filter { $0.frame.payload["action"] == .string("chat_message") }
+    }
+
+    func testACompletedTurnsMessageIsNotRestoredWhenALaterTurnDrops() async throws {
+        try await withModel { model, peer, _, _ in
+            try await sendTurnThatEnds("completed", model: model, peer: peer)
+            XCTAssertFalse(model.turnActive)
+            peer.send(#"{"type":"user_message_acked"}"#)
+            try await waitUntil { model.turnActive }
+            try await dropConnection(model, peer: peer)
+            XCTAssertEqual(model.composerDraft, "")
+            XCTAssertNil(model.errorBanner)
+        }
+    }
+
+    func testAnotherChatMessageRetiresTheEarlierMessageBeforeADrop() async throws {
+        try await withModel { model, peer, _, _ in
+            model.sendChat("Superseded")
+            try await waitUntil { self.chatMessages(peer).count == 1 }
+            model.sendEvent("chat_message", .object(["message": .string("Sent another way")]))
+            try await waitUntil { self.chatMessages(peer).count == 2 }
+            try await dropConnection(model, peer: peer)
+            XCTAssertEqual(model.composerDraft, "")
+            XCTAssertNil(model.errorBanner)
+        }
+    }
+
+    func testDisconnectReturnsAttachmentsAndKeepsANewerDraft() async throws {
+        try await withModel { model, peer, _, _ in
+            let scan = AppModel.StagedAttachment(
+                uid: 7, filename: "scan.pdf", category: "document", attachmentId: "attachment-7", state: "ready")
+            model.staged = [scan]
+            model.sendChat("")
+            try await waitUntil { self.chatMessages(peer).count == 1 }
+            let sent = try XCTUnwrap(chatMessages(peer).last).frame.payload["payload"]?["attachments"]
+            XCTAssertEqual(sent?.arrayValue?.first?["attachment_id"]?.stringValue, "attachment-7")
+            XCTAssertTrue(model.staged.isEmpty)
+            model.composerDraft = "A newer draft"
+            try await dropConnection(model, peer: peer)
+            XCTAssertEqual(model.staged, [scan])
+            XCTAssertEqual(model.composerDraft, "A newer draft")
+            XCTAssertEqual(
+                model.errorBanner, "The connection dropped before this message finished. Review it and send it again.")
+        }
+    }
+
+    func testARestoredMessageIsRefusedWhenItsQueuedCopyReplays() async throws {
+        try await withModel { model, peer, _, _ in
+            model.sendChat("Restored, not replayed")
+            try await waitUntil { self.chatMessages(peer).count == 1 }
+            let frame = try XCTUnwrap(chatMessages(peer).last).frame
+            try await dropConnection(model, peer: peer)
+            XCTAssertEqual(model.composerDraft, "Restored, not replayed")
+            let replay = try XCTUnwrap(
+                QueuedOperationReplay(frameText: String(decoding: try frame.payload.encoded(), as: UTF8.self)))
+            XCTAssertFalse(model.replayQueuedOperation(replay))
+            await model.handle(.queuedOperationDropped(replay, reason: "replay fence rejected"))
+            XCTAssertEqual(
+                model.errorBanner, "The connection dropped before this message finished. Review it and send it again.")
+            XCTAssertEqual(chatMessages(peer).count, 1)
+        }
+    }
+
+    func testDisconnectDoesNotReturnAMessageIntoAnotherChat() async throws {
+        try await withModel { model, peer, _, _ in
+            model.activeChatId = "77777777-7777-4777-8777-777777777777"
+            model.sendChat("Belongs to the first chat")
+            try await waitUntil { self.chatMessages(peer).count == 1 }
+            model.activeChatId = "88888888-8888-4888-8888-888888888888"
+            try await dropConnection(model, peer: peer)
+            XCTAssertEqual(model.composerDraft, "")
+            XCTAssertNil(model.errorBanner)
         }
     }
 
