@@ -1,9 +1,8 @@
 # Render targets
 
 Verified against the source tree on 2026-10-27. This page documents every
-render target of [`webrender.registry`](../backend/webrender/registry.py), as
-Constitution Principle II requires: how each is registered and selected, what
-it produces, and which clients consume it.
+render target of [`webrender.registry`](../backend/webrender/registry.py): how
+each is registered and selected, what it produces, and which clients consume it.
 
 ## Registration and selection
 
