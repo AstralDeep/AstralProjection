@@ -72,6 +72,23 @@
             XCTAssertTrue(cancels(sent()).isEmpty)
         }
 
+        func testADroppedConnectionEndsRunningRowsAndFreesTheTurn() async throws {
+            let (model, _) = try model()
+            model.handleFrame(ActivityFrames.step("s1", chat: chat, status: "in_progress", arguments: "{}"))
+            XCTAssertTrue(model.turnBusy)
+            await model.handle(.disconnected(reason: "test"))
+            XCTAssertFalse(model.turnBusy)
+            XCTAssertEqual(model.activity.first?.state, .cancelled)
+        }
+
+        func testAStepForSurvivingWorkCanRunAgainAfterReconnect() async throws {
+            let (model, _) = try model()
+            model.handleFrame(ActivityFrames.step("s1", chat: chat, status: "in_progress", arguments: "{}"))
+            await model.handle(.disconnected(reason: "test"))
+            model.handleFrame(ActivityFrames.step("s1", chat: chat, status: "in_progress", arguments: "{}"))
+            XCTAssertEqual(model.activity.first?.state, .running)
+        }
+
         func testAnApprovalContinuationKeepsCancelAvailableUntilItSettles() throws {
             let (model, sent) = try model()
             XCTAssertFalse(model.canCancelTurn)

@@ -2815,6 +2815,7 @@ final class AppModel: NSObject {
             retireOrdinarySurfaceRequests(preservingReadIntent: true)
             voice.controlTransportDisconnected()
             clearPendingOperationSubmissions()
+            endInterruptedActivity()
             turnActive = false
             pendingReplace = false
             pendingCanvas = []
@@ -5018,6 +5019,19 @@ final class AppModel: NSObject {
                 rows[index].state = .cancelled
                 if rows[index].approval == .waiting { rows[index].approval = .none }
                 redispatchable.remove(rows[index].id)
+            }
+        }
+    }
+
+    /// Terminal step frames go to the dead socket, so a running row would otherwise stay busy forever.
+    /// Rows are keyed by step id, so a later chat_step for work that survived can set one running again.
+    private func endInterruptedActivity() {
+        for key in activityLog.keys {
+            for index in activityLog[key, default: []].indices {
+                let row = activityLog[key, default: []][index]
+                guard row.state == .running, row.approval != .waiting else { continue }
+                activityLog[key]?[index].state = .cancelled
+                redispatchable.remove(row.id)
             }
         }
     }
