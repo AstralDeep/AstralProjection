@@ -3,8 +3,9 @@
 // and account, and clears it on settlement, sign-out, account removal and account change.
 
 import AstralCore
-@testable import AstralDeep
 import XCTest
+
+@testable import AstralDeep
 
 @MainActor
 final class AppModelUnsentMessageTests: XCTestCase {
