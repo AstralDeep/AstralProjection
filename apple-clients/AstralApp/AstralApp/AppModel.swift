@@ -3599,8 +3599,10 @@ final class AppModel: NSObject {
                 components: message.components,
                 branch: message.branch)
         }
-        let sameChat = activeChatId == snapshot.chatId
-        let editedText = turns.first(where: { $0.id == turnEditor?.turnId })?.text
+        #if os(macOS)
+            let sameChat = activeChatId == snapshot.chatId
+            let editedText = turns.first(where: { $0.id == turnEditor?.turnId })?.text
+        #endif
         activeChatId = snapshot.chatId
         turns = restoredTurns
         #if os(macOS)
