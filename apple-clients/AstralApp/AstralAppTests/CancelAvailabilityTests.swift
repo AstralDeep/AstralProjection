@@ -57,6 +57,21 @@
             frames.filter { $0["action"] == .string("cancel_task") }
         }
 
+        func testStopCancelsATurnOnAServerWithoutSteering() throws {
+            let (model, sent) = try model()
+            model.turnActive = true
+            XCTAssertTrue(model.canCancelTurn)
+            XCTAssertFalse(model.turnSteerNegotiated)
+            model.stopTurn()
+            XCTAssertEqual(cancels(sent()).count, 1)
+        }
+
+        func testStopDoesNothingWhenNoTurnIsRunning() throws {
+            let (model, sent) = try model()
+            model.stopTurn()
+            XCTAssertTrue(cancels(sent()).isEmpty)
+        }
+
         func testAnApprovalContinuationKeepsCancelAvailableUntilItSettles() throws {
             let (model, sent) = try model()
             XCTAssertFalse(model.canCancelTurn)
