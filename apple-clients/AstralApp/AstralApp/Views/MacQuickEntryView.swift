@@ -80,7 +80,7 @@
                     Spacer()
                     Button("Open chat") {
                         if model.composerDraft.isEmpty { model.composerDraft = draft }
-                        openWindow(id: "main")
+                        MacMainWindow.show(using: openWindow)
                     }
                     Button("Send") { submit() }
                         .buttonStyle(.borderedProminent)
@@ -99,7 +99,7 @@
             guard !text.isEmpty else { return }
             model.sendComposerText(text)
             draft = ""
-            openWindow(id: "main")
+            MacMainWindow.show(using: openWindow)
         }
     }
 #endif

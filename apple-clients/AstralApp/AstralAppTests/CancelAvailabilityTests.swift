@@ -57,6 +57,68 @@
             frames.filter { $0["action"] == .string("cancel_task") }
         }
 
+        func testStopCancelsATurnOnAServerWithoutSteering() throws {
+            let (model, sent) = try model()
+            model.turnActive = true
+            XCTAssertTrue(model.canCancelTurn)
+            XCTAssertFalse(model.turnSteerNegotiated)
+            model.stopTurn()
+            XCTAssertEqual(cancels(sent()).count, 1)
+        }
+
+        func testStopDoesNothingWhenNoTurnIsRunning() throws {
+            let (model, sent) = try model()
+            model.stopTurn()
+            XCTAssertTrue(cancels(sent()).isEmpty)
+        }
+
+        func testStopOnASteeringServerRestoresQueuedTextAndKeepsTheTypedDraft() throws {
+            let (model, sent) = try model()
+            model.handleFrame(
+                try XCTUnwrap(
+                    InboundFrame.parse(
+                        """
+                        {"type":"rote_config","device_profile":{"console":
+                            {"turn_steer":{"version":1,"queue_capable":true}}}}
+                        """)))
+            XCTAssertTrue(model.turnSteerNegotiated)
+            model.turnActive = true
+            model.handleFrame(
+                try XCTUnwrap(
+                    InboundFrame.parse(
+                        """
+                        {"type":"chat_queue_updated","chat_id":"\(chat)","revision":1,
+                         "items":[{"queue_id":"\(operation)","message":"update the changelog","revision":1}]}
+                        """)))
+            XCTAssertEqual(model.queuedFollowUps.map(\.message), ["update the changelog"])
+            model.composerDraft = "also tag the release"
+            model.stopTurn()
+            XCTAssertEqual(model.composerDraft, "update the changelog\n\nalso tag the release")
+            XCTAssertEqual(cancels(sent()).count, 1)
+            XCTAssertTrue(model.queuedFollowUps.isEmpty)
+        }
+
+        func testADroppedConnectionEndsRunningRowsAndFreesTheTurn() async throws {
+            let (model, _) = try model()
+            model.handleFrame(ActivityFrames.step("s1", chat: chat, status: "in_progress", arguments: "{}"))
+            XCTAssertTrue(model.turnBusy)
+            await model.handle(.disconnected(reason: "test"))
+            XCTAssertFalse(model.turnBusy)
+            XCTAssertEqual(model.activity.first?.state, .failed)
+            XCTAssertEqual(
+                model.activity.first?.result,
+                "The connection dropped before this step finished. Check its outcome before retrying.")
+        }
+
+        func testAStepForSurvivingWorkCanRunAgainAfterReconnect() async throws {
+            let (model, _) = try model()
+            model.handleFrame(ActivityFrames.step("s1", chat: chat, status: "in_progress", arguments: "{}"))
+            await model.handle(.disconnected(reason: "test"))
+            model.handleFrame(ActivityFrames.step("s1", chat: chat, status: "in_progress", arguments: "{}"))
+            XCTAssertEqual(model.activity.first?.state, .running)
+            XCTAssertEqual(model.activity.first?.result, "")
+        }
+
         func testAnApprovalContinuationKeepsCancelAvailableUntilItSettles() throws {
             let (model, sent) = try model()
             XCTAssertFalse(model.canCancelTurn)
@@ -83,6 +145,64 @@
             XCTAssertFalse(model.canCancelTurn)
             XCTAssertFalse(model.cancelCurrentTurn())
             XCTAssertEqual(cancels(sent()).count, 1)
+        }
+
+        func testATurnThatEndsWhileAnotherChatIsOpenStopsShowingAsActiveThere() throws {
+            let (model, _) = try model()
+            model.sendChat("A slow question")
+            let turn = try XCTUnwrap(model.localOperationSubmissions.values.first { $0.action == "chat_message" })
+            XCTAssertEqual(turn.chatId, chat)
+            model.activeChatId = other
+            model.statusText = "Accepted"
+            model.handleFrame(
+                try status(
+                    turn.requestGeneration, action: "chat_message", state: "completed", terminal: true, sequence: 1,
+                    chat: chat))
+            XCTAssertTrue(model.localOperationSubmissions.isEmpty)
+            XCTAssertNil(model.statusText)
+            XCTAssertFalse(model.statusShowsActivity)
+        }
+
+        func testASubmissionInAnotherChatIsNotReportedAsActivityHere() throws {
+            let (model, _) = try model()
+            model.sendChat("A slow question")
+            let turn = try XCTUnwrap(model.localOperationSubmissions.values.first { $0.action == "chat_message" })
+            model.activeChatId = other
+            model.turnActive = false
+            model.statusText = "Opening"
+            XCTAssertFalse(model.statusShowsActivity)
+            XCTAssertNotNil(model.localOperationSubmissions[turn.submissionId])
+        }
+
+        func testAnEndOfTurnFrameFromAnotherConnectionLeavesTheSubmissionInPlace() throws {
+            let (model, _) = try model()
+            model.sendChat("A slow question")
+            let turn = try XCTUnwrap(model.localOperationSubmissions.values.first { $0.action == "chat_message" })
+            model.activeChatId = other
+            model.handleFrame(
+                try XCTUnwrap(
+                    InboundFrame.parse(
+                        """
+                        {"type":"operation_status","operation_id":"\(operation)","action":"chat_message",
+                         "surface":"operation","chat_id":"\(chat)",
+                         "connection_generation":"66666666-6666-4666-8666-666666666666",
+                         "request_generation":"\(turn.requestGeneration)","sequence":1,"state":"completed",
+                         "phase":"completed","label":"completed","terminal":true,"retryable":false,"error":null,
+                         "retry_after_ms":null,"updated_at":"2026-10-27T12:00:01Z"}
+                        """)))
+            XCTAssertNotNil(model.localOperationSubmissions[turn.submissionId])
+        }
+
+        func testALateAcknowledgementForAnEarlierChatLeavesTheOpenChatInPlace() throws {
+            let (model, sent) = try model()
+            model.activeChatId = other
+            model.handleFrame(
+                try XCTUnwrap(
+                    InboundFrame.parse(#"{"type":"user_message_acked","chat_id":"\#(chat)"}"#)))
+            XCTAssertEqual(model.activeChatId, other)
+            XCTAssertFalse(model.turnActive)
+            model.sendChat("A question for the open chat")
+            XCTAssertEqual(sent().last?["session_id"], .string(other))
         }
 
         func testRunningToolRowsAreCancellableButAWaitingApprovalIsNot() throws {
