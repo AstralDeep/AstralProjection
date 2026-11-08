@@ -4991,6 +4991,7 @@ final class AppModel: NSObject {
                 rows[index].state = .cancelled
                 if rows[index].approval == .waiting { rows[index].approval = .none }
             default:
+                if rows[index].result == Self.droppedConnectionResult { rows[index].result = "" }
                 rows[index].state = .running
             }
         }
@@ -5049,14 +5050,16 @@ final class AppModel: NSObject {
         }
     }
 
-    /// Terminal step frames go to the dead socket, so a running row would otherwise stay busy forever.
-    /// Rows are keyed by step id, so a later chat_step for work that survived can set one running again.
+    private static let droppedConnectionResult =
+        "The connection dropped before this step finished. Check its outcome before retrying."
+
     private func endInterruptedActivity() {
         for key in activityLog.keys {
             for index in activityLog[key, default: []].indices {
                 let row = activityLog[key, default: []][index]
                 guard row.state == .running, row.approval != .waiting else { continue }
-                activityLog[key]?[index].state = .cancelled
+                activityLog[key]?[index].state = .failed
+                activityLog[key]?[index].result = Self.droppedConnectionResult
                 redispatchable.remove(row.id)
             }
         }

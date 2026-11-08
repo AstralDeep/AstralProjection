@@ -104,7 +104,10 @@
             XCTAssertTrue(model.turnBusy)
             await model.handle(.disconnected(reason: "test"))
             XCTAssertFalse(model.turnBusy)
-            XCTAssertEqual(model.activity.first?.state, .cancelled)
+            XCTAssertEqual(model.activity.first?.state, .failed)
+            XCTAssertEqual(
+                model.activity.first?.result,
+                "The connection dropped before this step finished. Check its outcome before retrying.")
         }
 
         func testAStepForSurvivingWorkCanRunAgainAfterReconnect() async throws {
@@ -113,6 +116,7 @@
             await model.handle(.disconnected(reason: "test"))
             model.handleFrame(ActivityFrames.step("s1", chat: chat, status: "in_progress", arguments: "{}"))
             XCTAssertEqual(model.activity.first?.state, .running)
+            XCTAssertEqual(model.activity.first?.result, "")
         }
 
         func testAnApprovalContinuationKeepsCancelAvailableUntilItSettles() throws {
