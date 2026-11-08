@@ -1,7 +1,7 @@
 // SwiftUI app entry point for the shared iOS/macOS AstralDeep client; selects a deterministic UI-test fixture
 // model over the real AppModel when running under XCTest.
-// On macOS it also starts the Sparkle updater, gates connecting on the signed minimum build, hosts Settings and
-// a menu bar companion, and rechecks the server connection after wake or reactivation.
+// On macOS it also starts the Sparkle updater, gates connecting on the signed minimum build, and hosts Settings,
+// a menu bar companion and the Quick Entry and Scheduled Work windows; MacAppLifecycle handles wake, lock and quit.
 
 import AVFoundation
 import AstralCore
@@ -20,6 +20,7 @@ struct AstralApp: App {
     #if os(macOS)
         @StateObject private var updates: UpdateCoordinator
         @State private var updateRequirement: UpdateRequirement?
+        private let lifecycle: MacAppLifecycle
     #endif
     @Environment(\.scenePhase) private var scenePhase
     #if os(iOS)
@@ -36,6 +37,7 @@ struct AstralApp: App {
         #endif
         _model = State(initialValue: launchModel)
         #if os(macOS)
+            lifecycle = MacAppLifecycle(handlers: .live(launchModel))
             let busy: @MainActor () -> Bool = { [launchModel] in
                 UpdateCoordinator.isTaskActive(
                     turnActive: launchModel.turnActive, session: launchModel.macComputerHost.session)
@@ -138,49 +140,6 @@ struct AstralApp: App {
                             for: UIApplication.willTerminateNotification)
                     ) { _ in
                         model.voiceApplicationWillTerminate()
-                    }
-                #else
-                    .onReceive(
-                        NSWorkspace.shared.notificationCenter.publisher(
-                            for: NSWorkspace.sessionDidResignActiveNotification)
-                    ) { _ in
-                        model.voiceSessionLocked()
-                        model.macComputerHost.sessionLocked()
-                    }
-                    .onReceive(
-                        NSWorkspace.shared.notificationCenter.publisher(
-                            for: NSWorkspace.screensDidSleepNotification)
-                    ) { _ in
-                        model.macComputerHost.sessionLocked()
-                    }
-                    .onReceive(
-                        NSWorkspace.shared.notificationCenter.publisher(
-                            for: NSWorkspace.sessionDidBecomeActiveNotification)
-                    ) { _ in
-                        model.voiceSessionUnlocked()
-                    }
-                    .onReceive(
-                        NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)
-                    ) { _ in
-                        model.verifyConnection()
-                    }
-                    .onReceive(
-                        NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
-                    ) { _ in
-                        model.verifyConnection()
-                    }
-                    .onReceive(
-                        NotificationCenter.default.publisher(
-                            for: .AVAudioEngineConfigurationChange)
-                    ) { _ in
-                        model.voiceAudioEngineConfigurationChanged()
-                    }
-                    .onReceive(
-                        NotificationCenter.default.publisher(
-                            for: NSApplication.willTerminateNotification)
-                    ) { _ in
-                        model.voiceApplicationWillTerminate()
-                        model.computerApplicationWillTerminate()
                     }
                 #endif
                 #if os(macOS)

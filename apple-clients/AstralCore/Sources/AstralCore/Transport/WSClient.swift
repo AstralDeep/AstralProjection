@@ -105,6 +105,9 @@ private final class PingAnswer: @unchecked Sendable {
 }
 
 public actor WSClient {
+    // The server sends a whole conversation as one frame; this matches the Windows client's cap.
+    static let maximumMessageSize = 16 * 1024 * 1024
+
     public let url: URL
     private var task: URLSessionWebSocketTask?
     private var backoff = BackoffPolicy()
@@ -446,6 +449,7 @@ public actor WSClient {
             var request = NoStoreHTTP.request(url: url)
             for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
             let task = NoStoreHTTP.session.webSocketTask(with: request)
+            task.maximumMessageSize = Self.maximumMessageSize
             self.task = task
             established = false
             registeredConnectionGeneration = nil
