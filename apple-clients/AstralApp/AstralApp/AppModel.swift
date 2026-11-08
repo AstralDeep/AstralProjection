@@ -623,6 +623,7 @@ final class AppModel: NSObject {
     @ObservationIgnored private var conversationNavigationGeneration = 0
     @ObservationIgnored private var conversationResumeStore: ConversationResumeStore
     @ObservationIgnored private var outcomeUnknownStore: OutcomeUnknownStore
+    @ObservationIgnored private let unsentMessageStore: any UnsentMessageStorage
     @ObservationIgnored var outcomeAckWait: @Sendable () async -> Void = {
         try? await Task.sleep(nanoseconds: 5_000_000_000)
     }
@@ -712,6 +713,7 @@ final class AppModel: NSObject {
     init(
         conversationResumeStore: ConversationResumeStore = ConversationResumeStore(),
         outcomeUnknownStore: OutcomeUnknownStore = OutcomeUnknownStore(),
+        unsentMessageStore: (any UnsentMessageStorage)? = nil,
         tokenStore: TokenStorage,
         defaults: UserDefaults = .standard,
         webSocket: WSClient? = nil,
@@ -737,7 +739,11 @@ final class AppModel: NSObject {
         self.initialWebSocket = webSocket
         self.conversationResumeStore = conversationResumeStore
         self.outcomeUnknownStore = outcomeUnknownStore
+        self.unsentMessageStore =
+            unsentMessageStore
+            ?? (tokenStore is KeychainTokenStore ? KeychainUnsentMessageStore() : InMemoryUnsentMessageStore())
         self.defaults = defaults
+        defaults.removeObject(forKey: "astral.unsentChatMessage.v1")
         #if os(macOS)
             if let stored = defaults.string(forKey: Self.composerReturnBindingKey),
                 let binding = ComposerReturnBinding(rawValue: stored)
@@ -930,6 +936,7 @@ final class AppModel: NSObject {
         }
         conversationAccount = account
         activeChatId = conversationResumeStore.load(for: account)?.chatId
+        bindUnsentMessage(to: account)
         #if os(macOS)
             restoreOutcomeUnknownCard()
         #endif
@@ -2313,6 +2320,7 @@ final class AppModel: NSObject {
         wsTask = nil
         ws = nil
         if pendingSurfaceKey == "terminal" { closeSurface() }
+        clearUnsentMessages()
         pendingSurface = nil
         pendingSurfaceKey = ""
         pendingSurfaceParams = .object([:])
@@ -2376,6 +2384,7 @@ final class AppModel: NSObject {
         if let account = conversationAccount {
             _ = conversationResumeStore.clear(.accountRemoval, for: account)
         }
+        clearUnsentMessages()
         conversationAccount = nil
         invalidateGuidance()
         pendingSurface = nil
@@ -3116,12 +3125,22 @@ final class AppModel: NSObject {
                 if continuity.connectionGeneration == nil {
                     commitTurn()
                     refreshActiveChat()
-                } else {
-                    turnActive = false
+                } else if !turnActive, pendingCommitRequestGeneration == nil, transientTurns.isEmpty {
+                    asyncDetached = false
                     statusText = nil
+                    // A revisit rebinds the chat, so the task's commit snapshot no longer reaches this socket.
+                    refreshActiveChat()
                 }
-                bannerIsError = false
-                errorBanner = "Background task finished"
+                let task = frame.payload["payload"]
+                let status = task?["status"]?.stringValue ?? "completed"
+                bannerIsError = !["completed", "cancelled"].contains(status)
+                switch status {
+                case "completed": errorBanner = "Background task finished"
+                case "cancelled": errorBanner = "Background task cancelled"
+                default:
+                    let summary = task?["summary"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    errorBanner = summary.isEmpty ? "The background task did not finish." : summary
+                }
             }
         case "notification":
             var text = [frame.payload["title"]?.stringValue, frame.payload["body"]?.stringValue]
@@ -3247,6 +3266,10 @@ final class AppModel: NSObject {
 
     private func reduceOperationStatus(_ frame: InboundFrame) {
         guard let status = OperationStatus(frame: frame) else { return }
+        if status.terminal {
+            // Authoritative for its own request even when another chat is open.
+            clearUnsentMessage(requestGeneration: status.requestGeneration)
+        }
         guard
             statusLifecycle.accept(
                 operation: status,
@@ -3632,6 +3655,8 @@ final class AppModel: NSObject {
         #endif
         activeChatId = snapshot.chatId
         turns = restoredTurns
+        clearUnsentMessage(requestGeneration: snapshot.requestGeneration)
+        restoreUnsentMessageIfCurrent()
         #if os(macOS)
             // A reconnect rehydrates the same chat unchanged; a branch switch changes the edited turn's text.
             let editedTurnUnchanged =
@@ -3749,6 +3774,7 @@ final class AppModel: NSObject {
         if let account = conversationAccount {
             _ = conversationResumeStore.save(chatId: chatId, for: account)
         }
+        adoptUnsentMessage(chatId: chatId)
         if activeChatId == nil, let pending = activityLog.removeValue(forKey: activityKey(nil)) {
             activityLog[chatId] = Array(((activityLog[chatId] ?? []) + pending).suffix(Self.maximumActivityRows))
             touchActivityChat(chatId)
@@ -5999,6 +6025,66 @@ final class AppModel: NSObject {
         }
     #endif
 
+    @ObservationIgnored private var unsentMessage: (scope: UnsentMessageScope, message: UnsentChatMessage)?
+    @ObservationIgnored private var restorableUnsentMessage: (scope: UnsentMessageScope, message: UnsentChatMessage)?
+    @ObservationIgnored private var unsentMessageLaunchChecked = false
+
+    private func saveUnsentMessage(_ text: String, requestGeneration: String) {
+        guard let account = conversationAccount, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return }
+        let scope = UnsentMessageScope(server: serverBase, account: account)
+        let message = UnsentChatMessage(chatId: activeChatId, requestGeneration: requestGeneration, text: text)
+        unsentMessageStore.save(message, for: scope)
+        unsentMessage = (scope, message)
+        restorableUnsentMessage = nil
+    }
+
+    private func adoptUnsentMessage(chatId: String) {
+        guard activeChatId == nil, let saved = unsentMessage, saved.message.chatId == nil else { return }
+        let message = UnsentChatMessage(
+            chatId: chatId, requestGeneration: saved.message.requestGeneration, text: saved.message.text)
+        unsentMessageStore.save(message, for: saved.scope)
+        unsentMessage = (saved.scope, message)
+    }
+
+    private func clearUnsentMessage(requestGeneration: String) {
+        guard let saved = unsentMessage, saved.message.requestGeneration == requestGeneration else { return }
+        unsentMessageStore.remove(saved.scope)
+        unsentMessage = nil
+    }
+
+    private func clearUnsentMessages() {
+        unsentMessageStore.retainOnly(nil)
+        unsentMessage = nil
+        restorableUnsentMessage = nil
+    }
+
+    private func bindUnsentMessage(to account: ConversationAccount) {
+        let scope = UnsentMessageScope(server: serverBase, account: account)
+        unsentMessageStore.retainOnly(scope)
+        if unsentMessage?.scope != scope { unsentMessage = nil }
+        if restorableUnsentMessage?.scope != scope { restorableUnsentMessage = nil }
+        if !unsentMessageLaunchChecked {
+            unsentMessageLaunchChecked = true
+            restorableUnsentMessage = unsentMessageStore.load(scope).map { (scope: scope, message: $0) }
+        }
+        restoreUnsentMessageIfCurrent()
+    }
+
+    private func restoreUnsentMessageIfCurrent() {
+        guard let saved = restorableUnsentMessage, saved.message.chatId == activeChatId, composerDraft.isEmpty,
+            !localOperationSubmissions.values.contains(where: {
+                $0.requestGeneration == saved.message.requestGeneration
+            })
+        else { return }
+        restorableUnsentMessage = nil
+        unsentMessageStore.remove(saved.scope)
+        composerDraft = saved.message.text
+        bannerIsError = false
+        errorBanner =
+            "Your last message may not have reached AstralDeep before it closed, so it is back in the composer."
+    }
+
     func sendChat(_ text: String) {
         #if os(macOS)
             if projects.negotiating {
@@ -6075,6 +6161,7 @@ final class AppModel: NSObject {
             action: "chat_message",
             surface: "chat",
             chatId: activeChatId)
+        saveUnsentMessage(text, requestGeneration: request)
 
         var payload: [String: JSONValue] = ["message": .string(text)]
         if let turnSelection, !turnSelection.isEmpty { payload["selection"] = turnSelection.json }
