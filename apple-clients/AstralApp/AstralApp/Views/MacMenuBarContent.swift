@@ -6,6 +6,24 @@
     import AppKit
     import SwiftUI
 
+    /// `openWindow(id:)` on a `WindowGroup` always adds a window, so reuse the one already open.
+    enum MacMainWindow {
+        static func reusable(in windows: [NSWindow]) -> NSWindow? {
+            windows.first {
+                $0.title == "AstralDeep" && $0.styleMask.contains(.titled) && ($0.isVisible || $0.isMiniaturized)
+            }
+        }
+
+        @MainActor static func show(using openWindow: OpenWindowAction) {
+            if let window = reusable(in: NSApp.windows) {
+                window.makeKeyAndOrderFront(nil)
+            } else {
+                openWindow(id: "main")
+            }
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
     struct MacMenuBarPresentation {
         let signedIn: Bool
         let connected: Bool
@@ -134,9 +152,6 @@
                 .accessibilityIdentifier("mac-menu-settings")
         }
 
-        private func showMainWindow() {
-            openWindow(id: "main")
-            NSApp.activate(ignoringOtherApps: true)
-        }
+        private func showMainWindow() { MacMainWindow.show(using: openWindow) }
     }
 #endif
