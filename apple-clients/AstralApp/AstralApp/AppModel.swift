@@ -3687,19 +3687,21 @@ final class AppModel: NSObject {
             let alert = frame.renderComponents.first(where: { $0.type == "alert" }),
             let message = alert.raw["message"]?.stringValue, !message.isEmpty
         else { return }
-        errorBanner = message
-        bannerIsError = ["error", "warning"].contains(alert.raw["variant"]?.stringValue)
+        showAlertInBanner(message, variant: alert.raw["variant"]?.stringValue)
     }
 
     private func showChatAlerts(_ components: [AstralComponent]) -> Bool {
         let alerts = components.filter { $0.type == "alert" }
         if let alert = alerts.last, let message = alert.raw["message"]?.stringValue, !message.isEmpty {
-            let variant = alert.raw["variant"]?.stringValue
-            bannerIsError = variant == "error"
-            warningBannerText = variant == "warning" ? message : nil
-            errorBanner = message
+            showAlertInBanner(message, variant: alert.raw["variant"]?.stringValue)
         }
         return !alerts.isEmpty && alerts.count == components.count
+    }
+
+    private func showAlertInBanner(_ message: String, variant: String?) {
+        bannerIsError = variant == "error"
+        warningBannerText = variant == "warning" ? message : nil
+        errorBanner = message
     }
 
     private func reduceTransient(_ frame: InboundFrame) {

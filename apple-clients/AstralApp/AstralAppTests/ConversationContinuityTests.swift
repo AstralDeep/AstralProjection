@@ -350,12 +350,17 @@ final class ConversationContinuityTests: XCTestCase {
         XCTAssertEqual(model.canvas.map(\.fallbackText), ["Restored canvas"])
     }
 
-    func testOnlyErrorAndWarningAlertsSentAfterATurnLookLikeFailures() {
+    func testAlertsSentAfterATurnAreStyledLikeInTurnAlerts() {
         let model = modelAfterASettledTurn()
         model.handleFrame(staleFenceAlert(variant: "info"))
         XCTAssertFalse(model.bannerIsError)
+        XCTAssertFalse(model.bannerIsWarning)
         model.handleFrame(staleFenceAlert(variant: "warning"))
+        XCTAssertFalse(model.bannerIsError)
+        XCTAssertTrue(model.bannerIsWarning)
+        model.handleFrame(staleFenceAlert(variant: "error"))
         XCTAssertTrue(model.bannerIsError)
+        XCTAssertFalse(model.bannerIsWarning)
     }
 
     func testAStaleFrameThatIsNotAChatAlertForThisConnectionIsStillIgnored() {
