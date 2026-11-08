@@ -5619,7 +5619,7 @@ final class AppModel: NSObject {
         canvasCapture.clear()
         activityLog.removeValue(forKey: activityKey(nil))
         activeChatId = nil
-        waitingForEarlierTurn = turnActive
+        waitingForEarlierTurn = false
         heldChatLoad = nil
         voice.updateVisibleChatLocally(nil)
         #if os(macOS)
@@ -6069,8 +6069,7 @@ final class AppModel: NSObject {
             }
         #endif
         if timelineReadOnly { return }
-        // A message queued behind the turn would outlast the server's 15-second sign-in check.
-        if mandatorySurface || waitingForEarlierTurn {
+        if mandatorySurface {
             composerDraft = text
             return
         }

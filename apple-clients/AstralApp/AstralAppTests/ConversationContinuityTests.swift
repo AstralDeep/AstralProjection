@@ -862,16 +862,18 @@ final class ConversationContinuityTests: XCTestCase {
         XCTAssertEqual(sent.last?["action"]?.stringValue, "load_chat")
     }
 
-    func testSendingWhileAChatWaitsToOpenKeepsTheTextInTheComposer() throws {
+    func testSendingWhileAChatWaitsToOpenSendsIntoThatChat() throws {
         let model = try modelShowingChatWithTurnRunning()
-        model.openChat("66666666-6666-4666-8666-666666666666")
+        let target = "66666666-6666-4666-8666-666666666666"
+        model.openChat(target)
         var sent: [JSONValue] = []
         model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
 
-        model.sendChat("Keep this until the chat opens")
+        model.sendChat("Send this into the chat being opened")
 
-        XCTAssertTrue(sent.isEmpty)
-        XCTAssertEqual(model.composerDraft, "Keep this until the chat opens")
+        XCTAssertEqual(sent.map { $0["action"]?.stringValue }, ["chat_message"])
+        XCTAssertEqual(sent.first?["session_id"]?.stringValue, target)
+        XCTAssertEqual(model.composerDraft, "")
     }
 
     func testTheLeftChatsFinalStatusOpensTheWaitingChatAfterACancel() throws {
@@ -980,14 +982,16 @@ final class ConversationContinuityTests: XCTestCase {
         XCTAssertNotEqual(model.visibleStatusText, waitingText)
     }
 
-    func testNewChatDuringATurnDoesNotAdoptTheOldTurnsProgress() throws {
+    func testNewChatDuringATurnCanSendAtOnce() throws {
         let model = try modelShowingChatWithTurnRunning()
+        var sent: [JSONValue] = []
+        model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
 
         model.newChat()
-        model.handleFrame(inbound(#"{"type":"chat_status","status":"thinking","message":"Old turn"}"#))
-        model.handleFrame(inbound(#"{"type":"chat_step","step":{"name":"Old step","status":"running"}}"#))
+        XCTAssertNotEqual(model.visibleStatusText, waitingText)
+        model.sendChat("A question for a new chat")
 
-        XCTAssertEqual(model.visibleStatusText, waitingText)
-        XCTAssertTrue(model.stepTrail.isEmpty)
+        XCTAssertEqual(sent.compactMap { $0["action"]?.stringValue }, ["new_chat", "chat_message"])
+        XCTAssertEqual(model.composerDraft, "")
     }
 }
