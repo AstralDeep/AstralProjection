@@ -559,7 +559,7 @@ final class AppModel: NSObject {
     var mutationsLocked: Bool { timelineReadOnly }
     var statusShowsActivity: Bool {
         guard statusText != nil else { return false }
-        if localOperationSubmissions.values.contains(where: localSubmissionShowsActivity) {
+        if localOperationSubmissions.values.contains(where: localSubmissionShowsActivityHere) {
             return true
         }
         var pendingGenerations = pendingChatRequestGenerations.union(
@@ -1587,6 +1587,8 @@ final class AppModel: NSObject {
     }
 
     func bootstrap() async {
+        // Every window shares this model and bootstraps on open; reconnecting would cut off a running turn.
+        guard wsTask == nil else { return }
         let generation = sessionGeneration
         let owner = downloadOwner
         let authentication = authSession
@@ -2313,6 +2315,12 @@ final class AppModel: NSObject {
         wsTask = nil
         ws = nil
         if pendingSurfaceKey == "terminal" { closeSurface() }
+        pendingSurface = nil
+        pendingSurfaceKey = ""
+        pendingSurfaceParams = .object([:])
+        surfaceFailureMessage = nil
+        warningBannerText = nil
+        screen = .chat
         store.wipe()
         tokens = nil
         conversationAccount = nil
@@ -2810,6 +2818,7 @@ final class AppModel: NSObject {
             voice.controlTransportDisconnected()
             clearPendingOperationSubmissions()
             restoreUnsettledChatSend()
+            endInterruptedActivity()
             turnActive = false
             pendingReplace = false
             pendingCanvas = []
@@ -2827,7 +2836,7 @@ final class AppModel: NSObject {
             if statusText == "Submitting…" {
                 statusText =
                     localOperationSubmissions.values.contains(
-                        where: localSubmissionShowsActivity) ? "Submitting…" : nil
+                        where: localSubmissionShowsActivityHere) ? "Submitting…" : nil
             }
             bannerIsError = true
             errorBanner = "Not sent while offline: \(replay.action) (\(reason))"
@@ -2965,7 +2974,10 @@ final class AppModel: NSObject {
         case "chat_created":
             if let chatId = nestedChatId(frame) { adoptChat(chatId) }
         case "user_message_acked":
-            if let chatId = nestedChatId(frame) { adoptChat(chatId) }
+            if let chatId = nestedChatId(frame) {
+                guard activeChatId == nil || activeChatId == chatId else { break }
+                adoptChat(chatId)
+            }
             turnActive = true
             #if os(macOS)
                 macTurnNotificationStartedAt = Date()
@@ -3237,7 +3249,8 @@ final class AppModel: NSObject {
     }
 
     private func reduceOperationStatus(_ frame: InboundFrame) {
-        guard let status = OperationStatus(frame: frame),
+        guard let status = OperationStatus(frame: frame) else { return }
+        guard
             statusLifecycle.accept(
                 operation: status,
                 connectionGeneration: continuity.connectionGeneration,
@@ -3245,7 +3258,10 @@ final class AppModel: NSObject {
                 activeChatId: activeChatId,
                 pendingChatRequestGenerations: pendingChatRequestGenerations,
                 pendingSurfaceRequestGenerations: pendingSurfaceRequestGenerations)
-        else { return }
+        else {
+            settleOperationInAnotherChat(status)
+            return
+        }
         operationStatuses = statusLifecycle.operations
         if status.terminal {
             if status.state != "completed" {
@@ -3291,8 +3307,19 @@ final class AppModel: NSObject {
         if let active {
             return active.label
         }
-        return localOperationSubmissions.values.contains(where: localSubmissionShowsActivity)
+        return localOperationSubmissions.values.contains(where: localSubmissionShowsActivityHere)
             ? "Submitting…" : nil
+    }
+
+    private func settleOperationInAnotherChat(_ status: OperationStatus) {
+        guard status.terminal, status.chatId != activeChatId,
+            localOperationSubmissions.values.contains(where: {
+                $0.requestGeneration == status.requestGeneration
+                    && $0.connectionGeneration == status.connectionGeneration
+            })
+        else { return }
+        clearLocalOperationSubmission(requestGeneration: status.requestGeneration)
+        statusText = latestActiveOperationStatusText()
     }
 
     private func reduceAgentLifecycle(_ frame: InboundFrame) {
@@ -3602,10 +3629,20 @@ final class AppModel: NSObject {
                 components: message.components,
                 branch: message.branch)
         }
+        #if os(macOS)
+            let sameChat = activeChatId == snapshot.chatId
+            let editedText = turns.first(where: { $0.id == turnEditor?.turnId })?.text
+        #endif
         activeChatId = snapshot.chatId
         turns = restoredTurns
         #if os(macOS)
-            turnEditor = nil
+            // A reconnect rehydrates the same chat unchanged; a branch switch changes the edited turn's text.
+            let editedTurnUnchanged =
+                editedText != nil
+                && restoredTurns.contains(where: { $0.id == turnEditor?.turnId && $0.text == editedText })
+            if !sameChat || !editedTurnUnchanged {
+                turnEditor = nil
+            }
             pendingTurnDeparture = nil
         #endif
         canvas = snapshot.canvasComponents
@@ -3644,14 +3681,45 @@ final class AppModel: NSObject {
         }
     }
 
+    private func showAlertSentOutsideATurn(_ frame: InboundFrame) {
+        guard frame.name == "ui_render", frame.renderTarget == "chat",
+            frame.chatId == nil || frame.chatId == activeChatId,
+            continuity.acceptedSnapshot != nil,
+            frame.payload["connection_generation"]?.stringValue == continuity.connectionGeneration,
+            frame.payload["request_generation"]?.stringValue == continuity.requestGeneration,
+            let alert = frame.renderComponents.first(where: { $0.type == "alert" }),
+            let message = alert.raw["message"]?.stringValue, !message.isEmpty
+        else { return }
+        showAlertInBanner(message, variant: alert.raw["variant"]?.stringValue)
+    }
+
+    private func showChatAlerts(_ components: [AstralComponent]) -> Bool {
+        let alerts = components.filter { $0.type == "alert" }
+        if let alert = alerts.last, let message = alert.raw["message"]?.stringValue, !message.isEmpty {
+            showAlertInBanner(message, variant: alert.raw["variant"]?.stringValue)
+        }
+        return !alerts.isEmpty && alerts.count == components.count
+    }
+
+    private func showAlertInBanner(_ message: String, variant: String?) {
+        bannerIsError = variant == "error"
+        warningBannerText = variant == "warning" ? message : nil
+        errorBanner = message
+    }
+
     private func reduceTransient(_ frame: InboundFrame) {
-        guard viewportRequest == nil, continuity.acceptTransient(frame) else { return }
+        guard viewportRequest == nil else { return }
+        guard continuity.acceptTransient(frame) else {
+            showAlertSentOutsideATurn(frame)
+            return
+        }
         acceptingTransientNavigationRender = true
         defer { acceptingTransientNavigationRender = false }
         switch frame.name {
         case "ui_render", "ui_update":
             let components = frame.renderComponents
             if frame.renderTarget == "chat" {
+                if showChatAlerts(components) { return }
                 let pendingUsers = transientTurns.filter { $0.role == "user" }
                 let response = chatPreviewTurn(components, frame: frame).map { [$0] } ?? []
                 transientTurns = pendingUsers + response
@@ -3661,6 +3729,7 @@ final class AppModel: NSObject {
         case "ui_append":
             let components = frame.renderComponents
             if frame.renderTarget == "chat" {
+                if showChatAlerts(components) { return }
                 if let turn = chatPreviewTurn(components, frame: frame) {
                     transientTurns.append(turn)
                 }
@@ -4221,6 +4290,13 @@ final class AppModel: NSObject {
         let image: String?
     }
 
+    func stopTurn() {
+        #if os(macOS)
+            if cancelTurnRestoringQueue() { return }
+        #endif
+        _ = cancelCurrentTurn()
+    }
+
     @discardableResult
     func cancelCurrentTurn() -> Bool {
         guard canCancelTurn else { return false }
@@ -4323,7 +4399,9 @@ final class AppModel: NSObject {
             steerNotice = nil
             queueConflictNotice = nil
             if !restored.isEmpty {
-                composerDraft = restored.joined(separator: "\n\n")
+                composerDraft = (restored + [composerDraft])
+                    .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                    .joined(separator: "\n\n")
             }
             return true
         }
@@ -4918,6 +4996,7 @@ final class AppModel: NSObject {
                 rows[index].state = .cancelled
                 if rows[index].approval == .waiting { rows[index].approval = .none }
             default:
+                if rows[index].result == Self.droppedConnectionResult { rows[index].result = "" }
                 rows[index].state = .running
             }
         }
@@ -4972,6 +5051,21 @@ final class AppModel: NSObject {
                 rows[index].state = .cancelled
                 if rows[index].approval == .waiting { rows[index].approval = .none }
                 redispatchable.remove(rows[index].id)
+            }
+        }
+    }
+
+    private static let droppedConnectionResult =
+        "The connection dropped before this step finished. Check its outcome before retrying."
+
+    private func endInterruptedActivity() {
+        for key in activityLog.keys {
+            for index in activityLog[key, default: []].indices {
+                let row = activityLog[key, default: []][index]
+                guard row.state == .running, row.approval != .waiting else { continue }
+                activityLog[key]?[index].state = .failed
+                activityLog[key]?[index].result = Self.droppedConnectionResult
+                redispatchable.remove(row.id)
             }
         }
     }
@@ -5542,6 +5636,11 @@ final class AppModel: NSObject {
         submission.action != "update_device" && submission.action != "chrome_llm_save"
     }
 
+    private func localSubmissionShowsActivityHere(_ submission: LocalOperationSubmission) -> Bool {
+        localSubmissionShowsActivity(submission)
+            && (submission.chatId == nil || submission.chatId == activeChatId)
+    }
+
     @discardableResult
     func replayQueuedOperation(_ replay: QueuedOperationReplay) -> Bool {
         #if os(macOS)
@@ -5610,7 +5709,11 @@ final class AppModel: NSObject {
     private func clearLocalOperationSubmission(submissionId: String) {
         guard let submission = localOperationSubmissions.removeValue(forKey: submissionId) else { return }
         componentPendingOperations.removeValue(forKey: submissionId)
-        if statusText == submission.label { statusText = latestActiveOperationStatusText() }
+        // The server's terminal status for this operation is no longer accepted once the submission is gone.
+        let shownByThisOperation = operationStatuses.values.contains {
+            $0.requestGeneration == submission.requestGeneration && $0.label == statusText
+        }
+        if statusText == submission.label || shownByThisOperation { statusText = latestActiveOperationStatusText() }
     }
 
     private func operationOwnsActiveChatTurn(

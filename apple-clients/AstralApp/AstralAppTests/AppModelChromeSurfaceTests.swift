@@ -447,6 +447,23 @@ final class AppModelChromeSurfaceTests: XCTestCase {
         XCTAssertEqual(payloads.count, 2)
     }
 
+    func testSignOutClearsAnOrdinarySurfaceFromTheNextAccount() async {
+        let model = signedInModel()
+        model.openSurface("theme", params: .object([:]))
+        reduce(model, unsolicitedTheme)
+        reduce(model, #"{"type":"notification","title":"Quota nearly used","level":"warning"}"#)
+        XCTAssertEqual(model.screen, .surface)
+        XCTAssertNotNil(model.pendingSurface)
+        XCTAssertTrue(model.bannerIsWarning)
+        await model.signOut(revokeRemote: false)
+        XCTAssertNil(model.pendingSurface)
+        XCTAssertEqual(model.pendingSurfaceKey, "")
+        XCTAssertEqual(model.screen, .chat)
+        XCTAssertNil(model.errorBanner)
+        model.errorBanner = "Quota nearly used"
+        XCTAssertFalse(model.bannerIsWarning)
+    }
+
     func testSignOutStaysAvailableWhileMandatory() async {
         let model = signedInModel()
         reduce(model, mandatoryLLM)

@@ -202,6 +202,59 @@ final class ConversationContinuityTests: XCTestCase {
         XCTAssertEqual(model.canvas.map(\.fallbackText), ["Restored canvas"])
     }
 
+    func testAnInTurnAlertShowsInTheBannerAndKeepsThePreview() {
+        let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
+        XCTAssertTrue(model.beginConversationConnection(connection))
+        XCTAssertTrue(model.openConversationRequest(chatId: chat, requestGeneration: commit, purpose: .commit))
+        model.handleFrame(
+            inbound(
+                """
+                {"type":"ui_render","target":"chat","chat_id":"\(chat)",
+                 "connection_generation":"\(connection)","request_generation":"\(commit)",
+                 "base_render_revision":0,"frame_sequence":1,
+                 "components":[{"type":"text","content":"Partial answer"}]}
+                """))
+        model.handleFrame(
+            inbound(
+                """
+                {"type":"ui_render","target":"chat","chat_id":"\(chat)",
+                 "connection_generation":"\(connection)","request_generation":"\(commit)",
+                 "base_render_revision":0,"frame_sequence":2,
+                 "components":[{"type":"alert","variant":"error","message":"The AI model timed out."}]}
+                """))
+        XCTAssertEqual(model.errorBanner, "The AI model timed out.")
+        XCTAssertTrue(model.bannerIsError)
+        XCTAssertFalse(model.bannerIsWarning)
+        XCTAssertTrue(model.transientTurns.contains { $0.text.contains("Partial answer") })
+    }
+
+    func testAnInTurnWarningAlertIsStyledAsAWarningNotAFailure() {
+        let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
+        XCTAssertTrue(model.beginConversationConnection(connection))
+        XCTAssertTrue(model.openConversationRequest(chatId: chat, requestGeneration: commit, purpose: .commit))
+        model.handleFrame(
+            inbound(
+                """
+                {"type":"ui_append","target":"chat","chat_id":"\(chat)",
+                 "connection_generation":"\(connection)","request_generation":"\(commit)",
+                 "base_render_revision":0,"frame_sequence":1,
+                 "components":[{"type":"alert","variant":"warning","message":"Results may be incomplete."}]}
+                """))
+        XCTAssertEqual(model.errorBanner, "Results may be incomplete.")
+        XCTAssertFalse(model.bannerIsError)
+        XCTAssertTrue(model.bannerIsWarning)
+        model.handleFrame(
+            inbound(
+                """
+                {"type":"ui_append","target":"chat","chat_id":"\(chat)",
+                 "connection_generation":"\(connection)","request_generation":"\(commit)",
+                 "base_render_revision":0,"frame_sequence":2,
+                 "components":[{"type":"alert","variant":"info","message":"Using cached data."}]}
+                """))
+        XCTAssertFalse(model.bannerIsError)
+        XCTAssertFalse(model.bannerIsWarning)
+    }
+
     func testTransientOverlayIsSequencedAndCannotMutateCommittedCanvas() {
         let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
         XCTAssertTrue(model.beginConversationConnection(connection))
@@ -263,6 +316,75 @@ final class ConversationContinuityTests: XCTestCase {
                 canvasText: "Committed next"))
         XCTAssertEqual(model.canvas.map(\.fallbackText), ["Committed next"])
         XCTAssertEqual(model.visibleCanvas.map(\.fallbackText), ["Committed next"])
+    }
+
+    private func staleFenceAlert(
+        target: String = "chat", connection stamped: String? = nil, request: String? = nil,
+        base: Int = 0, variant: String = "success"
+    ) -> InboundFrame {
+        inbound(
+            """
+            {"type":"ui_render","target":"\(target)","chat_id":"\(chat)",
+            "connection_generation":"\(stamped ?? connection)","request_generation":"\(request ?? commit)",
+            "base_render_revision":\(base),"frame_sequence":9,
+            "components":[{"type":"alert","message":"Scheduled","variant":"\(variant)"}]}
+            """)
+    }
+
+    private func modelAfterASettledTurn() -> AppModel {
+        let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
+        XCTAssertTrue(model.beginConversationConnection(connection))
+        XCTAssertTrue(model.openConversationRequest(chatId: chat, requestGeneration: commit, purpose: .commit))
+        model.handleFrame(snapshot(request: commit, purpose: "commit", revision: 1))
+        XCTAssertEqual(model.turns.map(\.id), ["u1", "a1"])
+        return model
+    }
+
+    func testAnAlertSentAfterATurnReachesTheBannerWithoutTouchingTheConversation() {
+        let model = modelAfterASettledTurn()
+        model.handleFrame(staleFenceAlert())
+        XCTAssertEqual(model.errorBanner, "Scheduled")
+        XCTAssertFalse(model.bannerIsError)
+        XCTAssertEqual(model.turns.map(\.id), ["u1", "a1"])
+        XCTAssertTrue(model.transientTurns.isEmpty)
+        XCTAssertEqual(model.canvas.map(\.fallbackText), ["Restored canvas"])
+    }
+
+    func testAlertsSentAfterATurnAreStyledLikeInTurnAlerts() {
+        let model = modelAfterASettledTurn()
+        model.handleFrame(staleFenceAlert(variant: "info"))
+        XCTAssertFalse(model.bannerIsError)
+        XCTAssertFalse(model.bannerIsWarning)
+        model.handleFrame(staleFenceAlert(variant: "warning"))
+        XCTAssertFalse(model.bannerIsError)
+        XCTAssertTrue(model.bannerIsWarning)
+        model.handleFrame(staleFenceAlert(variant: "error"))
+        XCTAssertTrue(model.bannerIsError)
+        XCTAssertFalse(model.bannerIsWarning)
+    }
+
+    func testAStaleFrameThatIsNotAChatAlertForThisConnectionIsStillIgnored() {
+        let model = modelAfterASettledTurn()
+        model.handleFrame(staleFenceAlert(target: "canvas"))
+        model.handleFrame(staleFenceAlert(connection: "66666666-6666-4666-8666-666666666666"))
+        XCTAssertNil(model.errorBanner)
+        XCTAssertEqual(model.canvas.map(\.fallbackText), ["Restored canvas"])
+    }
+
+    func testAnAlertFromAnEarlierTurnIsIgnoredAfterTheLatestTurnSettles() {
+        let model = modelAfterASettledTurn()
+        model.handleFrame(staleFenceAlert(request: hydration))
+        XCTAssertNil(model.errorBanner)
+        XCTAssertEqual(model.turns.map(\.id), ["u1", "a1"])
+    }
+
+    func testAnAlertOutsideTheOpenTurnIsIgnoredBeforeAnySnapshotSettles() {
+        let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
+        XCTAssertTrue(model.beginConversationConnection(connection))
+        XCTAssertTrue(model.openConversationRequest(chatId: chat, requestGeneration: commit, purpose: .commit))
+        model.handleFrame(staleFenceAlert(base: 3))
+        XCTAssertNil(model.errorBanner)
+        XCTAssertTrue(model.transientTurns.isEmpty)
     }
 
     func testCommitReadyPreludeFencesDetachedCommitAndRejectsWrongScope() {

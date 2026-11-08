@@ -245,6 +245,14 @@
                 MacProjectChoiceSheet()
             }
             .sheet(item: $renamingChat) { chat in MacRenameChatSheet(chat: chat) }
+            // ChatView owns this sheet elsewhere, but the workbench does not mount ChatView.
+            .sheet(
+                isPresented: Binding(
+                    get: { model.sideQuestionSheetVisible },
+                    set: { model.sideQuestionSheetVisible = $0 })
+            ) {
+                SideQuestionSheet()
+            }
             .sheet(
                 item: Binding(
                     get: { model.pendingTurnDeparture },

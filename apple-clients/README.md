@@ -69,8 +69,8 @@ package (currently v0.4.0): the same 38 primitives (`AstralPrims.Text`,
 empty `css` omitted, non-Optional defaults emitted. Types are namespaced
 under `AstralPrims` so nothing collides with SwiftUI. This is the AUTHORING
 layer only — the consuming/render model stays `AstralComponent`
-(Projection Constitution Principle I: AstralPrimitives defines → AstralProjection
-renders and adapts → AstralDeep orchestrates).
+(AstralPrimitives defines → AstralProjection renders and adapts → AstralDeep
+orchestrates).
 
 ```swift
 let canvas = AstralPrims.createUIResponse([
