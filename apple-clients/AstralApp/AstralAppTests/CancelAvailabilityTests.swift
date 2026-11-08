@@ -72,6 +72,32 @@
             XCTAssertTrue(cancels(sent()).isEmpty)
         }
 
+        func testStopOnASteeringServerRestoresQueuedTextAndKeepsTheTypedDraft() throws {
+            let (model, sent) = try model()
+            model.handleFrame(
+                try XCTUnwrap(
+                    InboundFrame.parse(
+                        """
+                        {"type":"rote_config","device_profile":{"console":
+                            {"turn_steer":{"version":1,"queue_capable":true}}}}
+                        """)))
+            XCTAssertTrue(model.turnSteerNegotiated)
+            model.turnActive = true
+            model.handleFrame(
+                try XCTUnwrap(
+                    InboundFrame.parse(
+                        """
+                        {"type":"chat_queue_updated","chat_id":"\(chat)","revision":1,
+                         "items":[{"queue_id":"\(operation)","message":"update the changelog","revision":1}]}
+                        """)))
+            XCTAssertEqual(model.queuedFollowUps.map(\.message), ["update the changelog"])
+            model.composerDraft = "also tag the release"
+            model.stopTurn()
+            XCTAssertEqual(model.composerDraft, "update the changelog\n\nalso tag the release")
+            XCTAssertEqual(cancels(sent()).count, 1)
+            XCTAssertTrue(model.queuedFollowUps.isEmpty)
+        }
+
         func testADroppedConnectionEndsRunningRowsAndFreesTheTurn() async throws {
             let (model, _) = try model()
             model.handleFrame(ActivityFrames.step("s1", chat: chat, status: "in_progress", arguments: "{}"))

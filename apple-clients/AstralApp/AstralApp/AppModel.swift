@@ -4285,7 +4285,6 @@ final class AppModel: NSObject {
         let image: String?
     }
 
-    /// The composer's stop action: restores queued follow-ups where the server supports them.
     func stopTurn() {
         #if os(macOS)
             if cancelTurnRestoringQueue() { return }
@@ -4395,7 +4394,9 @@ final class AppModel: NSObject {
             steerNotice = nil
             queueConflictNotice = nil
             if !restored.isEmpty {
-                composerDraft = restored.joined(separator: "\n\n")
+                composerDraft = (restored + [composerDraft])
+                    .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                    .joined(separator: "\n\n")
             }
             return true
         }
