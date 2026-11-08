@@ -3691,13 +3691,13 @@ final class AppModel: NSObject {
         bannerIsError = ["error", "warning"].contains(alert.raw["variant"]?.stringValue)
     }
 
-    /// Shows chat alerts in the banner, since the preview cannot render them. Returns true when the
-    /// frame held only alerts, so the caller leaves the existing preview in place.
     private func showChatAlerts(_ components: [AstralComponent]) -> Bool {
         let alerts = components.filter { $0.type == "alert" }
         if let alert = alerts.last, let message = alert.raw["message"]?.stringValue, !message.isEmpty {
+            let variant = alert.raw["variant"]?.stringValue
+            bannerIsError = variant == "error"
+            warningBannerText = variant == "warning" ? message : nil
             errorBanner = message
-            bannerIsError = ["error", "warning"].contains(alert.raw["variant"]?.stringValue)
         }
         return !alerts.isEmpty && alerts.count == components.count
     }

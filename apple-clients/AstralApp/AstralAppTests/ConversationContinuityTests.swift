@@ -224,7 +224,35 @@ final class ConversationContinuityTests: XCTestCase {
                 """))
         XCTAssertEqual(model.errorBanner, "The AI model timed out.")
         XCTAssertTrue(model.bannerIsError)
+        XCTAssertFalse(model.bannerIsWarning)
         XCTAssertTrue(model.transientTurns.contains { $0.text.contains("Partial answer") })
+    }
+
+    func testAnInTurnWarningAlertIsStyledAsAWarningNotAFailure() {
+        let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
+        XCTAssertTrue(model.beginConversationConnection(connection))
+        XCTAssertTrue(model.openConversationRequest(chatId: chat, requestGeneration: commit, purpose: .commit))
+        model.handleFrame(
+            inbound(
+                """
+                {"type":"ui_append","target":"chat","chat_id":"\(chat)",
+                 "connection_generation":"\(connection)","request_generation":"\(commit)",
+                 "base_render_revision":0,"frame_sequence":1,
+                 "components":[{"type":"alert","variant":"warning","message":"Results may be incomplete."}]}
+                """))
+        XCTAssertEqual(model.errorBanner, "Results may be incomplete.")
+        XCTAssertFalse(model.bannerIsError)
+        XCTAssertTrue(model.bannerIsWarning)
+        model.handleFrame(
+            inbound(
+                """
+                {"type":"ui_append","target":"chat","chat_id":"\(chat)",
+                 "connection_generation":"\(connection)","request_generation":"\(commit)",
+                 "base_render_revision":0,"frame_sequence":2,
+                 "components":[{"type":"alert","variant":"info","message":"Using cached data."}]}
+                """))
+        XCTAssertFalse(model.bannerIsError)
+        XCTAssertFalse(model.bannerIsWarning)
     }
 
     func testTransientOverlayIsSequencedAndCannotMutateCommittedCanvas() {
