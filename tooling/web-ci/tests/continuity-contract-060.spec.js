@@ -1056,6 +1056,72 @@ test("operation status is visible only while active and terminal failures stay s
 });
 
 
+const EARLIER_TURN = [
+  messageWithParts("earlier-question", "user", [{ type: "text", text: "Earlier question" }]),
+  messageWithParts("earlier-answer", "assistant", [{ type: "text", text: "Earlier answer" }]),
+];
+const FAILED_QUESTION = "Summarize the discharge plan";
+const SAVED_FAILURE = [
+  ...EARLIER_TURN,
+  messageWithParts("failed-question", "user", [{ type: "text", text: FAILED_QUESTION }]),
+  messageWithParts("failed-answer", "assistant", [{ type: "text", text: "Something went wrong while processing your request." }]),
+];
+
+async function submitAfterEarlierTurn(page) {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame, {
+    transcript: EARLIER_TURN, canvas: { target: "canvas", components: [] },
+  }));
+  await page.locator("#astral-input").fill(FAILED_QUESTION);
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  return page.evaluate(() => window.__socketEvents.findLast((event) => event.frame.action === "chat_message").frame);
+}
+
+function failedTurnCommit(scope, transcript) {
+  return snapshot(scope, {
+    snapshot_id: SNAPSHOT_B, snapshot_purpose: "commit", render_revision: 1, transcript,
+    canvas: { target: "canvas", components: [] },
+  });
+}
+
+for (const order of ["snapshot_first", "failure_first"]) {
+  test(`a failed turn whose message was saved shows it once without a local retry (${order})`, async ({ page }) => {
+    const scope = await submitAfterEarlierTurn(page);
+    const commit = failedTurnCommit(scope, SAVED_FAILURE);
+    const failed = operationStatus(scope, OPERATION_A, 0, "failed");
+    for (const frame of order === "snapshot_first" ? [commit, failed] : [failed, commit]) await receive(page, frame);
+    const users = page.locator(".astral-user-bubble");
+    await expect(users).toHaveCount(2);
+    await expect(users.nth(1)).toHaveText(FAILED_QUESTION);
+    await expect(page.locator("#astral-chat")).toContainText("Something went wrong while processing your request.");
+    await expect(page.locator(".astral-chat-error")).toHaveCount(0);
+    await expect(page.locator(".astral-retry-btn")).toHaveCount(0);
+    await expect(page.locator("#astral-status")).toHaveText("Visible terminal failure");
+  });
+}
+
+for (const committed of [null, EARLIER_TURN]) {
+  test(`a failed turn that saved no message restores it once with a retry (commit=${Boolean(committed)})`, async ({ page }) => {
+    const scope = await submitAfterEarlierTurn(page);
+    if (committed) await receive(page, failedTurnCommit(scope, committed));
+    await receive(page, operationStatus(scope, OPERATION_A, 0, "failed"));
+    const users = page.locator(".astral-user-bubble");
+    await expect(users).toHaveCount(2);
+    await expect(users.nth(1)).toContainText(FAILED_QUESTION);
+    await expect(page.locator('[data-astral-transient-overlay="chat"]')).toHaveCount(0);
+    const notice = page.locator(".astral-chat-error");
+    await expect(notice).toHaveCount(1);
+    await expect(notice).toContainText("Visible terminal failure");
+    await notice.locator(".astral-retry-btn").click();
+    const resent = await page.evaluate(() => window.__socketEvents.filter((event) => event.frame.action === "chat_message")
+      .map((event) => event.frame));
+    expect(resent).toHaveLength(2);
+    expect(resent[1].payload.message).toBe(FAILED_QUESTION);
+    expect(resent[1].request_generation).not.toBe(scope.request_generation);
+  });
+}
+
+
 test("accepted completion restores a newer unacknowledged local submission", async ({ page }) => {
   await installHarness(page);
   const { frame: registrationFrame } = await registration(page);

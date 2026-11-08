@@ -25,6 +25,7 @@
   var connectionGeneration = null;
   var requestState = null;
   var committedRevisionByChat = Object.create(null);
+  var committedTurnsByChat = Object.create(null);
   var lastSnapshotIdByChat = Object.create(null);
   var seenSnapshotIdsByChat = Object.create(null);
   var transientOverlay = null;
@@ -388,6 +389,7 @@
     if (reason === "account_switch" || reason === "definitive_sign_out") {
       clearPrivateAccountState();
       committedRevisionByChat = Object.create(null);
+      committedTurnsByChat = Object.create(null);
       lastSnapshotIdByChat = Object.create(null);
       seenSnapshotIdsByChat = Object.create(null);
       operationStatusById = Object.create(null);
@@ -396,6 +398,7 @@
       agentLifecycleById = Object.create(null);
     } else if (chatId) {
       delete committedRevisionByChat[chatId];
+      delete committedTurnsByChat[chatId];
       delete lastSnapshotIdByChat[chatId];
       delete seenSnapshotIdsByChat[chatId];
     }
@@ -6100,6 +6103,7 @@
 
   function surfaceFailedTurn(frame, localSubmission) {
     if (frame.action !== "chat_message") return;
+    if (localSubmission && localSubmission.user_row_committed) return;
     try {
       var retryText = localSubmission && localSubmission.message
         ? localSubmission.message : null;
@@ -6566,7 +6570,13 @@
   }
 
   function commitSnapshotCandidate(candidate, frame) {
+    var submission = frame.snapshot_purpose === "commit"
+      ? operationSubmissionByGeneration[frame.request_generation] : null;
+    if (submission && candidate.turnCount > (committedTurnsByChat[frame.chat_id] || 0)) {
+      submission.user_row_committed = true;
+    }
     committedRevisionByChat[frame.chat_id] = frame.render_revision;
+    committedTurnsByChat[frame.chat_id] = candidate.turnCount;
     lastSnapshotIdByChat[frame.chat_id] = frame.snapshot_id;
     transientOverlay = null;
     var wasFullscreen = fsRoot && !fsRoot.hidden;
