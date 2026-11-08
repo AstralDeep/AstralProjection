@@ -20,15 +20,16 @@
                 computerCanResume: computerCanResume)
         }
 
+        @MainActor private func window(_ title: String) -> NSWindow {
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 200, height: 200), styleMask: [.titled],
+                backing: .buffered, defer: true)
+            window.title = title
+            window.isReleasedWhenClosed = false
+            return window
+        }
+
         @MainActor func testOpeningTheAppReusesTheVisibleMainWindow() {
-            func window(_ title: String) -> NSWindow {
-                let window = NSWindow(
-                    contentRect: NSRect(x: 0, y: 0, width: 200, height: 200), styleMask: [.titled],
-                    backing: .buffered, defer: true)
-                window.title = title
-                window.isReleasedWhenClosed = false
-                return window
-            }
             let quickEntry = window("Quick Entry")
             let main = window("AstralDeep")
             quickEntry.orderFront(nil)
@@ -40,6 +41,15 @@
             XCTAssertTrue(MacMainWindow.reusable(in: [quickEntry, main]) === main)
             main.orderOut(nil)
             XCTAssertNil(MacMainWindow.reusable(in: [quickEntry, main]))
+        }
+
+        @MainActor func testAHiddenAppReusesItsMainWindowInsteadOfOpeningAnother() {
+            let quickEntry = window("Quick Entry")
+            let main = window("AstralDeep")
+            XCTAssertFalse(main.isVisible)
+            XCTAssertTrue(MacMainWindow.reusable(in: [quickEntry, main], appHidden: true) === main)
+            XCTAssertNil(MacMainWindow.reusable(in: [quickEntry], appHidden: true))
+            XCTAssertNil(MacMainWindow.reusable(in: [quickEntry, main], appHidden: false))
         }
 
         func testRemoteActionsRequireCurrentConnectedNavigableSession() {

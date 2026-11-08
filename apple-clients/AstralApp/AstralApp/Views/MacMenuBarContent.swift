@@ -6,16 +6,17 @@
     import AppKit
     import SwiftUI
 
-    /// `openWindow(id:)` on a `WindowGroup` always adds a window, so reuse the one already open.
+    // openWindow(id:) on a WindowGroup always adds a window, and a hidden app reports its windows as not visible.
     enum MacMainWindow {
-        static func reusable(in windows: [NSWindow]) -> NSWindow? {
+        static func reusable(in windows: [NSWindow], appHidden: Bool = false) -> NSWindow? {
             windows.first {
-                $0.title == "AstralDeep" && $0.styleMask.contains(.titled) && ($0.isVisible || $0.isMiniaturized)
+                $0.title == "AstralDeep" && $0.styleMask.contains(.titled)
+                    && ($0.isVisible || $0.isMiniaturized || appHidden)
             }
         }
 
         @MainActor static func show(using openWindow: OpenWindowAction) {
-            if let window = reusable(in: NSApp.windows) {
+            if let window = reusable(in: NSApp.windows, appHidden: NSApp.isHidden) {
                 window.makeKeyAndOrderFront(nil)
             } else {
                 openWindow(id: "main")
