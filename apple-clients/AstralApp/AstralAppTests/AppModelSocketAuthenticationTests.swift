@@ -1438,6 +1438,22 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
         }
     }
 
+    func testDisconnectWhileAnotherChatWaitsToOpenKeepsTheLeftMessageOut() async throws {
+        try await withModel { model, peer, _, _ in
+            let waiting = "Finishing the previous reply. This chat will open when it ends."
+            model.activeChatId = "77777777-7777-4777-8777-777777777777"
+            model.sendChat("Asked in the first chat")
+            try await waitUntil { self.chatMessages(peer).count == 1 }
+            model.openChat("88888888-8888-4888-8888-888888888888")
+            XCTAssertEqual(model.visibleStatusText, waiting)
+            try await dropConnection(model, peer: peer)
+            XCTAssertEqual(model.activeChatId, "88888888-8888-4888-8888-888888888888")
+            XCTAssertEqual(model.composerDraft, "")
+            XCTAssertNil(model.errorBanner)
+            XCTAssertNotEqual(model.visibleStatusText, waiting)
+        }
+    }
+
     func testIdleKeepaliveShowsTheTrueStateAndReconnectsWithoutASend() async throws {
         try await withModel(liveness: LivenessPolicy(interval: 0.2, timeout: 0.3, freshness: 0.1)) {
             model, peer, _, _ in

@@ -391,8 +391,7 @@ final class AppModel: NSObject {
     private var warningBannerText: String?
     var bannerIsWarning: Bool { errorBanner != nil && errorBanner == warningBannerText }
     var stepTrail: [String] = []
-    // The server runs load_chat after the turn in progress and expires it if that takes over 30 seconds,
-    // and that turn's frames carry no chat id. So the load is held here until the turn ends.
+    // A load queued behind a running turn expires after 30 seconds, and that turn's frames carry no chat id.
     private var waitingForEarlierTurn = false
     @ObservationIgnored private var heldChatLoad: (chatId: String, identity: ClientOperationIdentity)?
     var visibleStatusText: String? {
@@ -2838,6 +2837,8 @@ final class AppModel: NSObject {
             } else {
                 unsettledChatSend = nil
             }
+            waitingForEarlierTurn = false
+            heldChatLoad = nil
             endInterruptedActivity()
             turnActive = false
             pendingReplace = false
@@ -3351,6 +3352,7 @@ final class AppModel: NSObject {
             })
         else { return }
         clearLocalOperationSubmission(requestGeneration: status.requestGeneration)
+        if status.action == "chat_message" { finishWaitingForEarlierTurn() }
         statusText = latestActiveOperationStatusText()
     }
 
@@ -4173,7 +4175,7 @@ final class AppModel: NSObject {
             ? "\(message) (\(displayedCode!))" : message
         bannerIsError = true
         turnActive = false
-        finishWaitingForEarlierTurn()
+        if !earlierTurnStillRunning { finishWaitingForEarlierTurn() }
         pendingReplace = false
         pendingCanvas = []
         transientTurns = []
@@ -4220,8 +4222,10 @@ final class AppModel: NSObject {
         default:
             statusText = label
         }
-        // "Cancelled" is sent at once. The turn is over at the plain "done" it sends after unwinding.
-        if ["done", "idle"].contains(status ?? ""), message != "Cancelled" { finishWaitingForEarlierTurn() }
+        // "Cancelled" is sent at once; a turn still unwinding ends at the plain "done" that follows.
+        if ["done", "idle"].contains(status ?? ""), message != "Cancelled" || !earlierTurnStillRunning {
+            finishWaitingForEarlierTurn()
+        }
     }
 
     private func commitTurn() {
@@ -7344,6 +7348,10 @@ final class AppModel: NSObject {
                 chatId: chatId,
                 submissionId: identity.submissionId,
                 requestGeneration: identity.requestGeneration))
+    }
+
+    private var earlierTurnStillRunning: Bool {
+        localOperationSubmissions.values.contains { $0.action == "chat_message" && $0.chatId != activeChatId }
     }
 
     private func finishWaitingForEarlierTurn() {
