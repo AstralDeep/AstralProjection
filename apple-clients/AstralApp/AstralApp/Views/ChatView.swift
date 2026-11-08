@@ -885,7 +885,7 @@ struct InputBar: View {
             .submitLabel(.send).onSubmit(composerPrimarySend)
             .disabled(model.mutationsLocked).focused($focused)
             #if os(macOS)
-                .onExitCommand { model.cancelTurnRestoringQueue() }
+                .onExitCommand { model.stopTurn() }
             #endif
     }
 
@@ -986,7 +986,8 @@ struct InputBar: View {
                 .buttonStyle(.plain).disabled(model.mutationsLocked)
                 .accessibilityLabel("Run in background").accessibilityValue(model.runInBackground ? "On" : "Off")
             }
-            SendButton(enabled: canSend) { send() }
+            if model.canCancelTurn { StopButton { model.stopTurn() } }
+            if !model.canCancelTurn || canSend { SendButton(enabled: canSend) { send() } }
             #if os(macOS)
                 if queueShortcutActive {
                     Button {
@@ -1481,6 +1482,22 @@ private struct ComposerControlsLayout: Layout {
             y += height + spacing
         }
         return (points, max(0, y - spacing))
+    }
+}
+
+private struct StopButton: View {
+    @Environment(ThemeStore.self) var theme
+    let action: () -> Void
+    private var p: AstralPalette { theme.palette }
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "stop.fill").font(.system(size: 16, weight: .bold)).foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .background(p.primary, in: RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Stop response")
+        .accessibilityIdentifier("composer-stop-turn")
     }
 }
 

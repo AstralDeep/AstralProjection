@@ -208,7 +208,7 @@ import SwiftUI
                     .buttonStyle(.plain).foregroundStyle(p.primary)
                     .disabled(
                         (model.turnEditor?.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-                            || model.turnBusy
+                            || !model.canActOnTurns
                     )
                     .accessibilityIdentifier("conversation-edit-send-\(turn.id)")
                 }

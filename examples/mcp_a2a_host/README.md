@@ -116,5 +116,4 @@ Projection deliberately does **not** do these things; the integrating host must:
 - Own task/agent lifecycle and A2A state transitions, artifact identifiers, and transport
   security; Projection output is presentation data, not a trust boundary.
 - Serve rendered web HTML under its own nonce-based CSP and keep the web token handling
-  on the host side, as the repository constitution requires for the first-party web
-  shell.
+  on the host side, as the first-party web shell does.
