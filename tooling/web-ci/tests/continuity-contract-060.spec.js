@@ -181,6 +181,10 @@ async function installHarness(page, { locator = true, url = "https://candidate.e
 
         if (frame.type === "register_ui") {
           queueMicrotask(() => {
+            if (window.__dropAfterRegister) {
+              this.close();
+              return;
+            }
             this.receive({
               type: "rote_config",
               device_profile: { device_type: "browser" },
@@ -2523,4 +2527,61 @@ test("reconnect starts within two seconds and restarts the backoff after a succe
   const restarted = await page.evaluate(() => window.__socketTimes.map((time) => time - window.__closedAt));
   expect(restarted.length).toBeGreaterThanOrEqual(1);
   expect(restarted[0]).toBeLessThanOrEqual(2000);
+});
+
+test("a server that accepts and then drops the socket still gets backed-off retries", async ({ page }) => {
+  await page.clock.install();
+  await installHarness(page);
+  await page.evaluate(() => { window.__dropAfterRegister = true; });
+  await failReconnects(page);
+  await page.evaluate(() => { window.__serverDown = false; });
+  await page.clock.runFor(10 * 60000);
+  const gaps = await reconnectGaps(page);
+  expect(gaps.length).toBeLessThan(30);
+  for (const gap of gaps.slice(-5)) expect(gap).toBeGreaterThanOrEqual(30000);
+});
+
+test("a refresh racing an auth recovery leaves exactly one open socket", async ({ page }) => {
+  await page.clock.install();
+  await installHarness(page);
+  await page.evaluate(() => {
+    window.__pending = [];
+    window.fetch = () => new Promise((resolve) => window.__pending.push(() => resolve({
+      json: async () => ({ authenticated: true, access_token: window.__sessionToken, resumed: true, user_id: "continuity-user" }),
+    })));
+    window.__sockets.at(-1).receive({ type: "auth_required" });
+    window.__sockets.at(-1).close();
+  });
+  await page.clock.runFor(2500);
+  const pending = await page.evaluate(() => window.__pending.length);
+  for (let index = 0; index < pending; index += 1) {
+    await page.evaluate(() => window.__pending.shift()());
+    await page.clock.runFor(100);
+  }
+  expect(await page.evaluate(() => window.__sockets.filter((socket) => socket.readyState === 1).length)).toBe(1);
+});
+
+test("a signed-out answer during an outage goes to sign-in instead of retrying", async ({ page }) => {
+  await page.clock.install();
+  await installHarness(page);
+  await failReconnects(page);
+  await page.evaluate(() => {
+    window.fetch = async () => ({ json: async () => ({ authenticated: false }) });
+  });
+  await page.clock.runFor(5000);
+  await page.waitForURL(/\/auth\/login/u);
+});
+
+test("coming back online retries at once instead of waiting out the backoff", async ({ page }) => {
+  await page.clock.install();
+  await installHarness(page);
+  await failReconnects(page);
+  await page.clock.runFor(10 * 60000);
+  await page.evaluate(() => { window.__serverDown = false; });
+  const before = await page.evaluate(() => window.__sockets.length);
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await page.clock.runFor(100);
+  await expect.poll(() => page.evaluate(() => window.__sockets.length)).toBe(before + 1);
+  await expect.poll(() => page.evaluate(() => window.__sockets.at(-1).sent
+    .some((frame) => frame.type === "register_ui"))).toBe(true);
 });
