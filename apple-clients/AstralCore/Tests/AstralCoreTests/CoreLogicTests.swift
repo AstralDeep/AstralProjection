@@ -65,6 +65,38 @@ final class ReconnectContractTests: XCTestCase {
         XCTAssertEqual(drained.last, 64)
         XCTAssertEqual(queue.count, 0)
     }
+
+    func testPrependedFramesAreTheOldestAndDropFirstAtTheLimit() {
+        var queue = BoundedQueue<Int>(limit: 4)
+        queue.append(10)
+        queue.append(11)
+        XCTAssertEqual(queue.prependReturningDropped([1, 2, 3]), [1])
+        XCTAssertEqual(queue.prependReturningDropped([]), [])
+        XCTAssertEqual(queue.droppedCount, 1)
+        XCTAssertEqual(queue.drainAll(), [2, 3, 10, 11])
+        XCTAssertEqual(queue.prependReturningDropped([1, 2, 3, 4, 5, 6]), [1, 2])
+        XCTAssertEqual(queue.droppedCount, 3)
+        XCTAssertEqual(queue.drainAll(), [3, 4, 5, 6])
+    }
+
+    func testAHandOverNeverForwardsToARetiredClientOrItself() async {
+        let url = URL(string: "ws://127.0.0.1:9/ws")!
+        let message = Outbound.uiEvent(
+            action: "chat_message", sessionId: nil, payload: .object(["message": .string("queued")]),
+            snapshotPurpose: .commit)
+        XCTAssertNotNil(QueuedOperationReplay(frameText: message))
+        let first = WSClient(url: url)
+        let second = WSClient(url: url)
+        await first.handOverQueue(to: second)
+        await second.handOverQueue(to: first)
+        await first.send(message)
+        await second.send(message)
+        let alone = WSClient(url: url)
+        await alone.handOverQueue(to: alone)
+        await alone.send(message)
+        let live = await second.confirmLive()
+        XCTAssertFalse(live)
+    }
 }
 
 final class JSONValueParseTests: XCTestCase {

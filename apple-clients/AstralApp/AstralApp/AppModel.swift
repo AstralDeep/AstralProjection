@@ -576,6 +576,8 @@ final class AppModel: NSObject {
     @ObservationIgnored private var tokens: TokenSet?
     @ObservationIgnored private var serverSession: ServerSession?
     @ObservationIgnored private var restoringServerSession: ServerSession?
+    @ObservationIgnored var serverSessionRetryBackoff = BackoffPolicy(base: 2, factor: 2, cap: 60)
+    @ObservationIgnored private var bootstrapRun: BootstrapRun?
     @ObservationIgnored private var serverCustodyRequired = false
     @ObservationIgnored var serverSessionStorage: any MeshKeyStorage = KeychainMeshKeyStorage(
         service: "com.personalailabs.astraldeep.server-session")
@@ -583,6 +585,7 @@ final class AppModel: NSObject {
         try await ServerSessionHTTP.request($0)
     }
     @ObservationIgnored private var ws: WSClient?
+    @ObservationIgnored private var wsBinding: (socket: WSClient, owner: DownloadOwner, server: URL)?
     @ObservationIgnored private var initialWebSocket: WSClient?
     #if os(macOS)
         @ObservationIgnored var socketLiveness: LivenessPolicy? = .standard
@@ -1592,14 +1595,38 @@ final class AppModel: NSObject {
     }
 
     func bootstrap() async {
+        if let run = bootstrapRun, run.generation == sessionGeneration, !run.cancelled {
+            await run.wait()
+            return
+        }
         // Every window shares this model and bootstraps on open; reconnecting would cut off a running turn.
         guard wsTask == nil else { return }
-        let generation = sessionGeneration
+        bootstrapRun?.cancel()
+        let run = BootstrapRun(generation: sessionGeneration)
         let owner = downloadOwner
         let authentication = authSession
+        bootstrapRun = run
+        run.task = Task {
+            await restoreSession(generation: run.generation, owner: owner, authentication: authentication)
+            if bootstrapRun === run { bootstrapRun = nil }
+        }
+        await run.wait()
+    }
+
+    static func serverSessionRetryDelay(_ backoff: inout BackoffPolicy, jitter: Double = .random(in: 0.5...1))
+        -> UInt64
+    {
+        UInt64(backoff.next() * jitter * 1_000_000_000)
+    }
+
+    private func restoreSession(
+        generation: Int, owner: DownloadOwner, authentication: ASWebAuthenticationSession?
+    ) async {
         if let oidc, let scope = try? ServerSessionScope(server: serverBase, oidc: oidc) {
-            do {
-                if let data = try serverSessionStorage.load(scope.storageKey) {
+            var backoff = serverSessionRetryBackoff
+            restore: while true {
+                do {
+                    guard let data = try serverSessionStorage.load(scope.storageKey) else { break restore }
                     let restored = try JSONDecoder().decode(ServerSession.self, from: data)
                     guard restored.scope == scope, restored.cookieExpiresAt > credentialClock() else {
                         throw ServerSessionError.retired
@@ -1616,17 +1643,28 @@ final class AppModel: NSObject {
                     serverSession = refreshed
                     serverCustodyRequired = true
                     tokens = refreshed.tokenSet
+                    signInError = nil
                     enterSignedIn(resumedSession: true)
                     return
+                } catch ServerSessionError.unavailable {
+                    guard !Task.isCancelled, generation == sessionGeneration, owner == downloadOwner,
+                        authentication === authSession
+                    else { return }
+                    // No answer says nothing about the session: keep it, signed out, until the server confirms it.
+                    signInError = "The server can't be reached. Your sign-in is saved. Retrying…"
+                    try? await Task.sleep(nanoseconds: Self.serverSessionRetryDelay(&backoff))
+                    guard !Task.isCancelled, generation == sessionGeneration, owner == downloadOwner,
+                        authentication === authSession, !signedIn
+                    else { return }
+                } catch {
+                    guard !Task.isCancelled, generation == sessionGeneration, owner == downloadOwner,
+                        authentication === authSession
+                    else { return }
+                    retireServerSession()
+                    store.wipe()
+                    signInError = "The saved server session could not be resumed. Sign in again."
+                    return
                 }
-            } catch {
-                guard !Task.isCancelled, generation == sessionGeneration, owner == downloadOwner,
-                    authentication === authSession
-                else { return }
-                retireServerSession()
-                store.wipe()
-                signInError = "The saved server session could not be resumed. Sign in again."
-                return
             }
         }
         let loaded = await Task.detached { [store] in store.load() }.value
@@ -2695,15 +2733,21 @@ final class AppModel: NSObject {
                     await self?.serverSocketHeaders(url: socketURL, owner: socketOwner, server: socketServer)
                 })
         initialWebSocket = nil
-        if let previous = ws, previous !== client {
-            Task { await previous.stop() }
-        }
+        let previous = ws.flatMap { $0 !== client ? $0 : nil }
+        let inheritsQueue =
+            previous != nil && wsBinding?.socket === previous && wsBinding?.owner == socketOwner
+            && wsBinding?.server == socketServer
+        wsBinding = (client, socketOwner, socketServer)
         ws = client
         let owner = downloadOwner
         let server = serverBase
         let resumeState = AppRegistrationResumeState(initial: initialResumed)
         wsTask = Task {
             let events = await client.events()
+            if let previous {
+                if inheritsQueue { await previous.handOverQueue(to: client) } else { await previous.stop() }
+            }
+            guard !Task.isCancelled, self.ws === client else { return }
             #if os(macOS)
                 let onRegistration: (@Sendable (InboundFrame, String) async -> Bool)? = {
                     [weak self] frame, generation in
@@ -7829,6 +7873,35 @@ final class AppModel: NSObject {
         guard signedIn, !connected else { return }
         initialConnectionFailed = false
         connectWS(resumed: true)
+    }
+}
+
+@MainActor private final class BootstrapRun {
+    let generation: Int
+    var task: Task<Void, Never>?
+    private var waiters = 0
+
+    init(generation: Int) {
+        self.generation = generation
+    }
+
+    var cancelled: Bool { task?.isCancelled == true }
+
+    func cancel() { task?.cancel() }
+
+    func wait() async {
+        guard let task else { return }
+        waiters += 1
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            Task { @MainActor in self.leave() }
+        }
+    }
+
+    private func leave() {
+        waiters -= 1
+        if waiters == 0 { task?.cancel() }
     }
 }
 
