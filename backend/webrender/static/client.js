@@ -37,6 +37,7 @@
   var runningChatTurns = Object.create(null);
   var leftChatTurns = Object.create(null);
   var heldChatLoad = null;
+  var pendingTaskReload = null;
   var agentLifecycleById = Object.create(null);
   var ACCOUNT_SESSION_KEY = "astraldeep.active_chat.account.v1";
   var VOICE_DEVICE_KEY = "astraldeep.voice.device.v1";
@@ -473,6 +474,7 @@
       runningChatTurns = Object.create(null);
       leftChatTurns = Object.create(null);
       heldChatLoad = null;
+      pendingTaskReload = null;
     }
     var changed = activeChatLocatorKey !== nextKey;
     activeChatLocatorKey = nextKey;
@@ -5955,6 +5957,7 @@
   }
 
   function sendChatLoad(chatId) {
+    if (pendingTaskReload === chatId) pendingTaskReload = null;
     action("load_chat", {
       chat_id: chatId,
       connection_generation: connectionGeneration,
@@ -5972,8 +5975,17 @@
     if (heldChatLoad !== null) return true;
     return Object.keys(runningChatTurns).some(function (generation) { return !leftChatTurns[generation]; })
       || Object.keys(operationSubmissionByGeneration).some(function (generation) {
-        return operationSubmissionByGeneration[generation].action === "chat_message" && !leftChatTurns[generation];
+        var local = operationSubmissionByGeneration[generation];
+        return local.action === "chat_message" && !leftChatTurns[generation]
+          && (local.chat_id === null || local.chat_id === activeChatId);
       });
+  }
+
+  function flushPendingTaskReload() {
+    if (pendingTaskReload === null || liveTurnInView()) return;
+    var chatId = pendingTaskReload;
+    pendingTaskReload = null;
+    if (chatId === activeChatId) loadActiveChat(chatId);
   }
 
   function leaveRunningChatTurns() {
@@ -7422,6 +7434,7 @@
         if (!scopedStatusMatches(data)) break;
         var admissionRefusal = reduceAdmissionRefusal(data);
         if (admissionRefusal && !chatTurnRunning()) finishWaitingForEarlierTurn();
+        if (admissionRefusal) flushPendingTaskReload();
         var em = errorMessage(data);
         showToast(em, "error");
         hideSkeleton();
@@ -7447,15 +7460,16 @@
           bgTaskDone[tcp.task_id] = true;
           removeTaskChip(tcp.task_id);
         }
-        var tcFail = tcp.status === "failed";
+        var tcFail = tcp.status === "failed" || tcp.status === "retryable";
         var tcSummary = typeof tcp.summary === "string" ? tcp.summary.trim() : "";
-        var tcMsg = tcSummary || (tcFail || tcp.status === "retryable"
+        var tcMsg = tcSummary || (tcFail
           ? "The background task did not finish."
           : "Background task " + (tcp.status || "completed"));
         if (tcp.chat_id && tcp.chat_id === activeChatId) {
           showToast(tcMsg, tcFail ? "error" : "info");
-          // A live turn's own commit brings the chat current; reloading now would drop that turn
-          if (!liveTurnInView()) loadActiveChat(tcp.chat_id);
+          // Reloading mid-turn would drop that turn, so the reload waits for it to end
+          pendingTaskReload = tcp.chat_id;
+          flushPendingTaskReload();
         } else if (tcp.chat_id) {
           showToast(tcMsg + " — tap to open", tcFail ? "error" : "info", function () {
             loadActiveChat(tcp.chat_id);
@@ -7489,6 +7503,7 @@
           // A turn left for another chat fails the scope check, so its submission ends here
           finishOperationSubmission(data.request_generation);
           if (!chatTurnRunning()) finishWaitingForEarlierTurn();
+          flushPendingTaskReload();
         }
         break;
       }
@@ -9090,6 +9105,7 @@
       runningChatTurns = Object.create(null);
       leftChatTurns = Object.create(null);
       heldChatLoad = null;
+      pendingTaskReload = null;
       clearVoiceBindingRenewal();
       voiceBinding = null;
       if (voiceSpeechBackend === "client_local" && voiceLocalPendingFinal) {

@@ -2704,21 +2704,69 @@ test("a background task ending during a live turn in the open chat does not relo
   expect(await sentLoads(page)).toHaveLength(0);
 
   await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  expect(await sentLoads(page)).toHaveLength(1);
   await receive(page, { type: "task_completed", payload: {
     task_id: OPERATION_D, chat_id: CHAT_ID, status: "completed", summary: "Second report",
   } });
   const loads = await sentLoads(page);
-  expect(loads).toHaveLength(1);
-  expect(loads[0].payload.chat_id).toBe(CHAT_ID);
+  expect(loads).toHaveLength(2);
+  expect(loads.map((load) => load.payload.chat_id)).toEqual([CHAT_ID, CHAT_ID]);
 });
 
-test("a background task ending while its chat waits to open does not send a second load", async ({ page }) => {
-  await startTurnInChat(page);
+test("a background task ending while its chat waits to open loads it once when the turn ends", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
   await openChatFromHistory(page, OTHER_CHAT_ID);
   await receive(page, { type: "task_completed", payload: {
     task_id: OPERATION_C, chat_id: OTHER_CHAT_ID, status: "completed", summary: "Done",
   } });
   expect(await sentLoads(page)).toHaveLength(0);
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const loads = await sentLoads(page);
+  expect(loads).toHaveLength(1);
+  expect(loads[0].payload.chat_id).toBe(OTHER_CHAT_ID);
+});
+
+for (const ending of ["commit_then_task", "failed", "cancelled"]) {
+  test(`a reload skipped during a live turn runs when the turn ends (${ending})`, async ({ page }) => {
+    const { turnScope } = await startTurnInChat(page);
+    if (ending === "commit_then_task") {
+      await receive(page, snapshot(turnScope, { snapshot_purpose: "commit", render_revision: 1, snapshot_id: SNAPSHOT_B }));
+    }
+    await receive(page, { type: "task_completed", payload: {
+      task_id: OPERATION_C, chat_id: CHAT_ID, status: "completed", summary: "Report ready",
+    } });
+    expect(await sentLoads(page)).toHaveLength(0);
+    const terminal = ending === "cancelled"
+      ? operationStatus(turnScope, OPERATION_A, 2, "cancelled", { error: { code: "cancelled_by_user", message: "Cancelled" } })
+      : operationStatus(turnScope, OPERATION_A, 2, ending === "failed" ? "failed" : "completed");
+    await receive(page, terminal);
+    const loads = await sentLoads(page);
+    expect(loads).toHaveLength(1);
+    expect(loads[0].payload.chat_id).toBe(CHAT_ID);
+  });
+}
+
+test("a reload skipped for an unaccepted message runs when the message is refused", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await page.locator("#astral-input").fill("A request");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  const message = await page.evaluate(() => window.__socketEvents.findLast((event) => (
+    event.frame.action === "chat_message")).frame);
+  await receive(page, { type: "task_completed", payload: {
+    task_id: OPERATION_C, chat_id: CHAT_ID, status: "completed", summary: "Report ready",
+  } });
+  expect(await sentLoads(page)).toHaveLength(0);
+  await receive(page, { type: "error", accepted: false, code: "capacity_exceeded", message: "Busy right now",
+    retry_after_ms: null, retryable: false, submission_id: message.submission_id });
+  expect(await sentLoads(page)).toHaveLength(1);
+});
+
+test("a retryable background task that did not finish shows as an error", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await receive(page, { type: "task_completed", payload: { task_id: OPERATION_E, chat_id: OTHER_CHAT_ID, status: "retryable" } });
+  await expect(page.locator("#astral-toasts .astral-toast").last()).toHaveClass(/astral-toast-error/u);
 });
 
 for (const [status, summary, expected] of [
