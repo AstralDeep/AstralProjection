@@ -7576,6 +7576,7 @@
         applyDeviceProfile(data.device_profile && data.device_profile.device_type);
         if (!socketReady) {
           socketReady = true;
+          attempts = 0;
           setConnState("connected");
           flushPendingActions();
           runVoicePreflight();
@@ -9136,6 +9137,42 @@
     window.visualViewport.addEventListener("scroll", positionTour);
   }
 
+  // Doubles from 2 s to a 60 s cap with jitter, like the macOS bootstrap retry, and never gives up
+  function reconnectDelayMs(attempt) {
+    var base = Math.min(60000, 2000 * Math.pow(2, Math.max(0, attempt - 1)));
+    return Math.round(base * (0.5 + Math.random() / 2));
+  }
+
+  var reconnectTimer = null;
+  var reconnectSocket = null;
+  function scheduleReconnect(socket) {
+    clearTimeout(reconnectTimer);
+    reconnectSocket = socket;
+    reconnectTimer = setTimeout(runReconnect, reconnectDelayMs(attempts));
+  }
+
+  function runReconnect() {
+    var socket = reconnectSocket;
+    reconnectTimer = null;
+    reconnectSocket = null;
+    if (accountSignedOut || !socket || ws !== socket) return;
+    // Refresh first so a register_ui after the access-token TTL recovers silently; a signed-out answer goes to login
+    refreshToken(true, function () {
+      // An owner change during the refresh clears ws, and its new owner still needs a socket
+      if (!accountSignedOut && (ws === socket || ws === null)) connect();
+    });
+  }
+
+  function reconnectNow() {
+    if (!reconnectTimer) return;
+    clearTimeout(reconnectTimer);
+    runReconnect();
+  }
+  window.addEventListener("online", reconnectNow);
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") reconnectNow();
+  });
+
   function connect() {
     if (accountSignedOut) return;
     var preserveVoiceControls = !!voiceRecoverableFence() || !!voicePendingEndFence;
@@ -9154,7 +9191,7 @@
     var thisSocket = ws;
     ws.onopen = function () {
       if (accountSignedOut || ws !== thisSocket) return;
-      attempts = 0; authRetried = false; setStatus("");
+      authRetried = false; setStatus("");
       setConnState("connecting", "Registering…");
       sendRegistration(firstConnect ? serverResumed : true);
       firstConnect = false;
@@ -9197,10 +9234,7 @@
       setStatus("Disconnected"); attempts++;
       hideSkeleton();
       clearTransientOverlay();
-      // Refresh first so a register_ui after the access-token TTL recovers silently
-      if (attempts <= 10) setTimeout(function () {
-        refreshToken(false, function () { connect(); });
-      }, 3000);
+      scheduleReconnect(thisSocket);
     };
   }
   prepareAccountIdentity(token, null).then(function (ready) {

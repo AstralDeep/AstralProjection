@@ -159,6 +159,11 @@ async function installHarness(page, { locator = true, url = "https://candidate.e
         this.sent = [];
         window.__sockets.push(this);
         queueMicrotask(() => {
+          if (window.__serverDown) {
+            this.readyState = 3;
+            this.onclose?.();
+            return;
+          }
           this.readyState = FakeWebSocket.OPEN;
           this.onopen?.();
         });
@@ -176,6 +181,10 @@ async function installHarness(page, { locator = true, url = "https://candidate.e
 
         if (frame.type === "register_ui") {
           queueMicrotask(() => {
+            if (window.__dropAfterRegister) {
+              this.close();
+              return;
+            }
             this.receive({
               type: "rote_config",
               device_profile: { device_type: "browser" },
@@ -2950,3 +2959,128 @@ for (const [status, summary, expected] of [
     await expect(page.locator("#astral-toasts .astral-toast").last()).toContainText(expected);
   });
 }
+
+async function failReconnects(page) {
+  await page.evaluate(() => {
+    const Recorded = window.WebSocket;
+    window.__socketTimes = [];
+    window.WebSocket = class extends Recorded {
+      constructor(url) {
+        super(url);
+        window.__socketTimes.push(Date.now());
+      }
+    };
+    window.__serverDown = true;
+    window.__closedAt = Date.now();
+    window.__sockets.at(-1).close();
+  });
+}
+
+async function reconnectGaps(page) {
+  return page.evaluate(() => window.__socketTimes.map((time, index) => (
+    time - (index === 0 ? window.__closedAt : window.__socketTimes[index - 1]))));
+}
+
+test("reconnect keeps retrying through a long outage with capped backoff and recovers", async ({ page }) => {
+  await page.clock.install();
+  await installHarness(page);
+  await failReconnects(page);
+  await page.clock.runFor(30 * 60000);
+
+  const gaps = await reconnectGaps(page);
+  expect(gaps.length).toBeGreaterThan(25);
+  for (const gap of gaps) {
+    expect(gap).toBeGreaterThanOrEqual(1000);
+    expect(gap).toBeLessThanOrEqual(60000);
+  }
+  for (const gap of gaps.slice(-10)) expect(gap).toBeGreaterThanOrEqual(30000);
+  await expect(page.locator("#astral-status")).toHaveText("Disconnected");
+
+  await page.evaluate(() => { window.__serverDown = false; });
+  await page.clock.runFor(60000);
+  await expect.poll(() => page.evaluate(() => window.__sockets.at(-1).sent
+    .some((frame) => frame.type === "register_ui"))).toBe(true);
+  const registration = await page.evaluate(() => window.__sockets.at(-1).sent.find((frame) => frame.type === "register_ui"));
+  expect(registration.resume.active_chat_id).toBe(CHAT_ID);
+});
+
+test("reconnect starts within two seconds and restarts the backoff after a success", async ({ page }) => {
+  await page.clock.install();
+  await installHarness(page);
+  await failReconnects(page);
+  await page.clock.runFor(10 * 60000);
+  const first = (await reconnectGaps(page))[0];
+  expect(first).toBeGreaterThanOrEqual(1000);
+  expect(first).toBeLessThanOrEqual(2000);
+
+  await page.evaluate(() => { window.__serverDown = false; });
+  await page.clock.runFor(60000);
+  await expect.poll(() => page.evaluate(() => window.__sockets.at(-1).readyState)).toBe(1);
+  await page.evaluate(() => {
+    window.__serverDown = true;
+    window.__closedAt = Date.now();
+    window.__socketTimes = [];
+    window.__sockets.at(-1).close();
+  });
+  await page.clock.runFor(2000);
+  const restarted = await page.evaluate(() => window.__socketTimes.map((time) => time - window.__closedAt));
+  expect(restarted.length).toBeGreaterThanOrEqual(1);
+  expect(restarted[0]).toBeLessThanOrEqual(2000);
+});
+
+test("a server that accepts and then drops the socket still gets backed-off retries", async ({ page }) => {
+  await page.clock.install();
+  await installHarness(page);
+  await page.evaluate(() => { window.__dropAfterRegister = true; });
+  await failReconnects(page);
+  await page.evaluate(() => { window.__serverDown = false; });
+  await page.clock.runFor(10 * 60000);
+  const gaps = await reconnectGaps(page);
+  expect(gaps.length).toBeLessThan(30);
+  for (const gap of gaps.slice(-5)) expect(gap).toBeGreaterThanOrEqual(30000);
+});
+
+test("a refresh racing an auth recovery leaves exactly one open socket", async ({ page }) => {
+  await page.clock.install();
+  await installHarness(page);
+  await page.evaluate(() => {
+    window.__pending = [];
+    window.fetch = () => new Promise((resolve) => window.__pending.push(() => resolve({
+      json: async () => ({ authenticated: true, access_token: window.__sessionToken, resumed: true, user_id: "continuity-user" }),
+    })));
+    window.__sockets.at(-1).receive({ type: "auth_required" });
+    window.__sockets.at(-1).close();
+  });
+  await page.clock.runFor(2500);
+  const pending = await page.evaluate(() => window.__pending.length);
+  for (let index = 0; index < pending; index += 1) {
+    await page.evaluate(() => window.__pending.shift()());
+    await page.clock.runFor(100);
+  }
+  expect(await page.evaluate(() => window.__sockets.filter((socket) => socket.readyState === 1).length)).toBe(1);
+});
+
+test("a signed-out answer during an outage goes to sign-in instead of retrying", async ({ page }) => {
+  await page.clock.install();
+  await installHarness(page);
+  await failReconnects(page);
+  await page.evaluate(() => {
+    window.fetch = async () => ({ json: async () => ({ authenticated: false }) });
+  });
+  await page.clock.runFor(5000);
+  await page.waitForURL(/\/auth\/login/u);
+});
+
+test("coming back online retries at once instead of waiting out the backoff", async ({ page }) => {
+  await page.clock.install();
+  await installHarness(page);
+  await failReconnects(page);
+  await page.clock.runFor(10 * 60000);
+  await page.evaluate(() => { window.__serverDown = false; });
+  const before = await page.evaluate(() => window.__sockets.length);
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await page.clock.runFor(100);
+  await expect.poll(() => page.evaluate(() => window.__sockets.length)).toBe(before + 1);
+  await expect.poll(() => page.evaluate(() => window.__sockets.at(-1).sent
+    .some((frame) => frame.type === "register_ui"))).toBe(true);
+});
