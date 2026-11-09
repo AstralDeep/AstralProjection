@@ -1067,6 +1067,12 @@ struct InputBar: View {
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel("Queued follow-ups")
                 .accessibilityIdentifier("composer-queue-chips")
+                .onDisappear {
+                    // An edit cut off by the view going away must not hold the queue.
+                    guard editingId != nil else { return }
+                    editingId = nil
+                    model.endEditingQueuedFollowUp()
+                }
             }
         }
 
