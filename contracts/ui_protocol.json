@@ -3782,9 +3782,9 @@
       "version": 1,
       "scope": "Owner-typed mid-turn steering, queued follow-ups and side questions on the macOS DirectDownload composer; every other client and every server without the capability keeps the ordinary composer behavior unchanged.",
       "negotiation": "Authenticated register_ui capabilities includes turn_steer_v1, device.turn_steer_v1 is exactly true, and the device type is macos with the console contract. The server acknowledges only in the rote_config device profile described below; without that acknowledgment the composer behaves exactly as it does today.",
-      "acknowledgment": "rote_config.device_profile.console.turn_steer = {version:1, queue_capable:bool}. queue_capable false records steers and side questions but no durable queue; the composer hides queue affordances.",
+      "acknowledgment": "rote_config.device_profile.console.turn_steer = {version:1, queue_capable:bool}. queue_capable false records steers and side questions but no durable queue; the macOS composer then holds queued follow-ups in the app.",
       "clients": {
-        "macos": "steer and queue from the composer, queue chips hydrated from the server, side-question sheet, swapped bindings in Settings",
+        "macos": "Return queues by default and each queued chip has Interrupt (steer), edit, remove and reorder; chips hydrate from the server when it is queue_capable, otherwise the app holds them, sends the next one when a turn completes and returns them to the composer on any other ending; side-question sheet; swapped bindings in Settings",
         "browser": "compatible legacy composer",
         "windows": "compatible legacy composer",
         "android": "compatible legacy composer",

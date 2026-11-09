@@ -92,6 +92,7 @@
                 case "steer":
                     negotiate(model)
                     armTurn(model)
+                    model.composerReturnBinding = .steer
                     hint = "Return sends a steer"
                 case "queue":
                     model.composerReturnBinding = .queue
@@ -126,6 +127,7 @@
         func testReturnSendsASteerWithStableClientMessageIdWhileTurnRuns() throws {
             let (model, sent) = try makeModel()
             negotiate(model)
+            model.composerReturnBinding = .steer
             armTurn(model)
             model.sendComposerText("switch to the staging cluster")
             let steer = try XCTUnwrap(sent().last { $0["action"] == .string("chat_steer") })
@@ -140,6 +142,7 @@
         func testSteerRecordingAppendsASteerTurnAndSkippedTrailEntries() throws {
             let (model, sent) = try makeModel()
             negotiate(model)
+            model.composerReturnBinding = .steer
             armTurn(model)
             model.sendComposerText("skip the screenshot")
             let steer = try XCTUnwrap(sent().last { $0["action"] == .string("chat_steer") })
@@ -158,6 +161,7 @@
         func testRefusedSteerRestoresTheComposerTextWithANotice() throws {
             let (model, sent) = try makeModel()
             negotiate(model)
+            model.composerReturnBinding = .steer
             armTurn(model)
             model.sendComposerText("hold the deploy")
             let steer = try XCTUnwrap(sent().last { $0["action"] == .string("chat_steer") })
@@ -176,6 +180,7 @@
         func testOptionReturnQueuesAndSnapshotHydratesChips() throws {
             let (model, sent) = try makeModel()
             negotiate(model)
+            model.composerReturnBinding = .steer
             armTurn(model)
             model.composerOptionReturn("then update the changelog")
             XCTAssertEqual(actions(sent()).last, "chat_queue_put")
@@ -222,6 +227,7 @@
         func testASteerCannotAnswerAnApprovalBanner() throws {
             let (model, sent) = try makeModel()
             negotiate(model)
+            model.composerReturnBinding = .steer
             armTurn(model)
             let proposal = String(repeating: "ab", count: 16)
             let request = try XCTUnwrap(sent().last { $0["action"] == .string("chat_message") })
@@ -291,15 +297,16 @@
                 AppModel.ComposerReturnBinding.queue.rawValue)
         }
 
-        func testQueueIncapableServerHidesQueueActionsButSteersWork() throws {
+        func testReturnQueuesByDefaultAndAQueueIncapableServerGetsAnAppQueue() throws {
             let (model, sent) = try makeModel()
+            XCTAssertEqual(model.composerReturnBinding, .queue)
             negotiate(model, queueCapable: false)
             armTurn(model)
-            XCTAssertFalse(model.composerQueueApplies)
-            XCTAssertTrue(model.composerSteeringApplies)
-            model.sendComposerText("steer only")
-            XCTAssertEqual(actions(sent()).last, "chat_steer")
-            model.composerOptionReturn("try to queue")
+            XCTAssertTrue(model.composerQueueApplies)
+            model.sendComposerText("  update the changelog  ")
+            XCTAssertEqual(model.queuedFollowUps.map(\.message), ["update the changelog"])
+            XCTAssertEqual(actions(sent()), ["chat_message"])
+            model.composerOptionReturn("steer instead")
             XCTAssertEqual(actions(sent()).last, "chat_steer")
         }
 
@@ -309,6 +316,178 @@
             XCTAssertFalse(model.composerSteeringApplies)
             model.sendComposerText("ordinary message")
             XCTAssertEqual(actions(sent()).last, "chat_message")
+        }
+
+        private func status(_ request: String, operation: String, state: String, sequence: Int) -> InboundFrame {
+            let terminal = ["completed", "failed", "cancelled", "retryable"].contains(state)
+            let error =
+                ["failed", "cancelled", "retryable"].contains(state)
+                ? #"{"code":"operation_failed","message":"The task failed."}"# : "null"
+            return InboundFrame.parse(
+                """
+                {"type":"operation_status","operation_id":"\(operation)",
+                 "action":"chat_message","surface":"chat","chat_id":"\(chat)","connection_generation":"\(connection)",
+                 "request_generation":"\(request)","sequence":\(sequence),"state":"\(state)","phase":"\(state)",
+                 "label":"\(state)","terminal":\(terminal),"retryable":\(state == "retryable"),"error":\(error),
+                 "retry_after_ms":null,"updated_at":"2026-11-09T12:00:0\(sequence)Z"}
+                """)!
+        }
+
+        private func lastMessage(_ frames: [JSONValue]) throws -> JSONValue {
+            try XCTUnwrap(frames.last { $0["action"] == .string("chat_message") })
+        }
+
+        private func finishTurn(_ model: AppModel, _ frames: [JSONValue], state: String = "completed") throws {
+            let request = try XCTUnwrap(try lastMessage(frames)["request_generation"]?.stringValue)
+            let operation = UUID().uuidString.lowercased()
+            model.handleFrame(status(request, operation: operation, state: "running", sequence: 1))
+            model.handleFrame(status(request, operation: operation, state: state, sequence: 2))
+        }
+
+        private func appQueueModel() throws -> (AppModel, () -> [JSONValue]) {
+            let (model, sent) = try makeModel()
+            negotiate(model, queueCapable: false)
+            armTurn(model)
+            return (model, sent)
+        }
+
+        func testACompletedTaskSendsTheNextAppQueuedFollowUpOneAtATime() throws {
+            let (model, sent) = try appQueueModel()
+            model.sendComposerText("first follow-up")
+            model.sendComposerText("second follow-up")
+            try finishTurn(model, sent())
+            XCTAssertEqual(try lastMessage(sent())["payload"]?["message"], .string("first follow-up"))
+            XCTAssertEqual(model.queuedFollowUps.map(\.message), ["second follow-up"])
+            XCTAssertTrue(model.turnActive)
+            try finishTurn(model, sent())
+            XCTAssertEqual(try lastMessage(sent())["payload"]?["message"], .string("second follow-up"))
+            XCTAssertTrue(model.queuedFollowUps.isEmpty)
+            XCTAssertFalse(actions(sent()).contains { $0.hasPrefix("chat_queue") })
+        }
+
+        func testATaskThatDoesNotFinishPutsTheAppQueueBackInTheComposer() throws {
+            for state in ["failed", "cancelled", "retryable"] {
+                let (model, sent) = try appQueueModel()
+                model.sendComposerText("queued one")
+                model.sendComposerText("queued two")
+                model.composerDraft = "still typing"
+                try finishTurn(model, sent(), state: state)
+                XCTAssertTrue(model.queuedFollowUps.isEmpty, state)
+                XCTAssertTrue(model.composerDraft.hasPrefix("queued one\n\nqueued two"), state)
+                XCTAssertTrue(model.composerDraft.contains("still typing"), state)
+                XCTAssertEqual(actions(sent()).filter { $0 == "chat_message" }.count, 1, state)
+            }
+        }
+
+        func testInterruptSendsTheQueuedFollowUpAsASteer() throws {
+            let (model, sent) = try appQueueModel()
+            model.sendComposerText("use metric units")
+            let item = try XCTUnwrap(model.queuedFollowUps.first)
+            model.interruptWithQueuedFollowUp(item)
+            let steer = try XCTUnwrap(sent().last { $0["action"] == .string("chat_steer") })
+            XCTAssertEqual(steer["payload"]?["message"], .string("use metric units"))
+            XCTAssertTrue(model.queuedFollowUps.isEmpty)
+            try finishTurn(model, sent())
+            XCTAssertEqual(actions(sent()).filter { $0 == "chat_message" }.count, 1)
+        }
+
+        func testInterruptDoesNothingOnceTheTaskEnded() throws {
+            let (model, sent) = try appQueueModel()
+            model.sendComposerText("too late")
+            let item = try XCTUnwrap(model.queuedFollowUps.first)
+            try finishTurn(model, sent())
+            model.interruptWithQueuedFollowUp(item)
+            XCTAssertFalse(actions(sent()).contains("chat_steer"))
+        }
+
+        func testAppQueuedFollowUpsAreEditedRemovedAndReorderedLocally() throws {
+            let (model, sent) = try appQueueModel()
+            for text in ["alpha", "bravo", "charlie"] { model.sendComposerText(text) }
+            let items = model.queuedFollowUps
+            model.editQueuedFollowUp(items[0], text: "alpha edited")
+            XCTAssertEqual(model.queuedFollowUps.map(\.message), ["alpha edited", "bravo", "charlie"])
+            model.moveQueuedFollowUp(items[2], before: model.queuedFollowUps[0])
+            XCTAssertEqual(model.queuedFollowUps.map(\.message), ["charlie", "alpha edited", "bravo"])
+            model.removeQueuedFollowUp(items[1])
+            XCTAssertEqual(model.queuedFollowUps.map(\.message), ["charlie", "alpha edited"])
+            model.editQueuedFollowUp(model.queuedFollowUps[1], text: "   ")
+            XCTAssertEqual(model.queuedFollowUps.map(\.message), ["charlie"])
+            XCTAssertFalse(actions(sent()).contains { $0.hasPrefix("chat_queue") })
+        }
+
+        func testAFollowUpBeingEditedWaitsAndIsSentAsSaved() throws {
+            let (model, sent) = try appQueueModel()
+            model.sendComposerText("before edit")
+            let item = try XCTUnwrap(model.queuedFollowUps.first)
+            model.beginEditingQueuedFollowUp(item)
+            try finishTurn(model, sent())
+            XCTAssertEqual(actions(sent()).filter { $0 == "chat_message" }.count, 1)
+            model.editQueuedFollowUp(item, text: "after edit")
+            model.endEditingQueuedFollowUp()
+            XCTAssertEqual(try lastMessage(sent())["payload"]?["message"], .string("after edit"))
+        }
+
+        func testADroppedConnectionPutsTheAppQueueBackInTheComposer() async throws {
+            let (model, _) = try appQueueModel()
+            model.sendComposerText("queued before the drop")
+            await model.handle(.disconnected(reason: "test"))
+            XCTAssertTrue(model.queuedFollowUps.isEmpty)
+            XCTAssertTrue(model.composerDraft.contains("queued before the drop"))
+            XCTAssertEqual(
+                model.steerNotice, "The connection dropped, so your queued follow-ups are back in the composer.")
+        }
+
+        func testNewChatKeepsASavedChatsQueueAndClearsAnUnsavedOne() throws {
+            let (model, _) = try appQueueModel()
+            model.sendComposerText("for the saved chat")
+            model.newChat()
+            XCTAssertTrue(model.queuedFollowUps.isEmpty)
+            XCTAssertNil(model.steerNotice)
+            model.activeChatId = chat
+            XCTAssertEqual(model.queuedFollowUps.map(\.message), ["for the saved chat"])
+
+            model.activeChatId = nil
+            armTurn(model)
+            model.sendComposerText("for the unsaved chat")
+            XCTAssertEqual(model.queuedFollowUps.map(\.message), ["for the unsaved chat"])
+            model.newChat()
+            XCTAssertTrue(model.queuedFollowUps.isEmpty)
+            XCTAssertEqual(model.steerNotice, "Queued follow-ups were cleared for the new chat.")
+        }
+
+        func testANewChatsQueueFollowsItWhenTheServerNamesIt() throws {
+            let (model, _) = try makeModel()
+            model.activeChatId = nil
+            negotiate(model, queueCapable: false)
+            armTurn(model)
+            model.sendComposerText("follows the chat")
+            model.handleFrame(
+                InboundFrame.parse(#"{"type":"chat_created","payload":{"chat_id":"\#(chat)"}}"#)!)
+            XCTAssertEqual(model.activeChatId, chat)
+            XCTAssertEqual(model.queuedFollowUps.map(\.message), ["follows the chat"])
+        }
+
+        func testTheAppQueueHoldsSixteenFollowUpsAndKeepsTheRestInTheComposer() throws {
+            let (model, _) = try appQueueModel()
+            for index in 1...16 { model.sendComposerText("queued \(index)") }
+            model.sendComposerText("one too many")
+            XCTAssertEqual(model.queuedFollowUps.count, 16)
+            XCTAssertEqual(model.composerDraft, "one too many")
+            XCTAssertEqual(model.steerNotice, "Up to 16 follow-ups can wait at once.")
+        }
+
+        func testMountedChipsOfferInterruptOnlyWhileATaskRuns() async throws {
+            let (model, sent) = try appQueueModel()
+            model.sendComposerText("interrupt with me")
+            let mount = SurfaceMount(QueueChipsRow(), model: model, size: CGSize(width: 640, height: 120))
+            defer { mount.close() }
+            try await mount.settle()
+            let interrupt = try XCTUnwrap(
+                try mount.accessibility.first { $0.identifier == "composer-queue-chip-interrupt" })
+            XCTAssertEqual(interrupt.label, "Interrupt with follow-up")
+            XCTAssertTrue(interrupt.enabled)
+            model.stopTurn()
+            XCTAssertEqual(actions(sent()).last, "cancel_task")
         }
 
         private func continuityUUID4Value(_ text: String) -> String? {
