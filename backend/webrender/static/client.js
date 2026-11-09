@@ -33,6 +33,10 @@
   var operationSubmissionByGeneration = Object.create(null);
   var operationSubmissionById = Object.create(null);
   var operationSubmissionOrdinal = 0;
+  // The server runs load_chat after the turn in progress, and that turn's chat_status frames carry no chat id.
+  var runningChatTurns = Object.create(null);
+  var leftChatTurns = Object.create(null);
+  var heldChatLoad = null;
   var agentLifecycleById = Object.create(null);
   var ACCOUNT_SESSION_KEY = "astraldeep.active_chat.account.v1";
   var VOICE_DEVICE_KEY = "astraldeep.voice.device.v1";
@@ -466,6 +470,9 @@
       clearActiveChatLocator("account_switch", null, previousKey);
       activeChatId = null;
       requestState = null;
+      runningChatTurns = Object.create(null);
+      leftChatTurns = Object.create(null);
+      heldChatLoad = null;
     }
     var changed = activeChatLocatorKey !== nextKey;
     activeChatLocatorKey = nextKey;
@@ -833,7 +840,7 @@
   }
   function isChatActive() {
     if (document.body.getAttribute("data-astral-view") === "start") return false;
-    if (turnCounter > 0) return true;
+    if (turnCounter > 0 || heldChatLoad !== null) return true;
     if (chat && chat.children.length > 0) {
       var bubbles = chat.querySelectorAll(".astral-turn, .astral-chat-bubble, .astral-turn-card, .astral-bubble-user, .astral-turn-assistant");
       for (var i = 0; i < bubbles.length; i++) {
@@ -5931,13 +5938,69 @@
   }
 
   function loadActiveChat(chatId) {
+    if (heldChatLoad && heldChatLoad.chatId === chatId) return;
+    var leavesRunningTurn = chatId !== activeChatId && (heldChatLoad !== null || chatTurnRunning());
     if (!selectActiveChat(chatId, "hydration")) return;
+    if (leavesRunningTurn) {
+      leaveRunningChatTurns();
+      heldChatLoad = { chatId: chatId, generation: requestState.generation };
+      hideSkeleton();
+      resetFeed();
+      setHTML(canvas, "");
+      setWorkspaceView("work");
+      setStatus("Finishing the previous reply. This chat will open when it ends.", true, "earlier-turn");
+      return;
+    }
+    sendChatLoad(chatId);
+  }
+
+  function sendChatLoad(chatId) {
     action("load_chat", {
       chat_id: chatId,
       connection_generation: connectionGeneration,
       request_generation: requestState.generation,
       snapshot_purpose: "hydration",
     });
+  }
+
+  function chatTurnRunning() {
+    return Object.keys(runningChatTurns).length > 0 || Object.keys(operationSubmissionByGeneration)
+      .some(function (generation) { return operationSubmissionByGeneration[generation].action === "chat_message"; });
+  }
+
+  function leaveRunningChatTurns() {
+    lastChatStatusText = "";
+    Object.keys(runningChatTurns).forEach(function (generation) { leftChatTurns[generation] = true; });
+    Object.keys(operationSubmissionByGeneration).forEach(function (generation) {
+      if (operationSubmissionByGeneration[generation].action === "chat_message") leftChatTurns[generation] = true;
+    });
+  }
+
+  function chatTurnRunningElsewhere() {
+    return heldChatLoad !== null || Object.keys(leftChatTurns).length > 0;
+  }
+
+  function leftTurnFrame(frame) {
+    return !activeChatId && isCanonicalUuid4(frame.chat_id) && chatTurnRunningElsewhere();
+  }
+
+  function trackChatTurn(frame) {
+    if (frame.action !== "chat_message" || !isCanonicalUuid4(frame.request_generation)
+        || frame.connection_generation !== connectionGeneration) return;
+    if (frame.terminal) {
+      delete runningChatTurns[frame.request_generation];
+      delete leftChatTurns[frame.request_generation];
+    } else runningChatTurns[frame.request_generation] = true;
+  }
+
+  function finishWaitingForEarlierTurn() {
+    var held = heldChatLoad;
+    if (!held) return;
+    heldChatLoad = null;
+    restoreActiveStatusOrClear(["earlier-turn"]);
+    if (activeChatId === held.chatId && requestState && requestState.generation === held.generation) {
+      sendChatLoad(held.chatId);
+    }
   }
 
   var plotlyLoading = false;
@@ -7158,6 +7221,7 @@
       case "ui_render":
         if (isLateWelcomeRender(data)) break;
         if (data.target === "history") { applyHistoryRender(data.html); }
+        else if (leftTurnFrame(data)) break;
         else if (activeChatId) reduceTransientFrame(data);
         else if (data.target === "chat") appendChatBubble("assistant", data.html);
         else {
@@ -7168,11 +7232,12 @@
         }
         break;
       case "ui_upsert":
+        if (leftTurnFrame(data)) break;
         if (activeChatId) reduceTransientFrame(data);
         else applyUpsert(data);
         break;
       case "ui_update":
-        if (isLateWelcomeRender(data)) break;
+        if (isLateWelcomeRender(data) || leftTurnFrame(data)) break;
         if (activeChatId) reduceTransientFrame(data);
         else {
           clearWelcomeSlots();
@@ -7181,6 +7246,7 @@
         }
         break;
       case "ui_append":
+        if (leftTurnFrame(data)) break;
         if (activeChatId) reduceTransientFrame(data);
         else { hideSkeleton(); hideCanvasEmpty(); appendHTML(canvas, data.html); }
         break;
@@ -7224,6 +7290,7 @@
         } else { gotoLogin(); }
         break;
       case "ui_stream_data": {
+        if (leftTurnFrame(data)) break;
         if (activeChatId) { reduceTransientFrame(data); break; }
         if (data.session_id && activeChatId && data.session_id !== activeChatId) return;
         var last = streamSeq[data.stream_id]; if (last == null) last = -1;
@@ -7262,6 +7329,12 @@
         break;
       case "chat_status":
         if (!scopedStatusMatches(data)) break;
+        if (chatTurnRunningElsewhere()) {
+          // "Cancelled" is sent at once; a turn still unwinding ends at the plain "done" that follows.
+          if ((data.status === "done" || data.status === "idle")
+              && (data.message !== "Cancelled" || !chatTurnRunning())) finishWaitingForEarlierTurn();
+          break;
+        }
         var chatStatusOwner = data.request_generation
           ? "operation-submission:" + data.request_generation
           : "chat-status";
@@ -7304,6 +7377,7 @@
       case "chat_step":
         // chat_step carries no generation, so it is scoped by chat id like tool_progress
         if (data.chat_id && activeChatId && data.chat_id !== activeChatId) break;
+        if ((!data.chat_id || !activeChatId) && chatTurnRunningElsewhere()) break;
         renderStep(data.step);
         break;
       case "chat_created":
@@ -7382,6 +7456,7 @@
         if (!scopedStatusMatches(data)) break;
         var tpChat = data.session_id || data.chat_id;
         if (tpChat && activeChatId && tpChat !== activeChatId) break;
+        if ((!tpChat || !activeChatId) && chatTurnRunningElsewhere()) break;
         if (data.terminal) { turnPhaseActive = false; setStatus(""); break; }
         var tpText = data.message || ((data.tool_name || "job") + " running…");
         if (!data.message && data.agent_id && agentNameById[data.agent_id]) {
@@ -7393,7 +7468,13 @@
         break;
       }
       case "operation_status":
+        trackChatTurn(data);
         reduceOperationStatus(data);
+        if (data.action === "chat_message" && data.terminal && data.connection_generation === connectionGeneration) {
+          // A turn left for another chat fails the scope check, so its submission ends here
+          finishOperationSubmission(data.request_generation);
+          if (!chatTurnRunning()) finishWaitingForEarlierTurn();
+        }
         break;
       case "agent_lifecycle":
         reduceAgentLifecycle(data);
@@ -7690,7 +7771,9 @@
     if (attachInput) attachInput.value = "";
     closeAttachMenu();
     setBgArmed(false);
+    leaveRunningChatTurns();
     activeChatId = null;
+    heldChatLoad = null;
     timelineMode = false;
     streamSeq = {};
     streamChartPlot = {};
@@ -8987,6 +9070,10 @@
       setConnState("offline", "Reconnecting — messages will queue");
       operationSubmissionByGeneration = Object.create(null);
       operationSubmissionById = Object.create(null);
+      // Registration on reconnect hydrates the active chat, so a held load is not sent
+      runningChatTurns = Object.create(null);
+      leftChatTurns = Object.create(null);
+      heldChatLoad = null;
       clearVoiceBindingRenewal();
       voiceBinding = null;
       if (voiceSpeechBackend === "client_local" && voiceLocalPendingFinal) {

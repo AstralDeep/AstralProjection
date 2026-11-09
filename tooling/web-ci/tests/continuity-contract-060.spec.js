@@ -2450,3 +2450,186 @@ for (const retirement of ["disconnected", "mandatory", "removed"]) {
     expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).chat_id, LOCATOR_KEY)).toBe(CHAT_ID);
   });
 }
+
+
+const THIRD_CHAT_ID = "33333333-3333-4333-8333-333333333333";
+const EARLIER_TURN_WAIT = "Finishing the previous reply. This chat will open when it ends.";
+
+async function startTurnInChat(page) {
+  await installHarness(page);
+  const { frame: registrationFrame } = await registration(page);
+  await receive(page, snapshot(registrationFrame));
+  await page.locator("#astral-input").fill("A long request");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  const message = await page.evaluate(() => window.__socketEvents.findLast((event) => (
+    event.frame.action === "chat_message")).frame);
+  const turnScope = {
+    connection_generation: registrationFrame.connection_generation,
+    request_generation: message.request_generation,
+  };
+  await receive(page, operationStatus(turnScope, OPERATION_A, 0, "accepted"));
+  await receive(page, operationStatus(turnScope, OPERATION_A, 1, "running"));
+  return { registrationFrame, turnScope };
+}
+
+async function openChatFromHistory(page, chatId) {
+  await page.evaluate((id) => {
+    const button = document.createElement("button");
+    button.className = "astral-action";
+    button.dataset.action = "load_chat";
+    button.dataset.payload = JSON.stringify({ chat_id: id });
+    document.body.appendChild(button);
+    button.click();
+    button.remove();
+  }, chatId);
+}
+
+async function sentLoads(page) {
+  return page.evaluate(() => window.__socketEvents
+    .filter((event) => event.frame.type === "ui_event" && event.frame.action === "load_chat")
+    .map((event) => event.frame));
+}
+
+test("opening another chat during a running turn holds the load until the turn ends", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+
+  expect(await sentLoads(page)).toHaveLength(0);
+  const status = page.locator("#astral-status");
+  await expect(status).toHaveText(EARLIER_TURN_WAIT);
+  await expect(page.locator("#astral-chat")).not.toContainText("Committed answer");
+  await expect(page.locator("#astral-canvas")).not.toContainText("ROTE-adapted canvas");
+  await expect(page.locator("body")).toHaveClass(/astral-chat-active/u);
+  expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key)).chat_id, LOCATOR_KEY))
+    .toBe(OTHER_CHAT_ID);
+
+  await receive(page, { type: "chat_status", status: "thinking", message: "Left turn status" });
+  await receive(page, { type: "chat_step", step: { name: "left_tool", status: "in_progress" } });
+  await receive(page, { type: "tool_progress", tool_name: "left_tool", message: "Left progress" });
+  await expect(status).toHaveText(EARLIER_TURN_WAIT);
+  expect(await sentLoads(page)).toHaveLength(0);
+
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const loads = await sentLoads(page);
+  expect(loads).toHaveLength(1);
+  expect(loads[0].payload).toEqual(expect.objectContaining({
+    chat_id: OTHER_CHAT_ID,
+    connection_generation: turnScope.connection_generation,
+    snapshot_purpose: "hydration",
+  }));
+  await expect(status).not.toHaveText(EARLIER_TURN_WAIT);
+
+  await receive(page, snapshot({
+    connection_generation: turnScope.connection_generation,
+    request_generation: loads[0].request_generation,
+  }, { chat_id: OTHER_CHAT_ID, snapshot_id: SNAPSHOT_B }));
+  await expect(page.locator("#astral-chat")).toContainText("Committed answer");
+  await expect(status).toHaveText("");
+});
+
+test("only the last chat opened during the wait loads and reopening it changes nothing", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await openChatFromHistory(page, THIRD_CHAT_ID);
+  await openChatFromHistory(page, THIRD_CHAT_ID);
+  expect(await sentLoads(page)).toHaveLength(0);
+
+  await receive(page, { type: "chat_status", status: "done", message: "" });
+  const loads = await sentLoads(page);
+  expect(loads).toHaveLength(1);
+  expect(loads[0].payload.chat_id).toBe(THIRD_CHAT_ID);
+
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  expect(await sentLoads(page)).toHaveLength(1);
+});
+
+test("an immediate cancel keeps the wait until the left turn finishes unwinding", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+
+  await receive(page, { type: "chat_status", status: "done", message: "Cancelled" });
+  expect(await sentLoads(page)).toHaveLength(0);
+  await expect(page.locator("#astral-status")).toHaveText(EARLIER_TURN_WAIT);
+
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "cancelled", {
+    error: { code: "cancelled_by_user", message: "Cancelled" },
+  }));
+  const loads = await sentLoads(page);
+  expect(loads).toHaveLength(1);
+  expect(loads[0].payload.chat_id).toBe(OTHER_CHAT_ID);
+});
+
+test("a disconnect drops the held load and reconnecting hydrates the chat being opened", async ({ page }) => {
+  await startTurnInChat(page);
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await page.waitForFunction(() => window.__sockets.length === 2
+    && window.__sockets[1].sent.some((frame) => frame.type === "register_ui"), null, { timeout: 10000 });
+
+  const reconnect = await page.evaluate(() => window.__sockets[1].sent.find((frame) => frame.type === "register_ui"));
+  expect(reconnect.resume.active_chat_id).toBe(OTHER_CHAT_ID);
+  await receive(page, { type: "chat_status", status: "done", message: "" });
+  expect(await sentLoads(page)).toHaveLength(0);
+  await expect(page.locator("#astral-status")).not.toHaveText(EARLIER_TURN_WAIT);
+});
+
+test("a left turn's completion ends its submission so the next switch loads at once", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  expect(await sentLoads(page)).toHaveLength(1);
+
+  await openChatFromHistory(page, CHAT_ID);
+  const loads = await sentLoads(page);
+  expect(loads).toHaveLength(2);
+  expect(loads[1].payload.chat_id).toBe(CHAT_ID);
+  await expect(page.locator("#astral-status")).not.toHaveText(EARLIER_TURN_WAIT);
+});
+
+test("new chat during a running turn shows none of the left turn's output or status", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await page.locator("#astral-newchat-btn").click();
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+  const leftFrame = {
+    chat_id: CHAT_ID,
+    connection_generation: turnScope.connection_generation,
+    request_generation: turnScope.request_generation,
+    base_render_revision: 0,
+  };
+
+  await receive(page, { ...leftFrame, type: "ui_stream_data", stream_id: "left-stream", session_id: CHAT_ID,
+    seq: 0, components: [], html: "<p>Left streamed text</p>", raw: "", terminal: false, error: null, frame_sequence: 1 });
+  await receive(page, { ...leftFrame, type: "ui_upsert", frame_sequence: 2,
+    ops: [{ op: "upsert", component_id: "left-card", html: '<div data-component-id="left-card">Left card</div>' }] });
+  await receive(page, { ...leftFrame, type: "ui_render", target: "chat", html: "<p>Left reply</p>", frame_sequence: 3 });
+  await receive(page, { ...leftFrame, type: "ui_update", html: "<p>Left update</p>", frame_sequence: 4 });
+  await receive(page, { ...leftFrame, type: "ui_append", html: "<p>Left append</p>", frame_sequence: 5 });
+  await receive(page, { type: "chat_step", chat_id: CHAT_ID, step: { name: "left_tool", status: "completed" } });
+  await receive(page, { type: "chat_status", status: "thinking", message: "Left turn status" });
+  await receive(page, { type: "tool_progress", chat_id: CHAT_ID, tool_name: "left_tool", message: "Left progress" });
+
+  for (const text of ["Left streamed text", "Left card", "Left reply", "Left update", "Left append"]) {
+    await expect(page.locator("body")).not.toContainText(text);
+  }
+  await expect(page.locator("#astral-status")).not.toContainText("Left");
+
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  await receive(page, { type: "chat_status", status: "thinking", message: "New chat status" });
+  await expect(page.locator("#astral-status")).toHaveText("New chat status");
+});
+
+test("an owner change drops a held load so the new owner's status is shown", async ({ page }) => {
+  await startTurnInChat(page);
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await page.evaluate(({ token }) => {
+    window.__sessionToken = token;
+    window.__sessionSubject = "other-user";
+  }, { token: OTHER_TOKEN });
+  await receive(page, { type: "auth_required" });
+  await page.waitForFunction(() => window.__sockets.length === 2
+    && window.__sockets[1].sent.some((frame) => frame.type === "register_ui"));
+
+  await receive(page, { type: "chat_status", status: "thinking", message: "New owner status" });
+  await expect(page.locator("#astral-status")).toHaveText("New owner status");
+  expect(await sentLoads(page)).toHaveLength(0);
+});
