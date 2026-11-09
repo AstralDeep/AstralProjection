@@ -1005,12 +1005,15 @@
   }
 
   var lastCapabilitySignature = "";
+  function capabilitySignature(caps) {
+    return [caps.viewport_width, caps.viewport_height, caps.device_type,
+      caps.pixel_ratio, caps.microphone_permission, caps.connection_type,
+      caps.reduced_motion, caps.pointer_type].join("|");
+  }
   function maybeReportCapabilities(force) {
     if (!isSocketReady()) return;
     var caps = detectDeviceCapabilities();
-    var sig = [caps.viewport_width, caps.viewport_height, caps.device_type,
-      caps.pixel_ratio, caps.microphone_permission, caps.connection_type,
-      caps.reduced_motion, caps.pointer_type].join("|");
+    var sig = capabilitySignature(caps);
     if (!force && sig === lastCapabilitySignature) return;
     lastCapabilitySignature = sig;
     if (window.__ASTRAL_PARITY__ && window.__ASTRAL_PARITY__.notifyViewportRegistered) {
@@ -5916,6 +5919,7 @@
       };
     }
     var device = detectDeviceCapabilities();
+    lastCapabilitySignature = capabilitySignature(device);
     send({
       type: "register_ui",
       token: token,
@@ -7402,6 +7406,8 @@
         if (!socketReady) {
           socketReady = true;
           setConnState("connected");
+          // A page shown or resized before this reply reports its device now, since earlier reports were skipped
+          maybeReportCapabilities(false);
           flushPendingActions();
           runVoicePreflight();
         }

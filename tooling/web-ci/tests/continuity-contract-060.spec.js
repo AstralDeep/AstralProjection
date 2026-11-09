@@ -2473,3 +2473,52 @@ test("a browser on a watch registers as mobile", async ({ page }) => {
   await installHarness(page);
   expect((await registration(page)).frame.device.device_type).toBe("mobile");
 });
+
+test("widths that flap across the breakpoints never report a watch", async ({ page }) => {
+  await page.setViewportSize({ width: 150, height: 700 });
+  await installHarness(page);
+  expect((await registration(page)).frame.device.device_type).toBe("mobile");
+  const updates = () => page.evaluate(() => window.__socketEvents
+    .filter((event) => event.frame.action === "update_device").map((event) => event.frame.payload.device.device_type));
+  for (const [width, kind] of [[1440, "browser"], [199, "mobile"], [700, "tablet"], [201, "mobile"], [1440, "browser"]]) {
+    await page.setViewportSize({ width, height: 700 });
+    await expect.poll(async () => (await updates()).at(-1)).toBe(kind);
+  }
+  expect(await updates()).not.toContain("watch");
+});
+
+test("a page hidden at load and shown before the server replies reports itself as a desktop browser", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.addInitScript(() => {
+    const original = Object.getOwnPropertyDescriptor(window, "innerWidth");
+    window.__hidden = true;
+    Object.defineProperty(window, "innerWidth", { configurable: true,
+      get() { return window.__hidden ? 0 : original.get.call(window); } });
+    let Impl;
+    Object.defineProperty(window, "WebSocket", { configurable: true, get() { return Impl; }, set(Base) {
+      Impl = class extends Base {
+        receive(frame) {
+          if (frame.type === "rote_config" && !window.__roteReleased) { window.__releaseRote = () => { window.__roteReleased = true; super.receive(frame); }; return; }
+          super.receive(frame);
+        }
+      };
+    } });
+  });
+  await installHarness(page);
+  expect((await registration(page)).frame.device.device_type).toBe("mobile");
+  // The tab becomes visible at desktop width before the server's rote_config arrives
+  await page.evaluate(() => { window.__hidden = false; window.dispatchEvent(new Event("resize")); });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => window.__releaseRote());
+  await page.waitForTimeout(600);
+  const updates = await page.evaluate(() => window.__socketEvents
+    .filter((event) => event.frame.action === "update_device").map((event) => event.frame.payload.device.device_type));
+  expect(updates.at(-1)).toBe("browser");
+});
+
+test("reconnecting with an unchanged window sends no extra device report", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await installHarness(page);
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => window.__socketEvents.filter((event) => event.frame.action === "update_device").length)).toBe(0);
+});
