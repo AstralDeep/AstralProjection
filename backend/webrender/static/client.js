@@ -7954,6 +7954,8 @@
       case "chat_created":
         if (correlatedVoiceChatCreated(data)) break;
         if (heldChatLoad) break;
+        // A first message left for a New chat names its own chat, not the one now open
+        if (data.payload && data.payload.from_message === true && !activeChatId && chatTurnRunningElsewhere()) break;
         if (data.payload && isCanonicalUuid4(data.payload.chat_id)) {
           var createdFor = data.submission_id || data.payload.submission_id;
           var answersNewChat = !!newChatWait && data.payload.from_message !== true
