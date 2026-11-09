@@ -14,7 +14,8 @@ const SOURCE_PATHS = new Map([
   ["/static/mesh-enrollment.js", "backend/webrender/static/mesh-enrollment.js"],
 ]);
 const MAX_REPORT_BYTES = 64 * 1024 * 1024;
-const MAX_TOTAL_BYTES = 256 * 1024 * 1024;
+// Every browser test writes a full client.js report, so the total grows with the suite.
+const MAX_TOTAL_BYTES = 512 * 1024 * 1024;
 const MAX_ENTRIES = 1024;
 
 function fail(message) {
