@@ -4023,10 +4023,12 @@ test("a first message left for a New chat cannot make its chat the open one", as
     .toBeNull();
   await page.locator("#astral-input").fill("For the new chat");
   await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  // The message waits for the New chat's own answer
+  await receive(page, { type: "chat_created", payload: { chat_id: OTHER_CHAT_ID, from_message: false } });
   const message = await page.evaluate(() => window.__socketEvents.findLast((event) => (
     event.frame.action === "chat_message")).frame);
   expect(message.payload.message).toBe("For the new chat");
-  expect(message.payload.chat_id ?? null).not.toBe(THIRD_CHAT_ID);
+  expect(message.payload.chat_id).toBe(OTHER_CHAT_ID);
 });
 
 test("a refused queued message returns the rest of the queue to the composer", async ({ page }) => {
