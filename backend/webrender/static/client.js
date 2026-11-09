@@ -5652,6 +5652,7 @@
     if (local.shows_status) {
       setStatus(local.label, true, "operation-submission:" + requestGeneration);
     }
+    syncStopControl();
     return { payload: body, submissionId: submissionId, requestGeneration: requestGeneration };
   }
 
@@ -5660,6 +5661,7 @@
     if (!local) return false;
     delete operationSubmissionByGeneration[requestGeneration];
     delete operationSubmissionById[local.submission_id];
+    syncStopControl();
     return true;
   }
 
@@ -5949,6 +5951,7 @@
       setHTML(canvas, "");
       setWorkspaceView("work");
       setStatus("Finishing the previous reply. This chat will open when it ends.", true, "earlier-turn");
+      syncStopControl();
       return;
     }
     sendChatLoad(chatId);
@@ -5998,9 +6001,51 @@
     if (!held) return;
     heldChatLoad = null;
     restoreActiveStatusOrClear(["earlier-turn"]);
+    syncStopControl();
     if (activeChatId === held.chatId && requestState && requestState.generation === held.generation) {
       sendChatLoad(held.chatId);
     }
+  }
+
+  function canCancelTurn() {
+    if (!isSocketReady()) return false;
+    if (heldChatLoad !== null) return true;
+    return Object.keys(runningChatTurns).some(function (generation) { return !leftChatTurns[generation]; })
+      || Object.keys(operationSubmissionByGeneration).some(function (generation) {
+        return operationSubmissionByGeneration[generation].action === "chat_message" && !leftChatTurns[generation];
+      });
+  }
+
+  function syncStopControl() {
+    var stopButton = document.getElementById("astral-stop-btn");
+    if (!stopButton) return;
+    var stoppable = canCancelTurn();
+    var sendButton = document.getElementById("astral-send-btn");
+    var hasDraft = !!(input && input.value.trim())
+      || (typeof readyAttachments === "function" && readyAttachments().length > 0);
+    // Inline display because .astral-send-btn sets display, which outranks the hidden attribute
+    stopButton.hidden = !stoppable;
+    stopButton.style.display = stoppable ? "" : "none";
+    if (sendButton) {
+      sendButton.hidden = stoppable && !hasDraft;
+      sendButton.style.display = sendButton.hidden ? "none" : "";
+    }
+  }
+
+  // The server cancels whichever turn runs on this socket, the same as the macOS Stop
+  function stopTurn() {
+    if (!canCancelTurn()) return false;
+    var submissionId = randomUuid4();
+    var requestGeneration = randomUuid4();
+    send({
+      type: "ui_event",
+      action: "cancel_task",
+      session_id: activeChatId || null,
+      submission_id: submissionId,
+      request_generation: requestGeneration,
+      payload: { submission_id: submissionId, request_generation: requestGeneration },
+    });
+    return true;
   }
 
   var plotlyLoading = false;
@@ -7743,6 +7788,18 @@
     input.value = "";
     sendChat(v);
   });
+  if (input) input.addEventListener("keydown", function (e) {
+    if (e.key !== "Escape" || e.isComposing || e.defaultPrevented) return;
+    var slashMenu = document.getElementById("astral-slash-menu");
+    if (slashMenu && !slashMenu.classList.contains("hidden")) return;
+    if (stopTurn()) e.preventDefault();
+  });
+  if (input) input.addEventListener("input", syncStopControl);
+  var stopButton = document.getElementById("astral-stop-btn");
+  if (stopButton) stopButton.addEventListener("click", function () {
+    stopTurn();
+    if (input) { try { input.focus(); } catch (e) {} }
+  });
   if (input && input.tagName === "TEXTAREA") input.addEventListener("keydown", function (e) {
     if (e.key !== "Enter" || e.shiftKey || e.isComposing || e.keyCode === 229 || e.defaultPrevented) return;
     e.preventDefault();
@@ -9064,7 +9121,10 @@
       for (var tid in bgTaskChips) action("watch_task", { task_id: tid }, false);
     };
     ws.onmessage = function (event) {
-      if (!accountSignedOut && ws === thisSocket) onMessage(event);
+      if (!accountSignedOut && ws === thisSocket) {
+        onMessage(event);
+        syncStopControl();
+      }
     };
     ws.onerror = function () { try { thisSocket.close(); } catch (e) {} };
     ws.onclose = function () {
@@ -9078,6 +9138,7 @@
       runningChatTurns = Object.create(null);
       leftChatTurns = Object.create(null);
       heldChatLoad = null;
+      syncStopControl();
       clearVoiceBindingRenewal();
       voiceBinding = null;
       if (voiceSpeechBackend === "client_local" && voiceLocalPendingFinal) {
