@@ -5968,6 +5968,14 @@
       .some(function (generation) { return operationSubmissionByGeneration[generation].action === "chat_message"; });
   }
 
+  function liveTurnInView() {
+    if (heldChatLoad !== null) return true;
+    return Object.keys(runningChatTurns).some(function (generation) { return !leftChatTurns[generation]; })
+      || Object.keys(operationSubmissionByGeneration).some(function (generation) {
+        return operationSubmissionByGeneration[generation].action === "chat_message" && !leftChatTurns[generation];
+      });
+  }
+
   function leaveRunningChatTurns() {
     lastChatStatusText = "";
     Object.keys(runningChatTurns).forEach(function (generation) { leftChatTurns[generation] = true; });
@@ -7440,10 +7448,14 @@
           removeTaskChip(tcp.task_id);
         }
         var tcFail = tcp.status === "failed";
-        var tcMsg = tcp.summary || ("Background task " + (tcp.status || "completed"));
+        var tcSummary = typeof tcp.summary === "string" ? tcp.summary.trim() : "";
+        var tcMsg = tcSummary || (tcFail || tcp.status === "retryable"
+          ? "The background task did not finish."
+          : "Background task " + (tcp.status || "completed"));
         if (tcp.chat_id && tcp.chat_id === activeChatId) {
           showToast(tcMsg, tcFail ? "error" : "info");
-          loadActiveChat(tcp.chat_id);
+          // A live turn's own commit brings the chat current; reloading now would drop that turn
+          if (!liveTurnInView()) loadActiveChat(tcp.chat_id);
         } else if (tcp.chat_id) {
           showToast(tcMsg + " — tap to open", tcFail ? "error" : "info", function () {
             loadActiveChat(tcp.chat_id);

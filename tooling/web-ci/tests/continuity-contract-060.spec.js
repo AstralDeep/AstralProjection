@@ -2693,3 +2693,46 @@ test("returning to the running chat while waiting keeps its status, steps and fa
   expect(loads).toHaveLength(1);
   expect(loads[0].payload.chat_id).toBe(CHAT_ID);
 });
+
+
+test("a background task ending during a live turn in the open chat does not reload it", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await receive(page, { type: "task_completed", payload: {
+    task_id: OPERATION_C, chat_id: CHAT_ID, status: "completed", summary: "Report ready",
+  } });
+  await expect(page.locator("#astral-toasts")).toContainText("Report ready");
+  expect(await sentLoads(page)).toHaveLength(0);
+
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  await receive(page, { type: "task_completed", payload: {
+    task_id: OPERATION_D, chat_id: CHAT_ID, status: "completed", summary: "Second report",
+  } });
+  const loads = await sentLoads(page);
+  expect(loads).toHaveLength(1);
+  expect(loads[0].payload.chat_id).toBe(CHAT_ID);
+});
+
+test("a background task ending while its chat waits to open does not send a second load", async ({ page }) => {
+  await startTurnInChat(page);
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await receive(page, { type: "task_completed", payload: {
+    task_id: OPERATION_C, chat_id: OTHER_CHAT_ID, status: "completed", summary: "Done",
+  } });
+  expect(await sentLoads(page)).toHaveLength(0);
+});
+
+for (const [status, summary, expected] of [
+  ["failed", "   ", "The background task did not finish."],
+  ["retryable", "", "The background task did not finish."],
+  ["completed", " \n ", "Background task completed"],
+  ["failed", "  Quota exceeded  ", "Quota exceeded"],
+]) {
+  test(`a background task summary of ${JSON.stringify(summary)} with status ${status} is never blank`, async ({ page }) => {
+    await installHarness(page);
+    await receive(page, snapshot((await registration(page)).frame));
+    await receive(page, { type: "task_completed", payload: {
+      task_id: OPERATION_E, chat_id: OTHER_CHAT_ID, status, summary,
+    } });
+    await expect(page.locator("#astral-toasts .astral-toast").last()).toContainText(expected);
+  });
+}
