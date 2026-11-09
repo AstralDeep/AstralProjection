@@ -6258,9 +6258,17 @@
 
   function returnPendingSteers() {
     var here = [];
+    var elsewhere = Object.create(null);
     Object.keys(pendingSteers).forEach(function (clientMessageId) {
       var pending = dropPendingSteer(clientMessageId);
-      if (pending.chatId === (activeChatId || null)) here.push(pending.text);
+      if (pending.chatId === (activeChatId || null)) { here.push(pending.text); return; }
+      (elsewhere[pending.chatId || ""] = elsewhere[pending.chatId || ""] || []).push(pending.text);
+    });
+    // An interruption for a chat the user left waits at the front of that chat's queue
+    Object.keys(elsewhere).forEach(function (key) {
+      queuedFollowUps[key] = elsewhere[key].map(function (text) {
+        return { id: randomUuid4(), text: text, attachments: [], editing: false, draft: "" };
+      }).concat(queuedFollowUps[key] || []);
     });
     if (here.length) putTextsInComposer(here);
   }
@@ -7952,6 +7960,10 @@
         if (!scopedStatusMatches(data)) break;
         var admissionRefusal = reduceAdmissionRefusal(data);
         if (admissionRefusal && !chatTurnRunning()) finishWaitingForEarlierTurn();
+        // Nothing else will run after a refused message, so its queue goes back to the composer
+        if (admissionRefusal && !chatTurnRunning()) {
+          settleQueue(false, "Your message was not accepted, so your queued messages are back in the composer.");
+        }
         var em = errorMessage(data);
         showToast(em, "error");
         hideSkeleton();
