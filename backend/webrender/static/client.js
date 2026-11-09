@@ -5877,6 +5877,9 @@
       });
       return submission;
     }
+    if (name === "chat_message") {
+      recordUnsettledChatSend(submission, submission.payload.message, [], !!submission.payload.async_mode);
+    }
     send(frame);
     return submission;
   }
@@ -7345,6 +7348,9 @@
       case "error": {
         if (!scopedStatusMatches(data)) break;
         var admissionRefusal = reduceAdmissionRefusal(data);
+        if (admissionRefusal && unsettledChatSend && unsettledChatSend.submissionId === data.submission_id) {
+          unsettledChatSend = null;
+        }
         var em = errorMessage(data);
         showToast(em, "error");
         hideSkeleton();
@@ -7570,18 +7576,25 @@
     }
   }
 
+  function recordUnsettledChatSend(submission, message, attachments, background) {
+    // A background task keeps running after a drop, so resending its message would duplicate it
+    unsettledChatSend = background ? null : { submissionId: submission.submissionId,
+      requestGeneration: submission.requestGeneration, chatId: activeChatId || null,
+      text: message || "", attachments: attachments.slice() };
+  }
+
   // A turn cut off by a dropped connection is not saved, so its message goes back to the composer like on macOS
   function restoreUnsettledChatSend() {
     var unsent = unsettledChatSend;
     unsettledChatSend = null;
     if (!unsent || unsent.chatId !== (activeChatId || null) || !input) return false;
-    var draft = input.value;
+    var draft = input.value.trim() === unsent.text.trim() ? "" : input.value;
     input.value = unsent.text && draft ? unsent.text + "\n\n" + draft : (unsent.text || draft);
     input.dispatchEvent(new Event("input", { bubbles: true }));
-    var staged = stagedAttachments.map(function (entry) { return entry.uid; });
-    unsent.attachments.forEach(function (entry) {
-      if (staged.indexOf(entry.uid) === -1 && stagedAttachments.length < MAX_ATTACHMENTS) stagedAttachments.push(entry);
-    });
+    var restoredUids = unsent.attachments.map(function (entry) { return entry.uid; });
+    stagedAttachments = unsent.attachments.concat(stagedAttachments.filter(function (entry) {
+      return restoredUids.indexOf(entry.uid) === -1;
+    })).slice(0, MAX_ATTACHMENTS);
     renderAttachments();
     showToast("The connection dropped before your message was saved. It is back in the composer.", "warning");
     return true;
@@ -7662,8 +7675,7 @@
     if (bgArmed) payload.async_mode = true;
     if (turnSelection) payload.selection = cloneTurnSelection(turnSelection);
     var submission = beginOperationSubmission("chat_message", payload, requestState.generation);
-    unsettledChatSend = { requestGeneration: submission.requestGeneration, chatId: activeChatId || null,
-      text: message || "", attachments: ready.slice() };
+    recordUnsettledChatSend(submission, message, ready, !!payload.async_mode);
     send({
       type: "ui_event",
       action: "chat_message",
@@ -7718,6 +7730,7 @@
     if (attachInput) attachInput.value = "";
     closeAttachMenu();
     setBgArmed(false);
+    unsettledChatSend = null;
     activeChatId = null;
     timelineMode = false;
     streamSeq = {};

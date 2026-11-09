@@ -2515,8 +2515,7 @@ test("a first message in a new chat is restored into that chat after a drop", as
 });
 
 test("an owner change never restores the previous owner's unsaved message", async ({ page }) => {
-  await installHarness(page);
-  await receive(page, snapshot((await registration(page)).frame));
+  await installHarness(page, { locator: false });
   await sendInOpenChat(page, "Owner A private request");
   await page.evaluate(({ token }) => {
     window.__sessionToken = token;
@@ -2525,6 +2524,78 @@ test("an owner change never restores the previous owner's unsaved message", asyn
   await receive(page, { type: "auth_required" });
   await page.waitForFunction(() => window.__sockets.length === 2
     && window.__sockets[1].sent.some((frame) => frame.type === "register_ui"));
+  await page.evaluate(() => window.__sockets.at(-1).close());
   await expect(page.locator("#astral-input")).not.toHaveValue(/Owner A private request/u);
   await expect(page.locator("body")).not.toContainText(DROP_NOTICE);
+});
+
+async function clickUiAction(page, payload, { example = false } = {}) {
+  await page.evaluate(({ value, insideExample }) => {
+    const host = document.createElement("div");
+    if (insideExample) host.className = "astral-agent-example";
+    const button = document.createElement("button");
+    button.dataset.uiAction = "chat_message";
+    button.dataset.uiPayload = JSON.stringify(value);
+    host.append(button);
+    document.body.append(host);
+    button.click();
+    host.remove();
+  }, { value: payload, insideExample: example });
+}
+
+test("a background send is never restored after a drop", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await page.locator("#astral-bg-btn").click();
+  await sendInOpenChat(page, "Background job");
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await expect(page.locator("body")).not.toContainText(DROP_NOTICE);
+});
+
+test("an example prompt comes back once after a drop", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await clickUiAction(page, { message: "Example prompt" }, { example: true });
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("Example prompt");
+});
+
+test("a message from a server button is restored after a drop", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await clickUiAction(page, { message: "From a button" });
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("From a button");
+});
+
+test("a first message abandoned with New chat is not restored", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await sendInOpenChat(page, "Abandoned question");
+  await page.locator("#astral-newchat-btn").click();
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await expect(page.locator("body")).not.toContainText(DROP_NOTICE);
+});
+
+test("a refused message is not restored by a later drop", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await sendInOpenChat(page, "Refused request");
+  const message = await page.evaluate(() => window.__socketEvents.findLast((event) => (
+    event.frame.action === "chat_message")).frame);
+  await receive(page, { type: "error", accepted: false, code: "capacity_exceeded", message: "Busy right now",
+    retry_after_ms: null, retryable: false, submission_id: message.submission_id });
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("body")).not.toContainText(DROP_NOTICE);
+});
+
+test("restored files go ahead of files staged since", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await stageExistingFile(page, "file-1", "first.txt");
+  await sendInOpenChat(page, "With a file");
+  await stageExistingFile(page, "file-2", "second.txt");
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-attachments")).toContainText(/first\.txt[\s\S]*second\.txt/u);
 });
