@@ -33,6 +33,8 @@
   var operationSubmissionByGeneration = Object.create(null);
   var operationSubmissionById = Object.create(null);
   var operationSubmissionOrdinal = 0;
+  // A message sent before new_chat answers would make a second chat, so it waits for the new chat's id
+  var newChatWait = null;
   var agentLifecycleById = Object.create(null);
   var ACCOUNT_SESSION_KEY = "astraldeep.active_chat.account.v1";
   var VOICE_DEVICE_KEY = "astraldeep.voice.device.v1";
@@ -405,6 +407,7 @@
   }
 
   function clearPrivateAccountState() {
+    newChatWait = null;
     accountPrivacyEpoch += 1;
     retireOwnerSurface();
     if (input) input.value = "";
@@ -7309,6 +7312,7 @@
       case "chat_created":
         if (correlatedVoiceChatCreated(data)) break;
         if (data.payload && isCanonicalUuid4(data.payload.chat_id)) {
+          var answersNewChat = !!newChatWait && data.payload.from_message === false;
           persistActiveChatLocator(data.payload.chat_id);
           activeChatId = data.payload.chat_id;
           syncVoiceVisibleChat(activeChatId);
@@ -7318,6 +7322,7 @@
             pending.setAttribute("data-chat-id", activeChatId);
             pending.setAttribute("data-payload", JSON.stringify({ chat_id: activeChatId }));
           }
+          if (answersNewChat) endNewChatWait(true);
         }
         break;
       case "chat_loaded":
@@ -7338,6 +7343,7 @@
       case "error": {
         if (!scopedStatusMatches(data)) break;
         var admissionRefusal = reduceAdmissionRefusal(data);
+        if (admissionRefusal && newChatWait && data.submission_id === newChatWait.submissionId) endNewChatWait(false);
         var em = errorMessage(data);
         showToast(em, "error");
         hideSkeleton();
@@ -7393,7 +7399,8 @@
         break;
       }
       case "operation_status":
-        reduceOperationStatus(data);
+        if (reduceOperationStatus(data) && newChatWait && data.terminal && data.state !== "completed"
+            && data.request_generation === newChatWait.generation) endNewChatWait(false);
         break;
       case "agent_lifecycle":
         reduceAgentLifecycle(data);
@@ -7521,6 +7528,15 @@
     var ready = (typeof readyAttachments === "function") ? readyAttachments() : [];
     if (!message && !ready.length) return;
     setWorkspaceView("work");
+    if (newChatWait && isSocketReady()) {
+      var held = newChatWait.held;
+      newChatWait.held = held
+        ? { message: [held.message, message].filter(Boolean).join("\n\n"), ready: held.ready.concat(ready) }
+        : { message: message, ready: ready };
+      if (typeof clearStagedAttachments === "function") clearStagedAttachments();
+      setStatus("Starting the new chat…", true, "new-chat-wait");
+      return;
+    }
     if (!isSocketReady()) {
       queueChatSend(message, ready);
       if (typeof clearStagedAttachments === "function") clearStagedAttachments();
@@ -7528,6 +7544,21 @@
     }
     doSendChat(message, ready);
     if (typeof clearStagedAttachments === "function") clearStagedAttachments();
+  }
+
+  function endNewChatWait(sendHeld) {
+    var wait = newChatWait;
+    newChatWait = null;
+    if (!wait || !wait.held) return;
+    restoreActiveStatusOrClear(["new-chat-wait"]);
+    if (sendHeld) { doSendChat(wait.held.message, wait.held.ready); return; }
+    if (input) {
+      input.value = [wait.held.message, input.value].filter(function (text) { return text && text.trim(); }).join("\n\n");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    stagedAttachments = wait.held.ready.concat(stagedAttachments).slice(0, MAX_ATTACHMENTS);
+    renderAttachments();
+    showToast("The new chat did not start, so your message is back in the composer.", "warning");
   }
 
   function queueChatSend(message, ready) {
@@ -7698,7 +7729,12 @@
     resetFeed();
     showCanvasEmpty();
     setStatus("");
-    action("new_chat", {});
+    var newChatOnline = isSocketReady();
+    var newChatSubmission = action("new_chat", {});
+    newChatWait = newChatOnline && newChatSubmission && newChatSubmission.requestGeneration
+      ? { generation: newChatSubmission.requestGeneration, submissionId: newChatSubmission.submissionId,
+        held: newChatWait ? newChatWait.held : null }
+      : null;
     closeHistoryOverlay();
     setWorkspaceView("start");
     syncChatActiveState();
@@ -8981,6 +9017,7 @@
     };
     ws.onerror = function () { try { thisSocket.close(); } catch (e) {} };
     ws.onclose = function () {
+      if (ws === thisSocket && !accountSignedOut) endNewChatWait(false);
       if (accountSignedOut || ws !== thisSocket) return;
       socketReady = false;
       if (ownerSurfaceRequest) { retireOwnerSurface(); setModal(""); }

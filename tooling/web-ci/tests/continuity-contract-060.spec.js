@@ -2450,3 +2450,75 @@ for (const retirement of ["disconnected", "mandatory", "removed"]) {
     expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).chat_id, LOCATOR_KEY)).toBe(CHAT_ID);
   });
 }
+
+async function newChatThenType(page, text) {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await page.locator("#astral-newchat-btn").click();
+  await page.locator("#astral-input").fill(text);
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  return page.evaluate(() => window.__socketEvents.findLast((event) => event.frame.action === "new_chat").frame);
+}
+
+async function sentChatMessages(page) {
+  return page.evaluate(() => window.__socketEvents
+    .filter((event) => event.frame.action === "chat_message").map((event) => event.frame));
+}
+
+test("a message sent before the new chat exists waits and goes into that chat", async ({ page }) => {
+  const newChat = await newChatThenType(page, "First question");
+  expect(await sentChatMessages(page)).toHaveLength(0);
+  await expect(page.locator("#astral-status")).toContainText("Starting the new chat");
+  await page.locator("#astral-input").fill("And a second thought");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  await receive(page, { type: "chat_created", submission_id: newChat.submission_id,
+    payload: { chat_id: OTHER_CHAT_ID, from_message: false } });
+  const messages = await sentChatMessages(page);
+  expect(messages).toHaveLength(1);
+  expect(messages[0].payload.message).toBe("First question\n\nAnd a second thought");
+  expect(messages[0].payload.chat_id).toBe(OTHER_CHAT_ID);
+  expect(messages[0].session_id).toBe(OTHER_CHAT_ID);
+  await page.locator("#astral-input").fill("Sent right away");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  expect((await sentChatMessages(page)).at(-1).payload.message).toBe("Sent right away");
+});
+
+test("a refused new chat puts the waiting message back in the composer", async ({ page }) => {
+  const newChat = await newChatThenType(page, "Held question");
+  await receive(page, { type: "error", accepted: false, code: "capacity_exceeded", message: "Busy right now",
+    retry_after_ms: null, retryable: false, submission_id: newChat.submission_id });
+  await expect(page.locator("#astral-input")).toHaveValue("Held question");
+  await expect(page.locator("body")).toContainText("The new chat did not start, so your message is back in the composer.");
+  expect(await sentChatMessages(page)).toHaveLength(0);
+});
+
+test("a failed new chat puts the waiting message back in the composer", async ({ page }) => {
+  const newChat = await newChatThenType(page, "Held question");
+  const scope = { connection_generation: newChat.connection_generation, request_generation: newChat.request_generation };
+  await receive(page, operationStatus(scope, OPERATION_A, 0, "failed", { action: "new_chat", chat_id: null }));
+  await expect(page.locator("#astral-input")).toHaveValue("Held question");
+  expect(await sentChatMessages(page)).toHaveLength(0);
+});
+
+test("a dropped connection puts a message waiting for the new chat back in the composer", async ({ page }) => {
+  await newChatThenType(page, "Held question");
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("Held question");
+  expect(await sentChatMessages(page)).toHaveLength(0);
+});
+
+test("an owner change drops a message waiting for the new chat", async ({ page }) => {
+  const newChat = await newChatThenType(page, "Private held question");
+  await page.evaluate(({ token }) => {
+    window.__sessionToken = token;
+    window.__sessionSubject = "other-user";
+  }, { token: OTHER_TOKEN });
+  await receive(page, { type: "auth_required" });
+  await page.waitForFunction(() => window.__sockets.length === 2
+    && window.__sockets[1].sent.some((frame) => frame.type === "register_ui"));
+  await receive(page, { type: "chat_created", submission_id: newChat.submission_id,
+    payload: { chat_id: OTHER_CHAT_ID, from_message: false } });
+  expect(await sentChatMessages(page)).toHaveLength(0);
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await expect(page.locator("body")).not.toContainText("Private held question");
+});
