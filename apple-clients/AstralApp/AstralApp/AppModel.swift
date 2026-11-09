@@ -344,6 +344,16 @@ final class AppModel: NSObject {
             observeActivityComponents()
         }
     }
+    private struct UnsettledChatSend {
+        let submissionId: String
+        let requestGeneration: String
+        var chatId: String?
+        let text: String
+        let attachments: [StagedAttachment]
+        var transmitted = false
+    }
+    @ObservationIgnored private var unsettledChatSend: UnsettledChatSend?
+    @ObservationIgnored private var restoredChatSubmissions: Set<String> = []
     var transientTurns: [ChatTurn] = [] {
         didSet {
             bindConversationNavigationRender("transient-transcript")
@@ -381,6 +391,12 @@ final class AppModel: NSObject {
     private var warningBannerText: String?
     var bannerIsWarning: Bool { errorBanner != nil && errorBanner == warningBannerText }
     var stepTrail: [String] = []
+    // A load queued behind a running turn expires after 30 seconds, and that turn's frames carry no chat id.
+    private var waitingForEarlierTurn = false
+    @ObservationIgnored private var heldChatLoad: (chatId: String, identity: ClientOperationIdentity)?
+    var visibleStatusText: String? {
+        waitingForEarlierTurn ? "Finishing the previous reply. This chat will open when it ends." : statusText
+    }
     private(set) var activityLog: [String: [ActivityRow]] = [:]
     @ObservationIgnored private var activityAliases: [String: String] = [:]
     @ObservationIgnored private var activityOrder: [String] = []
@@ -472,7 +488,7 @@ final class AppModel: NSObject {
         }
         var composerSteeringApplies: Bool {
             turnSteerNegotiated && turnActive && signedIn && connected && !mutationsLocked
-                && !timelineReadOnly
+                && !timelineReadOnly && !waitingForEarlierTurn
         }
         var composerQueueApplies: Bool {
             turnQueueCapable && composerSteeringApplies
@@ -2868,6 +2884,14 @@ final class AppModel: NSObject {
             retireOrdinarySurfaceRequests(preservingReadIntent: true)
             voice.controlTransportDisconnected()
             clearPendingOperationSubmissions()
+            if turnActive {
+                restoreUnsettledChatSend(
+                    "The connection dropped before this message finished. Review it and send it again.")
+            } else {
+                unsettledChatSend = nil
+            }
+            waitingForEarlierTurn = false
+            heldChatLoad = nil
             endInterruptedActivity()
             turnActive = false
             pendingReplace = false
@@ -2888,6 +2912,7 @@ final class AppModel: NSObject {
                     localOperationSubmissions.values.contains(
                         where: localSubmissionShowsActivityHere) ? "Submitting…" : nil
             }
+            guard restoredChatSubmissions.remove(replay.identity.submissionId) == nil else { break }
             bannerIsError = true
             errorBanner = "Not sent while offline: \(replay.action) (\(reason))"
         case .sendRejected(let action):
@@ -3044,7 +3069,9 @@ final class AppModel: NSObject {
             if let chatId = nestedChatId(frame) { clearConfirmedDeletion(chatId) }
         case "chat_status":
             if let target = frame.payload["chat_id"]?.stringValue, let active = activeChatId, target != active { break }
-            if frame.payload["status"]?.stringValue == "done", frame.payload["message"]?.stringValue == "Cancelled" {
+            if frame.payload["status"]?.stringValue == "done", frame.payload["message"]?.stringValue == "Cancelled",
+                !waitingForEarlierTurn
+            {
                 recordActivityCancellation(chatId: nestedChatId(frame) ?? activeChatId)
             }
             if ["done", "idle"].contains(frame.payload["status"]?.stringValue ?? "") {
@@ -3139,11 +3166,13 @@ final class AppModel: NSObject {
                 reduceError(frame)
             }
         case "chat_step":
+            if waitingForEarlierTurn { break }
             let step = frame.payload["step"]
             let name = step?["name"]?.stringValue ?? step?["kind"]?.stringValue
             stepTrail = trailUpsert(stepTrail, stepLine(name: name, status: step?["status"]?.stringValue))
             recordActivityStep(frame)
         case "tool_progress":
+            if waitingForEarlierTurn { break }
             let head = [frame.payload["tool_name"]?.stringValue, frame.payload["message"]?.stringValue]
                 .compactMap { $0 }.joined(separator: ": ")
             // Int(Double) traps out-of-range — bounds-check before converting
@@ -3336,16 +3365,23 @@ final class AppModel: NSObject {
             let ownsActiveChatTurn = operationOwnsActiveChatTurn(
                 action: status.action,
                 requestGeneration: status.requestGeneration)
-            if status.state != "completed" {
-                _ = continuity.retireUncommittedCommit(requestGeneration: status.requestGeneration)
+            var nothingSaved = pendingCommitRequestGeneration == status.requestGeneration
+            if status.state != "completed",
+                continuity.retireUncommittedCommit(requestGeneration: status.requestGeneration)
+            {
+                nothingSaved = true
             }
+            let failure = status.error.objectValue?["message"]?.stringValue
+            let restored =
+                ownsActiveChatTurn && nothingSaved && ["failed", "retryable"].contains(status.state)
+                && restoreFailedChatSend(requestGeneration: status.requestGeneration, failure: failure)
             clearLocalOperationSubmission(requestGeneration: status.requestGeneration)
             if ownsActiveChatTurn {
                 settleActiveChatTurn(
                     requestGeneration: status.requestGeneration,
                     discardUncommitted: status.state != "completed")
             }
-            if let message = status.error.objectValue?["message"]?.stringValue {
+            if !restored, let message = failure {
                 bannerIsError = true
                 errorBanner = message
                 transientTurns = []
@@ -3383,6 +3419,7 @@ final class AppModel: NSObject {
             })
         else { return }
         clearLocalOperationSubmission(requestGeneration: status.requestGeneration)
+        if status.action == "chat_message" { finishWaitingForEarlierTurn() }
         statusText = latestActiveOperationStatusText()
     }
 
@@ -3698,6 +3735,8 @@ final class AppModel: NSObject {
             let editedText = turns.first(where: { $0.id == turnEditor?.turnId })?.text
         #endif
         activeChatId = snapshot.chatId
+        waitingForEarlierTurn = false
+        heldChatLoad = nil
         turns = restoredTurns
         clearUnsentMessage(requestGeneration: snapshot.requestGeneration)
         restoreUnsentMessageIfCurrent()
@@ -3826,6 +3865,7 @@ final class AppModel: NSObject {
         activeChatId = chatId
         voice.updateVisibleChatLocally(chatId)
         guard let request = pendingCommitRequestGeneration else { return }
+        if unsettledChatSend?.requestGeneration == request { unsettledChatSend?.chatId = chatId }
         if openConversationRequest(
             chatId: chatId,
             requestGeneration: request,
@@ -4205,6 +4245,7 @@ final class AppModel: NSObject {
             ? "\(message) (\(displayedCode!))" : message
         bannerIsError = true
         turnActive = false
+        if !earlierTurnStillRunning { finishWaitingForEarlierTurn() }
         pendingReplace = false
         pendingCanvas = []
         transientTurns = []
@@ -4250,6 +4291,10 @@ final class AppModel: NSObject {
             statusText = label
         default:
             statusText = label
+        }
+        // "Cancelled" is sent at once; a turn still unwinding ends at the plain "done" that follows.
+        if ["done", "idle"].contains(status ?? ""), message != "Cancelled" || !earlierTurnStillRunning {
+            finishWaitingForEarlierTurn()
         }
     }
 
@@ -5644,6 +5689,8 @@ final class AppModel: NSObject {
         canvasCapture.clear()
         activityLog.removeValue(forKey: activityKey(nil))
         activeChatId = nil
+        waitingForEarlierTurn = false
+        heldChatLoad = nil
         voice.updateVisibleChatLocally(nil)
         #if os(macOS)
             turnEditor = nil
@@ -5686,6 +5733,9 @@ final class AppModel: NSObject {
         chatId: String?,
         exposeStatus: Bool = true
     ) {
+        if action == "chat_message", unsettledChatSend?.submissionId != identity.submissionId {
+            unsettledChatSend = nil
+        }
         guard let connectionGeneration = continuity.connectionGeneration,
             let submission = LocalOperationSubmission(
                 identity: identity,
@@ -5710,6 +5760,7 @@ final class AppModel: NSObject {
 
     @discardableResult
     func replayQueuedOperation(_ replay: QueuedOperationReplay) -> Bool {
+        if restoredChatSubmissions.contains(replay.identity.submissionId) { return false }
         #if os(macOS)
             if projects.negotiating { return false }
             if projects.enabled, replay.conversationPurpose != nil, replay.chatId == nil {
@@ -5801,6 +5852,7 @@ final class AppModel: NSObject {
         liveOpsThisTurn = false
         stepTrail = []
         asyncDetached = false
+        unsettledChatSend = nil
         if discardUncommitted {
             pendingCanvas = []
             transientTurns = []
@@ -6193,6 +6245,9 @@ final class AppModel: NSObject {
             canvas = canvas.dropWelcome()
         }
         pendingLabel = String((text.isEmpty ? (ready.first?.filename ?? "") : text).prefix(80))
+        unsettledChatSend = UnsettledChatSend(
+            submissionId: identity.submissionId, requestGeneration: request, chatId: activeChatId, text: text,
+            attachments: ready)
         staged = []
         viewingIndex = nil
         statusText = nil
@@ -6888,8 +6943,9 @@ final class AppModel: NSObject {
                 }
                 if !sent && owner == downloadOwner { retireUnsentOperation(text) }
             } else {
-                _ = await socket.confirmLive()
+                let live = await socket.confirmLive()
                 await socket.send(text)
+                if live { markChatSendTransmitted(text) }
             }
         }
     }
@@ -6985,16 +7041,53 @@ final class AppModel: NSObject {
         return true
     }
 
+    private func markChatSendTransmitted(_ text: String) {
+        guard let submission = InboundFrame.parse(text)?.payload["submission_id"]?.stringValue,
+            unsettledChatSend?.submissionId == submission
+        else { return }
+        unsettledChatSend?.transmitted = true
+    }
+
+    @discardableResult
+    private func restoreUnsettledChatSend(_ notice: String) -> Bool {
+        defer { unsettledChatSend = nil }
+        guard let send = unsettledChatSend, send.transmitted, unsettledChatSendBelongsHere(send),
+            transientTurns.contains(where: { $0.role == "user" })
+        else { return false }
+        restoredChatSubmissions.insert(send.submissionId)
+        composerDraft = joinedWithDraft(send.text)
+        staged = send.attachments + staged
+        bannerIsError = true
+        errorBanner = notice
+        return true
+    }
+
+    private func unsettledChatSendBelongsHere(_ send: UnsettledChatSend) -> Bool {
+        if let chatId = send.chatId { return activeChatId == chatId }
+        return activeChatId == nil && pendingCommitRequestGeneration == send.requestGeneration
+    }
+
+    private func restoreFailedChatSend(requestGeneration: String, failure: String?) -> Bool {
+        guard unsettledChatSend?.requestGeneration == requestGeneration else { return false }
+        return restoreUnsettledChatSend(
+            [failure, "Your message is back in the composer."].compactMap { $0 }.joined(separator: " "))
+    }
+
     private func restoreUnsentQuery(_ text: String, navigation: Int, chatId: String?) {
         guard navigation == conversationNavigationGeneration, activeChatId == chatId, screen == .chat,
             let frame = InboundFrame.parse(text), frame.payload["action"]?.stringValue == "chat_message",
             let message = frame.payload["payload"]?["message"]?.stringValue
         else { return }
-        if composerDraft.isEmpty { composerDraft = message }
+        composerDraft = joinedWithDraft(message)
         turnActive = false
         statusText = nil
         bannerIsError = true
         errorBanner = "The message was not sent. Review it and try again after reconnecting."
+    }
+
+    private func joinedWithDraft(_ message: String) -> String {
+        if message.isEmpty { return composerDraft }
+        return composerDraft.isEmpty ? message : "\(message)\n\n\(composerDraft)"
     }
 
     @discardableResult
@@ -7348,6 +7441,9 @@ final class AppModel: NSObject {
             guard conversationResumeStore.save(chatId: chatId, for: account) else { return }
         }
         conversationNavigationGeneration += 1
+        let leavesRunningTurn =
+            continuity.connectionGeneration != nil && activeChatId != chatId
+            && (turnActive || waitingForEarlierTurn)
         activeChatId = chatId
         voice.updateVisibleChatLocally(chatId)
         let identity = ClientOperationIdentity.fresh()
@@ -7360,6 +7456,17 @@ final class AppModel: NSObject {
                     purpose: .hydration)
             else { return }
         }
+        if leavesRunningTurn {
+            showWaitingForEarlierTurn()
+            heldChatLoad = (chatId, identity)
+        } else {
+            sendChatLoad(chatId, identity: identity)
+        }
+        screen = .chat
+        viewingIndex = nil
+    }
+
+    private func sendChatLoad(_ chatId: String, identity: ClientOperationIdentity) {
         beginLocalOperationSubmission(
             identity: identity,
             action: "load_chat",
@@ -7370,9 +7477,34 @@ final class AppModel: NSObject {
                 sessionId: chatId,
                 chatId: chatId,
                 submissionId: identity.submissionId,
-                requestGeneration: request))
-        screen = .chat
-        viewingIndex = nil
+                requestGeneration: identity.requestGeneration))
+    }
+
+    private var earlierTurnStillRunning: Bool {
+        localOperationSubmissions.values.contains { $0.action == "chat_message" && $0.chatId != activeChatId }
+    }
+
+    private func finishWaitingForEarlierTurn() {
+        waitingForEarlierTurn = false
+        guard let held = heldChatLoad else { return }
+        heldChatLoad = nil
+        if continuity.requestGeneration == held.identity.requestGeneration {
+            sendChatLoad(held.chatId, identity: held.identity)
+        }
+    }
+
+    private func showWaitingForEarlierTurn() {
+        waitingForEarlierTurn = true
+        turns = []
+        canvas = []
+        pendingCanvas = []
+        canvasHistory = []
+        pendingReplace = false
+        stepTrail = []
+        #if os(macOS)
+            turnEditor = nil
+            pendingTurnDeparture = nil
+        #endif
     }
 
     func deleteChat(_ chatId: String) {
