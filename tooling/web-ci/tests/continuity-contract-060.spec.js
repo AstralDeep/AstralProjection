@@ -2693,3 +2693,20 @@ test("returning to the running chat while waiting keeps its status, steps and fa
   expect(loads).toHaveLength(1);
   expect(loads[0].payload.chat_id).toBe(CHAT_ID);
 });
+
+test("a first message left for a New chat cannot make its chat the open one", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await registration(page);
+  await page.locator("#astral-input").fill("First message");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  await page.locator("#astral-newchat-btn").click();
+  await receive(page, { type: "chat_created", payload: { chat_id: THIRD_CHAT_ID, from_message: true } });
+  expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key) || "null")?.chat_id ?? null, LOCATOR_KEY))
+    .toBeNull();
+  await page.locator("#astral-input").fill("For the new chat");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  const message = await page.evaluate(() => window.__socketEvents.findLast((event) => (
+    event.frame.action === "chat_message")).frame);
+  expect(message.payload.message).toBe("For the new chat");
+  expect(message.payload.chat_id ?? null).not.toBe(THIRD_CHAT_ID);
+});
