@@ -773,4 +773,225 @@ final class ConversationContinuityTests: XCTestCase {
         }
     }
 
+    private let waitingText = "Finishing the previous reply. This chat will open when it ends."
+
+    private func modelShowingChatWithTurnRunning() throws -> AppModel {
+        let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
+        model.bindConversationAccount(account)
+        model.signedIn = true
+        model.connected = true
+        XCTAssertTrue(model.beginConversationConnection(connection))
+        XCTAssertTrue(model.openConversationRequest(chatId: chat, requestGeneration: hydration, purpose: .hydration))
+        model.handleFrame(snapshot(canvasText: "First chat canvas"))
+        model.handleFrame(inbound(#"{"type":"chat_status","status":"thinking","message":"Working"}"#))
+        XCTAssertTrue(model.turnActive)
+        return model
+    }
+
+    private func modelWithSentTurnRunning() throws -> (model: AppModel, request: String) {
+        let model = try modelShowingChatWithTurnRunning()
+        var sent: JSONValue?
+        model.outboundTap = { sent = try? JSONValue.parse(Data($0.utf8)) }
+        model.sendChat("Question for the first chat")
+        model.outboundTap = nil
+        return (model, try XCTUnwrap(sent?["request_generation"]?.stringValue))
+    }
+
+    private func turnStatus(request: String, state: String) -> InboundFrame {
+        let error =
+            state == "completed" ? "null" : #"{"code":"operation_failed","message":"The turn was stopped."}"#
+        return inbound(
+            """
+            {"type":"operation_status","operation_id":"88888888-8888-4888-8888-888888888888",
+             "action":"chat_message","surface":"chat","chat_id":"\(chat)",
+             "connection_generation":"\(connection)","request_generation":"\(request)",
+             "sequence":2,"state":"\(state)","phase":"\(state)","label":"Ended",
+             "terminal":true,"retryable":false,"error":\(error),
+             "retry_after_ms":null,"updated_at":"2026-11-08T18:00:00Z"}
+            """)
+    }
+
+    func testOpeningAnotherChatDuringATurnHidesTheChatBeingLeft() throws {
+        let model = try modelShowingChatWithTurnRunning()
+        var sent: [JSONValue] = []
+        model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+        let target = "66666666-6666-4666-8666-666666666666"
+
+        model.openChat(target)
+
+        XCTAssertEqual(model.activeChatId, target)
+        XCTAssertTrue(model.turns.isEmpty)
+        XCTAssertTrue(model.canvas.isEmpty)
+        XCTAssertEqual(model.visibleStatusText, waitingText)
+
+        model.handleFrame(inbound(#"{"type":"chat_status","status":"executing","message":"Old turn"}"#))
+        model.handleFrame(inbound(#"{"type":"chat_step","step":{"name":"Old step","status":"running"}}"#))
+        model.handleFrame(inbound(#"{"type":"tool_progress","tool_name":"old_tool","message":"Old"}"#))
+        XCTAssertEqual(model.visibleStatusText, waitingText)
+        XCTAssertTrue(model.stepTrail.isEmpty)
+        XCTAssertTrue(model.turnActive, "Stop stays available for the turn still running.")
+        XCTAssertTrue(sent.isEmpty, "A load queued behind the turn would expire on the server.")
+
+        model.handleFrame(inbound(#"{"type":"chat_status","status":"done","message":""}"#))
+        let load = try XCTUnwrap(sent.last)
+        XCTAssertEqual(load["session_id"]?.stringValue, target)
+        var restored = snapshot(canvasText: "Target canvas").payload.objectValue!
+        restored["chat_id"] = .string(target)
+        restored["request_generation"] = load["request_generation"]
+        model.handleFrame(InboundFrame(name: "conversation_snapshot", payload: .object(restored)))
+        XCTAssertEqual(model.canvas.map(\.fallbackText), ["Target canvas"])
+        XCTAssertEqual(model.turns.map(\.id), ["u1", "a1"])
+
+        model.handleFrame(inbound(#"{"type":"chat_status","status":"thinking","message":"Next turn"}"#))
+        XCTAssertEqual(model.visibleStatusText, "Next turn")
+    }
+
+    func testCancelledTurnOpensTheWaitingChatOnceItHasUnwound() throws {
+        let model = try modelWithSentTurnRunning().model
+        var sent: [JSONValue] = []
+        model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+        model.openChat("66666666-6666-4666-8666-666666666666")
+
+        model.handleFrame(inbound(#"{"type":"chat_status","status":"done","message":"Cancelled"}"#))
+
+        XCTAssertTrue(sent.isEmpty, "The cancelled turn is still unwinding on the server.")
+        XCTAssertEqual(model.visibleStatusText, waitingText)
+        XCTAssertTrue(model.activity.isEmpty, "The cancelled turn did not belong to the chat being opened.")
+
+        model.handleFrame(inbound(#"{"type":"chat_status","status":"done","message":""}"#))
+        XCTAssertEqual(sent.last?["action"]?.stringValue, "load_chat")
+    }
+
+    func testSendingWhileAChatWaitsToOpenSendsIntoThatChat() throws {
+        let model = try modelShowingChatWithTurnRunning()
+        let target = "66666666-6666-4666-8666-666666666666"
+        model.openChat(target)
+        var sent: [JSONValue] = []
+        model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+
+        model.sendChat("Send this into the chat being opened")
+
+        XCTAssertEqual(sent.map { $0["action"]?.stringValue }, ["chat_message"])
+        XCTAssertEqual(sent.first?["session_id"]?.stringValue, target)
+        XCTAssertEqual(model.composerDraft, "")
+    }
+
+    func testTheLeftChatsFinalStatusOpensTheWaitingChatAfterACancel() throws {
+        let (model, request) = try modelWithSentTurnRunning()
+        var sent: [JSONValue] = []
+        model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+        let target = "66666666-6666-4666-8666-666666666666"
+        model.openChat(target)
+
+        model.handleFrame(inbound(#"{"type":"chat_status","status":"done","message":"Cancelled"}"#))
+        XCTAssertTrue(sent.isEmpty)
+        XCTAssertEqual(model.visibleStatusText, waitingText)
+
+        model.handleFrame(turnStatus(request: request, state: "cancelled"))
+
+        XCTAssertEqual(sent.map { $0["action"]?.stringValue }, ["load_chat"])
+        XCTAssertEqual(sent.first?["session_id"]?.stringValue, target)
+        XCTAssertNotEqual(model.visibleStatusText, waitingText)
+    }
+
+    func testACancelWithNothingStillRunningOpensTheWaitingChat() throws {
+        let model = try modelShowingChatWithTurnRunning()
+        var sent: [JSONValue] = []
+        model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+        model.openChat("66666666-6666-4666-8666-666666666666")
+
+        model.handleFrame(inbound(#"{"type":"chat_status","status":"done","message":"Cancelled"}"#))
+
+        XCTAssertEqual(sent.map { $0["action"]?.stringValue }, ["load_chat"])
+        XCTAssertNotEqual(model.visibleStatusText, waitingText)
+    }
+
+    func testAnUnrelatedErrorKeepsTheChatWaitingWhileTheLeftTurnRuns() throws {
+        let (model, request) = try modelWithSentTurnRunning()
+        var sent: [JSONValue] = []
+        model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+        model.openChat("66666666-6666-4666-8666-666666666666")
+
+        model.handleFrame(inbound(#"{"type":"error","code":"internal","message":"Something else failed"}"#))
+        XCTAssertTrue(sent.isEmpty)
+        XCTAssertEqual(model.visibleStatusText, waitingText)
+
+        model.handleFrame(turnStatus(request: request, state: "completed"))
+        XCTAssertEqual(sent.map { $0["action"]?.stringValue }, ["load_chat"])
+    }
+
+    func testADisconnectWhileAChatWaitsToOpenResumesThatChatOnReconnect() async throws {
+        let model = try modelWithSentTurnRunning().model
+        var sent: [JSONValue] = []
+        model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+        let target = "66666666-6666-4666-8666-666666666666"
+        model.openChat(target)
+
+        await model.handle(.disconnected(reason: "lost"))
+
+        XCTAssertNotEqual(model.visibleStatusText, waitingText)
+        XCTAssertFalse(model.turnActive)
+        XCTAssertEqual(model.composerDraft, "")
+        model.handleFrame(inbound(#"{"type":"chat_status","status":"done","message":""}"#))
+        XCTAssertTrue(sent.isEmpty, "The held load belonged to the lost connection.")
+        let registration = try JSONValue.parse(Data(model.registrationFrame(token: "token", resumed: true).utf8))
+        XCTAssertEqual(registration["resume"]?["active_chat_id"]?.stringValue, target)
+        XCTAssertEqual(model.activeChatId, target)
+    }
+
+    func testOnlyTheLastChatOpenedDuringATurnLoadsWhenItEnds() throws {
+        let model = try modelShowingChatWithTurnRunning()
+        var sent: [JSONValue] = []
+        model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+        model.openChat("66666666-6666-4666-8666-666666666666")
+        model.openChat("77777777-7777-4777-8777-777777777777")
+
+        model.handleFrame(inbound(#"{"type":"chat_status","status":"done","message":""}"#))
+
+        XCTAssertEqual(
+            sent.compactMap { $0["session_id"]?.stringValue }, ["77777777-7777-4777-8777-777777777777"])
+    }
+
+    func testATurnErrorStillOpensTheWaitingChat() throws {
+        let model = try modelShowingChatWithTurnRunning()
+        var sent: [JSONValue] = []
+        model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+        model.openChat("66666666-6666-4666-8666-666666666666")
+
+        model.handleFrame(inbound(#"{"type":"error","code":"internal","message":"Turn failed"}"#))
+
+        XCTAssertEqual(sent.last?["action"]?.stringValue, "load_chat")
+    }
+
+    func testOpeningTheSameChatDuringATurnKeepsItOnScreen() throws {
+        let model = try modelShowingChatWithTurnRunning()
+
+        model.openChat(chat)
+
+        XCTAssertEqual(model.turns.map(\.id), ["u1", "a1"])
+        XCTAssertNotEqual(model.visibleStatusText, waitingText)
+    }
+
+    func testOpeningAnotherChatWhenIdleKeepsTheOldViewUntilTheSnapshot() throws {
+        let model = try modelShowingChatWithTurnRunning()
+        model.handleFrame(inbound(#"{"type":"chat_status","status":"done","message":""}"#))
+
+        model.openChat("66666666-6666-4666-8666-666666666666")
+
+        XCTAssertEqual(model.turns.map(\.id), ["u1", "a1"])
+        XCTAssertNotEqual(model.visibleStatusText, waitingText)
+    }
+
+    func testNewChatDuringATurnCanSendAtOnce() throws {
+        let model = try modelShowingChatWithTurnRunning()
+        var sent: [JSONValue] = []
+        model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+
+        model.newChat()
+        XCTAssertNotEqual(model.visibleStatusText, waitingText)
+        model.sendChat("A question for a new chat")
+
+        XCTAssertEqual(sent.compactMap { $0["action"]?.stringValue }, ["new_chat", "chat_message"])
+        XCTAssertEqual(model.composerDraft, "")
+    }
 }

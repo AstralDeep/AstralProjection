@@ -344,6 +344,16 @@ final class AppModel: NSObject {
             observeActivityComponents()
         }
     }
+    private struct UnsettledChatSend {
+        let submissionId: String
+        let requestGeneration: String
+        var chatId: String?
+        let text: String
+        let attachments: [StagedAttachment]
+        var transmitted = false
+    }
+    @ObservationIgnored private var unsettledChatSend: UnsettledChatSend?
+    @ObservationIgnored private var restoredChatSubmissions: Set<String> = []
     var transientTurns: [ChatTurn] = [] {
         didSet {
             bindConversationNavigationRender("transient-transcript")
@@ -381,6 +391,12 @@ final class AppModel: NSObject {
     private var warningBannerText: String?
     var bannerIsWarning: Bool { errorBanner != nil && errorBanner == warningBannerText }
     var stepTrail: [String] = []
+    // A load queued behind a running turn expires after 30 seconds, and that turn's frames carry no chat id.
+    private var waitingForEarlierTurn = false
+    @ObservationIgnored private var heldChatLoad: (chatId: String, identity: ClientOperationIdentity)?
+    var visibleStatusText: String? {
+        waitingForEarlierTurn ? "Finishing the previous reply. This chat will open when it ends." : statusText
+    }
     private(set) var activityLog: [String: [ActivityRow]] = [:]
     @ObservationIgnored private var activityAliases: [String: String] = [:]
     @ObservationIgnored private var activityOrder: [String] = []
@@ -472,7 +488,7 @@ final class AppModel: NSObject {
         }
         var composerSteeringApplies: Bool {
             turnSteerNegotiated && turnActive && signedIn && connected && !mutationsLocked
-                && !timelineReadOnly
+                && !timelineReadOnly && !waitingForEarlierTurn
         }
         var composerQueueApplies: Bool {
             turnQueueCapable && composerSteeringApplies
@@ -576,6 +592,8 @@ final class AppModel: NSObject {
     @ObservationIgnored private var tokens: TokenSet?
     @ObservationIgnored private var serverSession: ServerSession?
     @ObservationIgnored private var restoringServerSession: ServerSession?
+    @ObservationIgnored var serverSessionRetryBackoff = BackoffPolicy(base: 2, factor: 2, cap: 60)
+    @ObservationIgnored private var bootstrapRun: BootstrapRun?
     @ObservationIgnored private var serverCustodyRequired = false
     @ObservationIgnored var serverSessionStorage: any MeshKeyStorage = KeychainMeshKeyStorage(
         service: "com.personalailabs.astraldeep.server-session")
@@ -583,6 +601,7 @@ final class AppModel: NSObject {
         try await ServerSessionHTTP.request($0)
     }
     @ObservationIgnored private var ws: WSClient?
+    @ObservationIgnored private var wsBinding: (socket: WSClient, owner: DownloadOwner, server: URL)?
     @ObservationIgnored private var initialWebSocket: WSClient?
     #if os(macOS)
         @ObservationIgnored var socketLiveness: LivenessPolicy? = .standard
@@ -623,6 +642,7 @@ final class AppModel: NSObject {
     @ObservationIgnored private var conversationNavigationGeneration = 0
     @ObservationIgnored private var conversationResumeStore: ConversationResumeStore
     @ObservationIgnored private var outcomeUnknownStore: OutcomeUnknownStore
+    @ObservationIgnored private let unsentMessageStore: any UnsentMessageStorage
     @ObservationIgnored var outcomeAckWait: @Sendable () async -> Void = {
         try? await Task.sleep(nanoseconds: 5_000_000_000)
     }
@@ -712,6 +732,7 @@ final class AppModel: NSObject {
     init(
         conversationResumeStore: ConversationResumeStore = ConversationResumeStore(),
         outcomeUnknownStore: OutcomeUnknownStore = OutcomeUnknownStore(),
+        unsentMessageStore: (any UnsentMessageStorage)? = nil,
         tokenStore: TokenStorage,
         defaults: UserDefaults = .standard,
         webSocket: WSClient? = nil,
@@ -737,7 +758,11 @@ final class AppModel: NSObject {
         self.initialWebSocket = webSocket
         self.conversationResumeStore = conversationResumeStore
         self.outcomeUnknownStore = outcomeUnknownStore
+        self.unsentMessageStore =
+            unsentMessageStore
+            ?? (tokenStore is KeychainTokenStore ? KeychainUnsentMessageStore() : InMemoryUnsentMessageStore())
         self.defaults = defaults
+        defaults.removeObject(forKey: "astral.unsentChatMessage.v1")
         #if os(macOS)
             if let stored = defaults.string(forKey: Self.composerReturnBindingKey),
                 let binding = ComposerReturnBinding(rawValue: stored)
@@ -930,6 +955,7 @@ final class AppModel: NSObject {
         }
         conversationAccount = account
         activeChatId = conversationResumeStore.load(for: account)?.chatId
+        bindUnsentMessage(to: account)
         #if os(macOS)
             restoreOutcomeUnknownCard()
         #endif
@@ -1585,14 +1611,38 @@ final class AppModel: NSObject {
     }
 
     func bootstrap() async {
+        if let run = bootstrapRun, run.generation == sessionGeneration, !run.cancelled {
+            await run.wait()
+            return
+        }
         // Every window shares this model and bootstraps on open; reconnecting would cut off a running turn.
         guard wsTask == nil else { return }
-        let generation = sessionGeneration
+        bootstrapRun?.cancel()
+        let run = BootstrapRun(generation: sessionGeneration)
         let owner = downloadOwner
         let authentication = authSession
+        bootstrapRun = run
+        run.task = Task {
+            await restoreSession(generation: run.generation, owner: owner, authentication: authentication)
+            if bootstrapRun === run { bootstrapRun = nil }
+        }
+        await run.wait()
+    }
+
+    static func serverSessionRetryDelay(_ backoff: inout BackoffPolicy, jitter: Double = .random(in: 0.5...1))
+        -> UInt64
+    {
+        UInt64(backoff.next() * jitter * 1_000_000_000)
+    }
+
+    private func restoreSession(
+        generation: Int, owner: DownloadOwner, authentication: ASWebAuthenticationSession?
+    ) async {
         if let oidc, let scope = try? ServerSessionScope(server: serverBase, oidc: oidc) {
-            do {
-                if let data = try serverSessionStorage.load(scope.storageKey) {
+            var backoff = serverSessionRetryBackoff
+            restore: while true {
+                do {
+                    guard let data = try serverSessionStorage.load(scope.storageKey) else { break restore }
                     let restored = try JSONDecoder().decode(ServerSession.self, from: data)
                     guard restored.scope == scope, restored.cookieExpiresAt > credentialClock() else {
                         throw ServerSessionError.retired
@@ -1609,17 +1659,28 @@ final class AppModel: NSObject {
                     serverSession = refreshed
                     serverCustodyRequired = true
                     tokens = refreshed.tokenSet
+                    signInError = nil
                     enterSignedIn(resumedSession: true)
                     return
+                } catch ServerSessionError.unavailable {
+                    guard !Task.isCancelled, generation == sessionGeneration, owner == downloadOwner,
+                        authentication === authSession
+                    else { return }
+                    // No answer says nothing about the session: keep it, signed out, until the server confirms it.
+                    signInError = "The server can't be reached. Your sign-in is saved. Retrying…"
+                    try? await Task.sleep(nanoseconds: Self.serverSessionRetryDelay(&backoff))
+                    guard !Task.isCancelled, generation == sessionGeneration, owner == downloadOwner,
+                        authentication === authSession, !signedIn
+                    else { return }
+                } catch {
+                    guard !Task.isCancelled, generation == sessionGeneration, owner == downloadOwner,
+                        authentication === authSession
+                    else { return }
+                    retireServerSession()
+                    store.wipe()
+                    signInError = "The saved server session could not be resumed. Sign in again."
+                    return
                 }
-            } catch {
-                guard !Task.isCancelled, generation == sessionGeneration, owner == downloadOwner,
-                    authentication === authSession
-                else { return }
-                retireServerSession()
-                store.wipe()
-                signInError = "The saved server session could not be resumed. Sign in again."
-                return
             }
         }
         let loaded = await Task.detached { [store] in store.load() }.value
@@ -2313,6 +2374,7 @@ final class AppModel: NSObject {
         wsTask = nil
         ws = nil
         if pendingSurfaceKey == "terminal" { closeSurface() }
+        clearUnsentMessages()
         pendingSurface = nil
         pendingSurfaceKey = ""
         pendingSurfaceParams = .object([:])
@@ -2376,6 +2438,7 @@ final class AppModel: NSObject {
         if let account = conversationAccount {
             _ = conversationResumeStore.clear(.accountRemoval, for: account)
         }
+        clearUnsentMessages()
         conversationAccount = nil
         invalidateGuidance()
         pendingSurface = nil
@@ -2686,15 +2749,21 @@ final class AppModel: NSObject {
                     await self?.serverSocketHeaders(url: socketURL, owner: socketOwner, server: socketServer)
                 })
         initialWebSocket = nil
-        if let previous = ws, previous !== client {
-            Task { await previous.stop() }
-        }
+        let previous = ws.flatMap { $0 !== client ? $0 : nil }
+        let inheritsQueue =
+            previous != nil && wsBinding?.socket === previous && wsBinding?.owner == socketOwner
+            && wsBinding?.server == socketServer
+        wsBinding = (client, socketOwner, socketServer)
         ws = client
         let owner = downloadOwner
         let server = serverBase
         let resumeState = AppRegistrationResumeState(initial: initialResumed)
         wsTask = Task {
             let events = await client.events()
+            if let previous {
+                if inheritsQueue { await previous.handOverQueue(to: client) } else { await previous.stop() }
+            }
+            guard !Task.isCancelled, self.ws === client else { return }
             #if os(macOS)
                 let onRegistration: (@Sendable (InboundFrame, String) async -> Bool)? = {
                     [weak self] frame, generation in
@@ -2815,6 +2884,14 @@ final class AppModel: NSObject {
             retireOrdinarySurfaceRequests(preservingReadIntent: true)
             voice.controlTransportDisconnected()
             clearPendingOperationSubmissions()
+            if turnActive {
+                restoreUnsettledChatSend(
+                    "The connection dropped before this message finished. Review it and send it again.")
+            } else {
+                unsettledChatSend = nil
+            }
+            waitingForEarlierTurn = false
+            heldChatLoad = nil
             endInterruptedActivity()
             turnActive = false
             pendingReplace = false
@@ -2835,6 +2912,7 @@ final class AppModel: NSObject {
                     localOperationSubmissions.values.contains(
                         where: localSubmissionShowsActivityHere) ? "Submitting…" : nil
             }
+            guard restoredChatSubmissions.remove(replay.identity.submissionId) == nil else { break }
             bannerIsError = true
             errorBanner = "Not sent while offline: \(replay.action) (\(reason))"
         case .sendRejected(let action):
@@ -2991,7 +3069,9 @@ final class AppModel: NSObject {
             if let chatId = nestedChatId(frame) { clearConfirmedDeletion(chatId) }
         case "chat_status":
             if let target = frame.payload["chat_id"]?.stringValue, let active = activeChatId, target != active { break }
-            if frame.payload["status"]?.stringValue == "done", frame.payload["message"]?.stringValue == "Cancelled" {
+            if frame.payload["status"]?.stringValue == "done", frame.payload["message"]?.stringValue == "Cancelled",
+                !waitingForEarlierTurn
+            {
                 recordActivityCancellation(chatId: nestedChatId(frame) ?? activeChatId)
             }
             if ["done", "idle"].contains(frame.payload["status"]?.stringValue ?? "") {
@@ -3086,11 +3166,13 @@ final class AppModel: NSObject {
                 reduceError(frame)
             }
         case "chat_step":
+            if waitingForEarlierTurn { break }
             let step = frame.payload["step"]
             let name = step?["name"]?.stringValue ?? step?["kind"]?.stringValue
             stepTrail = trailUpsert(stepTrail, stepLine(name: name, status: step?["status"]?.stringValue))
             recordActivityStep(frame)
         case "tool_progress":
+            if waitingForEarlierTurn { break }
             let head = [frame.payload["tool_name"]?.stringValue, frame.payload["message"]?.stringValue]
                 .compactMap { $0 }.joined(separator: ": ")
             // Int(Double) traps out-of-range — bounds-check before converting
@@ -3116,12 +3198,22 @@ final class AppModel: NSObject {
                 if continuity.connectionGeneration == nil {
                     commitTurn()
                     refreshActiveChat()
-                } else {
-                    turnActive = false
+                } else if !turnActive, pendingCommitRequestGeneration == nil, transientTurns.isEmpty {
+                    asyncDetached = false
                     statusText = nil
+                    // A revisit rebinds the chat, so the task's commit snapshot no longer reaches this socket.
+                    refreshActiveChat()
                 }
-                bannerIsError = false
-                errorBanner = "Background task finished"
+                let task = frame.payload["payload"]
+                let status = task?["status"]?.stringValue ?? "completed"
+                bannerIsError = !["completed", "cancelled"].contains(status)
+                switch status {
+                case "completed": errorBanner = "Background task finished"
+                case "cancelled": errorBanner = "Background task cancelled"
+                default:
+                    let summary = task?["summary"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    errorBanner = summary.isEmpty ? "The background task did not finish." : summary
+                }
             }
         case "notification":
             var text = [frame.payload["title"]?.stringValue, frame.payload["body"]?.stringValue]
@@ -3247,6 +3339,10 @@ final class AppModel: NSObject {
 
     private func reduceOperationStatus(_ frame: InboundFrame) {
         guard let status = OperationStatus(frame: frame) else { return }
+        if status.terminal {
+            // Authoritative for its own request even when another chat is open.
+            clearUnsentMessage(requestGeneration: status.requestGeneration)
+        }
         guard
             statusLifecycle.accept(
                 operation: status,
@@ -3269,16 +3365,23 @@ final class AppModel: NSObject {
             let ownsActiveChatTurn = operationOwnsActiveChatTurn(
                 action: status.action,
                 requestGeneration: status.requestGeneration)
-            if status.state != "completed" {
-                _ = continuity.retireUncommittedCommit(requestGeneration: status.requestGeneration)
+            var nothingSaved = pendingCommitRequestGeneration == status.requestGeneration
+            if status.state != "completed",
+                continuity.retireUncommittedCommit(requestGeneration: status.requestGeneration)
+            {
+                nothingSaved = true
             }
+            let failure = status.error.objectValue?["message"]?.stringValue
+            let restored =
+                ownsActiveChatTurn && nothingSaved && ["failed", "retryable"].contains(status.state)
+                && restoreFailedChatSend(requestGeneration: status.requestGeneration, failure: failure)
             clearLocalOperationSubmission(requestGeneration: status.requestGeneration)
             if ownsActiveChatTurn {
                 settleActiveChatTurn(
                     requestGeneration: status.requestGeneration,
                     discardUncommitted: status.state != "completed")
             }
-            if let message = status.error.objectValue?["message"]?.stringValue {
+            if !restored, let message = failure {
                 bannerIsError = true
                 errorBanner = message
                 transientTurns = []
@@ -3316,6 +3419,7 @@ final class AppModel: NSObject {
             })
         else { return }
         clearLocalOperationSubmission(requestGeneration: status.requestGeneration)
+        if status.action == "chat_message" { finishWaitingForEarlierTurn() }
         statusText = latestActiveOperationStatusText()
     }
 
@@ -3631,7 +3735,11 @@ final class AppModel: NSObject {
             let editedText = turns.first(where: { $0.id == turnEditor?.turnId })?.text
         #endif
         activeChatId = snapshot.chatId
+        waitingForEarlierTurn = false
+        heldChatLoad = nil
         turns = restoredTurns
+        clearUnsentMessage(requestGeneration: snapshot.requestGeneration)
+        restoreUnsentMessageIfCurrent()
         #if os(macOS)
             // A reconnect rehydrates the same chat unchanged; a branch switch changes the edited turn's text.
             let editedTurnUnchanged =
@@ -3749,6 +3857,7 @@ final class AppModel: NSObject {
         if let account = conversationAccount {
             _ = conversationResumeStore.save(chatId: chatId, for: account)
         }
+        adoptUnsentMessage(chatId: chatId)
         if activeChatId == nil, let pending = activityLog.removeValue(forKey: activityKey(nil)) {
             activityLog[chatId] = Array(((activityLog[chatId] ?? []) + pending).suffix(Self.maximumActivityRows))
             touchActivityChat(chatId)
@@ -3756,6 +3865,7 @@ final class AppModel: NSObject {
         activeChatId = chatId
         voice.updateVisibleChatLocally(chatId)
         guard let request = pendingCommitRequestGeneration else { return }
+        if unsettledChatSend?.requestGeneration == request { unsettledChatSend?.chatId = chatId }
         if openConversationRequest(
             chatId: chatId,
             requestGeneration: request,
@@ -4135,6 +4245,7 @@ final class AppModel: NSObject {
             ? "\(message) (\(displayedCode!))" : message
         bannerIsError = true
         turnActive = false
+        if !earlierTurnStillRunning { finishWaitingForEarlierTurn() }
         pendingReplace = false
         pendingCanvas = []
         transientTurns = []
@@ -4180,6 +4291,10 @@ final class AppModel: NSObject {
             statusText = label
         default:
             statusText = label
+        }
+        // "Cancelled" is sent at once; a turn still unwinding ends at the plain "done" that follows.
+        if ["done", "idle"].contains(status ?? ""), message != "Cancelled" || !earlierTurnStillRunning {
+            finishWaitingForEarlierTurn()
         }
     }
 
@@ -5574,6 +5689,8 @@ final class AppModel: NSObject {
         canvasCapture.clear()
         activityLog.removeValue(forKey: activityKey(nil))
         activeChatId = nil
+        waitingForEarlierTurn = false
+        heldChatLoad = nil
         voice.updateVisibleChatLocally(nil)
         #if os(macOS)
             turnEditor = nil
@@ -5616,6 +5733,9 @@ final class AppModel: NSObject {
         chatId: String?,
         exposeStatus: Bool = true
     ) {
+        if action == "chat_message", unsettledChatSend?.submissionId != identity.submissionId {
+            unsettledChatSend = nil
+        }
         guard let connectionGeneration = continuity.connectionGeneration,
             let submission = LocalOperationSubmission(
                 identity: identity,
@@ -5640,6 +5760,7 @@ final class AppModel: NSObject {
 
     @discardableResult
     func replayQueuedOperation(_ replay: QueuedOperationReplay) -> Bool {
+        if restoredChatSubmissions.contains(replay.identity.submissionId) { return false }
         #if os(macOS)
             if projects.negotiating { return false }
             if projects.enabled, replay.conversationPurpose != nil, replay.chatId == nil {
@@ -5731,6 +5852,7 @@ final class AppModel: NSObject {
         liveOpsThisTurn = false
         stepTrail = []
         asyncDetached = false
+        unsettledChatSend = nil
         if discardUncommitted {
             pendingCanvas = []
             transientTurns = []
@@ -5999,6 +6121,66 @@ final class AppModel: NSObject {
         }
     #endif
 
+    @ObservationIgnored private var unsentMessage: (scope: UnsentMessageScope, message: UnsentChatMessage)?
+    @ObservationIgnored private var restorableUnsentMessage: (scope: UnsentMessageScope, message: UnsentChatMessage)?
+    @ObservationIgnored private var unsentMessageLaunchChecked = false
+
+    private func saveUnsentMessage(_ text: String, requestGeneration: String) {
+        guard let account = conversationAccount, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return }
+        let scope = UnsentMessageScope(server: serverBase, account: account)
+        let message = UnsentChatMessage(chatId: activeChatId, requestGeneration: requestGeneration, text: text)
+        unsentMessageStore.save(message, for: scope)
+        unsentMessage = (scope, message)
+        restorableUnsentMessage = nil
+    }
+
+    private func adoptUnsentMessage(chatId: String) {
+        guard activeChatId == nil, let saved = unsentMessage, saved.message.chatId == nil else { return }
+        let message = UnsentChatMessage(
+            chatId: chatId, requestGeneration: saved.message.requestGeneration, text: saved.message.text)
+        unsentMessageStore.save(message, for: saved.scope)
+        unsentMessage = (saved.scope, message)
+    }
+
+    private func clearUnsentMessage(requestGeneration: String) {
+        guard let saved = unsentMessage, saved.message.requestGeneration == requestGeneration else { return }
+        unsentMessageStore.remove(saved.scope)
+        unsentMessage = nil
+    }
+
+    private func clearUnsentMessages() {
+        unsentMessageStore.retainOnly(nil)
+        unsentMessage = nil
+        restorableUnsentMessage = nil
+    }
+
+    private func bindUnsentMessage(to account: ConversationAccount) {
+        let scope = UnsentMessageScope(server: serverBase, account: account)
+        unsentMessageStore.retainOnly(scope)
+        if unsentMessage?.scope != scope { unsentMessage = nil }
+        if restorableUnsentMessage?.scope != scope { restorableUnsentMessage = nil }
+        if !unsentMessageLaunchChecked {
+            unsentMessageLaunchChecked = true
+            restorableUnsentMessage = unsentMessageStore.load(scope).map { (scope: scope, message: $0) }
+        }
+        restoreUnsentMessageIfCurrent()
+    }
+
+    private func restoreUnsentMessageIfCurrent() {
+        guard let saved = restorableUnsentMessage, saved.message.chatId == activeChatId, composerDraft.isEmpty,
+            !localOperationSubmissions.values.contains(where: {
+                $0.requestGeneration == saved.message.requestGeneration
+            })
+        else { return }
+        restorableUnsentMessage = nil
+        unsentMessageStore.remove(saved.scope)
+        composerDraft = saved.message.text
+        bannerIsError = false
+        errorBanner =
+            "Your last message may not have reached AstralDeep before it closed, so it is back in the composer."
+    }
+
     func sendChat(_ text: String) {
         #if os(macOS)
             if projects.negotiating {
@@ -6063,6 +6245,9 @@ final class AppModel: NSObject {
             canvas = canvas.dropWelcome()
         }
         pendingLabel = String((text.isEmpty ? (ready.first?.filename ?? "") : text).prefix(80))
+        unsettledChatSend = UnsettledChatSend(
+            submissionId: identity.submissionId, requestGeneration: request, chatId: activeChatId, text: text,
+            attachments: ready)
         staged = []
         viewingIndex = nil
         statusText = nil
@@ -6075,6 +6260,7 @@ final class AppModel: NSObject {
             action: "chat_message",
             surface: "chat",
             chatId: activeChatId)
+        saveUnsentMessage(text, requestGeneration: request)
 
         var payload: [String: JSONValue] = ["message": .string(text)]
         if let turnSelection, !turnSelection.isEmpty { payload["selection"] = turnSelection.json }
@@ -6757,8 +6943,9 @@ final class AppModel: NSObject {
                 }
                 if !sent && owner == downloadOwner { retireUnsentOperation(text) }
             } else {
-                _ = await socket.confirmLive()
+                let live = await socket.confirmLive()
                 await socket.send(text)
+                if live { markChatSendTransmitted(text) }
             }
         }
     }
@@ -6854,16 +7041,53 @@ final class AppModel: NSObject {
         return true
     }
 
+    private func markChatSendTransmitted(_ text: String) {
+        guard let submission = InboundFrame.parse(text)?.payload["submission_id"]?.stringValue,
+            unsettledChatSend?.submissionId == submission
+        else { return }
+        unsettledChatSend?.transmitted = true
+    }
+
+    @discardableResult
+    private func restoreUnsettledChatSend(_ notice: String) -> Bool {
+        defer { unsettledChatSend = nil }
+        guard let send = unsettledChatSend, send.transmitted, unsettledChatSendBelongsHere(send),
+            transientTurns.contains(where: { $0.role == "user" })
+        else { return false }
+        restoredChatSubmissions.insert(send.submissionId)
+        composerDraft = joinedWithDraft(send.text)
+        staged = send.attachments + staged
+        bannerIsError = true
+        errorBanner = notice
+        return true
+    }
+
+    private func unsettledChatSendBelongsHere(_ send: UnsettledChatSend) -> Bool {
+        if let chatId = send.chatId { return activeChatId == chatId }
+        return activeChatId == nil && pendingCommitRequestGeneration == send.requestGeneration
+    }
+
+    private func restoreFailedChatSend(requestGeneration: String, failure: String?) -> Bool {
+        guard unsettledChatSend?.requestGeneration == requestGeneration else { return false }
+        return restoreUnsettledChatSend(
+            [failure, "Your message is back in the composer."].compactMap { $0 }.joined(separator: " "))
+    }
+
     private func restoreUnsentQuery(_ text: String, navigation: Int, chatId: String?) {
         guard navigation == conversationNavigationGeneration, activeChatId == chatId, screen == .chat,
             let frame = InboundFrame.parse(text), frame.payload["action"]?.stringValue == "chat_message",
             let message = frame.payload["payload"]?["message"]?.stringValue
         else { return }
-        if composerDraft.isEmpty { composerDraft = message }
+        composerDraft = joinedWithDraft(message)
         turnActive = false
         statusText = nil
         bannerIsError = true
         errorBanner = "The message was not sent. Review it and try again after reconnecting."
+    }
+
+    private func joinedWithDraft(_ message: String) -> String {
+        if message.isEmpty { return composerDraft }
+        return composerDraft.isEmpty ? message : "\(message)\n\n\(composerDraft)"
     }
 
     @discardableResult
@@ -7217,6 +7441,9 @@ final class AppModel: NSObject {
             guard conversationResumeStore.save(chatId: chatId, for: account) else { return }
         }
         conversationNavigationGeneration += 1
+        let leavesRunningTurn =
+            continuity.connectionGeneration != nil && activeChatId != chatId
+            && (turnActive || waitingForEarlierTurn)
         activeChatId = chatId
         voice.updateVisibleChatLocally(chatId)
         let identity = ClientOperationIdentity.fresh()
@@ -7229,6 +7456,17 @@ final class AppModel: NSObject {
                     purpose: .hydration)
             else { return }
         }
+        if leavesRunningTurn {
+            showWaitingForEarlierTurn()
+            heldChatLoad = (chatId, identity)
+        } else {
+            sendChatLoad(chatId, identity: identity)
+        }
+        screen = .chat
+        viewingIndex = nil
+    }
+
+    private func sendChatLoad(_ chatId: String, identity: ClientOperationIdentity) {
         beginLocalOperationSubmission(
             identity: identity,
             action: "load_chat",
@@ -7239,9 +7477,34 @@ final class AppModel: NSObject {
                 sessionId: chatId,
                 chatId: chatId,
                 submissionId: identity.submissionId,
-                requestGeneration: request))
-        screen = .chat
-        viewingIndex = nil
+                requestGeneration: identity.requestGeneration))
+    }
+
+    private var earlierTurnStillRunning: Bool {
+        localOperationSubmissions.values.contains { $0.action == "chat_message" && $0.chatId != activeChatId }
+    }
+
+    private func finishWaitingForEarlierTurn() {
+        waitingForEarlierTurn = false
+        guard let held = heldChatLoad else { return }
+        heldChatLoad = nil
+        if continuity.requestGeneration == held.identity.requestGeneration {
+            sendChatLoad(held.chatId, identity: held.identity)
+        }
+    }
+
+    private func showWaitingForEarlierTurn() {
+        waitingForEarlierTurn = true
+        turns = []
+        canvas = []
+        pendingCanvas = []
+        canvasHistory = []
+        pendingReplace = false
+        stepTrail = []
+        #if os(macOS)
+            turnEditor = nil
+            pendingTurnDeparture = nil
+        #endif
     }
 
     func deleteChat(_ chatId: String) {
@@ -7742,6 +8005,35 @@ final class AppModel: NSObject {
         guard signedIn, !connected else { return }
         initialConnectionFailed = false
         connectWS(resumed: true)
+    }
+}
+
+@MainActor private final class BootstrapRun {
+    let generation: Int
+    var task: Task<Void, Never>?
+    private var waiters = 0
+
+    init(generation: Int) {
+        self.generation = generation
+    }
+
+    var cancelled: Bool { task?.isCancelled == true }
+
+    func cancel() { task?.cancel() }
+
+    func wait() async {
+        guard let task else { return }
+        waiters += 1
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            Task { @MainActor in self.leave() }
+        }
+    }
+
+    private func leave() {
+        waiters -= 1
+        if waiters == 0 { task?.cancel() }
     }
 }
 

@@ -589,7 +589,7 @@ private struct ChatList: View {
     @ViewBuilder
     private var rows: some View {
         ForEach(visible) { turn in ChatBubble(turn: turn) }
-        if let status = model.statusText {
+        if let status = model.visibleStatusText {
             StatusLine(text: status, showsActivity: model.statusShowsActivity)
                 .id("status")
         }
