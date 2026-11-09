@@ -33,6 +33,7 @@
   var operationSubmissionByGeneration = Object.create(null);
   var operationSubmissionById = Object.create(null);
   var operationSubmissionOrdinal = 0;
+  var unsettledChatSend = null;
   var agentLifecycleById = Object.create(null);
   var ACCOUNT_SESSION_KEY = "astraldeep.active_chat.account.v1";
   var VOICE_DEVICE_KEY = "astraldeep.voice.device.v1";
@@ -407,6 +408,7 @@
   function clearPrivateAccountState() {
     accountPrivacyEpoch += 1;
     retireOwnerSurface();
+    unsettledChatSend = null;
     if (input) input.value = "";
     (pendingActions || []).forEach(function (entry) { clearTimeout(entry.timer); });
     pendingActions = [];
@@ -466,6 +468,7 @@
       clearActiveChatLocator("account_switch", null, previousKey);
       activeChatId = null;
       requestState = null;
+      unsettledChatSend = null;
     }
     var changed = activeChatLocatorKey !== nextKey;
     activeChatLocatorKey = nextKey;
@@ -6575,6 +6578,8 @@
     if (submission && candidate.turnCount > (committedTurnsByChat[frame.chat_id] || 0)) {
       submission.user_row_committed = true;
     }
+    if (frame.snapshot_purpose === "commit" && unsettledChatSend
+        && unsettledChatSend.requestGeneration === frame.request_generation) unsettledChatSend = null;
     committedRevisionByChat[frame.chat_id] = frame.render_revision;
     committedTurnsByChat[frame.chat_id] = candidate.turnCount;
     lastSnapshotIdByChat[frame.chat_id] = frame.snapshot_id;
@@ -7313,6 +7318,8 @@
           activeChatId = data.payload.chat_id;
           syncVoiceVisibleChat(activeChatId);
           if (requestState && !requestState.chatId) requestState.chatId = activeChatId;
+          if (unsettledChatSend && !unsettledChatSend.chatId && requestState
+              && unsettledChatSend.requestGeneration === requestState.generation) unsettledChatSend.chatId = activeChatId;
           var pending = document.querySelector('.astral-history-item[data-chat-id="pending-new-chat"]');
           if (pending) {
             pending.setAttribute("data-chat-id", activeChatId);
@@ -7394,6 +7401,8 @@
       }
       case "operation_status":
         reduceOperationStatus(data);
+        if (data.action === "chat_message" && data.terminal && unsettledChatSend
+            && unsettledChatSend.requestGeneration === data.request_generation) unsettledChatSend = null;
         break;
       case "agent_lifecycle":
         reduceAgentLifecycle(data);
@@ -7561,6 +7570,23 @@
     }
   }
 
+  // A turn cut off by a dropped connection is not saved, so its message goes back to the composer like on macOS
+  function restoreUnsettledChatSend() {
+    var unsent = unsettledChatSend;
+    unsettledChatSend = null;
+    if (!unsent || unsent.chatId !== (activeChatId || null) || !input) return false;
+    var draft = input.value;
+    input.value = unsent.text && draft ? unsent.text + "\n\n" + draft : (unsent.text || draft);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    var staged = stagedAttachments.map(function (entry) { return entry.uid; });
+    unsent.attachments.forEach(function (entry) {
+      if (staged.indexOf(entry.uid) === -1 && stagedAttachments.length < MAX_ATTACHMENTS) stagedAttachments.push(entry);
+    });
+    renderAttachments();
+    showToast("The connection dropped before your message was saved. It is back in the composer.", "warning");
+    return true;
+  }
+
   function firstFourWords(text) {
     if (!text || typeof text !== "string") return "";
     var words = text.trim().split(/\s+/).filter(Boolean);
@@ -7636,6 +7662,8 @@
     if (bgArmed) payload.async_mode = true;
     if (turnSelection) payload.selection = cloneTurnSelection(turnSelection);
     var submission = beginOperationSubmission("chat_message", payload, requestState.generation);
+    unsettledChatSend = { requestGeneration: submission.requestGeneration, chatId: activeChatId || null,
+      text: message || "", attachments: ready.slice() };
     send({
       type: "ui_event",
       action: "chat_message",
@@ -8987,6 +9015,7 @@
       setConnState("offline", "Reconnecting — messages will queue");
       operationSubmissionByGeneration = Object.create(null);
       operationSubmissionById = Object.create(null);
+      restoreUnsettledChatSend();
       clearVoiceBindingRenewal();
       voiceBinding = null;
       if (voiceSpeechBackend === "client_local" && voiceLocalPendingFinal) {
