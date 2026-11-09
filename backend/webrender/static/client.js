@@ -37,6 +37,8 @@
   var runningChatTurns = Object.create(null);
   var leftChatTurns = Object.create(null);
   var heldChatLoad = null;
+  var cancelledChatTurns = Object.create(null);
+  var TURN_ACTIONS = { chat_message: true, authorize_action: true, remote_op_decision: true };
   var agentLifecycleById = Object.create(null);
   var ACCOUNT_SESSION_KEY = "astraldeep.active_chat.account.v1";
   var VOICE_DEVICE_KEY = "astraldeep.voice.device.v1";
@@ -472,7 +474,9 @@
       requestState = null;
       runningChatTurns = Object.create(null);
       leftChatTurns = Object.create(null);
+      cancelledChatTurns = Object.create(null);
       heldChatLoad = null;
+      syncStopControl();
     }
     var changed = activeChatLocatorKey !== nextKey;
     activeChatLocatorKey = nextKey;
@@ -5652,6 +5656,7 @@
     if (local.shows_status) {
       setStatus(local.label, true, "operation-submission:" + requestGeneration);
     }
+    syncStopControl();
     return { payload: body, submissionId: submissionId, requestGeneration: requestGeneration };
   }
 
@@ -5660,6 +5665,7 @@
     if (!local) return false;
     delete operationSubmissionByGeneration[requestGeneration];
     delete operationSubmissionById[local.submission_id];
+    syncStopControl();
     return true;
   }
 
@@ -5949,6 +5955,7 @@
       setHTML(canvas, "");
       setWorkspaceView("work");
       setStatus("Finishing the previous reply. This chat will open when it ends.", true, "earlier-turn");
+      syncStopControl();
       return;
     }
     sendChatLoad(chatId);
@@ -5965,14 +5972,14 @@
 
   function chatTurnRunning() {
     return Object.keys(runningChatTurns).length > 0 || Object.keys(operationSubmissionByGeneration)
-      .some(function (generation) { return operationSubmissionByGeneration[generation].action === "chat_message"; });
+      .some(function (generation) { return TURN_ACTIONS[operationSubmissionByGeneration[generation].action]; });
   }
 
   function leaveRunningChatTurns() {
     lastChatStatusText = "";
     Object.keys(runningChatTurns).forEach(function (generation) { leftChatTurns[generation] = true; });
     Object.keys(operationSubmissionByGeneration).forEach(function (generation) {
-      if (operationSubmissionByGeneration[generation].action === "chat_message") leftChatTurns[generation] = true;
+      if (TURN_ACTIONS[operationSubmissionByGeneration[generation].action]) leftChatTurns[generation] = true;
     });
   }
 
@@ -5985,11 +5992,12 @@
   }
 
   function trackChatTurn(frame) {
-    if (frame.action !== "chat_message" || !isCanonicalUuid4(frame.request_generation)
+    if (!TURN_ACTIONS[frame.action] || !isCanonicalUuid4(frame.request_generation)
         || frame.connection_generation !== connectionGeneration) return;
     if (frame.terminal) {
       delete runningChatTurns[frame.request_generation];
       delete leftChatTurns[frame.request_generation];
+      delete cancelledChatTurns[frame.request_generation];
     } else runningChatTurns[frame.request_generation] = true;
   }
 
@@ -5998,9 +6006,63 @@
     if (!held) return;
     heldChatLoad = null;
     restoreActiveStatusOrClear(["earlier-turn"]);
+    syncStopControl();
     if (activeChatId === held.chatId && requestState && requestState.generation === held.generation) {
       sendChatLoad(held.chatId);
     }
+  }
+
+  function cancellableTurns() {
+    var generations = Object.keys(runningChatTurns).concat(Object.keys(operationSubmissionByGeneration)
+      .filter(function (generation) { return TURN_ACTIONS[operationSubmissionByGeneration[generation].action]; }));
+    // While a chat waits to open, Stop ends the turn it waits behind
+    return generations.filter(function (generation) {
+      return heldChatLoad !== null ? leftChatTurns[generation] === true : !leftChatTurns[generation];
+    });
+  }
+
+  function canCancelTurn() {
+    if (!isSocketReady()) return false;
+    // A turn left for a new chat still owns the socket, so a cancel here would stop it
+    if (heldChatLoad === null && Object.keys(leftChatTurns).length > 0) return false;
+    return cancellableTurns().some(function (generation) { return cancelledChatTurns[generation] !== true; });
+  }
+
+  function syncStopControl() {
+    var stopButton = document.getElementById("astral-stop-btn");
+    if (!stopButton) return;
+    var stoppable = canCancelTurn();
+    if (!stoppable && document.activeElement === stopButton && input) {
+      try { input.focus(); } catch (e) {}
+    }
+    // Inline display because .astral-send-btn sets display, which outranks the hidden attribute
+    stopButton.hidden = !stoppable;
+    stopButton.style.display = stoppable ? "" : "none";
+  }
+
+  // The server cancels whichever turn runs on this socket, the same as the macOS Stop
+  function stopTurn() {
+    if (!canCancelTurn()) return false;
+    cancellableTurns().forEach(function (generation) { cancelledChatTurns[generation] = true; });
+    var submissionId = randomUuid4();
+    var requestGeneration = randomUuid4();
+    send({
+      type: "ui_event",
+      action: "cancel_task",
+      session_id: activeChatId || null,
+      submission_id: submissionId,
+      request_generation: requestGeneration,
+      payload: { submission_id: submissionId, request_generation: requestGeneration },
+    });
+    syncStopControl();
+    return true;
+  }
+
+  function escapeBelongsElsewhere() {
+    var slashMenu = document.getElementById("astral-slash-menu");
+    return !!(tourState || menuOpen() || (modalRoot && modalRoot.innerHTML) || (fsRoot && !fsRoot.hidden)
+      || drawerOpen() || chromePop || (slashMenu && !slashMenu.classList.contains("hidden"))
+      || (composerMore && composerMore.getAttribute("aria-expanded") === "true"));
   }
 
   var plotlyLoading = false;
@@ -7473,7 +7535,7 @@
         var leftTurnStatus = leftChatTurns[data.request_generation] === true;
         trackChatTurn(data);
         if (!leftTurnStatus) reduceOperationStatus(data);
-        if (data.action === "chat_message" && data.terminal && data.connection_generation === connectionGeneration) {
+        if (TURN_ACTIONS[data.action] && data.terminal && data.connection_generation === connectionGeneration) {
           // A turn left for another chat fails the scope check, so its submission ends here
           finishOperationSubmission(data.request_generation);
           if (!chatTurnRunning()) finishWaitingForEarlierTurn();
@@ -7742,6 +7804,16 @@
     if (!v && !hasReady) return;
     input.value = "";
     sendChat(v);
+  });
+  if (input) input.addEventListener("keydown", function (e) {
+    if (e.key !== "Escape" || e.repeat || e.isComposing || e.keyCode === 229 || e.defaultPrevented) return;
+    if (escapeBelongsElsewhere()) return;
+    if (stopTurn()) e.preventDefault();
+  });
+  var stopButton = document.getElementById("astral-stop-btn");
+  if (stopButton) stopButton.addEventListener("click", function () {
+    stopTurn();
+    if (input) { try { input.focus(); } catch (e) {} }
   });
   if (input && input.tagName === "TEXTAREA") input.addEventListener("keydown", function (e) {
     if (e.key !== "Enter" || e.shiftKey || e.isComposing || e.keyCode === 229 || e.defaultPrevented) return;
@@ -9064,7 +9136,10 @@
       for (var tid in bgTaskChips) action("watch_task", { task_id: tid }, false);
     };
     ws.onmessage = function (event) {
-      if (!accountSignedOut && ws === thisSocket) onMessage(event);
+      if (!accountSignedOut && ws === thisSocket) {
+        onMessage(event);
+        syncStopControl();
+      }
     };
     ws.onerror = function () { try { thisSocket.close(); } catch (e) {} };
     ws.onclose = function () {
@@ -9077,7 +9152,9 @@
       // Registration on reconnect hydrates the active chat, so a held load is not sent
       runningChatTurns = Object.create(null);
       leftChatTurns = Object.create(null);
+      cancelledChatTurns = Object.create(null);
       heldChatLoad = null;
+      syncStopControl();
       clearVoiceBindingRenewal();
       voiceBinding = null;
       if (voiceSpeechBackend === "client_local" && voiceLocalPendingFinal) {

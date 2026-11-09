@@ -105,7 +105,7 @@ function htmlShell() {
       <div id="astral-start-intro"></div>
       <div id="astral-start-permission"></div>
       <div id="astral-status"></div>
-      <form id="astral-form"><textarea id="astral-input" rows="2"></textarea><button type="submit">Send</button></form>
+      <form id="astral-form"><textarea id="astral-input" rows="2"></textarea><button type="button" id="astral-stop-btn" hidden>Stop response</button><button type="submit" id="astral-send-btn">Send</button></form>
       <div id="astral-start-examples"></div>
       <div id="astral-start-more"></div>
       <section id="astral-canvas">
@@ -2692,4 +2692,171 @@ test("returning to the running chat while waiting keeps its status, steps and fa
   const loads = await sentLoads(page);
   expect(loads).toHaveLength(1);
   expect(loads[0].payload.chat_id).toBe(CHAT_ID);
+});
+
+async function sentCancels(page) {
+  return page.evaluate(() => window.__socketEvents
+    .filter((event) => event.frame.type === "ui_event" && event.frame.action === "cancel_task")
+    .map((event) => event.frame));
+}
+
+test("Stop shows only while this chat's turn runs and keeps the typed draft", async ({ page }) => {
+  await installHarness(page);
+  const { frame: registrationFrame } = await registration(page);
+  await receive(page, snapshot(registrationFrame));
+  const stop = page.locator("#astral-stop-btn");
+  const sendButton = page.locator("#astral-send-btn");
+  await expect(stop).toBeHidden();
+  await expect(sendButton).toBeVisible();
+
+  await page.locator("#astral-input").fill("A long request");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  await expect(stop).toBeVisible();
+  await expect(sendButton).toBeVisible();
+  await page.locator("#astral-input").fill("Draft still being written");
+
+  await stop.click();
+  const cancels = await sentCancels(page);
+  expect(cancels).toHaveLength(1);
+  expect(cancels[0]).toEqual(expect.objectContaining({ session_id: CHAT_ID }));
+  expect(cancels[0].payload).toEqual({
+    submission_id: cancels[0].submission_id,
+    request_generation: cancels[0].request_generation,
+  });
+  expect(cancels[0].submission_id).toMatch(/^[0-9a-f-]{36}$/u);
+  await expect(page.locator("#astral-input")).toHaveValue("Draft still being written");
+});
+
+test("Stop hides when the turn ends and while disconnected", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  const stop = page.locator("#astral-stop-btn");
+  await expect(stop).toBeVisible();
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  await expect(stop).toBeHidden();
+
+  await page.locator("#astral-input").fill("Second request");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  await expect(stop).toBeVisible();
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(stop).toBeHidden();
+  await stop.evaluate((button) => button.click());
+  expect(await sentCancels(page)).toHaveLength(0);
+});
+
+test("Escape in the composer stops the turn unless the slash menu is open", async ({ page }) => {
+  await startTurnInChat(page);
+  const composer = page.locator("#astral-input");
+  await page.evaluate(() => document.querySelector("#astral-slash-menu").classList.remove("hidden"));
+  await composer.press("Escape");
+  expect(await sentCancels(page)).toHaveLength(0);
+
+  await page.evaluate(() => document.querySelector("#astral-slash-menu").classList.add("hidden"));
+  await composer.fill("Keep this text");
+  await composer.press("Escape");
+  expect(await sentCancels(page)).toHaveLength(1);
+  await expect(composer).toHaveValue("Keep this text");
+});
+
+test("Escape with no turn running sends nothing", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await page.locator("#astral-input").press("Escape");
+  expect(await sentCancels(page)).toHaveLength(0);
+});
+
+test("Stop stays available while a chat waits to open but not in a new chat beside a left turn", async ({ page }) => {
+  await startTurnInChat(page);
+  const stop = page.locator("#astral-stop-btn");
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await expect(stop).toBeVisible();
+  await stop.click();
+  const cancels = await sentCancels(page);
+  expect(cancels).toHaveLength(1);
+  expect(cancels[0].session_id).toBe(OTHER_CHAT_ID);
+
+  await page.locator("#astral-newchat-btn").click();
+  await expect(stop).toBeHidden();
+});
+
+test("Stop sends one cancel per turn and returns for the next turn", async ({ page }) => {
+  const { registrationFrame, turnScope } = await startTurnInChat(page);
+  const stop = page.locator("#astral-stop-btn");
+  await stop.click();
+  await expect(stop).toBeHidden();
+  await receive(page, { type: "chat_status", status: "done", message: "Cancelled" });
+  await page.locator("#astral-input").press("Escape");
+  await page.locator("#astral-input").evaluate((composer) => composer.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Escape", repeat: true, bubbles: true, cancelable: true })));
+  expect(await sentCancels(page)).toHaveLength(1);
+  await expect(stop).toBeHidden();
+
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  await page.locator("#astral-input").fill("Next request");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  const next = await page.evaluate(() => window.__socketEvents.findLast((event) => (
+    event.frame.action === "chat_message")).frame);
+  await receive(page, operationStatus({
+    connection_generation: registrationFrame.connection_generation,
+    request_generation: next.request_generation,
+  }, OPERATION_B, 0, "running"));
+  await expect(stop).toBeVisible();
+  await page.locator("#astral-input").press("Escape");
+  expect(await sentCancels(page)).toHaveLength(2);
+});
+
+test("Escape closes an open modal without cancelling the turn", async ({ page }) => {
+  await startTurnInChat(page);
+  await receive(page, { type: "chrome_render", region: "modal", html: "<div>Settings</div>" });
+  await page.locator("#astral-input").focus();
+  await page.locator("#astral-input").press("Escape");
+  expect(await sentCancels(page)).toHaveLength(0);
+  await expect(page.locator("#astral-stop-btn")).toBeVisible();
+});
+
+test("Stop stays hidden in a new chat whose first message queues behind a left turn", async ({ page }) => {
+  await startTurnInChat(page);
+  await page.locator("#astral-newchat-btn").click();
+  await page.locator("#astral-input").fill("First message in the new chat");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  await expect(page.locator("#astral-stop-btn")).toBeHidden();
+  await page.locator("#astral-input").press("Escape");
+  expect(await sentCancels(page)).toHaveLength(0);
+});
+
+test("Stop covers a turn resumed by an approval", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const stop = page.locator("#astral-stop-btn");
+  await expect(stop).toBeHidden();
+  await receive(page, operationStatus({
+    connection_generation: turnScope.connection_generation,
+    request_generation: "99999999-9999-4999-8999-999999999999",
+  }, OPERATION_C, 0, "running", { action: "authorize_action", surface: "chat" }));
+  await expect(stop).toBeVisible();
+  await stop.click();
+  expect(await sentCancels(page)).toHaveLength(1);
+});
+
+test("focus returns to the composer when a focused Stop hides", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await page.locator("#astral-stop-btn").focus();
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  await expect(page.locator("#astral-input")).toBeFocused();
+});
+
+test("opening another chat during an approval-resumed turn holds the load", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const approvalScope = {
+    connection_generation: turnScope.connection_generation,
+    request_generation: "99999999-9999-4999-8999-999999999999",
+  };
+  await receive(page, operationStatus(approvalScope, OPERATION_C, 0, "running", { action: "authorize_action", surface: "chat" }));
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  expect(await sentLoads(page)).toHaveLength(0);
+  await expect(page.locator("#astral-status")).toHaveText(EARLIER_TURN_WAIT);
+  await receive(page, operationStatus(approvalScope, OPERATION_C, 1, "completed", { action: "authorize_action", surface: "chat" }));
+  const loads = await sentLoads(page);
+  expect(loads).toHaveLength(1);
+  expect(loads[0].payload.chat_id).toBe(OTHER_CHAT_ID);
 });
