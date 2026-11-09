@@ -7377,11 +7377,12 @@
       case "chat_step":
         // chat_step carries no generation, so it is scoped by chat id like tool_progress
         if (data.chat_id && activeChatId && data.chat_id !== activeChatId) break;
-        if ((!data.chat_id || !activeChatId) && chatTurnRunningElsewhere()) break;
+        if (heldChatLoad || ((!data.chat_id || !activeChatId) && chatTurnRunningElsewhere())) break;
         renderStep(data.step);
         break;
       case "chat_created":
         if (correlatedVoiceChatCreated(data)) break;
+        if (heldChatLoad) break;
         if (data.payload && isCanonicalUuid4(data.payload.chat_id)) {
           persistActiveChatLocator(data.payload.chat_id);
           activeChatId = data.payload.chat_id;
@@ -7412,6 +7413,7 @@
       case "error": {
         if (!scopedStatusMatches(data)) break;
         var admissionRefusal = reduceAdmissionRefusal(data);
+        if (admissionRefusal && !chatTurnRunning()) finishWaitingForEarlierTurn();
         var em = errorMessage(data);
         showToast(em, "error");
         hideSkeleton();
@@ -7456,7 +7458,7 @@
         if (!scopedStatusMatches(data)) break;
         var tpChat = data.session_id || data.chat_id;
         if (tpChat && activeChatId && tpChat !== activeChatId) break;
-        if ((!tpChat || !activeChatId) && chatTurnRunningElsewhere()) break;
+        if (heldChatLoad || ((!tpChat || !activeChatId) && chatTurnRunningElsewhere())) break;
         if (data.terminal) { turnPhaseActive = false; setStatus(""); break; }
         var tpText = data.message || ((data.tool_name || "job") + " running…");
         if (!data.message && data.agent_id && agentNameById[data.agent_id]) {
@@ -7467,15 +7469,17 @@
         setStatus(tpText, true, "chat-status");
         break;
       }
-      case "operation_status":
+      case "operation_status": {
+        var leftTurnStatus = leftChatTurns[data.request_generation] === true;
         trackChatTurn(data);
-        reduceOperationStatus(data);
+        if (!leftTurnStatus) reduceOperationStatus(data);
         if (data.action === "chat_message" && data.terminal && data.connection_generation === connectionGeneration) {
           // A turn left for another chat fails the scope check, so its submission ends here
           finishOperationSubmission(data.request_generation);
           if (!chatTurnRunning()) finishWaitingForEarlierTurn();
         }
         break;
+      }
       case "agent_lifecycle":
         reduceAgentLifecycle(data);
         break;

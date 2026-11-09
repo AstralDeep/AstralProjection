@@ -2633,3 +2633,63 @@ test("an owner change drops a held load so the new owner's status is shown", asy
   await expect(page.locator("#astral-status")).toHaveText("New owner status");
   expect(await sentLoads(page)).toHaveLength(0);
 });
+
+test("an admission refusal of the left message ends the wait", async ({ page }) => {
+  await installHarness(page);
+  const { frame: registrationFrame } = await registration(page);
+  await receive(page, snapshot(registrationFrame));
+  await page.locator("#astral-input").fill("A long request");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  const message = await page.evaluate(() => window.__socketEvents.findLast((event) => (
+    event.frame.action === "chat_message")).frame);
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  expect(await sentLoads(page)).toHaveLength(0);
+
+  await receive(page, { type: "error", accepted: false, code: "capacity_exceeded", message: "Busy right now",
+    retry_after_ms: null, retryable: false, submission_id: message.submission_id });
+  const loads = await sentLoads(page);
+  expect(loads).toHaveLength(1);
+  expect(loads[0].payload.chat_id).toBe(OTHER_CHAT_ID);
+});
+
+test("a queued first message's chat creation cannot take over the chat being opened", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  const { frame: registrationFrame } = await registration(page);
+  await page.locator("#astral-input").fill("First message");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  const message = await page.evaluate(() => window.__socketEvents.findLast((event) => (
+    event.frame.action === "chat_message")).frame);
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await expect(page.locator("#astral-status")).toHaveText(EARLIER_TURN_WAIT);
+
+  await receive(page, { type: "chat_created", payload: { chat_id: THIRD_CHAT_ID } });
+  expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key)).chat_id, LOCATOR_KEY))
+    .toBe(OTHER_CHAT_ID);
+  await receive(page, operationStatus({
+    connection_generation: registrationFrame.connection_generation,
+    request_generation: message.request_generation,
+  }, OPERATION_B, 0, "completed", { chat_id: THIRD_CHAT_ID }));
+  const loads = await sentLoads(page);
+  expect(loads).toHaveLength(1);
+  expect(loads[0].payload.chat_id).toBe(OTHER_CHAT_ID);
+});
+
+test("returning to the running chat while waiting keeps its status, steps and failure out of view", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await openChatFromHistory(page, CHAT_ID);
+  const status = page.locator("#astral-status");
+  await expect(status).toHaveText(EARLIER_TURN_WAIT);
+
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "running", { label: "Left running label" }));
+  await receive(page, { type: "chat_step", chat_id: CHAT_ID, step: { name: "left_tool", status: "in_progress" } });
+  await receive(page, { type: "tool_progress", chat_id: CHAT_ID, tool_name: "left_tool", message: "Left progress" });
+  await expect(status).toHaveText(EARLIER_TURN_WAIT);
+  expect(await sentLoads(page)).toHaveLength(0);
+
+  await receive(page, operationStatus(turnScope, OPERATION_A, 3, "failed"));
+  await expect(page.locator("body")).not.toContainText("Visible terminal failure");
+  const loads = await sentLoads(page);
+  expect(loads).toHaveLength(1);
+  expect(loads[0].payload.chat_id).toBe(CHAT_ID);
+});
