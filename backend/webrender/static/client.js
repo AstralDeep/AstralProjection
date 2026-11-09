@@ -40,6 +40,7 @@
   var cancelledChatTurns = Object.create(null);
   var TURN_ACTIONS = { chat_message: true, authorize_action: true, remote_op_decision: true };
   var pendingTaskReload = null;
+  var unsettledChatSend = null;
   var agentLifecycleById = Object.create(null);
   var ACCOUNT_SESSION_KEY = "astraldeep.active_chat.account.v1";
   var VOICE_DEVICE_KEY = "astraldeep.voice.device.v1";
@@ -414,6 +415,7 @@
   function clearPrivateAccountState() {
     accountPrivacyEpoch += 1;
     retireOwnerSurface();
+    unsettledChatSend = null;
     if (input) input.value = "";
     (pendingActions || []).forEach(function (entry) { clearTimeout(entry.timer); });
     pendingActions = [];
@@ -479,6 +481,7 @@
       heldChatLoad = null;
       syncStopControl();
       pendingTaskReload = null;
+      unsettledChatSend = null;
     }
     var changed = activeChatLocatorKey !== nextKey;
     activeChatLocatorKey = nextKey;
@@ -5889,6 +5892,9 @@
       });
       return submission;
     }
+    if (name === "chat_message") {
+      recordUnsettledChatSend(submission, submission.payload.message, [], !!submission.payload.async_mode);
+    }
     send(frame);
     return submission;
   }
@@ -6720,6 +6726,8 @@
     if (submission && candidate.turnCount > (committedTurnsByChat[frame.chat_id] || 0)) {
       submission.user_row_committed = true;
     }
+    if (frame.snapshot_purpose === "commit" && unsettledChatSend
+        && unsettledChatSend.requestGeneration === frame.request_generation) unsettledChatSend = null;
     committedRevisionByChat[frame.chat_id] = frame.render_revision;
     committedTurnsByChat[frame.chat_id] = candidate.turnCount;
     lastSnapshotIdByChat[frame.chat_id] = frame.snapshot_id;
@@ -7470,6 +7478,8 @@
           activeChatId = data.payload.chat_id;
           syncVoiceVisibleChat(activeChatId);
           if (requestState && !requestState.chatId) requestState.chatId = activeChatId;
+          if (unsettledChatSend && !unsettledChatSend.chatId && requestState
+              && unsettledChatSend.requestGeneration === requestState.generation) unsettledChatSend.chatId = activeChatId;
           var pending = document.querySelector('.astral-history-item[data-chat-id="pending-new-chat"]');
           if (pending) {
             pending.setAttribute("data-chat-id", activeChatId);
@@ -7497,6 +7507,9 @@
         var admissionRefusal = reduceAdmissionRefusal(data);
         if (admissionRefusal && !chatTurnRunning()) finishWaitingForEarlierTurn();
         if (admissionRefusal) flushPendingTaskReload();
+        if (admissionRefusal && unsettledChatSend && unsettledChatSend.submissionId === data.submission_id) {
+          unsettledChatSend = null;
+        }
         var em = errorMessage(data);
         showToast(em, "error");
         hideSkeleton();
@@ -7561,6 +7574,8 @@
         var leftTurnStatus = leftChatTurns[data.request_generation] === true;
         trackChatTurn(data);
         if (!leftTurnStatus) reduceOperationStatus(data);
+        if (data.action === "chat_message" && data.terminal && unsettledChatSend
+            && unsettledChatSend.requestGeneration === data.request_generation) unsettledChatSend = null;
         if (TURN_ACTIONS[data.action] && data.terminal && data.connection_generation === connectionGeneration) {
           // A turn left for another chat fails the scope check, so its submission ends here
           finishOperationSubmission(data.request_generation);
@@ -7736,6 +7751,30 @@
     }
   }
 
+  function recordUnsettledChatSend(submission, message, attachments, background) {
+    // A background task keeps running after a drop, so resending its message would duplicate it
+    unsettledChatSend = background ? null : { submissionId: submission.submissionId,
+      requestGeneration: submission.requestGeneration, chatId: activeChatId || null,
+      text: message || "", attachments: attachments.slice() };
+  }
+
+  // A turn cut off by a dropped connection is not saved, so its message goes back to the composer like on macOS
+  function restoreUnsettledChatSend() {
+    var unsent = unsettledChatSend;
+    unsettledChatSend = null;
+    if (!unsent || unsent.chatId !== (activeChatId || null) || !input) return false;
+    var draft = input.value.trim() === unsent.text.trim() ? "" : input.value;
+    input.value = unsent.text && draft ? unsent.text + "\n\n" + draft : (unsent.text || draft);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    var restoredUids = unsent.attachments.map(function (entry) { return entry.uid; });
+    stagedAttachments = unsent.attachments.concat(stagedAttachments.filter(function (entry) {
+      return restoredUids.indexOf(entry.uid) === -1;
+    })).slice(0, MAX_ATTACHMENTS);
+    renderAttachments();
+    showToast("The connection dropped before your message was saved. It is back in the composer.", "warning");
+    return true;
+  }
+
   function firstFourWords(text) {
     if (!text || typeof text !== "string") return "";
     var words = text.trim().split(/\s+/).filter(Boolean);
@@ -7811,6 +7850,7 @@
     if (bgArmed) payload.async_mode = true;
     if (turnSelection) payload.selection = cloneTurnSelection(turnSelection);
     var submission = beginOperationSubmission("chat_message", payload, requestState.generation);
+    recordUnsettledChatSend(submission, message, ready, !!payload.async_mode);
     send({
       type: "ui_event",
       action: "chat_message",
@@ -7876,6 +7916,7 @@
     closeAttachMenu();
     setBgArmed(false);
     leaveRunningChatTurns();
+    unsettledChatSend = null;
     activeChatId = null;
     heldChatLoad = null;
     timelineMode = false;
@@ -9220,6 +9261,7 @@
       heldChatLoad = null;
       syncStopControl();
       pendingTaskReload = null;
+      restoreUnsettledChatSend();
       clearVoiceBindingRenewal();
       voiceBinding = null;
       if (voiceSpeechBackend === "client_local" && voiceLocalPendingFinal) {

@@ -3084,3 +3084,151 @@ test("coming back online retries at once instead of waiting out the backoff", as
   await expect.poll(() => page.evaluate(() => window.__sockets.at(-1).sent
     .some((frame) => frame.type === "register_ui"))).toBe(true);
 });
+
+async function sendInOpenChat(page, text) {
+  const { frame: registrationFrame } = await registration(page);
+  await page.locator("#astral-input").fill(text);
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  const message = await page.evaluate(() => window.__socketEvents.findLast((event) => (
+    event.frame.action === "chat_message")).frame);
+  return { connection_generation: registrationFrame.connection_generation, request_generation: message.request_generation };
+}
+
+const DROP_NOTICE = "The connection dropped before your message was saved. It is back in the composer.";
+
+test("a dropped connection puts an unsaved message and its files back ahead of the new draft", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await stageExistingFile(page, "file-1", "notes.txt");
+  await sendInOpenChat(page, "Summarize my notes");
+  await expect(page.locator("#astral-attachments")).not.toContainText("notes.txt");
+  await page.locator("#astral-input").fill("Also add dates");
+  await page.evaluate(() => window.__sockets.at(-1).close());
+
+  await expect(page.locator("#astral-input")).toHaveValue("Summarize my notes\n\nAlso add dates");
+  await expect(page.locator("#astral-attachments")).toContainText("notes.txt");
+  await expect(page.locator("#astral-toasts")).toContainText(DROP_NOTICE);
+});
+
+test("a message whose commit arrived is not restored after a drop", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  const scope = await sendInOpenChat(page, "Saved request");
+  await receive(page, snapshot(scope, { snapshot_purpose: "commit", render_revision: 1, snapshot_id: SNAPSHOT_B }));
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await expect(page.locator("body")).not.toContainText(DROP_NOTICE);
+});
+
+test("a message whose turn already ended is not restored after a drop", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  const scope = await sendInOpenChat(page, "Finished request");
+  await receive(page, operationStatus(scope, OPERATION_A, 0, "completed"));
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("");
+});
+
+test("an unsaved message is not restored into another chat", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await sendInOpenChat(page, "Request for chat one");
+  await page.locator("#astral-newchat-btn").click();
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await expect(page.locator("body")).not.toContainText(DROP_NOTICE);
+});
+
+test("a first message in a new chat is restored into that chat after a drop", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await sendInOpenChat(page, "First question");
+  await receive(page, { type: "chat_created", payload: { chat_id: OTHER_CHAT_ID } });
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("First question");
+});
+
+test("an owner change never restores the previous owner's unsaved message", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await sendInOpenChat(page, "Owner A private request");
+  await page.evaluate(({ token }) => {
+    window.__sessionToken = token;
+    window.__sessionSubject = "other-user";
+  }, { token: OTHER_TOKEN });
+  await receive(page, { type: "auth_required" });
+  await page.waitForFunction(() => window.__sockets.length === 2
+    && window.__sockets[1].sent.some((frame) => frame.type === "register_ui"));
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).not.toHaveValue(/Owner A private request/u);
+  await expect(page.locator("body")).not.toContainText(DROP_NOTICE);
+});
+
+async function clickUiAction(page, payload, { example = false } = {}) {
+  await page.evaluate(({ value, insideExample }) => {
+    const host = document.createElement("div");
+    if (insideExample) host.className = "astral-agent-example";
+    const button = document.createElement("button");
+    button.dataset.uiAction = "chat_message";
+    button.dataset.uiPayload = JSON.stringify(value);
+    host.append(button);
+    document.body.append(host);
+    button.click();
+    host.remove();
+  }, { value: payload, insideExample: example });
+}
+
+test("a background send is never restored after a drop", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await page.locator("#astral-bg-btn").click();
+  await sendInOpenChat(page, "Background job");
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await expect(page.locator("body")).not.toContainText(DROP_NOTICE);
+});
+
+test("an example prompt comes back once after a drop", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await clickUiAction(page, { message: "Example prompt" }, { example: true });
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("Example prompt");
+});
+
+test("a message from a server button is restored after a drop", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await clickUiAction(page, { message: "From a button" });
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("From a button");
+});
+
+test("a first message abandoned with New chat is not restored", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await sendInOpenChat(page, "Abandoned question");
+  await page.locator("#astral-newchat-btn").click();
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await expect(page.locator("body")).not.toContainText(DROP_NOTICE);
+});
+
+test("a refused message is not restored by a later drop", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await sendInOpenChat(page, "Refused request");
+  const message = await page.evaluate(() => window.__socketEvents.findLast((event) => (
+    event.frame.action === "chat_message")).frame);
+  await receive(page, { type: "error", accepted: false, code: "capacity_exceeded", message: "Busy right now",
+    retry_after_ms: null, retryable: false, submission_id: message.submission_id });
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("body")).not.toContainText(DROP_NOTICE);
+});
+
+test("restored files go ahead of files staged since", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await stageExistingFile(page, "file-1", "first.txt");
+  await sendInOpenChat(page, "With a file");
+  await stageExistingFile(page, "file-2", "second.txt");
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-attachments")).toContainText(/first\.txt[\s\S]*second\.txt/u);
+});
