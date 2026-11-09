@@ -3842,7 +3842,6 @@ test("a message waiting for an unanswered new chat is sent after ten seconds", a
   expect(await sentChatMessages(page)).toHaveLength(1);
 });
 
-const THIRD_CHAT_ID = "33333333-3333-4333-8333-333333333333";
 const activeLocator = (page) => page.evaluate((key) => JSON.parse(localStorage.getItem(key) || "null")?.chat_id ?? null, LOCATOR_KEY);
 
 test("two New chat clicks send the waiting message into the chat the user ends up in", async ({ page }) => {
