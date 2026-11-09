@@ -3756,3 +3756,177 @@ test("reconnecting with an unchanged window sends no extra device report", async
   await page.waitForTimeout(300);
   expect(await page.evaluate(() => window.__socketEvents.filter((event) => event.frame.action === "update_device").length)).toBe(0);
 });
+
+async function newChatThenType(page, text) {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await page.locator("#astral-newchat-btn").click();
+  await page.locator("#astral-input").fill(text);
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  return page.evaluate(() => window.__socketEvents.findLast((event) => event.frame.action === "new_chat").frame);
+}
+
+async function sentChatMessages(page) {
+  return page.evaluate(() => window.__socketEvents
+    .filter((event) => event.frame.action === "chat_message").map((event) => event.frame));
+}
+
+test("a message sent before the new chat exists waits and goes into that chat", async ({ page }) => {
+  const newChat = await newChatThenType(page, "First question");
+  expect(await sentChatMessages(page)).toHaveLength(0);
+  await expect(page.locator("#astral-status")).toContainText("Starting the new chat");
+  await page.locator("#astral-input").fill("And a second thought");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  await receive(page, { type: "chat_created", submission_id: newChat.submission_id,
+    payload: { chat_id: OTHER_CHAT_ID, from_message: false } });
+  const messages = await sentChatMessages(page);
+  expect(messages).toHaveLength(1);
+  expect(messages[0].payload.message).toBe("First question\n\nAnd a second thought");
+  expect(messages[0].payload.chat_id).toBe(OTHER_CHAT_ID);
+  expect(messages[0].session_id).toBe(OTHER_CHAT_ID);
+  await page.locator("#astral-input").fill("Sent right away");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  expect((await sentChatMessages(page)).at(-1).payload.message).toBe("Sent right away");
+});
+
+test("a refused new chat puts the waiting message back in the composer", async ({ page }) => {
+  const newChat = await newChatThenType(page, "Held question");
+  await receive(page, { type: "error", accepted: false, code: "capacity_exceeded", message: "Busy right now",
+    retry_after_ms: null, retryable: false, submission_id: newChat.submission_id });
+  await expect(page.locator("#astral-input")).toHaveValue("Held question");
+  await expect(page.locator("body")).toContainText("The new chat did not start, so your message is back in the composer.");
+  expect(await sentChatMessages(page)).toHaveLength(0);
+});
+
+test("a failed new chat puts the waiting message back in the composer", async ({ page }) => {
+  const newChat = await newChatThenType(page, "Held question");
+  const scope = { connection_generation: newChat.connection_generation, request_generation: newChat.request_generation };
+  await receive(page, operationStatus(scope, OPERATION_A, 0, "failed", { action: "new_chat", chat_id: null }));
+  await expect(page.locator("#astral-input")).toHaveValue("Held question");
+  expect(await sentChatMessages(page)).toHaveLength(0);
+});
+
+test("a dropped connection puts a message waiting for the new chat back in the composer", async ({ page }) => {
+  await newChatThenType(page, "Held question");
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("Held question");
+  expect(await sentChatMessages(page)).toHaveLength(0);
+});
+
+test("an owner change drops a message waiting for the new chat", async ({ page }) => {
+  const newChat = await newChatThenType(page, "Private held question");
+  await page.evaluate(({ token }) => {
+    window.__sessionToken = token;
+    window.__sessionSubject = "other-user";
+  }, { token: OTHER_TOKEN });
+  await receive(page, { type: "auth_required" });
+  await page.waitForFunction(() => window.__sockets.length === 2
+    && window.__sockets[1].sent.some((frame) => frame.type === "register_ui"));
+  await receive(page, { type: "chat_created", submission_id: newChat.submission_id,
+    payload: { chat_id: OTHER_CHAT_ID, from_message: false } });
+  expect(await sentChatMessages(page)).toHaveLength(0);
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await expect(page.locator("body")).not.toContainText("Private held question");
+});
+
+test("a message waiting for an unanswered new chat is sent after ten seconds", async ({ page }) => {
+  await page.clock.install();
+  await newChatThenType(page, "Eventually sent");
+  expect(await sentChatMessages(page)).toHaveLength(0);
+  await page.clock.runFor(9000);
+  expect(await sentChatMessages(page)).toHaveLength(0);
+  await page.clock.runFor(1500);
+  const messages = await sentChatMessages(page);
+  expect(messages.map((frame) => frame.payload.message)).toEqual(["Eventually sent"]);
+  await receive(page, { type: "chat_created", payload: { chat_id: OTHER_CHAT_ID, from_message: false } });
+  expect(await sentChatMessages(page)).toHaveLength(1);
+});
+
+const THIRD_CHAT_ID = "33333333-3333-4333-8333-333333333333";
+const activeLocator = (page) => page.evaluate((key) => JSON.parse(localStorage.getItem(key) || "null")?.chat_id ?? null, LOCATOR_KEY);
+
+test("two New chat clicks send the waiting message into the chat the user ends up in", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await page.locator("#astral-newchat-btn").click();
+  await page.locator("#astral-newchat-btn").click();
+  await page.locator("#astral-input").fill("Typed after a double click");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  // The real server answers a plain new_chat with an uncorrelated chat_created, one per new_chat
+  await receive(page, { type: "chat_created", payload: { chat_id: OTHER_CHAT_ID, from_message: false } });
+  await receive(page, { type: "chat_created", payload: { chat_id: THIRD_CHAT_ID, from_message: false } });
+  const messages = await sentChatMessages(page);
+  expect(messages).toHaveLength(1);
+  expect(messages[0].payload.chat_id).toBe(await activeLocator(page));
+});
+
+test("a chat_created for another request does not take the waiting message", async ({ page }) => {
+  const newChat = await newChatThenType(page, "Held question");
+  const foreign = "99999999-9999-4999-8999-999999999999";
+  const generation = "12345678-1234-4234-8234-123456789abc";
+  await receive(page, { type: "chat_created", schema_version: "1", connection_generation: newChat.connection_generation,
+    submission_id: foreign, request_generation: generation,
+    payload: { schema_version: "1", chat_id: THIRD_CHAT_ID, from_message: false,
+      connection_generation: newChat.connection_generation, submission_id: foreign, request_generation: generation } });
+  expect(await sentChatMessages(page)).toHaveLength(0);
+});
+
+test("an offline New chat holds a message typed before the new chat exists", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await page.clock.install({ time: new Date("2026-09-11T12:00:00Z") });
+  await page.clock.pauseAt(new Date("2026-09-11T12:00:01Z"));
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await page.locator("#astral-newchat-btn").click();
+  await page.locator("#astral-input").fill("Typed offline after New chat");
+  await page.locator("#astral-input").press("Enter");
+  await page.clock.runFor(5000);
+  const frames = await page.evaluate(() => window.__socketEvents.filter((event) => event.frame.type === "ui_event").map((event) => event.frame.action));
+  expect(frames).toContain("new_chat");
+  // Before chat_created arrives, nothing should have been sent without a chat id
+  const early = await sentChatMessages(page);
+  expect(early.map((frame) => frame.payload.chat_id)).toEqual([]);
+});
+
+test("merged waiting messages keep to ten files and leave the rest in the composer", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await page.locator("#astral-newchat-btn").click();
+  for (const batch of [0, 1]) {
+    for (let i = 0; i < 6; i += 1) await stageExistingFile(page, `file-${batch}-${i}`, `f${batch}${i}.txt`);
+    await page.locator("#astral-input").fill(`Batch ${batch}`);
+    await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  }
+  await receive(page, { type: "chat_created", payload: { chat_id: OTHER_CHAT_ID, from_message: false } });
+  const messages = await sentChatMessages(page);
+  expect(messages).toHaveLength(1);
+  expect(messages[0].payload.attachments).toHaveLength(10);
+  await expect(page.locator("#astral-attachments .astral-chip")).toHaveCount(2);
+});
+
+test("a second New chat click keeps saying a message is waiting", async ({ page }) => {
+  await newChatThenType(page, "Held question");
+  await page.locator("#astral-newchat-btn").click();
+  await expect(page.locator("#astral-status")).toContainText("Starting the new chat");
+});
+
+test("a new chat completed before chat_created still releases on chat_created", async ({ page }) => {
+  const newChat = await newChatThenType(page, "Held question");
+  const scope = { connection_generation: newChat.connection_generation, request_generation: newChat.request_generation };
+  await receive(page, operationStatus(scope, OPERATION_A, 0, "accepted", { action: "new_chat", chat_id: null }));
+  await receive(page, operationStatus(scope, OPERATION_A, 1, "completed", { action: "new_chat", chat_id: null }));
+  expect(await sentChatMessages(page)).toHaveLength(0);
+  await receive(page, { type: "chat_created", payload: { chat_id: OTHER_CHAT_ID, from_message: false } });
+  const messages = await sentChatMessages(page);
+  expect(messages).toHaveLength(1);
+  expect(messages[0].payload.chat_id).toBe(OTHER_CHAT_ID);
+  await expect(page.locator("#astral-status")).not.toContainText("Starting the new chat");
+});
+
+test("a chat_created from a message does not release the waiting message", async ({ page }) => {
+  await newChatThenType(page, "Held question");
+  await receive(page, { type: "chat_created", payload: { chat_id: THIRD_CHAT_ID, from_message: true } });
+  expect(await sentChatMessages(page)).toHaveLength(0);
+  await receive(page, { type: "chat_created", payload: { chat_id: OTHER_CHAT_ID, from_message: false } });
+  expect((await sentChatMessages(page)).map((frame) => frame.payload.chat_id)).toEqual([OTHER_CHAT_ID]);
+});

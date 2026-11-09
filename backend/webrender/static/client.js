@@ -52,6 +52,9 @@
   var MAX_QUEUED_FOLLOW_UPS = 16;
   var queueHost = null;
   var composerPlaceholder = null;
+  // A message sent before new_chat answers would make a second chat, so it waits for the new chat's id
+  var newChatWait = null;
+  var NEW_CHAT_WAIT_MS = 10000;
   var agentLifecycleById = Object.create(null);
   var ACCOUNT_SESSION_KEY = "astraldeep.active_chat.account.v1";
   var VOICE_DEVICE_KEY = "astraldeep.voice.device.v1";
@@ -424,6 +427,8 @@
   }
 
   function clearPrivateAccountState() {
+    if (newChatWait && newChatWait.timer) clearTimeout(newChatWait.timer);
+    newChatWait = null;
     accountPrivacyEpoch += 1;
     retireOwnerSurface();
     unsettledChatSend = null;
@@ -7947,6 +7952,9 @@
         if (correlatedVoiceChatCreated(data)) break;
         if (heldChatLoad) break;
         if (data.payload && isCanonicalUuid4(data.payload.chat_id)) {
+          var createdFor = data.submission_id || data.payload.submission_id;
+          var answersNewChat = !!newChatWait && data.payload.from_message !== true
+            && (!createdFor || createdFor === newChatWait.submissionId);
           persistActiveChatLocator(data.payload.chat_id);
           activeChatId = data.payload.chat_id;
           syncVoiceVisibleChat(activeChatId);
@@ -7964,6 +7972,7 @@
             pending.setAttribute("data-chat-id", activeChatId);
             pending.setAttribute("data-payload", JSON.stringify({ chat_id: activeChatId }));
           }
+          if (answersNewChat && (newChatWait.pending -= 1) <= 0) endNewChatWait(true);
         }
         break;
       case "chat_loaded":
@@ -7989,6 +7998,7 @@
         if (admissionRefusal && unsettledChatSend && unsettledChatSend.submissionId === data.submission_id) {
           unsettledChatSend = null;
         }
+        if (admissionRefusal && newChatWait && data.submission_id === newChatWait.submissionId) endNewChatWait(false);
         var em = errorMessage(data);
         showToast(em, "error");
         hideSkeleton();
@@ -8053,6 +8063,8 @@
         var leftTurnStatus = leftChatTurns[data.request_generation] === true;
         trackChatTurn(data);
         var statusApplied = !leftTurnStatus && reduceOperationStatus(data);
+        if (statusApplied && newChatWait && data.terminal && data.state !== "completed"
+            && data.request_generation === newChatWait.generation) endNewChatWait(false);
         if (data.action === "chat_message" && data.terminal && unsettledChatSend
             && unsettledChatSend.requestGeneration === data.request_generation) unsettledChatSend = null;
         if (TURN_ACTIONS[data.action] && data.terminal && data.connection_generation === connectionGeneration) {
@@ -8212,6 +8224,11 @@
     var ready = (typeof readyAttachments === "function") ? readyAttachments() : [];
     if (!message && !ready.length) return;
     setWorkspaceView("work");
+    if (newChatWait && isSocketReady()) {
+      if (typeof clearStagedAttachments === "function") clearStagedAttachments();
+      holdForNewChat(message, ready);
+      return;
+    }
     if (!isSocketReady()) {
       queueChatSend(message, ready);
       if (typeof clearStagedAttachments === "function") clearStagedAttachments();
@@ -8219,6 +8236,57 @@
     }
     doSendChat(message, ready);
     if (typeof clearStagedAttachments === "function") clearStagedAttachments();
+  }
+
+  function holdForNewChat(message, ready) {
+    var held = newChatWait.held || { message: "", ready: [] };
+    var room = Math.max(0, MAX_ATTACHMENTS - held.ready.length);
+    newChatWait.held = { message: [held.message, message].filter(Boolean).join("\n\n"),
+      ready: held.ready.concat(ready.slice(0, room)) };
+    // Files past the limit stay in the composer for the next message
+    if (ready.length > room) {
+      stagedAttachments = ready.slice(room).concat(stagedAttachments).slice(0, MAX_ATTACHMENTS);
+      renderAttachments();
+    }
+    setStatus("Starting the new chat…", true, "new-chat-wait");
+    // Without an answer the message still goes out, the old way, rather than waiting forever
+    if (!newChatWait.timer) newChatWait.timer = setTimeout(function () { endNewChatWait(true); }, NEW_CHAT_WAIT_MS);
+  }
+
+  // A New chat queued while offline sets up the wait when it is finally sent
+  function requestNewChat() {
+    if (!isSocketReady()) {
+      queueOutboundAction({
+        label: "new_chat",
+        dispatch: requestNewChat,
+        onRefused: function () { showToast("“new chat” was not sent — still reconnecting.", "error"); },
+      });
+      return;
+    }
+    var earlierWait = newChatWait;
+    var submission = action("new_chat", {});
+    if (!submission || !submission.requestGeneration) return;
+    // Plain chat_created answers carry no id, so a message waits for the answer to the last New chat
+    newChatWait = { generation: submission.requestGeneration, submissionId: submission.submissionId,
+      pending: (earlierWait ? earlierWait.pending : 0) + 1,
+      held: earlierWait ? earlierWait.held : null, timer: earlierWait ? earlierWait.timer : null };
+    if (newChatWait.held) setStatus("Starting the new chat…", true, "new-chat-wait");
+  }
+
+  function endNewChatWait(sendHeld) {
+    var wait = newChatWait;
+    newChatWait = null;
+    if (wait && wait.timer) clearTimeout(wait.timer);
+    if (!wait || !wait.held) return;
+    restoreActiveStatusOrClear(["new-chat-wait"]);
+    if (sendHeld) { doSendChat(wait.held.message, wait.held.ready); return; }
+    if (input) {
+      input.value = [wait.held.message, input.value].filter(function (text) { return text && text.trim(); }).join("\n\n");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    stagedAttachments = wait.held.ready.concat(stagedAttachments).slice(0, MAX_ATTACHMENTS);
+    renderAttachments();
+    showToast("The new chat did not start, so your message is back in the composer.", "warning");
   }
 
   function queueChatSend(message, ready) {
@@ -8238,7 +8306,8 @@
       label: "chat_message",
       dispatch: function () {
         if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
-        doSendChat(message, ready);
+        if (newChatWait) holdForNewChat(message, ready);
+        else doSendChat(message, ready);
       },
       onRefused: function () {
         if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
@@ -8440,7 +8509,7 @@
     resetFeed();
     showCanvasEmpty();
     setStatus("");
-    action("new_chat", {});
+    requestNewChat();
     renderQueue();
     closeHistoryOverlay();
     setWorkspaceView("start");
@@ -9763,6 +9832,7 @@
     };
     ws.onerror = function () { try { thisSocket.close(); } catch (e) {} };
     ws.onclose = function () {
+      if (ws === thisSocket && !accountSignedOut) endNewChatWait(false);
       if (accountSignedOut || ws !== thisSocket) return;
       socketReady = false;
       if (ownerSurfaceRequest) { retireOwnerSurface(); setModal(""); }
