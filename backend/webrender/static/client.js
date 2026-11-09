@@ -8950,6 +8950,12 @@
     window.visualViewport.addEventListener("scroll", positionTour);
   }
 
+  // Doubles from 2 s to a 60 s cap with jitter, like the macOS bootstrap retry, and never gives up
+  function reconnectDelayMs(attempt) {
+    var base = Math.min(60000, 2000 * Math.pow(2, Math.max(0, attempt - 1)));
+    return Math.round(base * (0.5 + Math.random() / 2));
+  }
+
   function connect() {
     if (accountSignedOut) return;
     var preserveVoiceControls = !!voiceRecoverableFence() || !!voicePendingEndFence;
@@ -9002,9 +9008,10 @@
       hideSkeleton();
       clearTransientOverlay();
       // Refresh first so a register_ui after the access-token TTL recovers silently
-      if (attempts <= 10) setTimeout(function () {
+      setTimeout(function () {
+        if (accountSignedOut || ws !== thisSocket) return;
         refreshToken(false, function () { connect(); });
-      }, 3000);
+      }, reconnectDelayMs(attempts));
     };
   }
   prepareAccountIdentity(token, null).then(function (ready) {

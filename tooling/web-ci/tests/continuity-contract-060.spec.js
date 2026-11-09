@@ -159,6 +159,11 @@ async function installHarness(page, { locator = true, url = "https://candidate.e
         this.sent = [];
         window.__sockets.push(this);
         queueMicrotask(() => {
+          if (window.__serverDown) {
+            this.readyState = 3;
+            this.onclose?.();
+            return;
+          }
           this.readyState = FakeWebSocket.OPEN;
           this.onopen?.();
         });
@@ -2450,3 +2455,72 @@ for (const retirement of ["disconnected", "mandatory", "removed"]) {
     expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).chat_id, LOCATOR_KEY)).toBe(CHAT_ID);
   });
 }
+
+
+async function failReconnects(page) {
+  await page.evaluate(() => {
+    const Recorded = window.WebSocket;
+    window.__socketTimes = [];
+    window.WebSocket = class extends Recorded {
+      constructor(url) {
+        super(url);
+        window.__socketTimes.push(Date.now());
+      }
+    };
+    window.__serverDown = true;
+    window.__closedAt = Date.now();
+    window.__sockets.at(-1).close();
+  });
+}
+
+async function reconnectGaps(page) {
+  return page.evaluate(() => window.__socketTimes.map((time, index) => (
+    time - (index === 0 ? window.__closedAt : window.__socketTimes[index - 1]))));
+}
+
+test("reconnect keeps retrying through a long outage with capped backoff and recovers", async ({ page }) => {
+  await page.clock.install();
+  await installHarness(page);
+  await failReconnects(page);
+  await page.clock.runFor(30 * 60000);
+
+  const gaps = await reconnectGaps(page);
+  expect(gaps.length).toBeGreaterThan(25);
+  for (const gap of gaps) {
+    expect(gap).toBeGreaterThanOrEqual(1000);
+    expect(gap).toBeLessThanOrEqual(60000);
+  }
+  for (const gap of gaps.slice(-10)) expect(gap).toBeGreaterThanOrEqual(30000);
+  await expect(page.locator("#astral-status")).toHaveText("Disconnected");
+
+  await page.evaluate(() => { window.__serverDown = false; });
+  await page.clock.runFor(60000);
+  await expect.poll(() => page.evaluate(() => window.__sockets.at(-1).sent
+    .some((frame) => frame.type === "register_ui"))).toBe(true);
+  const registration = await page.evaluate(() => window.__sockets.at(-1).sent.find((frame) => frame.type === "register_ui"));
+  expect(registration.resume.active_chat_id).toBe(CHAT_ID);
+});
+
+test("reconnect starts within two seconds and restarts the backoff after a success", async ({ page }) => {
+  await page.clock.install();
+  await installHarness(page);
+  await failReconnects(page);
+  await page.clock.runFor(10 * 60000);
+  const first = (await reconnectGaps(page))[0];
+  expect(first).toBeGreaterThanOrEqual(1000);
+  expect(first).toBeLessThanOrEqual(2000);
+
+  await page.evaluate(() => { window.__serverDown = false; });
+  await page.clock.runFor(60000);
+  await expect.poll(() => page.evaluate(() => window.__sockets.at(-1).readyState)).toBe(1);
+  await page.evaluate(() => {
+    window.__serverDown = true;
+    window.__closedAt = Date.now();
+    window.__socketTimes = [];
+    window.__sockets.at(-1).close();
+  });
+  await page.clock.runFor(2000);
+  const restarted = await page.evaluate(() => window.__socketTimes.map((time) => time - window.__closedAt));
+  expect(restarted.length).toBeGreaterThanOrEqual(1);
+  expect(restarted[0]).toBeLessThanOrEqual(2000);
+});
