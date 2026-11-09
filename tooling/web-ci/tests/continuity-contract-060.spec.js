@@ -3174,3 +3174,125 @@ test("the side question control appears only with the acknowledgment", async ({ 
   await installHarness(page);
   await expect(page.locator("#astral-side-question-btn")).toHaveCount(0);
 });
+
+test("returning to a chat while its answer still runs does not strand the queue", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Queued in the first chat");
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(1);
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await openChatFromHistory(page, CHAT_ID);
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const sent = (await sentActions(page, "chat_message")).map((frame) => frame.payload.message);
+  const composer = await page.locator("#astral-input").inputValue();
+  // The answer is over: the queued text must have been sent or handed back, not left as a chip
+  expect(sent.includes("Queued in the first chat") || composer.includes("Queued in the first chat")).toBe(true);
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
+});
+
+test("a queue typed during an approval-resumed turn is settled when that turn completes", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const approvalScope = {
+    connection_generation: turnScope.connection_generation,
+    request_generation: "99999999-9999-4999-8999-999999999999",
+  };
+  await receive(page, operationStatus(approvalScope, OPERATION_C, 0, "running", { action: "authorize_action", surface: "chat" }));
+  await submitComposer(page, "After the approval");
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(1);
+  await receive(page, operationStatus(approvalScope, OPERATION_C, 1, "completed", { action: "authorize_action", surface: "chat" }));
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
+  expect((await sentActions(page, "chat_message")).at(-1).payload.message).toBe("After the approval");
+});
+
+test("saving an unchanged edit of a files-only queued message keeps the message and its file", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await stageExistingFile(page, "queued-file", "notes.txt");
+  await submitComposer(page, "");
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(1);
+  await page.locator(QUEUED_ROWS).getByRole("button", { name: "Edit" }).click();
+  await page.locator(QUEUED_ROWS).getByRole("button", { name: "Save" }).click();
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(1);
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const sent = (await sentActions(page, "chat_message")).at(-1);
+  expect(sent.payload.attachments).toEqual([expect.objectContaining({ attachment_id: "queued-file" })]);
+});
+
+test("Stop names the queued files that do not fit back in the composer", async ({ page }) => {
+  await startTurnInChat(page, { steer: true });
+  for (let index = 1; index <= 6; index += 1) await stageExistingFile(page, `first-${index}`, `first-${index}.txt`);
+  await submitComposer(page, "First with files");
+  for (let index = 1; index <= 6; index += 1) await stageExistingFile(page, `second-${index}`, `second-${index}.txt`);
+  await submitComposer(page, "Second with files");
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(2);
+  await page.locator("#astral-stop-btn").click();
+  await expect(page.locator("#astral-input")).toHaveValue("First with files\n\nSecond with files");
+  await expect(page.locator("#astral-attachments .astral-chip")).toHaveCount(10);
+  await expect(page.locator("body")).toContainText("Only 10 files fit in the composer. Attach these again: second-5.txt, second-6.txt");
+});
+
+test("a message typed while a queued edit holds the queue waits behind it", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Queued A");
+  await submitComposer(page, "Queued B");
+  await page.locator(QUEUED_ROWS).first().getByRole("button", { name: "Edit" }).click();
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  expect(await sentActions(page, "chat_message")).toHaveLength(1);
+  await submitComposer(page, "Typed C");
+  expect((await sentActions(page, "chat_message")).map((frame) => frame.payload.message)).not.toContain("Typed C");
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(3);
+  await page.locator(QUEUED_ROWS).first().getByRole("button", { name: "Save" }).click();
+  expect((await sentActions(page, "chat_message")).at(-1).payload.message).toBe("Queued A");
+});
+
+test("an unsaved chat's refused interruption does not land in the next new chat's composer", async ({ page }) => {
+  await installHarness(page, { locator: false, steer: true });
+  const { frame: registrationFrame } = await registration(page);
+  await submitComposer(page, "First question");
+  const message = (await sentActions(page, "chat_message"))[0];
+  const turnScope = { connection_generation: registrationFrame.connection_generation, request_generation: message.request_generation };
+  await receive(page, operationStatus(turnScope, OPERATION_A, 0, "running", { chat_id: null }));
+  await submitComposer(page, "Steer for the old chat");
+  await page.locator(QUEUED_ROWS).getByRole("button", { name: "Interrupt" }).click();
+  const [steer] = await sentActions(page, "chat_steer");
+  await page.locator("#astral-newchat-btn").click();
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await receive(page, { type: "chat_steer_refused", client_message_id: steer.payload.client_message_id,
+    code: "stale_turn", message: "The turn ended before this steer could be applied." });
+  await expect(page.locator("#astral-input")).toHaveValue("");
+});
+
+test("a side question closed before its answer is picked back up when reopened", async ({ page }) => {
+  await startTurnInChat(page, { steer: true });
+  await page.locator("#astral-side-question-btn").click();
+  const dialog = page.getByRole("dialog", { name: "Side question" });
+  await dialog.getByRole("textbox", { name: "Side question" }).fill("First question");
+  await dialog.getByRole("button", { name: "Ask" }).click();
+  const [asked] = await sentActions(page, "side_question");
+  await dialog.getByRole("button", { name: "Close side question" }).click();
+  await expect(page.locator("#astral-side-question-btn")).toBeFocused();
+  await page.locator("#astral-side-question-btn").click();
+  await expect(dialog.getByRole("textbox", { name: "Side question" })).toHaveValue("First question");
+  await expect(dialog.getByRole("button", { name: "Ask" })).toBeDisabled();
+  await receive(page, { type: "side_question_result", client_message_id: asked.payload.client_message_id, answer: "First answer" });
+  await expect(dialog.locator(".astral-side-question-answer")).toHaveText("First answer");
+  expect(await sentActions(page, "side_question")).toHaveLength(1);
+});
+
+test("the side question dialog keeps Tab inside and returns focus when its menu item is hidden", async ({ page }) => {
+  await startTurnInChat(page, { steer: true });
+  await page.evaluate(() => document.querySelector("#astral-side-question-btn").addEventListener("click", () => {
+    document.querySelector("#astral-composer-controls").style.display = "none";
+  }));
+  await page.locator("#astral-side-question-btn").click();
+  const dialog = page.getByRole("dialog", { name: "Side question" });
+  const question = dialog.getByRole("textbox", { name: "Side question" });
+  await expect(question).toBeFocused();
+  for (let index = 0; index < 4; index += 1) {
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => !!document.activeElement.closest(".astral-side-question"))).toBe(true);
+  }
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator("#astral-input")).toBeFocused();
+  expect(await sentActions(page, "cancel_task")).toHaveLength(0);
+});

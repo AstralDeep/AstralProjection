@@ -46,6 +46,7 @@
   var pendingSteers = Object.create(null);
   var sideQuestionRequestId = null;
   var sideQuestionRoot = null;
+  var sideQuestionAsked = "";
   var MAX_QUEUED_FOLLOW_UPS = 16;
   var queueHost = null;
   var composerPlaceholder = null;
@@ -6135,13 +6136,20 @@
     putTextsInComposer(items.map(function (item) { return item.editing ? item.draft : item.text; }));
     var restored = [];
     items.forEach(function (item) { restored = restored.concat(item.attachments); });
+    var dropped = [];
     if (restored.length) {
       var uids = restored.map(function (entry) { return entry.uid; });
-      stagedAttachments = restored.concat(stagedAttachments.filter(function (entry) {
-        return uids.indexOf(entry.uid) === -1; })).slice(0, MAX_ATTACHMENTS);
+      var combined = restored.concat(stagedAttachments.filter(function (entry) {
+        return uids.indexOf(entry.uid) === -1; }));
+      dropped = combined.slice(MAX_ATTACHMENTS);
+      stagedAttachments = combined.slice(0, MAX_ATTACHMENTS);
       renderAttachments();
     }
     if (notice) showToast(notice, "warning");
+    if (dropped.length) {
+      showToast("Only " + MAX_ATTACHMENTS + " files fit in the composer. Attach these again: "
+        + dropped.map(function (entry) { return entry.filename; }).join(", "), "warning");
+    }
     return true;
   }
 
@@ -6340,7 +6348,7 @@
     var item = findQueued(id);
     if (!item || !item.editing) return;
     var text = item.draft.trim();
-    if (save && !text) removeQueued(id);
+    if (save && !text && !item.attachments.length) removeQueued(id);
     else {
       if (save) item.text = text;
       item.editing = false;
@@ -6402,7 +6410,7 @@
       button.hidden = !turnSteerAck;
       button.style.display = turnSteerAck ? "" : "none";
     }
-    if (!turnSteerAck) closeSideQuestion();
+    if (!turnSteerAck) { sideQuestionRequestId = null; closeSideQuestion(); }
     syncQueueControls();
   }
 
@@ -6426,6 +6434,7 @@
       if (e.target === overlay || (e.target.closest && e.target.closest('[data-side-question="close"]'))) closeSideQuestion();
     });
     overlay.addEventListener("keydown", function (e) {
+      if (e.key === "Tab") { trapSideQuestionFocus(e); return; }
       if (e.key !== "Escape" || e.isComposing) return;
       e.preventDefault();
       e.stopPropagation();
@@ -6443,18 +6452,32 @@
     overlay.returnFocus = returnFocus;
     document.body.appendChild(overlay);
     sideQuestionRoot = overlay;
+    // A question closed before its answer is still being answered, so the dialog picks it back up
+    if (sideQuestionRequestId) {
+      overlay.querySelector(".astral-side-question-input").value = sideQuestionAsked;
+      setSideQuestionAnswer("Thinking…", true);
+    }
     try { overlay.querySelector(".astral-side-question-input").focus(); } catch (e) {}
+  }
+
+  function trapSideQuestionFocus(e) {
+    var focusable = Array.prototype.filter.call(
+      sideQuestionRoot.querySelectorAll("button, textarea"), function (el) { return !el.disabled; });
+    if (!focusable.length) return;
+    var first = focusable[0], last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   }
 
   function closeSideQuestion() {
     var overlay = sideQuestionRoot;
     sideQuestionRoot = null;
-    sideQuestionRequestId = null;
     if (!overlay) return;
     if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
-    if (overlay.returnFocus && overlay.returnFocus.focus && document.contains(overlay.returnFocus)) {
-      try { overlay.returnFocus.focus(); } catch (e) {}
-    }
+    // The menu item that opened the dialog is hidden by now, so focus goes back to the composer
+    var target = overlay.returnFocus;
+    if (!target || !target.focus || !document.contains(target) || !target.getClientRects().length) target = input;
+    if (target) { try { target.focus(); } catch (e) {} }
   }
 
   function setSideQuestionAnswer(text, busy) {
@@ -6475,6 +6498,7 @@
     var submissionId = randomUuid4();
     var requestGeneration = randomUuid4();
     sideQuestionRequestId = clientMessageId;
+    sideQuestionAsked = question;
     setSideQuestionAnswer("Thinking…", true);
     send({
       type: "ui_event",
@@ -7982,10 +8006,12 @@
           // A turn left for another chat fails the scope check, so its submission ends here
           finishOperationSubmission(data.request_generation);
           if (!chatTurnRunning()) finishWaitingForEarlierTurn();
-          if (statusApplied) {
-            settleQueue(data.state === "completed",
-              "The answer did not finish, so your queued messages are back in the composer.");
-          }
+          // A status the client skipped, such as for a chat left and reopened mid-answer, still ends the turn
+          var completedHere = data.state === "completed"
+            && (statusApplied || (data.chat_id || null) === (activeChatId || null));
+          settleQueue(completedHere, completedHere || data.state !== "completed"
+            ? "The answer did not finish, so your queued messages are back in the composer."
+            : "The answer finished in another chat, so your queued messages are back in the composer.");
         }
         syncQueueControls();
         break;
@@ -8263,7 +8289,7 @@
     var v = input.value.trim();
     var hasReady = (typeof readyAttachments === "function") && readyAttachments().length;
     if (!v && !hasReady) return;
-    if (steeringApplies()) {
+    if (steeringApplies() || queueSendWaiting[queueKey()]) {
       if (!queueFollowUp(v, readyAttachments())) return;
       input.value = "";
       clearStagedAttachments();
@@ -8306,7 +8332,12 @@
       return false;
     });
     // A saved chat keeps its queue for when it is reopened; an unsaved one has nowhere to return
-    if (!activeChatId) cancelledMessages += takeQueue("").length;
+    if (!activeChatId) {
+      cancelledMessages += takeQueue("").length;
+      Object.keys(pendingSteers).forEach(function (clientMessageId) {
+        if (pendingSteers[clientMessageId].chatId === null) { dropPendingSteer(clientMessageId); cancelledMessages += 1; }
+      });
+    }
     if (cancelledMessages) showToast("Queued messages cleared for the new chat.", "info");
     if (input) {
       input.value = "";
