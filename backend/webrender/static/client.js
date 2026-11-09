@@ -6236,6 +6236,15 @@
   function reduceSteerRefused(frame) {
     if (!pendingSteers[frame.client_message_id] || !STEER_REFUSALS[frame.code]) return;
     var pending = dropPendingSteer(frame.client_message_id);
+    if (frame.code === "stale_turn" && pending.chatId === (activeChatId || null) && chatTurnRunning()) {
+      // The answer moved on before the interruption applied, so it goes out next instead of being overtaken
+      var openKey = queueKey();
+      queuedFollowUps[openKey] = [{ id: randomUuid4(), text: pending.text, attachments: [], editing: false, draft: "" }]
+        .concat(queuedFollowUps[openKey] || []);
+      renderQueue();
+      showToast("The answer moved on before your interruption applied, so it will be sent next.", "info");
+      return;
+    }
     if (pending.chatId === (activeChatId || null)) {
       putTextsInComposer([pending.text]);
       showToast(STEER_REFUSALS[frame.code], "warning");

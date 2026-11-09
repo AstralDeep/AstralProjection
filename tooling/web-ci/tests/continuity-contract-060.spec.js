@@ -2966,10 +2966,26 @@ test("Interrupt steers with the queued text and a refusal returns it to the comp
     await page.locator(".astral-turn-user:not(.astral-bubble-steer) .astral-turn-pill").last().textContent());
 
   await receive(page, { type: "chat_steer_refused", chat_id: CHAT_ID, client_message_id: steer.payload.client_message_id,
-    code: "stale_turn", message: "The turn ended before this steer could be applied." });
+    code: "approval_pending", message: "Answer the approval first; a steer cannot answer it." });
   await expect(page.locator(".astral-bubble-steer")).toHaveCount(0);
   await expect(page.locator("#astral-input")).toHaveValue("Use metric units");
-  await expect(page.locator("body")).toContainText("The answer finished before your interruption reached it.");
+  await expect(page.locator("body")).toContainText("Decide the approval first; an interruption cannot answer it.");
+});
+
+test("an interruption the answer outran is sent next, ahead of later queued messages", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "First: use metric");
+  await submitComposer(page, "Second: then summarize");
+  await page.locator(QUEUED_ROWS).first().getByRole("button", { name: "Interrupt" }).click();
+  const [steer] = await sentActions(page, "chat_steer");
+  await receive(page, { type: "chat_steer_refused", chat_id: CHAT_ID, client_message_id: steer.payload.client_message_id,
+    code: "stale_turn", message: "The turn ended before this steer could be applied." });
+  await expect(page.locator(QUEUED_ROWS).first()).toContainText("First: use metric");
+  await expect(page.locator("body")).toContainText("so it will be sent next");
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  expect((await sentActions(page, "chat_message")).at(-1).payload.message).toBe("First: use metric");
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(1);
+  await expect(page.locator("#astral-input")).toHaveValue("");
 });
 
 test("a recorded interruption stays in the feed and unknown receipts change nothing", async ({ page }) => {
