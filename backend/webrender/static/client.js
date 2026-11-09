@@ -1007,9 +1007,8 @@
 
   function detectDeviceType() {
     var ua = navigator.userAgent.toLowerCase(), vw = window.innerWidth;
-    if (/watch|watchos/.test(ua)) return "watch";
+    // The server treats watch as a native app and sends it no web markup, so even a tiny or hidden page is mobile
     if (/smart-?tv|hbbtv|netcast|viera|nettv|roku|web0s/.test(ua)) return "tv";
-    if (vw <= 200) return "watch";
     if (/ipad|tablet|playbook|silk/.test(ua) || (vw > 480 && vw <= 1024 && /android/.test(ua))) return "tablet";
     if (/android|iphone|ipod|blackberry|iemobile|opera mini/.test(ua) || vw <= 480) return "mobile";
     if (vw <= 1024) return "tablet";
@@ -1041,12 +1040,15 @@
   }
 
   var lastCapabilitySignature = "";
+  function capabilitySignature(caps) {
+    return [caps.viewport_width, caps.viewport_height, caps.device_type,
+      caps.pixel_ratio, caps.microphone_permission, caps.connection_type,
+      caps.reduced_motion, caps.pointer_type].join("|");
+  }
   function maybeReportCapabilities(force) {
     if (!isSocketReady()) return;
     var caps = detectDeviceCapabilities();
-    var sig = [caps.viewport_width, caps.viewport_height, caps.device_type,
-      caps.pixel_ratio, caps.microphone_permission, caps.connection_type,
-      caps.reduced_motion, caps.pointer_type].join("|");
+    var sig = capabilitySignature(caps);
     if (!force && sig === lastCapabilitySignature) return;
     lastCapabilitySignature = sig;
     if (window.__ASTRAL_PARITY__ && window.__ASTRAL_PARITY__.notifyViewportRegistered) {
@@ -5958,6 +5960,7 @@
     }
     var device = detectDeviceCapabilities();
     device.turn_steer_v1 = true;
+    lastCapabilitySignature = capabilitySignature(device);
     send({
       type: "register_ui",
       token: token,
@@ -8089,6 +8092,8 @@
           socketReady = true;
           attempts = 0;
           setConnState("connected");
+          // A page shown or resized before this reply reports its device now, since earlier reports were skipped
+          maybeReportCapabilities(false);
           flushPendingActions();
           runVoicePreflight();
         }
