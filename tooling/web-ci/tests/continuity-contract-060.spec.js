@@ -2450,3 +2450,26 @@ for (const retirement of ["disconnected", "mandatory", "removed"]) {
     expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).chat_id, LOCATOR_KEY)).toBe(CHAT_ID);
   });
 }
+
+test("a tiny web window registers and resizes as mobile, never as a watch", async ({ page }) => {
+  await page.setViewportSize({ width: 180, height: 700 });
+  await installHarness(page);
+  const { frame } = await registration(page);
+  expect(frame.device.device_type).toBe("mobile");
+  await page.setViewportSize({ width: 150, height: 700 });
+  await page.waitForFunction(() => window.__socketEvents.some((event) => event.frame.action === "update_device"));
+  const updates = await page.evaluate(() => window.__socketEvents
+    .filter((event) => event.frame.action === "update_device").map((event) => event.frame.payload.device.device_type));
+  expect(updates.length).toBeGreaterThan(0);
+  expect(updates).not.toContain("watch");
+  expect(updates.at(-1)).toBe("mobile");
+});
+
+test("a browser on a watch registers as mobile", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "userAgent", { get: () => "Mozilla/5.0 (Watch; watchOS 26) AppleWebKit/605" });
+  });
+  await page.setViewportSize({ width: 320, height: 700 });
+  await installHarness(page);
+  expect((await registration(page)).frame.device.device_type).toBe("mobile");
+});

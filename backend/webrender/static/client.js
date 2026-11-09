@@ -972,9 +972,8 @@
 
   function detectDeviceType() {
     var ua = navigator.userAgent.toLowerCase(), vw = window.innerWidth;
-    if (/watch|watchos/.test(ua)) return "watch";
+    // The server treats watch as a native app and sends it no web markup, so even a tiny or hidden page is mobile
     if (/smart-?tv|hbbtv|netcast|viera|nettv|roku|web0s/.test(ua)) return "tv";
-    if (vw <= 200) return "watch";
     if (/ipad|tablet|playbook|silk/.test(ua) || (vw > 480 && vw <= 1024 && /android/.test(ua))) return "tablet";
     if (/android|iphone|ipod|blackberry|iemobile|opera mini/.test(ua) || vw <= 480) return "mobile";
     if (vw <= 1024) return "tablet";
