@@ -3445,7 +3445,8 @@ test("a dropped connection returns queued and unconfirmed interruptions to the c
   await page.locator(QUEUED_ROWS).getByRole("button", { name: "Interrupt" }).click();
   await submitComposer(page, "Queued text");
   await page.evaluate(() => window.__sockets.at(-1).close());
-  await expect(page.locator("#astral-input")).toHaveValue("Steer text\n\nQueued text");
+  // The turn's own message was never saved, so it comes back first
+  await expect(page.locator("#astral-input")).toHaveValue("A long request\n\nSteer text\n\nQueued text");
   await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
   await expect(page.locator(".astral-bubble-steer")).toHaveCount(0);
   await expect(page.locator("body")).toContainText("The connection dropped, so your queued messages are back in the composer.");
