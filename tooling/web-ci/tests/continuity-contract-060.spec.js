@@ -4028,3 +4028,30 @@ test("a first message left for a New chat cannot make its chat the open one", as
   expect(message.payload.message).toBe("For the new chat");
   expect(message.payload.chat_id ?? null).not.toBe(THIRD_CHAT_ID);
 });
+
+test("a refused queued message returns the rest of the queue to the composer", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "First follow-up");
+  await submitComposer(page, "Second follow-up");
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const sent = (await sentActions(page, "chat_message")).at(-1);
+  expect(sent.payload.message).toBe("First follow-up");
+  await receive(page, { type: "error", accepted: false, code: "capacity_exceeded", message: "Busy right now",
+    retry_after_ms: null, retryable: false, submission_id: sent.submission_id });
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
+  await expect(page.locator("#astral-input")).toHaveValue("Second follow-up");
+  await expect(page.locator("#astral-toasts")).toContainText("Your message was not accepted");
+});
+
+test("an unconfirmed interruption for a chat left behind survives a drop ahead of its queue", async ({ page }) => {
+  await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Steer text");
+  await page.locator(QUEUED_ROWS).getByRole("button", { name: "Interrupt" }).click();
+  await submitComposer(page, "Queued text");
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await page.waitForFunction(() => window.__socketEvents.filter((event) => event.frame.type === "register_ui").length >= 2,
+    null, { timeout: 15000 });
+  await openChatFromHistory(page, CHAT_ID);
+  await expect(page.locator("#astral-input")).toHaveValue(/Steer text[\s\S]*Queued text/u);
+});
