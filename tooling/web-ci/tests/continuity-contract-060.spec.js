@@ -3951,3 +3951,63 @@ test("a reloaded chat shows when each message was sent, while a new message show
   await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
   await expect(page.locator(".astral-turn-time").last()).toHaveText(await label("2026-07-16T15:42:00Z"));
 });
+
+async function lastNewChatFrame(page) {
+  return page.evaluate(() => window.__socketEvents.findLast((event) => event.frame.action === "new_chat").frame);
+}
+
+test("a New chat answered while another chat waits to open does not hold that chat's messages", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await page.locator("#astral-newchat-btn").click();
+  const newChat = await lastNewChatFrame(page);
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await receive(page, { type: "chat_created", submission_id: newChat.submission_id,
+    payload: { chat_id: THIRD_CHAT_ID, from_message: false } });
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const loads = await sentLoads(page);
+  expect(loads.at(-1).payload.chat_id).toBe(OTHER_CHAT_ID);
+  await receive(page, snapshot({ connection_generation: turnScope.connection_generation,
+    request_generation: loads.at(-1).request_generation }, { chat_id: OTHER_CHAT_ID, snapshot_id: SNAPSHOT_B }));
+  await submitComposer(page, "Question for the other chat");
+  await expect(page.locator("#astral-status")).not.toContainText("Starting the new chat");
+  const messages = await sentChatMessages(page);
+  expect(messages.at(-1).payload.message).toBe("Question for the other chat");
+  expect(messages.at(-1).payload.chat_id).toBe(OTHER_CHAT_ID);
+});
+
+test("a message typed for a New chat comes back instead of going into a chat opened afterwards", async ({ page }) => {
+  await page.clock.install();
+  const { turnScope } = await startTurnInChat(page);
+  await page.locator("#astral-newchat-btn").click();
+  await submitComposer(page, "Meant for the new chat");
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await expect(page.locator("#astral-input")).toHaveValue("Meant for the new chat");
+  await expect(page.locator("#astral-toasts")).toContainText("You opened another chat");
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  await page.clock.runFor(11000);
+  const messages = await sentChatMessages(page);
+  expect(messages.filter((frame) => frame.payload.message === "Meant for the new chat")).toHaveLength(0);
+});
+
+test("a queued message equal to the unsaved one both come back after a drop", async ({ page }) => {
+  await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "A long request");
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(1);
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("A long request\n\nA long request");
+});
+
+test("a background reload waits behind a queued follow-up and then runs once", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Queued follow-up");
+  await receive(page, { type: "task_completed", payload: {
+    task_id: OPERATION_C, chat_id: CHAT_ID, status: "completed", summary: "Report ready" } });
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const messages = await sentActions(page, "chat_message");
+  expect(messages.at(-1).payload.message).toBe("Queued follow-up");
+  expect(await sentLoads(page)).toHaveLength(0);
+  const second = nextTurnScope(turnScope, messages.at(-1));
+  await receive(page, operationStatus(second, OPERATION_B, 0, "running"));
+  await receive(page, operationStatus(second, OPERATION_B, 1, "completed"));
+  expect(await sentLoads(page)).toHaveLength(1);
+});

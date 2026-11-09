@@ -5983,6 +5983,7 @@
 
   function loadActiveChat(chatId) {
     if (heldChatLoad && heldChatLoad.chatId === chatId) return;
+    if (newChatWait && chatId !== activeChatId) endNewChatWait(false, "You opened another chat, so your message is back in the composer.");
     var leavesRunningTurn = chatId !== activeChatId && (heldChatLoad !== null || chatTurnRunning());
     if (!selectActiveChat(chatId, "hydration")) return;
     if (leavesRunningTurn) {
@@ -8275,7 +8276,7 @@
     if (newChatWait.held) setStatus("Starting the new chat…", true, "new-chat-wait");
   }
 
-  function endNewChatWait(sendHeld) {
+  function endNewChatWait(sendHeld, notice) {
     var wait = newChatWait;
     newChatWait = null;
     if (wait && wait.timer) clearTimeout(wait.timer);
@@ -8288,7 +8289,7 @@
     }
     stagedAttachments = wait.held.ready.concat(stagedAttachments).slice(0, MAX_ATTACHMENTS);
     renderAttachments();
-    showToast("The new chat did not start, so your message is back in the composer.", "warning");
+    showToast(notice || "The new chat did not start, so your message is back in the composer.", "warning");
   }
 
   function queueChatSend(message, ready) {
@@ -8335,7 +8336,7 @@
     var unsent = unsettledChatSend;
     unsettledChatSend = null;
     if (!unsent || unsent.chatId !== (activeChatId || null) || !input) return false;
-    var draft = input.value.trim() === unsent.text.trim() ? "" : input.value;
+    var draft = input.value;
     input.value = unsent.text && draft ? unsent.text + "\n\n" + draft : (unsent.text || draft);
     input.dispatchEvent(new Event("input", { bubbles: true }));
     var restoredUids = unsent.attachments.map(function (entry) { return entry.uid; });
@@ -9847,6 +9848,9 @@
       cancelledChatTurns = Object.create(null);
       heldChatLoad = null;
       turnSteerAck = null;
+      // A draft that repeats the unsaved message is dropped before queued messages come back
+      if (unsettledChatSend && unsettledChatSend.chatId === (activeChatId || null) && input
+          && input.value.trim() === unsettledChatSend.text.trim()) input.value = "";
       restoreQueueToComposer("The connection dropped, so your queued messages are back in the composer.");
       returnPendingSteers();
       syncSteerControls();
