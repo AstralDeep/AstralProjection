@@ -612,9 +612,11 @@
     });
   }
 
-  function turnClock() {
-    var now = new Date();
-    return ("0" + now.getHours()).slice(-2) + ":" + ("0" + now.getMinutes()).slice(-2);
+  // A saved message shows when it was sent; a live one shows now
+  function turnClock(createdAt) {
+    var stamp = typeof createdAt === "string" && isRfc3339Utc(createdAt) ? new Date(createdAt) : new Date();
+    if (isNaN(stamp.getTime())) stamp = new Date();
+    return ("0" + stamp.getHours()).slice(-2) + ":" + ("0" + stamp.getMinutes()).slice(-2);
   }
 
   var bodyResizeObserver = typeof window.ResizeObserver !== "undefined"
@@ -6989,7 +6991,7 @@
     return { nodes: nodes, envelopes: envelopes, workspace: sharedWorkspace };
   }
 
-  function createChatBubbleNode(role, turnNo) {
+  function createChatBubbleNode(role, turnNo, createdAt) {
     var wrap = document.createElement("div");
     wrap.className = "astral-turn " + (role === "user"
       ? "astral-turn-user" : "astral-turn-assistant");
@@ -7004,7 +7006,7 @@
       pill.textContent = "Turn " + number;
       var time = document.createElement("span");
       time.className = "astral-turn-time";
-      time.textContent = turnClock();
+      time.textContent = turnClock(createdAt);
       head.appendChild(pill);
       head.appendChild(time);
       wrap.appendChild(head);
@@ -7020,7 +7022,7 @@
   }
 
   function decodeSemanticMessage(message, turnNo) {
-    var built = createChatBubbleNode(message.role, turnNo);
+    var built = createChatBubbleNode(message.role, turnNo, message.created_at);
     var presentations = [];
     var hasVisibleContent = false;
     message.attachments.forEach(function (attachment) {

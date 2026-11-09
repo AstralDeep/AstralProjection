@@ -3930,3 +3930,24 @@ test("a chat_created from a message does not release the waiting message", async
   await receive(page, { type: "chat_created", payload: { chat_id: OTHER_CHAT_ID, from_message: false } });
   expect((await sentChatMessages(page)).map((frame) => frame.payload.chat_id)).toEqual([OTHER_CHAT_ID]);
 });
+
+test("a reloaded chat shows when each message was sent, while a new message shows now", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-07-16T15:42:00Z"));
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame, {
+    transcript: [
+      { message_id: "user-1", role: "user", created_at: "2026-07-16T09:05:00Z",
+        parts: [{ type: "text", text: "Morning question" }], attachments: [] },
+      { message_id: "assistant-1", role: "assistant", created_at: "2026-07-16T09:06:00Z",
+        parts: [{ type: "text", text: "Morning answer" }], attachments: [] },
+    ],
+  }));
+  const label = (iso) => page.evaluate((value) => {
+    const stamp = new Date(value);
+    return ("0" + stamp.getHours()).slice(-2) + ":" + ("0" + stamp.getMinutes()).slice(-2);
+  }, iso);
+  await expect(page.locator(".astral-turn-time").first()).toHaveText(await label("2026-07-16T09:05:00Z"));
+  await page.locator("#astral-input").fill("Afternoon question");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  await expect(page.locator(".astral-turn-time").last()).toHaveText(await label("2026-07-16T15:42:00Z"));
+});
