@@ -820,7 +820,9 @@
             try await sheet.settle()
             let tree = try sheet.accessibility
             XCTAssertNotNil(tree.first { $0.identifier == "mac-bypass-title" })
-            XCTAssertNotNil(tree.first { $0.identifier == "mac-bypass-message" })
+            let message = tree.first { $0.identifier == "mac-bypass-message" }
+            XCTAssertTrue(
+                [message?.label, message?.value].contains { $0?.contains("call your MCP connectors") == true })
             let buttons = tree.filter { $0.role == kAXButtonRole }.compactMap(\.identifier)
             XCTAssertEqual(buttons, ["mac-bypass-close", "mac-bypass-cancel", "mac-bypass-confirm"])
         }
