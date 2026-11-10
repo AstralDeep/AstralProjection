@@ -35,6 +35,10 @@ struct HistoryView: View {
                             }
                             .buttonStyle(.plain)
                             .contextMenu {
+                                Button("Audit for this chat") {
+                                    model.openChatAudit(chat.id)
+                                }
+                                .accessibilityIdentifier("chat-audit-\(chat.id)")
                                 Button(role: .destructive) {
                                     model.deleteChat(chat.id)
                                 } label: {

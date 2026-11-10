@@ -32,7 +32,7 @@
     enum MacPaletteAction: Equatable {
         case newChat, toggleSidebar, toggleActivity, toggleBrowser, computerControls, agentDirectory
         case updates, settings, cancelTurn, signOut, toggleBypass
-        case renameChat, togglePin, toggleArchive
+        case renameChat, togglePin, toggleArchive, chatAudit
         case composer(String)
         case menu(group: String, item: ChromeMenuItem)
     }
@@ -173,6 +173,9 @@
                 MacPaletteRow(
                     id: "chat/archive", section: chatSection, title: archived ? "Unarchive Chat" : "Archive Chat",
                     enabled: enabled, action: .toggleArchive),
+                MacPaletteRow(
+                    id: "chat/audit", section: chatSection, title: "Audit for This Chat", enabled: enabled,
+                    action: .chatAudit),
             ]
         }
 
