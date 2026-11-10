@@ -55,6 +55,8 @@
   var composerPlaceholder = null;
   // A message sent before new_chat answers would make a second chat, so it waits for the new chat's id
   var newChatWait = null;
+  // The server answers each plain new_chat in order, so an answer to one the user walked away from is skipped
+  var newChatAnswers = [];
   var NEW_CHAT_WAIT_MS = 10000;
   var agentLifecycleById = Object.create(null);
   var ACCOUNT_SESSION_KEY = "astraldeep.active_chat.account.v1";
@@ -434,6 +436,7 @@
     retireOwnerSurface();
     unsettledChatSend = null;
     unsentByChat = Object.create(null);
+    newChatAnswers = [];
     if (input) input.value = "";
     queuedFollowUps = Object.create(null);
     queueSendWaiting = Object.create(null);
@@ -503,6 +506,7 @@
       leftChatTurns = Object.create(null);
       cancelledChatTurns = Object.create(null);
       heldChatLoad = null;
+      newChatAnswers = [];
       syncStopControl();
       pendingTaskReload = null;
       unsettledChatSend = null;
@@ -5987,6 +5991,7 @@
   function loadActiveChat(chatId) {
     if (heldChatLoad && heldChatLoad.chatId === chatId) return;
     if (newChatWait && chatId !== activeChatId) endNewChatWait(false, "You opened another chat, so your message is back in the composer.");
+    if (chatId !== activeChatId) newChatAnswers.forEach(function (answer) { answer.abandoned = true; });
     var leavesRunningTurn = chatId !== activeChatId && (heldChatLoad !== null || chatTurnRunning());
     if (!selectActiveChat(chatId, "hydration")) return;
     if (leavesRunningTurn) {
@@ -7972,6 +7977,7 @@
         break;
       case "chat_created":
         if (correlatedVoiceChatCreated(data)) break;
+        if (data.payload && data.payload.from_message !== true && takeNewChatAnswer(data) === "abandoned") break;
         if (heldChatLoad) break;
         // A first message left for a New chat names its own chat, not the one now open
         if (data.payload && data.payload.from_message === true && !activeChatId && chatTurnRunningElsewhere()) break;
@@ -8022,6 +8028,7 @@
         if (admissionRefusal && !chatTurnRunning()) {
           settleQueue(false, "Your message was not accepted, so your queued messages are back in the composer.");
         }
+        if (admissionRefusal) forgetNewChatAnswer(data.submission_id, null);
         if (admissionRefusal) flushPendingTaskReload();
         if (admissionRefusal && unsettledChatSend && unsettledChatSend.submissionId === data.submission_id) {
           unsettledChatSend = null;
@@ -8106,7 +8113,9 @@
             ? "The answer did not finish, so your queued messages are back in the composer."
             : "The answer finished in another chat, so your queued messages are back in the composer.");
           flushPendingTaskReload();
+          if (!chatTurnRunning()) armNewChatWaitTimer();
         }
+        if (data.terminal && data.state !== "completed") forgetNewChatAnswer(null, data.request_generation);
         syncQueueControls();
         break;
       }
@@ -8277,8 +8286,8 @@
       renderAttachments();
     }
     setStatus("Starting the new chat…", true, "new-chat-wait");
-    // Without an answer the message still goes out, the old way, rather than waiting forever
-    if (!newChatWait.timer) newChatWait.timer = setTimeout(function () { endNewChatWait(true); }, NEW_CHAT_WAIT_MS);
+    // Without an answer the message still goes out without a chat id rather than waiting forever
+    armNewChatWaitTimer();
   }
 
   // A New chat queued while offline sets up the wait when it is finally sent
@@ -8294,11 +8303,32 @@
     var earlierWait = newChatWait;
     var submission = action("new_chat", {});
     if (!submission || !submission.requestGeneration) return;
+    newChatAnswers.push({ submissionId: submission.submissionId, generation: submission.requestGeneration,
+      abandoned: false });
     // Plain chat_created answers carry no id, so a message waits for the answer to the last New chat
     newChatWait = { generation: submission.requestGeneration, submissionId: submission.submissionId,
       pending: (earlierWait ? earlierWait.pending : 0) + 1,
       held: earlierWait ? earlierWait.held : null, timer: earlierWait ? earlierWait.timer : null };
     if (newChatWait.held) setStatus("Starting the new chat…", true, "new-chat-wait");
+  }
+
+  function takeNewChatAnswer(frame) {
+    var createdFor = frame.submission_id || frame.payload.submission_id;
+    var index = createdFor ? newChatAnswers.findIndex(function (answer) { return answer.submissionId === createdFor; }) : 0;
+    if (index < 0 || !newChatAnswers.length) return "unknown";
+    return newChatAnswers.splice(index, 1)[0].abandoned ? "abandoned" : "current";
+  }
+
+  function forgetNewChatAnswer(submissionId, generation) {
+    newChatAnswers = newChatAnswers.filter(function (answer) {
+      return answer.submissionId !== submissionId && answer.generation !== generation;
+    });
+  }
+
+  // While a turn runs elsewhere the server answers New chat only after it, so the wait starts when it ends
+  function armNewChatWaitTimer() {
+    if (!newChatWait || !newChatWait.held || newChatWait.timer || chatTurnRunning()) return;
+    newChatWait.timer = setTimeout(function () { endNewChatWait(true); }, NEW_CHAT_WAIT_MS);
   }
 
   function endNewChatWait(sendHeld, notice) {
@@ -9888,6 +9918,7 @@
       leftChatTurns = Object.create(null);
       cancelledChatTurns = Object.create(null);
       heldChatLoad = null;
+      newChatAnswers = [];
       turnSteerAck = null;
       // A draft that repeats the unsaved message is dropped before queued messages come back
       if (unsettledChatSend && unsettledChatSend.chatId === (activeChatId || null) && input

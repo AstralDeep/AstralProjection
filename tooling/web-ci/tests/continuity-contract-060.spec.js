@@ -3961,9 +3961,10 @@ test("a New chat answered while another chat waits to open does not hold that ch
   await page.locator("#astral-newchat-btn").click();
   const newChat = await lastNewChatFrame(page);
   await openChatFromHistory(page, OTHER_CHAT_ID);
-  await receive(page, { type: "chat_created", submission_id: newChat.submission_id,
-    payload: { chat_id: THIRD_CHAT_ID, from_message: false } });
+  expect(newChat.action).toBe("new_chat");
   await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  // The server runs New chat after the turn, and a plain new_chat answer carries no request id
+  await receive(page, { type: "chat_created", payload: { chat_id: THIRD_CHAT_ID, from_message: false } });
   const loads = await sentLoads(page);
   expect(loads.at(-1).payload.chat_id).toBe(OTHER_CHAT_ID);
   await receive(page, snapshot({ connection_generation: turnScope.connection_generation,
@@ -4056,6 +4057,63 @@ test("an unconfirmed interruption for a chat left behind survives a drop ahead o
     null, { timeout: 15000 });
   await openChatFromHistory(page, CHAT_ID);
   await expect(page.locator("#astral-input")).toHaveValue(/Steer text[\s\S]*Queued text/u);
+});
+
+test("an abandoned New chat's answer cannot take over the chat opened while a turn runs", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await page.locator("#astral-newchat-btn").click();
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const load = (await sentLoads(page)).at(-1);
+  expect(load.payload.chat_id).toBe(OTHER_CHAT_ID);
+  await receive(page, { type: "chat_created", payload: { chat_id: THIRD_CHAT_ID, from_message: false } });
+  await receive(page, snapshot(nextTurnScope(turnScope, load), { chat_id: OTHER_CHAT_ID, snapshot_id: SNAPSHOT_B }));
+  await expect(page.locator("#astral-chat")).toContainText("Committed answer");
+  expect(JSON.parse(await page.evaluate((key) => localStorage.getItem(key), LOCATOR_KEY)).chat_id).toBe(OTHER_CHAT_ID);
+  await submitComposer(page, "For the other chat");
+  expect((await sentActions(page, "chat_message")).at(-1).payload.chat_id).toBe(OTHER_CHAT_ID);
+});
+
+test("a message for a second New chat skips the answer to the first one the user left", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await page.locator("#astral-newchat-btn").click();
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await page.locator("#astral-newchat-btn").click();
+  await submitComposer(page, "For the second new chat");
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  await receive(page, { type: "chat_created", payload: { chat_id: THIRD_CHAT_ID, from_message: false } });
+  expect((await sentChatMessages(page)).filter((frame) => frame.payload.message === "For the second new chat"))
+    .toHaveLength(0);
+  const fourth = "44444444-aaaa-4aaa-8aaa-444444444444";
+  await receive(page, { type: "chat_created", payload: { chat_id: fourth, from_message: false } });
+  const message = (await sentChatMessages(page)).at(-1);
+  expect(message.payload.message).toBe("For the second new chat");
+  expect(message.payload.chat_id).toBe(fourth);
+});
+
+test("a message for a New chat behind a running turn waits for the turn instead of timing out", async ({ page }) => {
+  await page.clock.install();
+  const { turnScope } = await startTurnInChat(page);
+  await page.locator("#astral-newchat-btn").click();
+  await submitComposer(page, "Meant for the new chat");
+  await page.clock.runFor(15000);
+  expect((await sentChatMessages(page)).filter((frame) => frame.payload.message === "Meant for the new chat"))
+    .toHaveLength(0);
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  await receive(page, { type: "chat_created", payload: { chat_id: OTHER_CHAT_ID, from_message: false } });
+  const message = (await sentChatMessages(page)).at(-1);
+  expect(message.payload.message).toBe("Meant for the new chat");
+  expect(message.payload.chat_id).toBe(OTHER_CHAT_ID);
+});
+
+test("the New chat fallback still sends after the earlier turn ends without an answer", async ({ page }) => {
+  await page.clock.install();
+  const { turnScope } = await startTurnInChat(page);
+  await page.locator("#astral-newchat-btn").click();
+  await submitComposer(page, "Meant for the new chat");
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  await page.clock.runFor(11000);
+  expect((await sentChatMessages(page)).at(-1).payload.message).toBe("Meant for the new chat");
 });
 
 test("Stop pressed before the server starts the turn comes back once it starts", async ({ page }) => {
