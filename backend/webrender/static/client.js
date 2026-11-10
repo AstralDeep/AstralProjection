@@ -45,6 +45,7 @@
   var turnSteerAck = null;
   var queuedFollowUps = Object.create(null);
   var queueSendWaiting = Object.create(null);
+  var queuedSendSubmission = null;
   var unsentByChat = Object.create(null);
   var pendingSteers = Object.create(null);
   var sideQuestionRequestId = null;
@@ -440,6 +441,7 @@
     if (input) input.value = "";
     queuedFollowUps = Object.create(null);
     queueSendWaiting = Object.create(null);
+    queuedSendSubmission = null;
     Object.keys(pendingSteers).forEach(dropPendingSteer);
     turnSteerAck = null;
     syncSteerControls();
@@ -6155,14 +6157,15 @@
     return !!turnSteerAck && heldChatLoad === null && Object.keys(leftChatTurns).length === 0 && canCancelTurn();
   }
 
-  function queueFollowUp(text, attachments) {
+  function queueFollowUp(text, attachments, background) {
     var key = queueKey();
     var items = queuedFollowUps[key] || [];
     if (items.length >= MAX_QUEUED_FOLLOW_UPS) {
       showToast("Up to " + MAX_QUEUED_FOLLOW_UPS + " messages can wait at once. Your text is still in the composer.", "warning");
       return false;
     }
-    items.push({ id: randomUuid4(), text: text, attachments: attachments, editing: false, draft: "" });
+    items.push({ id: randomUuid4(), text: text, attachments: attachments, background: !!background,
+      editing: false, draft: "" });
     queuedFollowUps[key] = items;
     renderQueue();
     return true;
@@ -6210,15 +6213,40 @@
   function settleQueue(completedHere, notice) {
     var key = queueKey();
     var items = queuedFollowUps[key];
-    if (!items || !items.length || !isSocketReady() || heldChatLoad !== null || chatTurnRunning()
-        || Object.keys(leftChatTurns).length) return;
+    if (!items || !items.length) { delete queueSendWaiting[key]; return; }
+    if (!isSocketReady() || heldChatLoad !== null || chatTurnRunning() || Object.keys(leftChatTurns).length) return;
     if (!completedHere || !turnSteerAck) { restoreQueueToComposer(notice); return; }
-    if (items[0].editing) { queueSendWaiting[key] = true; return; }
+    // Sending now would replace the history load of a chat reopened mid-answer
+    if (items[0].editing || reloadingOpenChat()) { queueSendWaiting[key] = true; return; }
     delete queueSendWaiting[key];
     var next = items.shift();
     if (!items.length) delete queuedFollowUps[key];
     renderQueue();
-    doSendChat(next.text, next.attachments);
+    queuedSendSubmission = doSendChat(next.text, next.attachments, !!next.background);
+  }
+
+  function reloadingOpenChat() {
+    return !!(requestState && requestState.purpose === "hydration" && !requestState.snapshotApplied
+      && requestState.chatId === (activeChatId || null));
+  }
+
+  function settleQueueAfterReload(frame) {
+    if (frame.action !== "load_chat" || !frame.terminal || !requestState
+        || frame.request_generation !== requestState.generation || !queueSendWaiting[queueKey()]) return;
+    if (requestState.snapshotApplied) sendWaitingQueued();
+    else restoreQueueToComposer("The chat did not reload, so your queued messages are back in the composer.");
+  }
+
+  function restoreRefusedQueuedSend(submissionId) {
+    var refused = queuedSendSubmission;
+    if (!refused || refused.submissionId !== submissionId) return;
+    queuedSendSubmission = null;
+    if (refused.chatId !== (activeChatId || null)) return;
+    putTextsInComposer([refused.text]);
+    var uids = refused.attachments.map(function (entry) { return entry.uid; });
+    stagedAttachments = refused.attachments.concat(stagedAttachments.filter(function (entry) {
+      return uids.indexOf(entry.uid) === -1; })).slice(0, MAX_ATTACHMENTS);
+    renderAttachments();
   }
 
   function sendWaitingQueued() {
@@ -6383,13 +6411,17 @@
       } else {
         var text = document.createElement("span");
         text.className = "astral-queued-text";
+        text.id = "astral-queued-text-" + item.id;
         var files = item.attachments.length;
-        text.textContent = item.text + (files ? " (" + files + (files === 1 ? " file)" : " files)") : "");
+        text.textContent = item.text + (files ? " (" + files + (files === 1 ? " file)" : " files)") : "")
+          + (item.background ? " (background)" : "");
         text.title = item.text;
         row.appendChild(text);
-        row.appendChild(queueButton("Interrupt", "interrupt", "is-primary"));
-        row.appendChild(queueButton("Edit", "edit"));
-        row.appendChild(queueButton("Delete", "delete"));
+        ["Interrupt", "Edit", "Delete"].forEach(function (name) {
+          var button = queueButton(name, name.toLowerCase(), name === "Interrupt" ? "is-primary" : "");
+          button.setAttribute("aria-describedby", text.id);
+          row.appendChild(button);
+        });
       }
       host.appendChild(row);
     });
@@ -7812,6 +7844,7 @@
         break;
       case "conversation_snapshot":
         reduceConversationSnapshot(data);
+        if (requestState && requestState.purpose === "hydration" && requestState.snapshotApplied) sendWaitingQueued();
         break;
       case "ui_render":
         if (isLateWelcomeRender(data)) break;
@@ -8028,6 +8061,7 @@
         if (admissionRefusal && !chatTurnRunning()) {
           settleQueue(false, "Your message was not accepted, so your queued messages are back in the composer.");
         }
+        if (admissionRefusal) restoreRefusedQueuedSend(data.submission_id);
         if (admissionRefusal) forgetNewChatAnswer(data.submission_id, null);
         if (admissionRefusal) flushPendingTaskReload();
         if (admissionRefusal && unsettledChatSend && unsettledChatSend.submissionId === data.submission_id) {
@@ -8116,6 +8150,7 @@
           if (!chatTurnRunning()) armNewChatWaitTimer();
         }
         if (data.terminal && data.state !== "completed") forgetNewChatAnswer(null, data.request_generation);
+        settleQueueAfterReload(data);
         syncQueueControls();
         break;
       }
@@ -8468,7 +8503,8 @@
     list.insertBefore(btn, list.firstChild);
   }
 
-  function doSendChat(message, ready) {
+  function doSendChat(message, ready, queuedBackground) {
+    var background = queuedBackground === undefined ? bgArmed : queuedBackground;
     sealLiveTurn();
     openRequest("commit", activeChatId);
     var html = "";
@@ -8491,7 +8527,7 @@
         return { attachment_id: a.attachment_id, filename: a.filename, category: a.category };
       });
     }
-    if (bgArmed) payload.async_mode = true;
+    if (background) payload.async_mode = true;
     if (turnSelection) payload.selection = cloneTurnSelection(turnSelection);
     var submission = beginOperationSubmission("chat_message", payload, requestState.generation);
     recordUnsettledChatSend(submission, message, ready, !!payload.async_mode);
@@ -8505,8 +8541,10 @@
       payload: submission.payload,
     });
     purgeWelcome();
-    if (bgArmed) setBgArmed(false);
-    else showSkeleton();
+    if (queuedBackground === undefined && bgArmed) setBgArmed(false);
+    if (!background) showSkeleton();
+    return { submissionId: submission.submissionId, chatId: activeChatId || null,
+      text: message || "", attachments: ready.slice() };
   }
 
   if (form) form.addEventListener("submit", function (e) {
@@ -8515,9 +8553,10 @@
     var hasReady = (typeof readyAttachments === "function") && readyAttachments().length;
     if (!v && !hasReady) return;
     if (steeringApplies() || queueSendWaiting[queueKey()]) {
-      if (!queueFollowUp(v, readyAttachments())) return;
+      if (!queueFollowUp(v, readyAttachments(), bgArmed)) return;
       input.value = "";
       clearStagedAttachments();
+      if (bgArmed) setBgArmed(false);
       return;
     }
     input.value = "";

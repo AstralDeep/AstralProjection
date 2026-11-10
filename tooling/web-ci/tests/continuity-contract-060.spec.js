@@ -3571,11 +3571,29 @@ test("returning to a chat while its answer still runs does not strand the queue"
   await openChatFromHistory(page, OTHER_CHAT_ID);
   await openChatFromHistory(page, CHAT_ID);
   await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
-  const sent = (await sentActions(page, "chat_message")).map((frame) => frame.payload.message);
-  const composer = await page.locator("#astral-input").inputValue();
-  // The answer is over: the queued text must have been sent or handed back, not left as a chip
-  expect(sent.includes("Queued in the first chat") || composer.includes("Queued in the first chat")).toBe(true);
+  const load = (await sentLoads(page)).at(-1);
+  expect(load.payload.chat_id).toBe(CHAT_ID);
+  expect((await sentActions(page, "chat_message")).map((frame) => frame.payload.message)).toEqual(["A long request"]);
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(1);
+  const loadScope = nextTurnScope(turnScope, load);
+  await receive(page, snapshot(loadScope, { snapshot_id: SNAPSHOT_B, render_revision: 1 }));
   await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
+  expect((await sentActions(page, "chat_message")).at(-1).payload.message).toBe("Queued in the first chat");
+  await expect(page.locator("#astral-chat")).toContainText("Committed answer");
+});
+
+test("a chat reopened mid-answer gives its queue back when its history does not load", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Queued in the first chat");
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await openChatFromHistory(page, CHAT_ID);
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const loadScope = nextTurnScope(turnScope, (await sentLoads(page)).at(-1));
+  await receive(page, operationStatus(loadScope, OPERATION_B, 0, "failed", { action: "load_chat" }));
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
+  await expect(page.locator("#astral-input")).toHaveValue("Queued in the first chat");
+  await expect(page.locator("#astral-toasts")).toContainText("The chat did not reload");
+  expect((await sentActions(page, "chat_message")).map((frame) => frame.payload.message)).toEqual(["A long request"]);
 });
 
 test("a queue typed during an approval-resumed turn is settled when that turn completes", async ({ page }) => {
@@ -4042,7 +4060,7 @@ test("a refused queued message returns the rest of the queue to the composer", a
   await receive(page, { type: "error", accepted: false, code: "capacity_exceeded", message: "Busy right now",
     retry_after_ms: null, retryable: false, submission_id: sent.submission_id });
   await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
-  await expect(page.locator("#astral-input")).toHaveValue("Second follow-up");
+  await expect(page.locator("#astral-input")).toHaveValue("First follow-up\n\nSecond follow-up");
   await expect(page.locator("#astral-toasts")).toContainText("Your message was not accepted");
 });
 
@@ -4057,6 +4075,48 @@ test("an unconfirmed interruption for a chat left behind survives a drop ahead o
     null, { timeout: 15000 });
   await openChatFromHistory(page, CHAT_ID);
   await expect(page.locator("#astral-input")).toHaveValue(/Steer text[\s\S]*Queued text/u);
+});
+
+test("removing the queued message being edited after the answer ends lets the next send go out", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Queued A");
+  await page.locator(QUEUED_ROWS).getByRole("button", { name: "Edit" }).click();
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  await page.locator(".astral-queued-edit").fill("");
+  await page.locator(QUEUED_ROWS).getByRole("button", { name: "Save" }).click();
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
+  await submitComposer(page, "Typed C");
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
+  expect((await sentActions(page, "chat_message")).at(-1).payload.message).toBe("Typed C");
+});
+
+test("a queued message keeps the Background choice it was queued with", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Foreground follow-up");
+  await page.locator("#astral-bg-btn").click();
+  await submitComposer(page, "Background follow-up");
+  await expect(page.locator("#astral-bg-btn")).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator(QUEUED_ROWS).nth(1)).toContainText("Background follow-up (background)");
+  await page.locator("#astral-bg-btn").click();
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const first = (await sentActions(page, "chat_message")).at(-1);
+  expect(first.payload.message).toBe("Foreground follow-up");
+  expect(first.payload.async_mode).toBeUndefined();
+  await expect(page.locator("#astral-bg-btn")).toHaveAttribute("aria-pressed", "true");
+  await receive(page, operationStatus(nextTurnScope(turnScope, first), OPERATION_B, 0, "completed"));
+  const second = (await sentActions(page, "chat_message")).at(-1);
+  expect(second.payload.message).toBe("Background follow-up");
+  expect(second.payload.async_mode).toBe(true);
+  await expect(page.locator("#astral-bg-btn")).toHaveAttribute("aria-pressed", "true");
+});
+
+test("queued row buttons name the message they act on", async ({ page }) => {
+  await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Check the dosage table");
+  const row = page.locator(QUEUED_ROWS);
+  for (const name of ["Interrupt", "Edit", "Delete"]) {
+    await expect(row.getByRole("button", { name })).toHaveAccessibleDescription("Check the dosage table");
+  }
 });
 
 test("an abandoned New chat's answer cannot take over the chat opened while a turn runs", async ({ page }) => {
