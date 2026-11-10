@@ -14,9 +14,10 @@ const SOURCE_PATHS = new Map([
   ["/static/mesh-enrollment.js", "backend/webrender/static/mesh-enrollment.js"],
 ]);
 const MAX_REPORT_BYTES = 64 * 1024 * 1024;
-// Every browser test writes a full client.js report, so the total grows with the suite.
+// Spec suites write one source copy per record, so the total grows with the specs rather than the tests.
 const MAX_TOTAL_BYTES = 512 * 1024 * 1024;
 const MAX_ENTRIES = 1024;
+const MAX_EXECUTIONS = 1024;
 
 function fail(message) {
   throw new TypeError(`invalid browser V8 coverage reports: ${message}`);
@@ -42,6 +43,24 @@ function browserEntry(entry) {
   return SOURCE_PATHS.get(url.pathname);
 }
 
+function observationsFrom(entry) {
+  if (entry === null || typeof entry !== "object" || Array.isArray(entry)
+      || Object.keys(entry).sort().join(",") !== "executions,source,url") return [entry];
+  const { executions, source, url } = entry;
+  if (!Array.isArray(executions) || executions.length === 0 || executions.length > MAX_EXECUTIONS) {
+    fail("record must contain a bounded nonempty execution list");
+  }
+  const distinct = new Set();
+  return executions.map(execution => {
+    if (execution === null || typeof execution !== "object" || Array.isArray(execution)
+        || Object.keys(execution).sort().join(",") !== "functions,scriptId") fail("record execution shape does not match");
+    const functions = JSON.stringify(execution.functions);
+    if (distinct.has(functions)) fail("duplicate record execution");
+    distinct.add(functions);
+    return { url, scriptId: execution.scriptId, source, functions: execution.functions };
+  });
+}
+
 export async function convertBrowserV8Reports({ inputs, repoRoot }) {
   if (!Array.isArray(inputs) || inputs.length === 0 || inputs.length > 32) fail("input count is empty or excessive");
   const root = realpathSync(repoRoot);
@@ -59,23 +78,28 @@ export async function convertBrowserV8Reports({ inputs, repoRoot }) {
     if (totalBytes > MAX_TOTAL_BYTES) fail("total report size exceeds bound");
     const entries = JSON.parse(raw);
     if (!Array.isArray(entries) || entries.length === 0) fail("report must contain a nonempty raw browser array");
-    for (const entry of entries) {
-      if (++count > MAX_ENTRIES) fail("entry count exceeds bound");
-      const path = browserEntry(entry);
-      const sourceFile = resolve(root, path);
-      if (realpathSync(sourceFile) !== sourceFile) fail("candidate source must not traverse a symbolic link");
-      if (!sources.has(path)) sources.set(path, readRegular(sourceFile, 4 * 1024 * 1024));
-      const source = sources.get(path);
-      if (entry.source !== source) fail("entry shape or candidate source does not match");
-      const document = await convertPlaywrightV8Coverage([entry], () => path);
-      if (readRegular(sourceFile, 4 * 1024 * 1024) !== source) fail("candidate source changed during conversion");
-      const observed = document.coverage[path];
-      const record = records.get(path);
-      if (!record) {
-        records.set(path, observed);
-      } else {
-        if (JSON.stringify(record.statementMap) !== JSON.stringify(observed.statementMap)) fail("inconsistent statement map");
-        for (const [id, hits] of Object.entries(observed.s)) record.s[id] = record.s[id] > 0 || hits > 0 ? 1 : 0;
+    for (const reported of entries) {
+      const observations = observationsFrom(reported);
+      // The bound counts conversions, since each one re-parses the source
+      count += observations.length;
+      if (count > MAX_ENTRIES) fail("entry count exceeds bound");
+      for (const entry of observations) {
+        const path = browserEntry(entry);
+        const sourceFile = resolve(root, path);
+        if (realpathSync(sourceFile) !== sourceFile) fail("candidate source must not traverse a symbolic link");
+        if (!sources.has(path)) sources.set(path, readRegular(sourceFile, 4 * 1024 * 1024));
+        const source = sources.get(path);
+        if (entry.source !== source) fail("entry shape or candidate source does not match");
+        const document = await convertPlaywrightV8Coverage([entry], () => path);
+        if (readRegular(sourceFile, 4 * 1024 * 1024) !== source) fail("candidate source changed during conversion");
+        const observed = document.coverage[path];
+        const record = records.get(path);
+        if (!record) {
+          records.set(path, observed);
+        } else {
+          if (JSON.stringify(record.statementMap) !== JSON.stringify(observed.statementMap)) fail("inconsistent statement map");
+          for (const [id, hits] of Object.entries(observed.s)) record.s[id] = record.s[id] > 0 || hits > 0 ? 1 : 0;
+        }
       }
     }
   }
