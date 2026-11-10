@@ -4057,3 +4057,21 @@ test("an unconfirmed interruption for a chat left behind survives a drop ahead o
   await openChatFromHistory(page, CHAT_ID);
   await expect(page.locator("#astral-input")).toHaveValue(/Steer text[\s\S]*Queued text/u);
 });
+
+test("Stop pressed before the server starts the turn comes back once it starts", async ({ page }) => {
+  await installHarness(page);
+  const { frame: registrationFrame } = await registration(page);
+  await receive(page, snapshot(registrationFrame));
+  const scope = await sendInOpenChat(page, "A long request");
+  const stop = page.locator("#astral-stop-btn");
+  await stop.click();
+  await expect(stop).toBeHidden();
+  await receive(page, operationStatus(scope, OPERATION_A, 0, "accepted"));
+  await expect(stop).toBeHidden();
+  await receive(page, operationStatus(scope, OPERATION_A, 1, "running"));
+  await expect(stop).toBeVisible();
+  await stop.click();
+  expect(await sentCancels(page)).toHaveLength(2);
+  await receive(page, operationStatus(scope, OPERATION_A, 2, "running"));
+  await expect(stop).toBeHidden();
+});

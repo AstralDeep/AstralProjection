@@ -6055,7 +6055,13 @@
       delete runningChatTurns[frame.request_generation];
       delete leftChatTurns[frame.request_generation];
       delete cancelledChatTurns[frame.request_generation];
-    } else runningChatTurns[frame.request_generation] = true;
+      return;
+    }
+    var generation = frame.request_generation;
+    var started = frame.state === "running" || runningChatTurns[generation] === "started";
+    // A Stop sent before the server started this turn did not reach it, so Stop comes back for it
+    if (started && cancelledChatTurns[generation] === "unstarted") delete cancelledChatTurns[generation];
+    runningChatTurns[generation] = started ? "started" : true;
   }
 
   function finishWaitingForEarlierTurn() {
@@ -6082,7 +6088,7 @@
     if (!isSocketReady()) return false;
     // A turn left for a new chat still owns the socket, so a cancel here would stop it
     if (heldChatLoad === null && Object.keys(leftChatTurns).length > 0) return false;
-    return cancellableTurns().some(function (generation) { return cancelledChatTurns[generation] !== true; });
+    return cancellableTurns().some(function (generation) { return !cancelledChatTurns[generation]; });
   }
 
   function syncStopControl() {
@@ -6101,7 +6107,9 @@
   // The server cancels whichever turn runs on this socket, the same as the macOS Stop
   function stopTurn() {
     if (!canCancelTurn()) return false;
-    cancellableTurns().forEach(function (generation) { cancelledChatTurns[generation] = true; });
+    cancellableTurns().forEach(function (generation) {
+      cancelledChatTurns[generation] = runningChatTurns[generation] === "started" ? true : "unstarted";
+    });
     var submissionId = randomUuid4();
     var requestGeneration = randomUuid4();
     send({
