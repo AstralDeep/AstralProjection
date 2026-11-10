@@ -479,7 +479,7 @@ final class AppModel: NSObject {
         }
         static let composerReturnBindingKey = "astraldeep.composer.return-binding.v1"
         @ObservationIgnored private var turnSteerAck: TurnSteerAcknowledgement?
-        @ObservationIgnored private var queueByChat: [String: QueueSnapshot] = [:]
+        private var queueByChat: [String: QueueSnapshot] = [:]
         @ObservationIgnored private var pendingSteerTexts: [String: String] = [:]
         var steerNotice: String?
         var queueConflictNotice: String?
