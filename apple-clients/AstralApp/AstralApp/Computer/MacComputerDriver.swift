@@ -109,6 +109,7 @@
         private let accessibility: MacComputerAccessibility
         private let overlay: (@Sendable (MacComputerOverlayCue) async -> Void)?
         private let bypass: @Sendable () async -> Bool
+        private let receipts: (@Sendable () -> MacComputerReceiptGate?)?
         private var cuedApp: String?
         private var geometry: Geometry?
         private var windows: [Int: AXUIElement] = [:]
@@ -119,13 +120,15 @@
         init(
             marker: Int64, system: any MacComputerSystemIO = MacComputerLiveSystem.shared,
             input: MacComputerInput? = nil, overlay: (@Sendable (MacComputerOverlayCue) async -> Void)? = nil,
-            bypass: @escaping @Sendable () async -> Bool = { false }
+            bypass: @escaping @Sendable () async -> Bool = { false },
+            receipts: (@Sendable () -> MacComputerReceiptGate?)? = nil
         ) {
             self.system = system
             self.input = input ?? MacComputerInput(marker: marker, system: system)
             accessibility = MacComputerAccessibility(system: system)
             self.overlay = overlay
             self.bypass = bypass
+            self.receipts = receipts
         }
         func reset() {
             geometry = nil
@@ -1023,6 +1026,17 @@
                     return try root.read(path, maximum: Int(request.args["max_bytes"]?.numberValue ?? 65536))
                 }
                 if request.verb == "list_dir" { return try root.list(path) }
+                if let receiptText = request.args["receipt"]?.stringValue {
+                    guard let gate = receipts?() else {
+                        throw ComputerHostError(
+                            "receipt_refused", "This Mac cannot verify effect receipts, so nothing changes.")
+                    }
+                    let plan = try ComputerFilePlan(
+                        verb: request.verb, path: path, root: root.root, rootIdentity: root.rootIdentity.digest)
+                    let receipt = try gate.verify(receiptText, evidence: plan.digest)
+                    try plan.recheck()
+                    try gate.claim(receipt)
+                }
                 if request.verb == "write_file" {
                     let text = request.args["content"]!.stringValue!
                     try root.write(

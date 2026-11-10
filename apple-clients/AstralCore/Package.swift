@@ -14,12 +14,18 @@ let canonicalVoiceFixture = repositoryRoot.appendingPathComponent(
     "contracts/fixtures/voice_065/client_conformance.json")
 let canonicalLocalVoiceFixture = repositoryRoot.appendingPathComponent(
     "contracts/fixtures/voice_075/client_local_conformance.json")
+let canonicalLetsFixture = repositoryRoot.appendingPathComponent(
+    "contracts/fixtures/lets_139/canonicalization-vectors.json")
 let linkedVoiceFixture = packageRoot.appendingPathComponent(
     "Tests/AstralCoreTests/Fixtures/voice_065/client_conformance.json")
+let linkedLetsFixture = packageRoot.appendingPathComponent(
+    "Tests/AstralCoreTests/Fixtures/lets_139/canonicalization-vectors.json")
 let expectedVoiceFixtureSHA256 =
     "bc98077594fa8d51dd664fadefaa48cf596a94e7fb2a961a972dbabca4f02143"
 let expectedLocalVoiceFixtureSHA256 =
     "9350d77e327112435246d7a574979bd6869d3c6e42d365890f59e2d70743b849"
+let expectedLetsFixtureSHA256 =
+    "d9ad1f5849bd3bb1a4ef73ef430ab14fc4077f5aa2e7d566bebf82f0e6b261f5"
 
 func sha256(_ data: Data) -> String {
     SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
@@ -39,8 +45,16 @@ do {
     guard sha256(localBytes) == expectedLocalVoiceFixtureSHA256 else {
         fatalError("canonical Feature 075 local voice fixture digest changed")
     }
+    let letsBytes = try Data(contentsOf: canonicalLetsFixture)
+    guard sha256(letsBytes) == expectedLetsFixtureSHA256 else {
+        fatalError("canonical LETS canonicalization vector digest changed")
+    }
+    let letsLinkedBytes = try Data(contentsOf: linkedLetsFixture)
+    guard letsLinkedBytes == letsBytes else {
+        fatalError("LETS canonicalization test-resource link differs from its canonical source")
+    }
 } catch {
-    fatalError("unable to validate canonical Feature 065 voice fixture: \(error)")
+    fatalError("unable to validate canonical fixture: \(error)")
 }
 
 let package = Package(
@@ -63,7 +77,7 @@ let package = Package(
                 "Fixtures/astralprims-fixtures.json",
                 "Fixtures/generate_fixtures.py",
             ],
-            resources: [.process("Fixtures/voice_065")]
+            resources: [.process("Fixtures/voice_065"), .process("Fixtures/lets_139")]
         ),
     ]
 )

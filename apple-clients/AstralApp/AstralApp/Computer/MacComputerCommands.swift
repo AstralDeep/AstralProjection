@@ -359,6 +359,7 @@
         nonisolated let clock: any MacComputerCommandClock
         private let spawner: any MacComputerCommandSpawning
         private let sandbox: (any MacComputerCommandSandboxing)?
+        private let receipts: (@Sendable () -> MacComputerReceiptGate?)?
         private let inherited: [String: String]
         private let resolver: (@Sendable () async -> String)?
         private var path: String?
@@ -374,12 +375,14 @@
             clock: any MacComputerCommandClock = MacComputerLiveCommandClock(),
             inherited: [String: String] = ProcessInfo.processInfo.environment,
             loginPath: (@Sendable () async -> String)? = nil,
-            sandbox: (any MacComputerCommandSandboxing)? = nil
+            sandbox: (any MacComputerCommandSandboxing)? = nil,
+            receipts: (@Sendable () -> MacComputerReceiptGate?)? = nil
         ) {
             self.spawner = spawner
             self.clock = clock
             self.inherited = inherited
             self.sandbox = sandbox
+            self.receipts = receipts
             resolver = loginPath
         }
 
@@ -420,6 +423,32 @@
             }
             guard case .exited(0) = job.result else { return fallback }
             return ComputerCommandPolicy.loginPath(output.tail(.stdout, limit: 16384).text) ?? fallback
+        }
+
+        func prepare(
+            _ request: ComputerHostRequest, roots: [String], exclusions: ComputerWorkspaceExclusions
+        ) async throws -> [String: JSONValue] {
+            let args = request.args
+            let cwd = try ComputerCommandPolicy.workingDirectory(args["cwd"]?.stringValue ?? "", roots: roots)
+            let argv = try args["argv"]?.arrayValue.map { items in
+                try items.map { item in
+                    guard let text = item.stringValue else {
+                        throw ComputerHostError("out_of_range", "Invalid argv.")
+                    }
+                    return text
+                }
+            }
+            let invocation = try ComputerCommandPolicy.invocation(command: args["command"]?.stringValue, argv: argv)
+            try ComputerCommandPolicy.refuseExcluded(
+                cwd: args["cwd"]?.stringValue ?? "", resolvedCwd: cwd, command: invocation.command,
+                argv: invocation.argv, roots: roots, exclusions: exclusions)
+            let plan = try ComputerCommandPlan.resolve(
+                command: invocation.command, argv: invocation.argv, cwd: args["cwd"]?.stringValue ?? "",
+                roots: roots, path: await loginPath())
+            guard case .object(let payload) = plan.json else {
+                throw ComputerHostError("failed", "The command plan could not be reported.")
+            }
+            return payload
         }
 
         func run(
@@ -492,6 +521,17 @@
             }
             try authorize()
             try Task.checkCancellation()
+            if let receiptText = request.args["receipt"]?.stringValue {
+                guard let gate = receipts?() else {
+                    throw ComputerHostError(
+                        "receipt_refused", "This Mac cannot verify effect receipts, so nothing runs.")
+                }
+                let fresh = try ComputerCommandPlan.resolve(
+                    command: invocation.command, argv: invocation.argv, cwd: cwd, roots: roots,
+                    path: environment["PATH"] ?? ComputerCommandPolicy.fallbackPath, driftOnFailure: true)
+                let verified = try gate.verify(receiptText, evidence: fresh.digest)
+                try gate.claim(verified)
+            }
             let output = MacComputerCommandOutput()
             let process: any MacComputerCommandProcess
             do {

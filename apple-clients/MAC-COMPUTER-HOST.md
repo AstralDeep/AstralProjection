@@ -77,6 +77,12 @@ Results and audit:
 
 The owner configures the sandbox in Computer controls: the toggle switches between shadow (default) and enforce. The egress domain list and the placeholder-to-Keychain bindings are read from the `computer.sandbox.configuration` defaults key as JSON, for example `{"mode":"enforce","domains":["api.github.com"],"bindings":[{"placeholder":"ASTRAL_GITHUB_TOKEN","host":"api.github.com","secret":"astral.egress.github"}]}`. Placeholder names begin with `ASTRAL_` and the referenced secret is a generic-password Keychain item named by `secret`. Invalid configuration falls back to shadow mode with an empty list.
 
+## Receipt verification
+
+Every consequential host effect can be bound to a warden-signed LETS receipt. A `prepare_run_command` step resolves the executable's real path and SHA-256 and the working folder's identity into a canonical plan digest; for file verbs the plan binds the verb, path and granted root. The server returns the plan for review and mints the receipt with that digest as its `evidence_digest`. Immediately before a spawn, write or delete, the host re-resolves the plan, verifies the receipt (Ed25519, executor audience, tenant, envelope, epoch, digests, trusted wardens, freshness) and durably claims it under the app's Application Support container, so each receipt is claimed once even across relaunches. Any difference between the re-resolved plan and the receipt's evidence digest is refused with `plan_drift`; a repeated delivery is refused as a replay; a receipt that cannot be verified leaves the effect unrun and is reported, never retried automatically. Executable drift, replaced folders and unreadable executables are refused before anything runs.
+
+Receipt verification keys are configured through the `computer.receipt.configuration` defaults key as JSON: `{"audience":"...","tenant_id":"...","envelope_id":"...","config_epoch":1,"policy_digests":["sha256:..."],"machine_digests":["sha256:..."],"max_clock_uncertainty_ns":...,"uncertainty_ns":...,"wardens":[{"warden_id":"...","key_id":"...","public_key":"<32-byte base64url>","not_before_ns":...,"not_after_ns":...}]}`. Invalid or absent configuration disables verification; a delivered receipt that cannot then be verified refuses the effect. The prepare verb stays unadvertised until the server's closed verb set registers it, like the checkpoint verbs.
+
 ## Verify
 
 ```sh

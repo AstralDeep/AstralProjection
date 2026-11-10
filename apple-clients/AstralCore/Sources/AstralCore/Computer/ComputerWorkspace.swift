@@ -20,6 +20,11 @@
             let value = "\(device):\(inode):\(generation)"
             return SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
         }
+        public static func at(_ path: String, directory: Bool) -> ComputerWorkspaceIdentity? {
+            var info = stat()
+            guard stat(path, &info) == 0, !directory || info.st_mode & S_IFMT == S_IFDIR else { return nil }
+            return ComputerWorkspaceIdentity(info)
+        }
     }
 
     public struct ComputerWorkspaceTreeEntry: Sendable, Equatable {
