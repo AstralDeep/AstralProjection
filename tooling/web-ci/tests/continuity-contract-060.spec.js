@@ -4075,3 +4075,18 @@ test("Stop pressed before the server starts the turn comes back once it starts",
   await receive(page, operationStatus(scope, OPERATION_A, 2, "running"));
   await expect(stop).toBeHidden();
 });
+
+test("a message cut off in a chat left mid-answer comes back when that chat is opened again", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  const scope = await sendInOpenChat(page, "Request for chat one");
+  await receive(page, operationStatus(scope, OPERATION_A, 0, "running"));
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await expect(page.locator("#astral-toasts")).toContainText("your message in another chat was saved");
+  await page.waitForFunction(() => window.__socketEvents.filter((event) => event.frame.type === "register_ui").length >= 2,
+    null, { timeout: 15000 });
+  await openChatFromHistory(page, CHAT_ID);
+  await expect(page.locator("#astral-input")).toHaveValue("Request for chat one");
+});

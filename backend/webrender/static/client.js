@@ -45,6 +45,7 @@
   var turnSteerAck = null;
   var queuedFollowUps = Object.create(null);
   var queueSendWaiting = Object.create(null);
+  var unsentByChat = Object.create(null);
   var pendingSteers = Object.create(null);
   var sideQuestionRequestId = null;
   var sideQuestionRoot = null;
@@ -432,6 +433,7 @@
     accountPrivacyEpoch += 1;
     retireOwnerSurface();
     unsettledChatSend = null;
+    unsentByChat = Object.create(null);
     if (input) input.value = "";
     queuedFollowUps = Object.create(null);
     queueSendWaiting = Object.create(null);
@@ -555,6 +557,7 @@
     activeChatId = chatId;
     syncVoiceVisibleChat(chatId);
     if (purpose) openRequest(purpose, chatId);
+    if (unsentByChat[chatId]) restoreUnsentForOpenedChat(chatId);
     renderQueue();
     settleQueue(false, "The answer finished while you were in another chat, so your queued messages are back in the composer.");
     return true;
@@ -8357,6 +8360,22 @@
   function restoreUnsettledChatSend() {
     var unsent = unsettledChatSend;
     unsettledChatSend = null;
+    if (unsent && unsent.chatId && unsent.chatId !== (activeChatId || null)) {
+      unsentByChat[unsent.chatId] = unsent;
+      showToast("The connection dropped before your message in another chat was saved. "
+        + "It will be back in the composer when you open that chat.", "warning");
+      return false;
+    }
+    return putUnsentInComposer(unsent);
+  }
+
+  function restoreUnsentForOpenedChat(chatId) {
+    var unsent = unsentByChat[chatId];
+    delete unsentByChat[chatId];
+    putUnsentInComposer(unsent);
+  }
+
+  function putUnsentInComposer(unsent) {
     if (!unsent || unsent.chatId !== (activeChatId || null) || !input) return false;
     var draft = input.value;
     input.value = unsent.text && draft ? unsent.text + "\n\n" + draft : (unsent.text || draft);
