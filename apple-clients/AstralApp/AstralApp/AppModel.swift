@@ -479,6 +479,7 @@ final class AppModel: NSObject {
         private var queueByChat: [String: QueueSnapshot] = [:]
         @ObservationIgnored private var queuesToReturn: [String: [String]] = [:]
         @ObservationIgnored private var pendingSteerTexts: [String: String] = [:]
+        @ObservationIgnored private var steerChats: [String: String] = [:]
         var steerNotice: String?
         var queueConflictNotice: String?
         var sideQuestionSheetVisible = false
@@ -487,12 +488,14 @@ final class AppModel: NSObject {
         @ObservationIgnored private var sideQuestionRequestId: String?
         @ObservationIgnored private var composerReturnBindingStored: ComposerReturnBinding
         @ObservationIgnored private var queuedFollowUpBeingEdited: String?
+        @ObservationIgnored private var queuedFollowUpEditText: String?
         @ObservationIgnored private var appQueueSendWaiting = false
         @ObservationIgnored private var settlingChatTurnStatus = false
         @ObservationIgnored private var interruptsFromQueue: Set<String> = []
         @ObservationIgnored private var approvalIdsBeforeTurn: Set<String> = []
         @ObservationIgnored private var decisionSentSinceTurn = false
         @ObservationIgnored private var lateChatDoneExpected = false
+        @ObservationIgnored private var chatDoneSeen = false
         struct QueueSnapshot: Equatable {
             let revision: Int
             var items: [QueuedFollowUpItem]
@@ -2582,8 +2585,13 @@ final class AppModel: NSObject {
                 // A queue held in one mode cannot be carried into the other without losing or doubling it.
                 if !turnQueueCapable {
                     restoreAppQueue(Self.queueModeChangedNotice)
-                    for (chat, snapshot) in queueByChat where !chat.isEmpty {
-                        queuesToReturn[chat, default: []] += snapshot.items.map(\.message)
+                    for (chat, snapshot) in queueByChat {
+                        if chat.isEmpty {
+                            // An unsaved chat cannot be reopened, so its queue joins the open composer.
+                            composerDraft = joinedWithDraft(snapshot.items.map(\.message).joined(separator: "\n\n"))
+                        } else {
+                            queuesToReturn[chat, default: []] += snapshot.items.map(\.message)
+                        }
                     }
                 }
                 queueByChat.removeAll()
@@ -2591,6 +2599,7 @@ final class AppModel: NSObject {
             turnSteerAck = nextAck
             if !turnSteerNegotiated {
                 pendingSteerTexts.removeAll()
+                steerChats.removeAll()
                 interruptsFromQueue.removeAll()
             }
         #endif
@@ -3401,8 +3410,8 @@ final class AppModel: NSObject {
             }
             let failure = status.error.objectValue?["message"]?.stringValue
             #if os(macOS)
-                // The server sends done before the final status, so a turn still active here owes a late done.
-                let doneStillOwed = ownsActiveChatTurn && turnActive
+                // The server sends done before the final status, so a turn whose done has not come owes a late one.
+                let doneStillOwed = ownsActiveChatTurn && !chatDoneSeen
                 if ownsActiveChatTurn, status.state != "completed" {
                     restoreAppQueue("The task did not finish, so your queued follow-ups are back in the composer.")
                 }
@@ -3427,8 +3436,8 @@ final class AppModel: NSObject {
                 #endif
             }
             #if os(macOS)
-                if ["authorize_action", "remote_op_decision"].contains(status.action) {
-                    settleAppQueue(completed: status.state == "completed", notice: Self.decisionNotice)
+                if ["authorize_action", "remote_op_decision"].contains(status.action), decisionSentSinceTurn {
+                    settleAppQueue(completed: false, notice: Self.decisionNotice)
                 }
             #endif
             if !restored, let message = failure {
@@ -3912,6 +3921,9 @@ final class AppModel: NSObject {
         }
         adoptUnsentMessage(chatId: chatId)
         #if os(macOS)
+            if activeChatId == nil {
+                for (id, chat) in steerChats where chat.isEmpty { steerChats[id] = chatId }
+            }
             if activeChatId == nil, let unnamed = queueByChat.removeValue(forKey: "") {
                 queueByChat[chatId] = QueueSnapshot(
                     revision: 0, items: (queueByChat[chatId]?.items ?? []) + unnamed.items)
@@ -4352,6 +4364,7 @@ final class AppModel: NSObject {
                 // This done belongs to the turn before the one the queue just started.
                 if chatTurnSubmissionOpen { return }
             }
+            if status == "done" { chatDoneSeen = true }
         #endif
         switch status {
         case "done":
@@ -4530,6 +4543,7 @@ final class AppModel: NSObject {
             else { return nil }
             let clientMessageId = clientMessageId(of: frame)
             pendingSteerTexts[clientMessageId] = text
+            steerChats[clientMessageId] = queueKey
             steerNotice = nil
             queueConflictNotice = nil
             transientTurns.append(
@@ -4580,7 +4594,10 @@ final class AppModel: NSObject {
                     } else if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         removeQueuedFollowUp(item)
                     } else {
-                        steerNotice = "A follow-up can be at most 20,000 characters, so the edit was not saved."
+                        // Keeping the old text would send what the user just replaced.
+                        removeQueuedFollowUp(item)
+                        composerDraft = joinedWithDraft(text)
+                        steerNotice = "A follow-up can be at most 20,000 characters, so your edit is in the composer."
                     }
                 }
                 return
@@ -4596,10 +4613,17 @@ final class AppModel: NSObject {
         // The chip view reports edits so a finished answer never sends text that is still being changed.
         func beginEditingQueuedFollowUp(_ item: QueuedFollowUpItem) {
             queuedFollowUpBeingEdited = item.id
+            queuedFollowUpEditText = item.message
+        }
+
+        // A queue handed back mid-edit returns the text being typed, not the text it replaces.
+        func updateQueuedFollowUpEdit(_ text: String) {
+            if queuedFollowUpBeingEdited != nil { queuedFollowUpEditText = text }
         }
 
         func endEditingQueuedFollowUp() {
             queuedFollowUpBeingEdited = nil
+            queuedFollowUpEditText = nil
             if appQueueSendWaiting { settleAppQueue(completed: true, notice: nil) }
         }
 
@@ -4694,7 +4718,15 @@ final class AppModel: NSObject {
             guard !turnQueueCapable, let items = queueByChat.removeValue(forKey: queueKey)?.items, !items.isEmpty
             else { return }
             appQueueSendWaiting = false
-            composerDraft = joinedWithDraft(items.map(\.message).joined(separator: "\n\n"))
+            let texts = items.map { item in
+                guard item.id == queuedFollowUpBeingEdited,
+                    let typed = queuedFollowUpEditText?.trimmingCharacters(in: .whitespacesAndNewlines), !typed.isEmpty
+                else { return item.message }
+                return typed
+            }
+            queuedFollowUpBeingEdited = nil
+            queuedFollowUpEditText = nil
+            composerDraft = joinedWithDraft(texts.joined(separator: "\n\n"))
             if let notice { steerNotice = notice }
         }
 
@@ -4768,6 +4800,8 @@ final class AppModel: NSObject {
             case "chat_steer_recorded":
                 guard let recorded = ChatSteerRecorded(frame: frame) else { return }
                 pendingSteerTexts.removeValue(forKey: recorded.clientMessageId)
+                steerChats.removeValue(forKey: recorded.clientMessageId)
+                interruptsFromQueue.remove(recorded.clientMessageId)
                 for skipped in recorded.skippedCalls {
                     stepTrail = trailUpsert(stepTrail, "\u{21b7} \(skipped.name) \u{2014} \(skipped.reason)")
                 }
@@ -4775,7 +4809,21 @@ final class AppModel: NSObject {
                 guard let refused = ChatSteerRefused(frame: frame) else { return }
                 let text = pendingSteerTexts.removeValue(forKey: refused.clientMessageId)
                 let fromQueue = interruptsFromQueue.remove(refused.clientMessageId) != nil
+                let steerChat = steerChats.removeValue(forKey: refused.clientMessageId) ?? queueKey
                 transientTurns.removeAll { $0.id == "pending-steer-\(refused.clientMessageId)" }
+                guard steerChat == queueKey else {
+                    // A steer refused after the user left its chat stays with that chat.
+                    guard let text else { return }
+                    if fromQueue, refused.code == .staleTurn, !turnQueueCapable,
+                        let item = appQueueItem(id: UUID().uuidString.lowercased(), text: text, revision: 1)
+                    {
+                        queueByChat[steerChat] = QueueSnapshot(
+                            revision: 0, items: [item] + (queueByChat[steerChat]?.items ?? []))
+                    } else {
+                        queuesToReturn[steerChat, default: []].append(text)
+                    }
+                    return
+                }
                 if let text, fromQueue, refused.code == .staleTurn, turnActive || chatTurnSubmissionOpen,
                     !turnQueueCapable,
                     let item = appQueueItem(id: UUID().uuidString.lowercased(), text: text, revision: 1)
@@ -5944,6 +5992,8 @@ final class AppModel: NSObject {
             lateChatDoneExpected = false
             interruptsFromQueue.removeAll()
             pendingSteerTexts.removeAll()
+            steerChats.removeAll()
+            queuedFollowUpEditText = nil
             steerNotice = nil
             queueConflictNotice = nil
             sideQuestionSheetVisible = false
@@ -5993,7 +6043,10 @@ final class AppModel: NSObject {
         else { return }
         localOperationSubmissions[submission.submissionId] = submission
         #if os(macOS)
-            if ["authorize_action", "remote_op_decision"].contains(action), chatId == activeChatId {
+            // A decision made while an answer runs settles with that answer, not after it.
+            if ["authorize_action", "remote_op_decision"].contains(action), chatId == activeChatId, !turnActive,
+                !chatTurnSubmissionOpen
+            {
                 decisionSentSinceTurn = true
             }
         #endif
@@ -6490,6 +6543,7 @@ final class AppModel: NSObject {
         #if os(macOS)
             recordApprovalBaseline()
             decisionSentSinceTurn = false
+            chatDoneSeen = false
         #endif
         let background = runInBackground
         runInBackground = false
@@ -7724,7 +7778,7 @@ final class AppModel: NSObject {
             decisionSentSinceTurn = false
             if let held = queuesToReturn.removeValue(forKey: chatId) {
                 composerDraft = joinedWithDraft(held.joined(separator: "\n\n"))
-                steerNotice = Self.queueModeChangedNotice
+                steerNotice = "Messages you queued or sent here earlier are back in the composer."
             }
             settleAppQueue(
                 completed: false,

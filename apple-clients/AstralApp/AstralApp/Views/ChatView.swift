@@ -1090,6 +1090,7 @@ struct InputBar: View {
                         .onSubmit { commitEdit(item) }
                         .onExitCommand { cancelEdit() }
                         // Clicking away saves the edit so the queue is not left waiting on it.
+                        .onChange(of: editingText) { _, text in model.updateQueuedFollowUpEdit(text) }
                         .onChange(of: editorFocused) { _, focused in
                             if !focused, editingId == item.id { commitEdit(item) }
                         }
@@ -1142,6 +1143,12 @@ struct InputBar: View {
         }
 
         private func beginEdit(_ item: QueuedFollowUpItem) {
+            // Opening another chip saves the one being edited instead of dropping its text.
+            if let current = editingId, current != item.id,
+                let editing = model.queuedFollowUps.first(where: { $0.id == current })
+            {
+                commitEdit(editing)
+            }
             editingText = item.message
             editingId = item.id
             model.beginEditingQueuedFollowUp(item)
