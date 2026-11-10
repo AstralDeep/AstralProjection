@@ -35,20 +35,59 @@ function fixture(entries = [observation()]) {
   return { root, source, input, inputs: [input], repoRoot: root };
 }
 
-test("bounded browser reports preserve every observation and the canonical union", async () => {
-  const entries = [observation(0), observation(1), observation(0)];
+function execution({ scriptId, functions }) {
+  return { scriptId, functions };
+}
+
+test("bounded browser reports store each source once per record and keep the canonical union", async () => {
+  const entries = [observation(0), observation(1), observation(0), observation(2)];
   const options = fixture(entries);
-  const maximum = Math.max(...entries.map(entry => Buffer.byteLength(JSON.stringify([entry]) + "\n")));
+  const record = { url: entries[0].url, source: SOURCE, executions: [entries[0], entries[1]].map(execution) };
+  const maximum = Buffer.byteLength(JSON.stringify([record]) + "\n");
   const directory = resolve(options.root, "bounded");
   const paths = await clientCoverage.writeClientCoverageReports(directory, "work", entries, maximum);
-  assert.equal(paths.length, 3);
-  assert.deepEqual(paths.flatMap(path => JSON.parse(readFileSync(path, "utf8"))), entries);
+  assert.equal(paths.length, 2);
+  assert.deepEqual(paths.flatMap(path => JSON.parse(readFileSync(path, "utf8"))),
+    [record, { ...record, executions: [execution(entries[3])] }]);
   for (const path of paths) {
     assert.ok(lstatSync(path).size <= maximum);
     assert.equal(lstatSync(path).mode & 0o777, 0o600);
   }
   assert.deepEqual(await convertBrowserV8Reports({...options, inputs: paths}),
     await convertBrowserV8Reports(options));
+});
+
+test("one spec report holds one record per source and URL", async () => {
+  const entries = [observation(0), observation(1, ""), observation(2), observation(1, "")];
+  const options = fixture(entries);
+  const [path] = await clientCoverage.writeClientCoverageReports(resolve(options.root, "spec"), "work", entries);
+  const records = JSON.parse(readFileSync(path, "utf8"));
+  assert.deepEqual(records.map(record => [record.url, record.executions.length]),
+    [[entries[0].url, 2], ["", 1]]);
+  assert.equal(readFileSync(path, "utf8").split(SOURCE.slice(0, 16)).length - 1, 2);
+  assert.deepEqual(await convertBrowserV8Reports({...options, inputs: [path]}), await convertBrowserV8Reports(options));
+  assert.throws(() => clientCoverage.clientCoverageRecords([{ ...observation(), scriptId: 1 }]));
+  assert.throws(() => clientCoverage.clientCoverageRecords([{ ...observation(), functions: undefined }]));
+});
+
+test("records reject malformed, duplicate, excessive and stale executions", async () => {
+  const record = (executions, extra = {}) => ({ url: observation().url, source: SOURCE, executions, ...extra });
+  const first = execution(observation(0));
+  for (const entry of [record([]), record("bogus"), record([first, first]), record([{ ...first, url: "" }]),
+    record([{ functions: first.functions }]), record([{ ...first, scriptId: "" }]), record([null]),
+    record([first], { source: SOURCE + "// old source" }), record([first], { url: "https://candidate.invalid/static/other.js" }),
+    record([first], { url: "https://candidate.invalid/static/client.js?x=1" })]) {
+    await assert.rejects(convertBrowserV8Reports(fixture([entry])));
+  }
+  await assert.rejects(convertBrowserV8Reports(fixture([record([first, first])])), /duplicate record execution/u);
+  const distinct = count => Array.from({ length: count }, (_value, index) => ({ scriptId: String(index),
+    functions: [{ ...first.functions[0], functionName: String(index) }] }));
+  await assert.rejects(convertBrowserV8Reports(fixture([record(distinct(1025))])), /bounded nonempty execution list/u);
+  // The entry bound counts executions across records, so 1,025 in two records are refused.
+  const bounded = fixture([record(distinct(1024)), record([execution(observation(1))], { url: "" })]);
+  await assert.rejects(convertBrowserV8Reports(bounded), /entry count exceeds bound/u);
+  const report = await convertBrowserV8Reports(fixture([record([first, execution(observation(1, ""))], { url: "" })]));
+  assert.deepEqual(report.coverage[PATH].s, { 0: 1, 1: 1, 2: 0 });
 });
 
 test("bounded writer counts UTF8 bytes and rejects a single excessive observation", async () => {
@@ -74,7 +113,8 @@ test("bounded writer replaces only its prior regular reports and refuses links",
   const options = fixture();
   const directory = resolve(options.root, "bounded");
   const entries = [observation(0), observation(1)];
-  const maximum = Math.max(...entries.map(entry => Buffer.byteLength(JSON.stringify([entry]) + "\n")));
+  const maximum = Math.max(...entries.map(entry => Buffer.byteLength(JSON.stringify([{ url: entry.url, source: SOURCE,
+    executions: [execution(entry)] }]) + "\n")));
   const old = await clientCoverage.writeClientCoverageReports(directory, "work", entries, maximum);
   const unrelated = resolve(directory, "other.json");writeFileSync(unrelated, "preserved");
   const current = await clientCoverage.writeClientCoverageReports(directory, "work", [entries[0]], maximum);
