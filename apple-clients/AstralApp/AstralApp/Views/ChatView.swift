@@ -907,7 +907,8 @@ struct InputBar: View {
         submit(submittedInput)
     }
 
-    private var optionReturnQueueBinding: Bool {
+    // Option-Return does the opposite of Return, so a Return that queues makes Option-Return steer.
+    private var optionReturnSteers: Bool {
         #if os(macOS)
             return model.composerReturnBinding == .queue
         #else
@@ -994,17 +995,17 @@ struct InputBar: View {
                         submitComposerInput { model.composerOptionReturn($0) }
                     } label: {
                         Image(
-                            systemName: optionReturnQueueBinding
-                                ? "text.badge.plus" : "arrow.turn.up.right"
+                            systemName: optionReturnSteers
+                                ? "arrow.turn.up.right" : "text.badge.plus"
                         )
                         .font(.system(size: 18)).foregroundStyle(p.muted)
                         .frame(width: 44, height: 44)
                     }
                     .buttonStyle(.plain)
                     .keyboardShortcut(.return, modifiers: .option)
-                    .accessibilityLabel(optionReturnQueueBinding ? "Queue follow-up" : "Send steer")
+                    .accessibilityLabel(optionReturnSteers ? "Send steer" : "Queue follow-up")
                     .accessibilityIdentifier("composer-option-return")
-                    .help(optionReturnQueueBinding ? "Queue follow-up (Option-Return)" : "Send steer (Option-Return)")
+                    .help(optionReturnSteers ? "Send steer (Option-Return)" : "Queue follow-up (Option-Return)")
                 }
             #endif
         }
@@ -1045,6 +1046,7 @@ struct InputBar: View {
         @State private var editingId: String?
         @State private var editingText = ""
         @State private var draggingId: String?
+        @FocusState private var editorFocused: Bool
         private var p: AstralPalette { theme.palette }
 
         var body: some View {
@@ -1083,8 +1085,14 @@ struct InputBar: View {
                         .textFieldStyle(.plain)
                         .font(ConsoleTypography.caption)
                         .frame(minWidth: 160)
+                        .focused($editorFocused)
+                        .onAppear { editorFocused = true }
                         .onSubmit { commitEdit(item) }
                         .onExitCommand { cancelEdit() }
+                        // Clicking away saves the edit so the queue is not left waiting on it.
+                        .onChange(of: editorFocused) { _, focused in
+                            if !focused, editingId == item.id { commitEdit(item) }
+                        }
                         .accessibilityIdentifier("composer-queue-chip-editor")
                 } else {
                     Text(item.message)
