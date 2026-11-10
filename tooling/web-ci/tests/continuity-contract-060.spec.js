@@ -4339,3 +4339,81 @@ test("a queue typed while the user's own decision runs comes back once the decis
   await expect(page.locator("#astral-toasts")).toContainText("Your decision is still being carried out");
   await expect(page.locator("#astral-toasts")).not.toContainText(APPROVAL_NOTICE);
 });
+
+test("Interrupt waits until the server has started the answer", async ({ page }) => {
+  await installHarness(page, { steer: true });
+  const { frame: registrationFrame } = await registration(page);
+  await receive(page, snapshot(registrationFrame));
+  await submitComposer(page, "A long request");
+  const message = (await sentActions(page, "chat_message")).at(-1);
+  const turnScope = { connection_generation: registrationFrame.connection_generation, request_generation: message.request_generation };
+  await receive(page, operationStatus(turnScope, OPERATION_A, 0, "accepted"));
+  await submitComposer(page, "Queued early");
+  const interrupt = page.locator(QUEUED_ROWS).getByRole("button", { name: "Interrupt" });
+  await expect(interrupt).toBeDisabled();
+  await expect(interrupt).toHaveAttribute("title", /available once it is running/u);
+  await receive(page, operationStatus(turnScope, OPERATION_A, 1, "running"));
+  await expect(interrupt).toBeEnabled();
+  await interrupt.click();
+  expect(await sentActions(page, "chat_steer")).toHaveLength(1);
+});
+
+test("an interruption refused as not running while the answer runs here is sent next", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "First: use metric");
+  await submitComposer(page, "Second: then summarize");
+  await page.locator(QUEUED_ROWS).first().getByRole("button", { name: "Interrupt" }).click();
+  const [steer] = await sentActions(page, "chat_steer");
+  await receive(page, { type: "chat_steer_refused", chat_id: CHAT_ID, client_message_id: steer.payload.client_message_id,
+    code: "not_running", message: "No turn is running." });
+  await expect(page.locator(QUEUED_ROWS).first()).toContainText("First: use metric");
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await expect(page.locator("body")).toContainText("did not reach the running answer, so it will be sent next");
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  expect((await sentActions(page, "chat_message")).at(-1).payload.message).toBe("First: use metric");
+});
+
+test("an interruption refused after Stop comes back to the composer instead of being sent", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Use metric units");
+  await page.locator(QUEUED_ROWS).getByRole("button", { name: "Interrupt" }).click();
+  const [steer] = await sentActions(page, "chat_steer");
+  await page.locator("#astral-stop-btn").click();
+  expect(await sentActions(page, "cancel_task")).toHaveLength(1);
+  await receive(page, snapshot(turnScope, { snapshot_id: SNAPSHOT_B, snapshot_purpose: "commit", render_revision: 1 }));
+  await receive(page, { type: "chat_status", status: "done", message: "" });
+  await receive(page, { type: "chat_steer_refused", chat_id: CHAT_ID, client_message_id: steer.payload.client_message_id,
+    code: "not_running", message: "No turn is running in this chat." });
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  expect((await sentActions(page, "chat_message")).map((frame) => frame.payload.message)).toEqual(["A long request"]);
+  await expect(page.locator("#astral-input")).toHaveValue("Use metric units");
+});
+
+for (const code of ["stale_turn", "not_running"]) {
+  test(`interruptions refused as ${code} go out in the order they were sent`, async ({ page }) => {
+    await startTurnInChat(page, { steer: true });
+    await submitComposer(page, "First: use metric");
+    await submitComposer(page, "Second: then summarize");
+    await submitComposer(page, "Third: plain queued");
+    await page.locator(QUEUED_ROWS).first().getByRole("button", { name: "Interrupt" }).click();
+    await page.locator(QUEUED_ROWS).first().getByRole("button", { name: "Interrupt" }).click();
+    const steers = await sentActions(page, "chat_steer");
+    expect(steers.map((steer) => steer.payload.message)).toEqual(["First: use metric", "Second: then summarize"]);
+    for (const steer of steers) {
+      await receive(page, { type: "chat_steer_refused", chat_id: CHAT_ID, client_message_id: steer.payload.client_message_id,
+        code, message: "Missed." });
+    }
+    const rows = await page.locator(`${QUEUED_ROWS} .astral-queued-text`).allTextContents();
+    expect(rows.map((text) => text.trim())).toEqual(["First: use metric", "Second: then summarize", "Third: plain queued"]);
+  });
+}
+
+test("Interrupt stays off while only an approval decision runs", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const approvalScope = { connection_generation: turnScope.connection_generation,
+    request_generation: "99999999-9999-4999-8999-999999999999" };
+  await receive(page, operationStatus(approvalScope, OPERATION_C, 0, "running", { action: "authorize_action", surface: "chat" }));
+  await submitComposer(page, "During decision");
+  await expect(page.locator(QUEUED_ROWS).getByRole("button", { name: "Interrupt" })).toBeDisabled();
+});

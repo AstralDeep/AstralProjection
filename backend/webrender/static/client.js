@@ -45,6 +45,7 @@
   var turnSteerAck = null;
   var queuedFollowUps = Object.create(null);
   var queueSendWaiting = Object.create(null);
+  var startedChatAnswers = Object.create(null);
   var approvalCardsBeforeTurn = [];
   var settlingDecision = false;
   var queuedSendSubmission = null;
@@ -507,6 +508,7 @@
       activeChatId = null;
       requestState = null;
       runningChatTurns = Object.create(null);
+      startedChatAnswers = Object.create(null);
       leftChatTurns = Object.create(null);
       cancelledChatTurns = Object.create(null);
       heldChatLoad = null;
@@ -6064,6 +6066,7 @@
     if (!TURN_ACTIONS[frame.action] || !isCanonicalUuid4(frame.request_generation)
         || frame.connection_generation !== connectionGeneration) return;
     if (frame.terminal) {
+      delete startedChatAnswers[frame.request_generation];
       delete runningChatTurns[frame.request_generation];
       delete leftChatTurns[frame.request_generation];
       delete cancelledChatTurns[frame.request_generation];
@@ -6074,6 +6077,8 @@
     // A Stop sent before the server started this turn did not reach it, so Stop comes back for it
     if (started && cancelledChatTurns[generation] === "unstarted") delete cancelledChatTurns[generation];
     runningChatTurns[generation] = started ? "started" : true;
+    // A decision's own operation is not the answer that takes steers; its continuation runs separately
+    if (started && frame.action === "chat_message") startedChatAnswers[generation] = true;
   }
 
   function finishWaitingForEarlierTurn() {
@@ -6324,9 +6329,16 @@
     else delete queuedFollowUps[key];
   }
 
+  // The server accepts a steer only once it has started the turn, not while it is still being admitted
+  function interruptReady() {
+    return steeringApplies() && Object.keys(startedChatAnswers).some(function (generation) {
+      return runningChatTurns[generation] === "started" && !leftChatTurns[generation] && !cancelledChatTurns[generation];
+    });
+  }
+
   function interruptWithQueued(id) {
     var item = findQueued(id);
-    if (!item || item.attachments.length || !steeringApplies()) return;
+    if (!item || item.attachments.length || !interruptReady()) return;
     var text = (item.editing ? item.draft : item.text).trim();
     if (!text) return;
     removeQueued(id);
@@ -6353,13 +6365,22 @@
   function reduceSteerRefused(frame) {
     if (!pendingSteers[frame.client_message_id] || !STEER_REFUSALS[frame.code]) return;
     var pending = dropPendingSteer(frame.client_message_id);
-    if (frame.code === "stale_turn" && pending.chatId === (activeChatId || null) && chatTurnRunning()) {
-      // The answer moved on before the interruption applied, so it goes out next instead of being overtaken
+    var missedTurn = frame.code === "stale_turn" || frame.code === "not_running";
+    // After Stop the user no longer wants the answer, so a missed interruption comes back instead of going out
+    var stopped = cancellableTurns().some(function (generation) { return !!cancelledChatTurns[generation]; });
+    if (missedTurn && !stopped && pending.chatId === (activeChatId || null) && chatTurnRunning()) {
+      // The interruption missed the answer still running here, so it goes out next instead of being overtaken
       var openKey = queueKey();
-      queuedFollowUps[openKey] = [{ id: randomUuid4(), text: pending.text, attachments: [], editing: false, draft: "" }]
-        .concat(queuedFollowUps[openKey] || []);
+      var items = queuedFollowUps[openKey] || [];
+      // Several missed interruptions keep the order they were sent in, ahead of the rest of the queue
+      var at = 0;
+      while (at < items.length && items[at].missedSteer) at += 1;
+      items.splice(at, 0, { id: randomUuid4(), text: pending.text, attachments: [], editing: false, draft: "", missedSteer: true });
+      queuedFollowUps[openKey] = items;
       renderQueue();
-      showToast("The answer moved on before your interruption applied, so it will be sent next.", "info");
+      showToast(frame.code === "not_running"
+        ? "Your interruption did not reach the running answer, so it will be sent next."
+        : "The answer moved on before your interruption applied, so it will be sent next.", "info");
       return;
     }
     if (pending.chatId === (activeChatId || null)) {
@@ -6466,6 +6487,7 @@
 
   function syncQueueControls() {
     var steering = steeringApplies();
+    var ready = interruptReady();
     if (input) {
       if (composerPlaceholder === null) composerPlaceholder = input.getAttribute("placeholder") || "";
       input.setAttribute("placeholder",
@@ -6476,9 +6498,10 @@
       var row = button.closest(".astral-queued");
       var item = row && findQueued(row.getAttribute("data-queue-id"));
       var hasFiles = !!(item && item.attachments.length);
-      button.disabled = !steering || hasFiles;
+      button.disabled = !ready || hasFiles;
       button.title = hasFiles ? "Messages with files cannot interrupt; this one waits for the answer to finish."
-        : steering ? "Send this now into the running answer" : "Nothing is running to interrupt";
+        : ready ? "Send this now into the running answer"
+          : steering ? "The answer is starting; Interrupt is available once it is running" : "Nothing is running to interrupt";
     });
   }
 
@@ -9997,6 +10020,7 @@
       operationSubmissionById = Object.create(null);
       // Registration on reconnect hydrates the active chat, so a held load is not sent
       runningChatTurns = Object.create(null);
+      startedChatAnswers = Object.create(null);
       leftChatTurns = Object.create(null);
       cancelledChatTurns = Object.create(null);
       heldChatLoad = null;
