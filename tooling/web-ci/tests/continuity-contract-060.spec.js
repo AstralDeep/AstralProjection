@@ -3608,7 +3608,9 @@ test("a queue typed during an approval-resumed turn is settled when that turn co
   await expect(page.locator(QUEUED_ROWS)).toHaveCount(1);
   await receive(page, operationStatus(approvalScope, OPERATION_C, 1, "completed", { action: "authorize_action", surface: "chat" }));
   await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
-  expect((await sentActions(page, "chat_message")).at(-1).payload.message).toBe("After the approval");
+  // The decision's continuation may still be running, so the queue comes back instead of starting a turn
+  expect((await sentActions(page, "chat_message")).map((frame) => frame.payload.message)).not.toContain("After the approval");
+  await expect(page.locator("#astral-input")).toHaveValue("After the approval");
 });
 
 test("saving an unchanged edit of a files-only queued message keeps the message and its file", async ({ page }) => {
@@ -4207,6 +4209,135 @@ test("a message cut off in a chat left mid-answer comes back when that chat is o
     null, { timeout: 15000 });
   await openChatFromHistory(page, CHAT_ID);
   await expect(page.locator("#astral-input")).toHaveValue("Request for chat one");
+});
+
+const APPROVAL_REQUEST = "9a9a9a9a-9a9a-4a9a-8a9a-9a9a9a9a9a9a";
+const OLD_APPROVAL_REQUEST = "8b8b8b8b-8b8b-4b8b-8b8b-8b8b8b8b8b8b";
+const SNAPSHOT_C = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const APPROVAL_NOTICE = "The answer is waiting for your approval, so your queued messages are back in the composer.";
+
+// Shaped like the server renderer's hitl card: astral-action buttons with data-action and data-payload
+function approvalCard(requestId = APPROVAL_REQUEST) {
+  const card = presentation(`hitl_${requestId}`, "Review action");
+  const button = (decision, label) => `<button type="button" class="astral-action" data-action="authorize_action" `
+    + `data-payload='${JSON.stringify({ hitl_request_id: requestId, decision })}'>${label}</button>`;
+  card._presentation.html = `<div class="astral-component" data-component-id="hitl_${requestId}">Review action`
+    + `${button("approve", "Approve")}${button("deny", "Deny")}</div>`;
+  return card;
+}
+
+async function queuedSends(page, text) {
+  return (await sentActions(page, "chat_message")).filter((frame) => frame.payload.message === text);
+}
+
+test("a queue comes back to the composer when the answer ends on a new approval card", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Queued follow-up");
+  await receive(page, snapshot(turnScope, { snapshot_id: SNAPSHOT_B, snapshot_purpose: "commit", render_revision: 1,
+    canvas: { target: "canvas", components: [approvalCard()] } }));
+  await expect(page.locator('#astral-canvas [data-action="authorize_action"]')).toHaveCount(2);
+  await receive(page, { type: "chat_status", status: "done", message: "" });
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  expect(await queuedSends(page, "Queued follow-up")).toHaveLength(0);
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
+  await expect(page.locator("#astral-input")).toHaveValue("Queued follow-up");
+  await expect(page.locator("#astral-toasts")).toContainText(APPROVAL_NOTICE);
+});
+
+test("an undecided approval card from an earlier turn does not stop the queue", async ({ page }) => {
+  await installHarness(page, { steer: true });
+  const { frame: registrationFrame } = await registration(page);
+  await receive(page, snapshot(registrationFrame, { canvas: { target: "canvas", components: [approvalCard(OLD_APPROVAL_REQUEST)] } }));
+  await expect(page.locator('#astral-canvas [data-action="authorize_action"]')).toHaveCount(2);
+  await submitComposer(page, "A long request");
+  const message = (await sentActions(page, "chat_message")).at(-1);
+  const turnScope = { connection_generation: registrationFrame.connection_generation, request_generation: message.request_generation };
+  await receive(page, operationStatus(turnScope, OPERATION_A, 0, "accepted"));
+  await receive(page, operationStatus(turnScope, OPERATION_A, 1, "running"));
+  await submitComposer(page, "Queued follow-up");
+  await receive(page, snapshot(turnScope, { snapshot_id: SNAPSHOT_B, snapshot_purpose: "commit", render_revision: 1,
+    canvas: { target: "canvas", components: [approvalCard(OLD_APPROVAL_REQUEST)] } }));
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  expect(await queuedSends(page, "Queued follow-up")).toHaveLength(1);
+});
+
+test("a queue sent after a new approval card's turn ignores that card on the following turn", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await receive(page, snapshot(turnScope, { snapshot_id: SNAPSHOT_B, snapshot_purpose: "commit", render_revision: 1,
+    canvas: { target: "canvas", components: [approvalCard()] } }));
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  await submitComposer(page, "Typed after the card");
+  const second = (await sentActions(page, "chat_message")).at(-1);
+  const secondScope = { connection_generation: turnScope.connection_generation, request_generation: second.request_generation };
+  await receive(page, operationStatus(secondScope, OPERATION_B, 0, "accepted"));
+  await receive(page, operationStatus(secondScope, OPERATION_B, 1, "running"));
+  await submitComposer(page, "Queued follow-up");
+  await receive(page, snapshot(secondScope, { snapshot_id: SNAPSHOT_C, snapshot_purpose: "commit", render_revision: 2,
+    canvas: { target: "canvas", components: [approvalCard()] } }));
+  await receive(page, operationStatus(secondScope, OPERATION_B, 2, "completed"));
+  expect(await queuedSends(page, "Queued follow-up")).toHaveLength(1);
+});
+
+test("a chat reopened mid-answer that reloads onto a new approval card gives the queue back", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Queued in the first chat");
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await openChatFromHistory(page, CHAT_ID);
+  await receive(page, { type: "chat_status", status: "done", message: "" });
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const load = (await sentLoads(page)).at(-1);
+  expect(load.payload.chat_id).toBe(CHAT_ID);
+  await receive(page, snapshot(nextTurnScope(turnScope, load), { snapshot_id: SNAPSHOT_B, render_revision: 1,
+    canvas: { target: "canvas", components: [approvalCard()] } }));
+  await expect(page.locator('#astral-canvas [data-action="authorize_action"]')).toHaveCount(2);
+  expect(await queuedSends(page, "Queued in the first chat")).toHaveLength(0);
+  await expect(page.locator("#astral-input")).toHaveValue("Queued in the first chat");
+});
+
+function remoteApprovalCard(componentId, proposalId) {
+  const card = presentation(componentId, "Run on your Mac");
+  const button = (decision, label) => `<button type="button" class="astral-action" data-action="remote_op_decision" `
+    + `data-payload='${JSON.stringify({ proposal_id: proposalId, decision })}'>${label}</button>`;
+  card._presentation.html = `<div class="astral-component" data-component-id="${componentId}">Run on your Mac`
+    + `${button("approve", "Approve")}${button("decline", "Decline")}</div>`;
+  return card;
+}
+
+test("a new approval card upserted over an old card's fingerprint id still stops the queue", async ({ page }) => {
+  await installHarness(page, { steer: true });
+  const { frame: registrationFrame } = await registration(page);
+  await receive(page, snapshot(registrationFrame, { canvas: { target: "canvas",
+    components: [remoteApprovalCard("fp_remote_ls", "a".repeat(32))] } }));
+  await submitComposer(page, "A long request");
+  const message = (await sentActions(page, "chat_message")).at(-1);
+  const turnScope = { connection_generation: registrationFrame.connection_generation, request_generation: message.request_generation };
+  await receive(page, operationStatus(turnScope, OPERATION_A, 0, "accepted"));
+  await receive(page, operationStatus(turnScope, OPERATION_A, 1, "running"));
+  await submitComposer(page, "Queued follow-up");
+  await receive(page, snapshot(turnScope, { snapshot_id: SNAPSHOT_B, snapshot_purpose: "commit", render_revision: 1,
+    canvas: { target: "canvas", components: [remoteApprovalCard("fp_remote_ls", "b".repeat(32))] } }));
+  await expect(page.locator('#astral-canvas [data-payload*="bbbb"]')).toHaveCount(2);
+  await receive(page, { type: "chat_status", status: "done", message: "" });
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  expect(await queuedSends(page, "Queued follow-up")).toHaveLength(0);
+  await expect(page.locator("#astral-input")).toHaveValue("Queued follow-up");
+});
+
+test("a queue typed while the user's own decision runs comes back once the decision ends", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await receive(page, snapshot(turnScope, { snapshot_id: SNAPSHOT_B, snapshot_purpose: "commit", render_revision: 1,
+    canvas: { target: "canvas", components: [approvalCard()] } }));
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const approvalScope = { connection_generation: turnScope.connection_generation,
+    request_generation: "99999999-9999-4999-8999-999999999999" };
+  await receive(page, operationStatus(approvalScope, OPERATION_C, 0, "running", { action: "authorize_action", surface: "chat" }));
+  await submitComposer(page, "After approving");
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(1);
+  await receive(page, operationStatus(approvalScope, OPERATION_C, 1, "completed", { action: "authorize_action", surface: "chat" }));
+  expect(await queuedSends(page, "After approving")).toHaveLength(0);
+  await expect(page.locator("#astral-input")).toHaveValue("After approving");
+  await expect(page.locator("#astral-toasts")).toContainText("Your decision is still being carried out");
+  await expect(page.locator("#astral-toasts")).not.toContainText(APPROVAL_NOTICE);
 });
 
 test("Interrupt waits until the server has started the answer", async ({ page }) => {

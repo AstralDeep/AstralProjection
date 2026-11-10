@@ -1,5 +1,6 @@
-// Collects exact-source browser observations from the contract suites and writes bounded, lossless reports.
-// Canonical validation and conversion remain in browser-v8-cli.mjs.
+// Collects exact-source browser observations from the contract suites and writes bounded, lossless reports
+// holding each source once per record, with its distinct per-test executions. Canonical validation and
+// conversion remain in browser-v8-cli.mjs.
 
 import { mkdir, readFile, writeFile, mkdtemp, readdir, lstat, unlink, rename, rm } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -7,6 +8,46 @@ import { resolve } from "node:path";
 const CLIENT = resolve(import.meta.dirname, "../../../backend/webrender/static/client.js");
 const SOURCE = await readFile(CLIENT, "utf8");
 const REPORT_BYTES = 32 * 1024 * 1024;
+
+export function clientCoverageRecords(observations, maximum = REPORT_BYTES) {
+  const groups = new Map();
+  for (const observation of observations) {
+    if (observation === null || typeof observation !== "object" || typeof observation.url !== "string"
+        || typeof observation.source !== "string" || typeof observation.scriptId !== "string") {
+      throw new TypeError("Invalid browser coverage observation");
+    }
+    const key = JSON.stringify([observation.url, observation.source]);
+    if (!groups.has(key)) groups.set(key, {url: observation.url, source: observation.source, seen: new Set(), executions: []});
+    const group = groups.get(key);
+    const functions = JSON.stringify(observation.functions);
+    if (typeof functions !== "string") throw new TypeError("Invalid browser coverage observation");
+    // Identical executions cannot change the union of observed lines.
+    if (group.seen.has(functions)) continue;
+    group.seen.add(functions);
+    group.executions.push(JSON.stringify({scriptId: observation.scriptId, functions: observation.functions}));
+  }
+  const records = [];
+  for (const {url, source, executions} of groups.values()) {
+    const prefix = JSON.stringify({url, source}).slice(0, -1) + ',"executions":[';
+    // Each record must fit in one report chunk: "[" + prefix + executions + "]}" + "]\n".
+    const empty = Buffer.byteLength(prefix, "utf8") + 5;
+    let current = [];
+    let size = empty;
+    for (const execution of executions) {
+      const length = Buffer.byteLength(execution, "utf8");
+      if (empty + length > maximum) throw new TypeError("Browser coverage observation exceeds output bound");
+      if (current.length && size + 1 + length > maximum) {
+        records.push(prefix + current.join(",") + "]}");
+        current = [];
+        size = empty;
+      }
+      size += length + (current.length ? 1 : 0);
+      current.push(execution);
+    }
+    records.push(prefix + current.join(",") + "]}");
+  }
+  return records;
+}
 
 export async function writeClientCoverageReports(directory, name, observations, maximum = REPORT_BYTES) {
   if (typeof name !== "string" || !/^[a-z0-9][a-z0-9-]{0,80}$/u.test(name) || !Array.isArray(observations)
@@ -17,11 +58,7 @@ export async function writeClientCoverageReports(directory, name, observations, 
   const chunks = [];
   let current = [];
   let bytes = 3;
-  for (const observation of observations) {
-    const encoded = JSON.stringify(observation);
-    if (typeof encoded !== "string" || Buffer.byteLength(encoded, "utf8") + 3 > maximum) {
-      throw new TypeError("Browser coverage observation exceeds output bound");
-    }
+  for (const encoded of clientCoverageRecords(observations, maximum)) {
     const size = Buffer.byteLength(encoded, "utf8");
     if (bytes + size + (current.length ? 1 : 0) > maximum) {
       chunks.push("[" + current.join(",") + "]\n");

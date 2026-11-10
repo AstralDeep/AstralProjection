@@ -69,7 +69,7 @@ image is the authority, and coverage gates are only meaningful there.
 | Variable | Used by | Purpose |
 | --- | --- | --- |
 | `ASTRAL_ASSIGNMENT_FIXTURE_DIR` | `persistent-agents-079.spec.js` | Rendered assignment fixtures |
-| `ASTRAL_ALL_CLIENT_COVERAGE_DIR` | Seven complete-source client suites | Optional directory containing one exact-source raw array per suite; use instead of the individual client coverage sinks |
+| `ASTRAL_ALL_CLIENT_COVERAGE_DIR` | Seven complete-source client suites | Optional directory containing one exact-source report array per suite; use instead of the individual client coverage sinks |
 | `ASTRAL_EXPORT_COVERAGE_OUTPUT` | `native-export-088.spec.js` | Portable-export V8 coverage sink |
 | `ASTRAL_WORK_COVERAGE_OUTPUT` | `work-reads-088.spec.js` | Optional `client.js` coverage sink |
 | `ASTRAL_GUIDANCE_COVERAGE_OUTPUT` | `guidance-notes-088.spec.js` | Optional `client.js` coverage sink |
@@ -104,8 +104,14 @@ Canvas and workspace-topbar tests inject partial source fragments, so their test
 remain required but do not contribute canonical `client.js` coverage. The four
 individual raw sinks remain available for focused diagnostics.
 
-The converter rejects empty or duplicate inputs, stale source, non-browser
-observations, and other assets. It converts each observation separately and
+Each suite report holds one record per source and URL, `{url, source, executions}`,
+so `client.js` is stored once per suite rather than once per test; `executions`
+lists the suite's distinct per-test `{scriptId, functions}` observations (at most
+1,024 per record). The converter still accepts plain per-observation entries, and
+the 1,024-entry bound counts every execution across all records and entries.
+
+The converter rejects empty or duplicate inputs, duplicate executions within a record,
+stale source, non-browser observations, and other assets. It converts each observation separately and
 unions observed hits only; an unobserved line stays uncovered. The output retains
 the canonical browser producer identity. It is fixture execution evidence and
 does not replace authenticated staging acceptance. Run its tests with
