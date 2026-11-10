@@ -74,7 +74,8 @@
                     settingsOpener: {
                         opened.append($0)
                         return succeeds
-                    }, desktopProbe: { true },
+                    }, appRevealer: { _ in XCTFail("Reviewing a granted permission reveals nothing") },
+                    desktopProbe: { true },
                     desktopRearm: {
                         rearms += 1
                         return true
@@ -110,6 +111,7 @@
             for granted in [true, false] {
                 var requested: [MacComputerPermission] = []
                 var opened: [URL] = []
+                var revealed: [URL] = []
                 let host = MacComputerHost(
                     available: true, defaults: UserDefaults(suiteName: UUID().uuidString)!,
                     driver: ComputerTestDriver(), monitor: ComputerTestMonitor(),
@@ -124,6 +126,7 @@
                         opened.append($0)
                         return true
                     },
+                    appRevealer: { revealed.append($0) },
                     desktopProbe: { true },
                     desktopRearm: {
                         XCTFail("A permission request cannot rearm control")
@@ -135,8 +138,9 @@
                     opened.map(\.absoluteString),
                     ["x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"])
                 XCTAssertTrue(host.lastError?.contains(granted ? "returned granted" : "returned not granted") == true)
-                XCTAssertTrue(host.lastError?.contains("System Settings") == true)
-                XCTAssertTrue(host.lastError?.contains("Refresh permissions") == true)
+                XCTAssertTrue(host.lastError?.contains("reported no access") == true)
+                XCTAssertEqual(revealed, [Bundle.main.bundleURL])
+                XCTAssertEqual(host.permissionSetup, .monitoring)
                 XCTAssertTrue(host.accessibilityTrusted)
                 XCTAssertFalse(host.eventPostingAllowed)
                 XCTAssertFalse(host.accessibilityAllowed)
@@ -146,9 +150,10 @@
             }
         }
 
-        func testRepeatedMissingPermissionOpensItsPaneWithAddGuidanceInsteadOfPrompting() {
+        func testRepeatedMissingPermissionOpensItsPaneAndRevealsTheAppInsteadOfPrompting() {
             var requested: [MacComputerPermission] = []
             var opened: [URL] = []
+            var revealed: [URL] = []
             var opens = true
             let host = MacComputerHost(
                 available: true, defaults: UserDefaults(suiteName: UUID().uuidString)!,
@@ -161,7 +166,8 @@
                 settingsOpener: {
                     opened.append($0)
                     return opens
-                }, desktopProbe: { true }, desktopRearm: { false }, system: MacComputerTestSystem(),
+                }, appRevealer: { revealed.append($0) }, desktopProbe: { true }, desktopRearm: { false },
+                system: MacComputerTestSystem(),
                 panelPresenter: { _ in })
             let panes: [(MacComputerPermission, () -> Void, String, String)] = [
                 (.accessibility, host.requestAccessibility, "Device Control and Data Access", "Privacy_Accessibility"),
@@ -172,20 +178,24 @@
                 request()
                 XCTAssertEqual(requested.last, permission)
                 XCTAssertTrue(host.lastError?.contains("returned not granted") == true)
+                XCTAssertEqual(host.permissionSetup, permission)
                 let prompts = requested.count
+                let reveals = revealed.count
                 request()
                 XCTAssertEqual(requested.count, prompts)
-                XCTAssertEqual(
-                    host.lastError, "macOS no longer prompts for this app; open \(pane) and add AstralDeep with +")
+                XCTAssertEqual(host.lastError, "macOS no longer prompts for \(permission.title).")
+                XCTAssertEqual(host.permissionSetup, permission)
+                XCTAssertEqual(revealed.count, reveals + 1)
+                XCTAssertEqual(revealed.last, Bundle.main.bundleURL)
                 XCTAssertEqual(
                     opened.last?.absoluteString, "x-apple.systempreferences:com.apple.preference.security?" + anchor)
+                XCTAssertEqual(permission.setupSteps.first, "Open Privacy & Security > \(pane) in System Settings.")
             }
-            XCTAssertEqual(
-                MacComputerPermission.accessibility.noPromptGuidance,
-                "macOS no longer prompts for this app; open Device Control and Data Access and add AstralDeep with +")
             opens = false
             host.requestAccessibility()
-            XCTAssertTrue(host.lastError?.hasSuffix("AstralDeep could not open that pane.") == true)
+            XCTAssertEqual(
+                host.lastError, "AstralDeep could not open System Settings. macOS no longer prompts for Accessibility.")
+            XCTAssertEqual(host.permissionSetup, .accessibility)
             XCTAssertFalse(host.enabled)
         }
 
