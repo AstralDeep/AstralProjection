@@ -26,6 +26,32 @@ final class ComputerHostProtocolTests: XCTestCase {
         ["command": .string("wc -l notes.md"), "cwd": .string("/Users/sam/Projects/x")].merging(extra) { $1 }
     }
 
+    func testPrepareVerbAndReceiptArgumentValidation() throws {
+        XCTAssertEqual(try request("prepare_run_command", args: command()).verb, "prepare_run_command")
+        XCTAssertNoThrow(
+            try request("prepare_run_command", args: ["argv": .array([.string("echo")]), "cwd": .string("/w")],
+                deadline: 5000))
+        XCTAssertThrowsError(
+            try request("prepare_run_command", args: command(["env": .object(["APP_X": .string("1")])])))
+        XCTAssertThrowsError(
+            try request("prepare_run_command", args: command(), deadline: 5001))
+        XCTAssertThrowsError(
+            try request("prepare_run_command", args: ["cwd": .string("/w")]))
+        let receipt = "{\"type\":\"lets.receipt/v1\"}"
+        XCTAssertNoThrow(try request("run_command", args: command(["receipt": .string(receipt)])))
+        XCTAssertThrowsError(
+            try request("run_command", args: command(["receipt": .number(1)])))
+        XCTAssertThrowsError(
+            try request("run_command", args: command(["receipt": .string(String(repeating: "r", count: 16385))])))
+        XCTAssertNoThrow(
+            try request(
+                "write_file",
+                args: ["path": .string("/w/notes.md"), "content": .string("x"), "receipt": .string(receipt)]))
+        XCTAssertNoThrow(try request("delete_path", args: ["path": .string("/w/notes.md")]))
+        XCTAssertThrowsError(
+            try request("delete_path", args: ["path": .string("/w/notes.md"), "receipt": .number(2)]))
+    }
+
     func testClosedArgumentsAndTerminalAuthority() throws {
         XCTAssertEqual(try request().verb, "click")
         XCTAssertEqual(
@@ -47,10 +73,10 @@ final class ComputerHostProtocolTests: XCTestCase {
             "browser_scroll", "browser_dialog", "list_apps", "ax_tree", "ax_find", "ax_action", "menu", "zoom",
             "browser_find", "browser_hover", "browser_zoom", "browser_console", "browser_network",
             "browser_evaluate", "browser_resize", "browser_tabs",
-            "list_checkpoints", "diff_checkpoint", "restore_checkpoint",
+            "list_checkpoints", "diff_checkpoint", "restore_checkpoint", "prepare_run_command",
         ]
         XCTAssertTrue(added.isSubset(of: ComputerHostRequest.verbs))
-        XCTAssertEqual(ComputerHostRequest.verbs.count, 49)
+        XCTAssertEqual(ComputerHostRequest.verbs.count, 50)
         XCTAssertFalse(ComputerHostRequest.verbs.contains("run_shell"))
         let descriptor = try ComputerHostDescriptor(
             hostId: session, name: "Test Mac", clientVersion: "1.9.0",
@@ -67,6 +93,7 @@ final class ComputerHostProtocolTests: XCTestCase {
     func testDeadlineCeilingFollowsTheVerb() throws {
         let ceilings: [String: Double] = [
             "run_command": 630000, "read_output": 30000, "interrupt_command": 5000, "browser_navigate": 15000,
+            "prepare_run_command": 5000,
             "browser_wait": 15000, "browser_snapshot": 5000, "browser_get_text": 5000, "browser_screenshot": 5000,
             "browser_click": 5000, "browser_fill": 5000, "browser_press": 5000, "browser_scroll": 5000,
             "browser_dialog": 5000, "ax_tree": 8000, "browser_find": 5000, "browser_hover": 5000,

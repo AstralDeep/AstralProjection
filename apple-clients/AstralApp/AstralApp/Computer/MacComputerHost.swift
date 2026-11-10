@@ -191,6 +191,7 @@
             self.panelPresenter = panelPresenter ?? { $0.orderFrontRegardless() }
             let link = MacComputerHostLink()
             let sandboxReader = MacComputerSandboxConfigurationReader(defaults: defaults)
+            let receiptReader = MacComputerReceiptConfigurationReader(defaults: defaults)
             self.commands =
                 commands
                 ?? MacComputerCommands(
@@ -198,7 +199,8 @@
                         configuration: { sandboxReader.read() },
                         sink: { name, payload in
                             Task { @MainActor in link.host?.sandboxEvent(name, payload) }
-                        }))
+                        }),
+                    receipts: { receiptReader.read() })
             self.appActivator = appActivator ?? { NSApp.activate() }
             let marker = Int64.random(in: 1...Int64.max)
             self.monitor = monitor ?? MacComputerInputMonitor(marker: marker)
@@ -215,7 +217,8 @@
             self.driver =
                 driver
                 ?? MacComputerDriver(
-                    marker: marker, system: system, overlay: cues, bypass: { await link.bypass() })
+                    marker: marker, system: system, overlay: cues, bypass: { await link.bypass() },
+                    receipts: { receiptReader.read() })
             if let stored = defaults.string(forKey: "computer.host.id"),
                 UUID(uuidString: stored)?.uuidString.lowercased() == stored
             {
@@ -340,6 +343,9 @@
         private static let commandVerbs: Set<String> = ["run_command", "read_output", "interrupt_command"]
         // Checkpoint verbs stay unadvertised until the server registers them in its own closed verb set.
         private static let checkpointVerbs: Set<String> = MacComputerCheckpoints.verbs
+        // The receipt prepare verb is implemented and validated host-side but held back from the descriptor
+        // until the server's closed verb set registers it.
+        private static let unadvertisedVerbs: Set<String> = ["prepare_run_command"]
         private static let mutatingFileVerbs: Set<String> = ["write_file", "delete_path"]
         private static let computerName: String = {
             let name = String(
@@ -388,6 +394,7 @@
             }
             var verbs = ComputerHostRequest.verbs
             verbs.subtract(Self.checkpointVerbs)
+            verbs.subtract(Self.unadvertisedVerbs)
             if !projectMode && files.roots.isEmpty {
                 verbs.subtract(Self.commandVerbs.union(["read_file", "list_dir", "write_file", "delete_path"]))
             }
@@ -1316,6 +1323,8 @@
             workspaces: [ComputerWorkspace], authorize: @escaping @Sendable () throws -> Void
         ) async throws -> [String: JSONValue] {
             switch request.verb {
+            case "prepare_run_command":
+                return try await commands.prepare(request, roots: roots, exclusions: files.exclusions)
             case "run_command":
                 for root in workspaces {
                     try checkpoints.snapshotBeforeMutation(root: root, authorize: authorize)

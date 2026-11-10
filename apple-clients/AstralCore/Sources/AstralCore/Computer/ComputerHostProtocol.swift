@@ -197,6 +197,7 @@ public struct ComputerHostRequest: Sendable, Equatable {
         "write_file", "delete_path", "run_command", "read_output", "interrupt_command", "browser_snapshot",
         "browser_get_text", "browser_screenshot", "browser_wait", "browser_navigate", "browser_click", "browser_fill",
         "browser_press", "browser_scroll", "browser_dialog",
+        "prepare_run_command",
         "list_apps", "ax_tree", "ax_find", "ax_action", "menu", "zoom",
         "browser_find", "browser_hover", "browser_zoom", "browser_console", "browser_network", "browser_evaluate",
         "browser_resize", "browser_tabs",
@@ -204,6 +205,7 @@ public struct ComputerHostRequest: Sendable, Equatable {
     ]
     private static let deadlineCeilings: [String: Double] = [
         "run_command": 630000, "read_output": 30000, "interrupt_command": 5000, "browser_navigate": 15000,
+        "prepare_run_command": 5000,
         "browser_wait": 15000, "browser_snapshot": 5000, "browser_get_text": 5000, "browser_screenshot": 5000,
         "browser_click": 5000, "browser_fill": 5000, "browser_press": 5000, "browser_scroll": 5000,
         "browser_dialog": 5000, "ax_tree": 8000, "browser_find": 5000, "browser_hover": 5000, "browser_zoom": 5000,
@@ -252,8 +254,8 @@ public struct ComputerHostRequest: Sendable, Equatable {
     private static func validate(_ verb: String, _ args: [String: JSONValue]) throws {
         let fields: [String: Set<String>] = [
             "screenshot": ["screen_index", "max_width"], "list_windows": [], "get_clipboard": [], "wait": ["seconds"],
-            "read_file": ["path", "max_bytes"], "list_dir": ["path"], "write_file": ["path", "content", "if_exists"],
-            "delete_path": ["path"],
+            "read_file": ["path", "max_bytes"], "list_dir": ["path"],
+            "write_file": ["path", "content", "if_exists", "receipt"], "delete_path": ["path", "receipt"],
             "click": ["x", "y", "button", "count", "hwnd", "ref", "snapshot_id"],
             "double_click": ["x", "y", "hwnd", "ref", "snapshot_id"],
             "right_click": ["x", "y", "hwnd", "ref", "snapshot_id"], "move": ["x", "y", "hwnd", "ref", "snapshot_id"],
@@ -267,7 +269,8 @@ public struct ComputerHostRequest: Sendable, Equatable {
             "type_text": ["text", "terminal_ok", "hwnd", "terminal_app"],
             "press_keys": ["keys", "terminal_ok", "hwnd", "terminal_app"],
             "focus_window": ["hwnd", "title"], "open_app": ["app", "args"], "set_clipboard": ["text"],
-            "run_command": ["command", "argv", "cwd", "env", "timeout_s", "background", "stdin"],
+            "run_command": ["command", "argv", "cwd", "env", "timeout_s", "background", "stdin", "receipt"],
+            "prepare_run_command": ["command", "argv", "cwd"],
             "read_output": ["job_id", "stream", "offset", "max_bytes", "wait_s"],
             "interrupt_command": ["job_id", "signal"],
             "list_checkpoints": [], "diff_checkpoint": ["checkpoint_id", "path"],
@@ -417,6 +420,7 @@ public struct ComputerHostRequest: Sendable, Equatable {
             guard args["path"]!.stringValue!.hasPrefix("/"),
                 !args["path"]!.stringValue!.split(separator: "/").contains("..")
             else { throw ComputerHostError("out_of_range", "An absolute workspace path is required.") }
+            if args["receipt"] != nil { try text("receipt", 16384) }
             if verb == "read_file" { try integer("max_bytes", 1...262144) }
             if verb == "write_file" {
                 try text("content", 262144, empty: true)
@@ -424,7 +428,7 @@ public struct ComputerHostRequest: Sendable, Equatable {
                     args["if_exists"] == nil || [.string("refuse"), .string("overwrite")].contains(args["if_exists"]!)
                 else { throw ComputerHostError("out_of_range", "Invalid file content or overwrite mode.") }
             }
-        case "run_command":
+        case "run_command", "prepare_run_command":
             guard (args["command"] == nil) != (args["argv"] == nil) else {
                 throw ComputerHostError("out_of_range", "Give exactly one of command or argv.")
             }
@@ -438,20 +442,23 @@ public struct ComputerHostRequest: Sendable, Equatable {
             guard args["cwd"]!.stringValue!.hasPrefix("/"),
                 !args["cwd"]!.stringValue!.split(separator: "/").contains("..")
             else { throw ComputerHostError("out_of_range", "An absolute workspace folder is required.") }
-            if let env = args["env"] {
-                guard let variables = env.objectValue, variables.count <= 32,
-                    variables.allSatisfy({
-                        computerFullMatch($0.key, "^[A-Za-z_][A-Za-z0-9_]{0,127}$") && bounded($0.value, 4096)
-                    })
-                else { throw ComputerHostError("out_of_range", "Invalid command environment.") }
-            }
-            if args["background"] != nil, args["background"]?.boolValue == nil {
-                throw ComputerHostError("out_of_range", "Invalid background.")
-            }
-            try integer("timeout_s", 1...(args["background"]?.boolValue == true ? 3600 : 600))
-            if let stdin = args["stdin"] {
-                guard let input = stdin.stringValue, input.utf8.count <= 16384, !input.contains("\0") else {
-                    throw ComputerHostError("out_of_range", "Invalid stdin.")
+            if verb == "run_command" {
+                if args["receipt"] != nil { try text("receipt", 16384) }
+                if let env = args["env"] {
+                    guard let variables = env.objectValue, variables.count <= 32,
+                        variables.allSatisfy({
+                            computerFullMatch($0.key, "^[A-Za-z_][A-Za-z0-9_]{0,127}$") && bounded($0.value, 4096)
+                        })
+                    else { throw ComputerHostError("out_of_range", "Invalid command environment.") }
+                }
+                if args["background"] != nil, args["background"]?.boolValue == nil {
+                    throw ComputerHostError("out_of_range", "Invalid background.")
+                }
+                try integer("timeout_s", 1...(args["background"]?.boolValue == true ? 3600 : 600))
+                if let stdin = args["stdin"] {
+                    guard let input = stdin.stringValue, input.utf8.count <= 16384, !input.contains("\0") else {
+                        throw ComputerHostError("out_of_range", "Invalid stdin.")
+                    }
                 }
             }
         case "read_output", "interrupt_command":
