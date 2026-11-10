@@ -45,6 +45,8 @@
   var turnSteerAck = null;
   var queuedFollowUps = Object.create(null);
   var queueSendWaiting = Object.create(null);
+  var approvalCardsBeforeTurn = [];
+  var settlingDecision = false;
   var queuedSendSubmission = null;
   var unsentByChat = Object.create(null);
   var pendingSteers = Object.create(null);
@@ -6216,6 +6218,16 @@
     if (!items || !items.length) { delete queueSendWaiting[key]; return; }
     if (!isSocketReady() || heldChatLoad !== null || chatTurnRunning() || Object.keys(leftChatTurns).length) return;
     if (!completedHere || !turnSteerAck) { restoreQueueToComposer(notice); return; }
+    // A new turn would make the answer's undecided approval card stale, and only the server knows when its continuation ends
+    // The answer continues on its own after a decision, with no status that says when it ends
+    if (settlingDecision) {
+      restoreQueueToComposer("Your decision is still being carried out, so your queued messages are back in the composer.");
+      return;
+    }
+    if (newApprovalCardPending()) {
+      restoreQueueToComposer("The answer is waiting for your approval, so your queued messages are back in the composer.");
+      return;
+    }
     // Sending now would replace the history load of a chat reopened mid-answer
     if (items[0].editing || reloadingOpenChat()) { queueSendWaiting[key] = true; return; }
     delete queueSendWaiting[key];
@@ -6251,6 +6263,30 @@
 
   function sendWaitingQueued() {
     if (queueSendWaiting[queueKey()]) settleQueue(true, null);
+  }
+
+  function undecidedApprovalCards() {
+    var ids = [];
+    Array.prototype.forEach.call(document.querySelectorAll("#astral-chat, #astral-canvas"), function (root) {
+      Array.prototype.forEach.call(root.querySelectorAll(
+        '[data-action="authorize_action"], [data-action="remote_op_decision"], '
+        + '[data-ui-action="authorize_action"], [data-ui-action="remote_op_decision"]'), function (control) {
+        // The server reuses component ids for a new proposal, so the request or proposal id names the card
+        var id = "";
+        try {
+          var payload = JSON.parse(control.getAttribute("data-payload") || control.getAttribute("data-ui-payload") || "{}");
+          id = String(payload.hitl_request_id || payload.proposal_id || "");
+        } catch (e) { id = ""; }
+        if (!id) id = control.getAttribute("data-payload") || control.getAttribute("data-ui-payload") || "";
+        if (ids.indexOf(id) === -1) ids.push(id);
+      });
+    });
+    return ids;
+  }
+
+  // Cards already on screen when the turn began are stale, since the server never retires them
+  function newApprovalCardPending() {
+    return undecidedApprovalCards().some(function (id) { return approvalCardsBeforeTurn.indexOf(id) === -1; });
   }
 
   function sendSteer(text) {
@@ -7844,7 +7880,11 @@
         break;
       case "conversation_snapshot":
         reduceConversationSnapshot(data);
-        if (requestState && requestState.purpose === "hydration" && requestState.snapshotApplied) sendWaitingQueued();
+        if (requestState && requestState.purpose === "hydration" && requestState.snapshotApplied) {
+          // A queue waiting on this reload belongs to the turn that just ended, so its baseline stays
+          if (!queueSendWaiting[queueKey()]) approvalCardsBeforeTurn = undecidedApprovalCards();
+          sendWaitingQueued();
+        }
         break;
       case "ui_render":
         if (isLateWelcomeRender(data)) break;
@@ -8143,9 +8183,11 @@
           // A status the client skipped, such as for a chat left and reopened mid-answer, still ends the turn
           var completedHere = data.state === "completed"
             && (statusApplied || (data.chat_id || null) === (activeChatId || null));
+          settlingDecision = data.action !== "chat_message";
           settleQueue(completedHere, completedHere || data.state !== "completed"
             ? "The answer did not finish, so your queued messages are back in the composer."
             : "The answer finished in another chat, so your queued messages are back in the composer.");
+          settlingDecision = false;
           flushPendingTaskReload();
           if (!chatTurnRunning()) armNewChatWaitTimer();
         }
@@ -8505,6 +8547,7 @@
 
   function doSendChat(message, ready, queuedBackground) {
     var background = queuedBackground === undefined ? bgArmed : queuedBackground;
+    approvalCardsBeforeTurn = undecidedApprovalCards();
     sealLiveTurn();
     openRequest("commit", activeChatId);
     var html = "";

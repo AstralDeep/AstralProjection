@@ -3785,7 +3785,7 @@
       "acknowledgment": "rote_config.device_profile.console.turn_steer = {version:1, queue_capable:bool} on macOS console/v2; the web client has no console profile, so it reads rote_config.device_profile.turn_steer with the same shape. queue_capable false records steers and side questions but no durable queue; the macOS composer hides queue affordances, and the browser holds queued follow-ups in the page.",
       "clients": {
         "macos": "steer and queue from the composer, queue chips hydrated from the server, side-question sheet, swapped bindings in Settings",
-        "browser": "while a turn runs in the open chat, the composer queues follow-ups in the page with Interrupt (steer), edit and delete; a completed turn sends the next one and any other ending returns them to the composer; side-question dialog",
+        "browser": "while a turn runs in the open chat, the composer queues follow-ups in the page with Interrupt (steer), edit and delete; a completed answer sends the next one unless it ended on a new undecided approval card; that, the end of an approval decision, or any other ending returns them to the composer; side-question dialog",
         "windows": "compatible legacy composer",
         "android": "compatible legacy composer",
         "ios": "compatible legacy composer",
