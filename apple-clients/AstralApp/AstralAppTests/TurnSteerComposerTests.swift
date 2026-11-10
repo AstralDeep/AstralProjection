@@ -811,60 +811,127 @@
             XCTAssertEqual(model.composerDraft, "interrupt me")
         }
 
-        private func showApprovalCard(_ model: AppModel, _ frames: [JSONValue]) throws {
-            let proposal = String(repeating: "cd", count: 16)
+        private func approvalCard(_ proposal: String) -> String {
+            """
+            {"type":"card","id":"au_approval_\(proposal)","title":"Confirm an action on Test Mac",
+             "content":[{"type":"text","variant":"body","content":"Open a site"},
+              {"type":"button","label":"Approve","action":"remote_op_decision",
+               "payload":{"proposal_id":"\(proposal)","decision":"approve"}},
+              {"type":"button","label":"Decline","action":"remote_op_decision",
+               "payload":{"proposal_id":"\(proposal)","decision":"decline"}}]}
+            """
+        }
+
+        private let firstProposal = String(repeating: "ab", count: 16)
+        private let secondProposal = String(repeating: "cd", count: 16)
+
+        private func showApprovalCard(_ model: AppModel, _ frames: [JSONValue], proposal: String) throws {
             let generation = try XCTUnwrap(try lastMessage(frames)["request_generation"]?.stringValue)
             model.handleFrame(
                 InboundFrame.parse(
                     """
                     {"type":"ui_upsert","chat_id":"\(chat)","connection_generation":"\(connection)",
                      "request_generation":"\(generation)","base_render_revision":0,"frame_sequence":1,
-                     "ops":[{"op":"upsert","component_id":"approval",
-                     "component":{"type":"card","id":"au_approval_\(proposal)",
-                      "title":"Confirm an action on Test Mac",
-                      "content":[{"type":"text","variant":"body","content":"Open a site"},
-                       {"type":"button","label":"Approve","action":"remote_op_decision",
-                        "payload":{"proposal_id":"\(proposal)","decision":"approve"}},
-                       {"type":"button","label":"Decline","action":"remote_op_decision",
-                        "payload":{"proposal_id":"\(proposal)","decision":"decline"}}]}}]}
+                     "ops":[{"op":"upsert","component_id":"approval","component":\(approvalCard(proposal))}]}
                     """)!)
-            XCTAssertFalse(model.approvalPrompts.isEmpty)
+            XCTAssertTrue(model.visibleCanvas.contains { $0.raw["id"]?.stringValue == "au_approval_\(proposal)" })
         }
 
-        func testTheAppQueueWaitsForAnApprovalAndGoesAfterTheResumedTurn() throws {
+        // The card is on screen before the turn starts, as one left by an earlier answer would be.
+        private func modelWithCardBeforeTheTurn() throws -> (AppModel, () -> [JSONValue]) {
+            let (model, sent) = try makeModel()
+            negotiate(model, queueCapable: false)
+            model.canvas = [
+                try XCTUnwrap(AstralComponent(json: JSONValue.parse(Data(approvalCard(firstProposal).utf8))))
+            ]
+            XCTAssertFalse(model.approvalPrompts.isEmpty)
+            armTurn(model)
+            return (model, sent)
+        }
+
+        func testAnAnswerEndingOnANewApprovalCardHandsTheQueueBack() throws {
             let (model, sent) = try appQueueModel()
-            model.currentApprovalDecisionSendOverride = { _, _ in true }
             model.sendComposerText("after the approval")
-            try showApprovalCard(model, sent())
+            try showApprovalCard(model, sent(), proposal: firstProposal)
             try finishTurn(model, sent())
             XCTAssertEqual(messages(sent()), ["start the deployment task"], "a new turn would make the card stale")
-            XCTAssertEqual(model.queuedFollowUps.map(\.message), ["after the approval"])
-            XCTAssertEqual(model.composerDraft, "")
+            XCTAssertTrue(model.queuedFollowUps.isEmpty)
+            XCTAssertEqual(model.composerDraft, "after the approval")
+            XCTAssertEqual(
+                model.steerNotice,
+                "The answer is waiting for your approval, so your queued messages are back in the composer.")
+        }
 
+        func testACardAlreadyShownWhenTheTurnBeganDoesNotStopTheQueue() throws {
+            let (model, sent) = try modelWithCardBeforeTheTurn()
+            model.sendComposerText("send me anyway")
+            try finishTurn(model, sent())
+            XCTAssertEqual(messages(sent()), ["start the deployment task", "send me anyway"])
+            XCTAssertEqual(model.composerDraft, "")
+        }
+
+        func testAReusedCardIdWithANewProposalHandsTheQueueBack() throws {
+            let (model, sent) = try modelWithCardBeforeTheTurn()
+            model.sendComposerText("after the new proposal")
+            try showApprovalCard(model, sent(), proposal: secondProposal)
+            try finishTurn(model, sent())
+            XCTAssertEqual(messages(sent()), ["start the deployment task"])
+            XCTAssertEqual(model.composerDraft, "after the new proposal")
+            XCTAssertEqual(
+                model.steerNotice,
+                "The answer is waiting for your approval, so your queued messages are back in the composer.")
+        }
+
+        func testACardRetiredDuringTheTurnLetsTheQueueSend() throws {
+            let (model, sent) = try modelWithCardBeforeTheTurn()
+            model.sendComposerText("after the card")
+            model.canvas = []
+            model.transientCanvas = []
+            try finishTurn(model, sent())
+            XCTAssertEqual(messages(sent()), ["start the deployment task", "after the card"])
+        }
+
+        // The approved answer runs on after the decision's own status, so the queue cannot know when it ends.
+        private func decideAndQueueDuringTheContinuation(
+            _ model: AppModel, _ sent: () -> [JSONValue]
+        ) throws -> (request: String, operation: String) {
+            model.currentApprovalDecisionSendOverride = { _, _ in true }
             model.decideApproval(try XCTUnwrap(model.approvalPrompts.first), allow: true)
             let decision = try XCTUnwrap(sent().last { $0["action"] == .string("remote_op_decision") })
             let request = try XCTUnwrap(decision["request_generation"]?.stringValue)
             let operation = UUID().uuidString.lowercased()
-            XCTAssertEqual(messages(sent()), ["start the deployment task"], "sent before the resumed turn ran")
             model.handleFrame(InboundFrame.parse(#"{"type":"chat_status","status":"thinking"}"#)!)
             model.handleFrame(
                 status(request, operation: operation, state: "running", sequence: 1, action: "remote_op_decision"))
-            XCTAssertEqual(model.queuedFollowUps.map(\.message), ["after the approval"])
-            // Without decision receipts the resumed turn's done is what settles the decision.
-            model.handleFrame(done)
-            XCTAssertEqual(messages(sent()), ["start the deployment task", "after the approval"])
-            XCTAssertTrue(model.queuedFollowUps.isEmpty)
-            XCTAssertEqual(model.composerDraft, "")
-            model.handleFrame(
-                status(request, operation: operation, state: "completed", sequence: 2, action: "remote_op_decision"))
-            XCTAssertEqual(messages(sent()), ["start the deployment task", "after the approval"])
+            model.sendComposerText("after the decision")
+            XCTAssertEqual(model.queuedFollowUps.map(\.message), ["after the decision"])
+            return (request, operation)
         }
 
-        func testWithDecisionReceiptsTheQueueWaitsForTheDecisionToFinish() async throws {
-            let (model, sent) = try appQueueModel()
-            model.currentApprovalDecisionSendOverride = { _, _ in true }
-            model.sendComposerText("after the decision")
-            try showApprovalCard(model, sent())
+        private func cardModelWithoutATurn() throws -> (AppModel, () -> [JSONValue]) {
+            let (model, sent) = try makeModel()
+            negotiate(model, queueCapable: false)
+            model.canvas = [
+                try XCTUnwrap(AstralComponent(json: JSONValue.parse(Data(approvalCard(firstProposal).utf8))))
+            ]
+            return (model, sent)
+        }
+
+        func testTheEndOfADecisionHandsTheQueueBackWithoutReceipts() throws {
+            let (model, sent) = try cardModelWithoutATurn()
+            let (request, operation) = try decideAndQueueDuringTheContinuation(model, sent)
+            model.handleFrame(done)
+            model.handleFrame(
+                status(request, operation: operation, state: "completed", sequence: 2, action: "remote_op_decision"))
+            XCTAssertTrue(messages(sent()).isEmpty)
+            XCTAssertEqual(model.composerDraft, "after the decision")
+            XCTAssertEqual(
+                model.steerNotice,
+                "Your decision is still being carried out, so your queued messages are back in the composer.")
+        }
+
+        func testTheEndOfADecisionHandsTheQueueBackWithReceipts() async throws {
+            let (model, sent) = try cardModelWithoutATurn()
             let server = ProjectCatalogServer(project: "12345678-1234-1234-9234-123456789abc")
             await server.setChatSnapshot([chat: "100"])
             model.projects.bind(
@@ -875,33 +942,17 @@
             model.projects.negotiate(true)
             await model.projects.refresh()
             XCTAssertNotNil(model.projects.project(for: chat))
-            try finishTurn(model, sent())
-            model.decideApproval(try XCTUnwrap(model.approvalPrompts.first), allow: true)
-            let decision = try XCTUnwrap(sent().last { $0["action"] == .string("remote_op_decision") })
-            let request = try XCTUnwrap(decision["request_generation"]?.stringValue)
-            let operation = UUID().uuidString.lowercased()
-            model.handleFrame(InboundFrame.parse(#"{"type":"chat_status","status":"thinking"}"#)!)
-            model.handleFrame(
-                status(request, operation: operation, state: "running", sequence: 1, action: "remote_op_decision"))
-            model.handleFrame(done)
-            XCTAssertEqual(messages(sent()), ["start the deployment task"], "sent while the decision was still open")
-            XCTAssertEqual(model.queuedFollowUps.map(\.message), ["after the decision"])
-            XCTAssertEqual(model.composerDraft, "")
+            let (request, operation) = try decideAndQueueDuringTheContinuation(model, sent)
+            // The decision's own status ends while its continuation is still running.
             model.handleFrame(
                 status(request, operation: operation, state: "completed", sequence: 2, action: "remote_op_decision"))
-            XCTAssertEqual(messages(sent()), ["start the deployment task", "after the decision"])
-        }
-
-        func testAnApprovalCardRetiredWithoutAResumedTurnReleasesTheQueue() throws {
-            let (model, sent) = try appQueueModel()
-            model.sendComposerText("after the card")
-            try showApprovalCard(model, sent())
-            try finishTurn(model, sent())
-            XCTAssertEqual(model.queuedFollowUps.map(\.message), ["after the card"])
-            model.canvas = []
-            model.transientCanvas = nil
-            XCTAssertTrue(model.approvalPrompts.isEmpty)
-            XCTAssertEqual(messages(sent()), ["start the deployment task", "after the card"])
+            XCTAssertEqual(model.queuedFollowUps.map(\.message), ["after the decision"])
+            model.handleFrame(done)
+            XCTAssertTrue(messages(sent()).isEmpty)
+            XCTAssertEqual(model.composerDraft, "after the decision")
+            XCTAssertEqual(
+                model.steerNotice,
+                "Your decision is still being carried out, so your queued messages are back in the composer.")
         }
 
         private func continuityUUID4Value(_ text: String) -> String? {

@@ -490,7 +490,8 @@ final class AppModel: NSObject {
         @ObservationIgnored private var appQueueSendWaiting = false
         @ObservationIgnored private var settlingChatTurnStatus = false
         @ObservationIgnored private var interruptsFromQueue: Set<String> = []
-        @ObservationIgnored private var appQueueApprovalHold: (chat: String, completed: Bool)?
+        @ObservationIgnored private var approvalIdsBeforeTurn: Set<String> = []
+        @ObservationIgnored private var decisionSentSinceTurn = false
         @ObservationIgnored private var lateChatDoneExpected = false
         struct QueueSnapshot: Equatable {
             let revision: Int
@@ -2908,7 +2909,7 @@ final class AppModel: NSObject {
             clearPendingOperationSubmissions()
             #if os(macOS)
                 restoreAppQueue("The connection dropped, so your queued follow-ups are back in the composer.")
-                appQueueApprovalHold = nil
+                decisionSentSinceTurn = false
                 interruptsFromQueue.removeAll()
                 lateChatDoneExpected = false
             #endif
@@ -3426,7 +3427,9 @@ final class AppModel: NSObject {
                 #endif
             }
             #if os(macOS)
-                releaseAppQueueAfterApproval()
+                if ["authorize_action", "remote_op_decision"].contains(status.action) {
+                    settleAppQueue(completed: status.state == "completed", notice: Self.decisionNotice)
+                }
             #endif
             if !restored, let message = failure {
                 bannerIsError = true
@@ -3810,6 +3813,9 @@ final class AppModel: NSObject {
         stepTrail = []
         asyncDetached = false
         pendingCommitRequestGeneration = nil
+        #if os(macOS)
+            if snapshot.snapshotPurpose == "hydration" { recordApprovalBaseline() }
+        #endif
         voice.conversationDidHydrate(snapshot)
     }
 
@@ -4613,35 +4619,52 @@ final class AppModel: NSObject {
             }
         }
 
-        // A new turn retires the HITL task an undecided card belongs to, which would make its decision stale.
-        private var approvalHoldsAppQueue: Bool {
-            !approvalPrompts.isEmpty
-                || localOperationSubmissions.values.contains {
-                    ["authorize_action", "remote_op_decision"].contains($0.action) && $0.chatId == activeChatId
+        static let decisionNotice =
+            "Your decision is still being carried out, so your queued messages are back in the composer."
+        static let approvalWaitingNotice =
+            "The answer is waiting for your approval, so your queued messages are back in the composer."
+
+        // The server reuses component ids for a new proposal, so the request or proposal id names the card.
+        private var undecidedApprovalIds: Set<String> {
+            var ids: Set<String> = []
+            func visit(_ component: AstralComponent, depth: Int) {
+                if component.type == "button", component.raw["disabled"]?.boolValue != true,
+                    ["authorize_action", "remote_op_decision"].contains(component.raw["action"]?.stringValue ?? ""),
+                    let payload = component.raw["payload"],
+                    let id = (payload["hitl_request_id"] ?? payload["proposal_id"])?.stringValue, !id.isEmpty
+                {
+                    ids.insert(id)
                 }
+                guard depth < 8 else { return }
+                for child in component.children { visit(child, depth: depth + 1) }
+            }
+            for component in visibleTurns.flatMap(\.components) + (transientCanvas ?? canvas) {
+                visit(component, depth: 0)
+            }
+            return ids
         }
 
-        private func releaseAppQueueAfterApproval() {
-            guard let hold = appQueueApprovalHold, hold.chat == queueKey, !approvalHoldsAppQueue else { return }
-            settleAppQueue(completed: hold.completed, notice: Self.queueReturnedNotice)
-        }
+        private func recordApprovalBaseline() { approvalIdsBeforeTurn = undecidedApprovalIds }
 
         static let queueReturnedNotice = "The task ended, so your queued follow-ups are back in the composer."
 
         // Only a completed answer is known to want the next follow-up, so any other ending lets the user decide.
-        private func settleAppQueue(completed requested: Bool, notice: String?) {
+        private func settleAppQueue(completed: Bool, notice: String?) {
             guard !turnQueueCapable, let items = queueByChat[queueKey]?.items, !items.isEmpty,
                 connected, !turnActive, !waitingForEarlierTurn, !chatTurnSubmissionOpen
             else { return }
-            if approvalHoldsAppQueue {
-                if appQueueApprovalHold?.chat != queueKey { appQueueApprovalHold = (queueKey, requested) }
+            // An approved answer continues on its own, with no status that says when it ends.
+            if decisionSentSinceTurn {
+                restoreAppQueue(Self.decisionNotice)
                 return
             }
-            // The ending that met the approval decides what happens once the approval is settled.
-            let completed = appQueueApprovalHold.flatMap { $0.chat == queueKey ? $0.completed : nil } ?? requested
-            appQueueApprovalHold = nil
             guard completed, turnSteerNegotiated else {
                 restoreAppQueue(notice)
+                return
+            }
+            // A new turn would make the answer's new card stale; cards already shown are stale since none are retired.
+            if !undecidedApprovalIds.subtracting(approvalIdsBeforeTurn).isEmpty {
+                restoreAppQueue(Self.approvalWaitingNotice)
                 return
             }
             if items.first?.id == queuedFollowUpBeingEdited {
@@ -4670,7 +4693,6 @@ final class AppModel: NSObject {
         private func restoreAppQueue(_ notice: String?) {
             guard !turnQueueCapable, let items = queueByChat.removeValue(forKey: queueKey)?.items, !items.isEmpty
             else { return }
-            if appQueueApprovalHold?.chat == queueKey { appQueueApprovalHold = nil }
             appQueueSendWaiting = false
             composerDraft = joinedWithDraft(items.map(\.message).joined(separator: "\n\n"))
             if let notice { steerNotice = notice }
@@ -5747,7 +5769,6 @@ final class AppModel: NSObject {
         }
         #if os(macOS)
             if macComputerHost.awaitingApproval == pending.isEmpty { macComputerHost.approvalWaiting(!pending.isEmpty) }
-            releaseAppQueueAfterApproval()
         #endif
         guard
             let shot = live.first(where: {
@@ -5918,7 +5939,8 @@ final class AppModel: NSObject {
             queuesToReturn.removeAll()
             queuedFollowUpBeingEdited = nil
             appQueueSendWaiting = false
-            appQueueApprovalHold = nil
+            approvalIdsBeforeTurn = []
+            decisionSentSinceTurn = false
             lateChatDoneExpected = false
             interruptsFromQueue.removeAll()
             pendingSteerTexts.removeAll()
@@ -5970,6 +5992,11 @@ final class AppModel: NSObject {
                 connectionGeneration: connectionGeneration)
         else { return }
         localOperationSubmissions[submission.submissionId] = submission
+        #if os(macOS)
+            if ["authorize_action", "remote_op_decision"].contains(action), chatId == activeChatId {
+                decisionSentSinceTurn = true
+            }
+        #endif
         let approvalDuringActiveTurn = turnActive && ["authorize_action", "remote_op_decision"].contains(action)
         if exposeStatus && !approvalDuringActiveTurn { statusText = submission.label }
     }
@@ -6460,6 +6487,10 @@ final class AppModel: NSObject {
                     text: bubble))
         }
         workspaceStarted = true
+        #if os(macOS)
+            recordApprovalBaseline()
+            decisionSentSinceTurn = false
+        #endif
         let background = runInBackground
         runInBackground = false
         turnActive = true
@@ -7690,7 +7721,7 @@ final class AppModel: NSObject {
         screen = .chat
         viewingIndex = nil
         #if os(macOS)
-            appQueueApprovalHold = nil
+            decisionSentSinceTurn = false
             if let held = queuesToReturn.removeValue(forKey: chatId) {
                 composerDraft = joinedWithDraft(held.joined(separator: "\n\n"))
                 steerNotice = Self.queueModeChangedNotice
