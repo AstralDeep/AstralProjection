@@ -59,6 +59,7 @@ def build_audit_view(
     filters: Mapping[str, object] | None = None,
     event_classes: Iterable[str] = (),
     next_cursor: str | None = None,
+    chat_title: str | None = None,
     denied: bool = False,
     error: str | None = None,
     loaded: bool = True,
@@ -73,6 +74,9 @@ def build_audit_view(
         return _build_audit_detail(selected, filters=filters, theme=theme, layout=layout)
 
     active = dict(filters or {})
+    chat_id = clean_text(active.get("conversation_id") or "").strip()
+    scope = {"conversation_id": chat_id} if chat_id else {}
+    chat_label = clean_text(chat_title or "") or chat_id
     fields = [
         field(
             "event_class",
@@ -92,19 +96,27 @@ def build_audit_view(
         field("from", "From (UTC, YYYY-MM-DD)", default=active.get("from") or ""),
         field("to", "Through (UTC, YYYY-MM-DD)", default=active.get("to") or ""),
     ]
-    components: list[ComponentView] = [
+    components: list[ComponentView] = []
+    if chat_id:
+        fields.insert(0, field(
+            "conversation_id", "Chat", "select", default=chat_id,
+            options=({"value": "", "label": "All chats"}, {"value": chat_id, "label": chat_label}),
+        ))
+        components.append(text(f"Chat: {chat_label}", "h3"))
+    components.append(
         form(
             fields,
             submit_action="chrome_audit_page",
             submit_label="Apply",
             title="Filter audit entries",
         )
-    ]
+    )
     components.append(container([
         button(label, "chrome_audit_page", {"fields": values})
         for label, values in (
-            ("Reset", {}), ("All activity", {}), ("Failures", {"outcome": "failure"}),
-            ("Tool calls", {"event_class": "agent_tool_call"}), ("Sign ins", {"event_class": "auth"}),
+            ("Reset", scope), ("All activity", {}), ("Failures", {**scope, "outcome": "failure"}),
+            ("Tool calls", {**scope, "event_class": "agent_tool_call"}),
+            ("Sign ins", {**scope, "event_class": "auth"}),
         )
     ], direction="row"))
     rows = _rows(entries)
