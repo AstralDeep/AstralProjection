@@ -117,7 +117,9 @@
 
         func testSignatureCoversEveryUnsignedFieldIncludingTheEvidenceDigest() throws {
             let privateKey = Curve25519.Signing.PrivateKey()
-            for name in ComputerLetsReceipt.unsignedNames where name != "type" {
+            let unrestricted = policy(tenantId: nil, envelopeId: nil, configEpoch: nil)
+            for name in ComputerLetsReceipt.unsignedNames
+            where name != "type" && name != "executor_audience" {
                 let (json, _) = try mint { payload in
                     switch payload[name] {
                     case .string(let value): payload[name] = .string(value + "x")
@@ -127,8 +129,12 @@
                     default: XCTFail("unexpected field shape for \(name)")
                     }
                 }
-                XCTAssertEqual(verifyCode(json, privateKey: privateKey), "receipt_invalid", name)
+                XCTAssertEqual(
+                    verifyCode(json, privateKey: privateKey, policy: unrestricted), "receipt_invalid", name)
             }
+            let (audience, _) = try mint { $0["executor_audience"] = .string("mac-hostx") }
+            XCTAssertEqual(
+                verifyCode(audience, privateKey: privateKey, policy: unrestricted), "receipt_refused")
         }
 
         func testPolicyDenialsForForeignAudienceTenantEnvelopeEpochDigestAndWarden() throws {

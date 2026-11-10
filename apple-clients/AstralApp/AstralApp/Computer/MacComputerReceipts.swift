@@ -131,11 +131,7 @@
 
     struct MacComputerReceiptConfigurationReader: @unchecked Sendable {
         static let configurationKey = "computer.receipt.configuration"
-        private let defaults: UserDefaults
-
-        init(defaults: UserDefaults) {
-            self.defaults = defaults
-        }
+        let defaults: UserDefaults
 
         func read() -> MacComputerReceiptGate? {
             guard let raw = defaults.string(forKey: Self.configurationKey),

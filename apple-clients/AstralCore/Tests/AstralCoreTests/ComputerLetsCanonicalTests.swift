@@ -89,7 +89,7 @@
                             domain: "ComputerLetsCanonicalTests", code: 5,
                             userInfo: [NSLocalizedDescriptionKey: "LETS base64url vector is malformed"])
                     }
-                    encoded.append((try Self.data(fromHex: hex), text))
+                    encoded.append((try ComputerLetsCanonicalTests.data(fromHex: hex), text))
                 }
                 base64URL = encoded
                 invalidBase64URL = invalidEncodedEntries.compactMap {

@@ -63,7 +63,7 @@
                 "executable_sha256": .string(resolved.digest),
                 "type": .string(wireType),
             ])
-            self.init(
+            return ComputerCommandPlan(
                 cwd: resolvedCwd, cwdIdentity: identity.digest, executable: resolved.path,
                 executableDigest: resolved.digest, digest: try planDigest(plan), command: command, argv: argv)
         }
@@ -112,19 +112,6 @@
             }
             let hex = hasher.finalize().map { String(format: "%02x", $0) }.joined()
             return (resolved, "sha256:\(hex)")
-        }
-
-        init(
-            cwd: String, cwdIdentity: String, executable: String, executableDigest: String, digest: String,
-            command: String?, argv: [String]?
-        ) {
-            self.cwd = cwd
-            self.cwdIdentity = cwdIdentity
-            self.executable = executable
-            self.executableDigest = executableDigest
-            self.digest = digest
-            self.command = command
-            self.argv = argv
         }
     }
 

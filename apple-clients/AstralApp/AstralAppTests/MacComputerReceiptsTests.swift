@@ -91,7 +91,7 @@
             } catch { return (error as? ComputerHostError)?.code }
         }
 
-        private func code(_ work: () async throws -> Void) async -> String? {
+        private func outcomeCode(_ work: () async throws -> Void) async -> String? {
             do {
                 try await work()
                 return nil
@@ -229,32 +229,32 @@
                 authorize: {})
             XCTAssertNotNil(first["job_id"])
             XCTAssertEqual(spawner.plans.count, 1)
-            XCTAssertEqual(
-                await code {
+            let outcome1 = await outcomeCode {
                     try await commands.run(
-                        try command(receiptJSON), session: "11111111-1111-4111-8111-111111111111", roots: [root],
-                        authorize: {})
-                }, "receipt_replayed")
+                    try command(receiptJSON), session: "11111111-1111-4111-8111-111111111111", roots: [root],
+                    authorize: {})
+            }
+            XCTAssertEqual(outcome1, "receipt_replayed")
             XCTAssertEqual(spawner.plans.count, 1)
             try "#!/bin/sh\necho changed\n".write(toFile: tool, atomically: true, encoding: .utf8)
             (receiptJSON, _) = try mint(changes)
-            XCTAssertEqual(
-                await code {
+            let outcome2 = await outcomeCode {
                     try await commands.run(
-                        try command(receiptJSON), session: "11111111-1111-4111-8111-111111111111", roots: [root],
-                        authorize: {})
-                }, "plan_drift")
+                    try command(receiptJSON), session: "11111111-1111-4111-8111-111111111111", roots: [root],
+                    authorize: {})
+            }
+            XCTAssertEqual(outcome2, "plan_drift")
             XCTAssertEqual(spawner.plans.count, 1)
             let unconfigured = MacComputerCommands(
                 spawner: spawner, clock: MacComputerFakeClock(),
                 inherited: ["HOME": "/Users/synthetic", "PATH": "/inherited", "LANG": "C"],
                 loginPath: { "/usr/bin:/bin" }, receipts: nil)
-            XCTAssertEqual(
-                await code {
+            let outcome3 = await outcomeCode {
                     try await unconfigured.run(
-                        try command(receiptJSON), session: "11111111-1111-4111-8111-111111111111", roots: [root],
-                        authorize: {})
-                }, "receipt_refused")
+                    try command(receiptJSON), session: "11111111-1111-4111-8111-111111111111", roots: [root],
+                    authorize: {})
+            }
+            XCTAssertEqual(outcome3, "receipt_refused")
             XCTAssertEqual(spawner.plans.count, 1)
         }
 
@@ -290,10 +290,10 @@
                     "args": .object(["argv": .array([.string(unreadable)]), "cwd": .string(root)]),
                     "deadline_ms": .number(5000),
                 ]))
-            XCTAssertEqual(
-                await code {
+            let outcome4 = await outcomeCode {
                     try await commands.prepare(failure, roots: [root], exclusions: .defaults)
-                }, "not_found")
+            }
+            XCTAssertEqual(outcome4, "not_found")
         }
 
         func testFileVerbsRefuseReplayedReceiptsAndReplacedFolders() async throws {
@@ -323,11 +323,11 @@
             let written = try await driver.execute(
                 try fileRequest("write_file", writeReceipt), workspaces: [workspace], authorize: {})
             XCTAssertEqual(written["bytes"], .number(Double("synthetic".utf8.count)))
-            XCTAssertEqual(
-                await code {
+            let outcome5 = await outcomeCode {
                     try await driver.execute(
-                        try fileRequest("write_file", writeReceipt), workspaces: [workspace], authorize: {})
-                }, "receipt_replayed")
+                    try fileRequest("write_file", writeReceipt), workspaces: [workspace], authorize: {})
+            }
+            XCTAssertEqual(outcome5, "receipt_replayed")
             XCTAssertEqual(try String(contentsOf: URL(fileURLWithPath: root + "/notes.md")), "synthetic")
             let deletion = try ComputerFilePlan(
                 verb: "delete_path", path: root + "/notes.md", root: root,
@@ -337,11 +337,11 @@
                 $0["receipt_id"] = .string("receipt_app555555")
                 $0["evidence_digest"] = .string("sha256:" + String(repeating: "b", count: 64))
             }.json
-            XCTAssertEqual(
-                await code {
+            let outcome6 = await outcomeCode {
                     try await driver.execute(
-                        try fileRequest("delete_path", wrongEvidence), workspaces: [workspace], authorize: {})
-                }, "plan_drift")
+                    try fileRequest("delete_path", wrongEvidence), workspaces: [workspace], authorize: {})
+            }
+            XCTAssertEqual(outcome6, "plan_drift")
             XCTAssertNotNil(try? FileManager.default.attributesOfItem(atPath: root + "/notes.md"))
             _ = try await driver.execute(
                 try fileRequest("delete_path", deleteReceipt), workspaces: [workspace], authorize: {})
@@ -352,12 +352,12 @@
             let (replacementReceipt, _) = try mint { $0["evidence_digest"] = .string(replacement.digest) }
             try FileManager.default.removeItem(atPath: root)
             try FileManager.default.createDirectory(atPath: root, withIntermediateDirectories: true)
-            XCTAssertEqual(
-                await code {
+            let outcome7 = await outcomeCode {
                     try await driver.execute(
-                        try fileRequest("write_file", replacementReceipt), workspaces: [workspace],
-                        authorize: {})
-                }, "plan_drift")
+                    try fileRequest("write_file", replacementReceipt), workspaces: [workspace],
+                    authorize: {})
+            }
+            XCTAssertEqual(outcome7, "plan_drift")
             XCTAssertNil(try? FileManager.default.attributesOfItem(atPath: root + "/notes.md"))
         }
     }
