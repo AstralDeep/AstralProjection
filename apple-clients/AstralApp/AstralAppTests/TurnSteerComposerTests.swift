@@ -341,14 +341,32 @@
 
         private let done = InboundFrame.parse(#"{"type":"chat_status","status":"done"}"#)!
 
-        // The server sends chat_status done, then any stale_turn refusals, then the final operation_status.
+        private var commitRevision = 0
+
+        private func commitSnapshot(_ model: AppModel, _ request: String, canvas: String) -> InboundFrame {
+            commitRevision += 1
+            return InboundFrame.parse(
+                """
+                {"type":"conversation_snapshot","schema_version":1,
+                 "snapshot_id":"\(UUID().uuidString.lowercased())","chat_id":"\(model.activeChatId ?? chat)",
+                 "connection_generation":"\(connection)","request_generation":"\(request)",
+                 "snapshot_purpose":"commit","render_revision":\(commitRevision),
+                 "committed_at":"2026-11-07T20:00:00Z",
+                 "transcript":[{"message_id":"u\(commitRevision)","role":"user","created_at":"2026-11-07T20:00:00Z",
+                   "parts":[{"type":"text","text":"q\(commitRevision)"}],"attachments":[]}],
+                 "canvas":{"target":"canvas","components":[\(canvas)]}}
+                """)!
+        }
+
+        // The server commits a completed turn, sends chat_status done, any stale_turn refusals, then the final status.
         private func finishTurn(
             _ model: AppModel, _ frames: [JSONValue], state: String = "completed", doneFirst: Bool = true,
-            beforeFinal: () throws -> Void = {}
+            canvas: String = "", beforeFinal: () throws -> Void = {}
         ) throws {
             let request = try XCTUnwrap(try lastMessage(frames)["request_generation"]?.stringValue)
             let operation = UUID().uuidString.lowercased()
             model.handleFrame(status(request, operation: operation, state: "running", sequence: 1))
+            if state == "completed" { model.handleFrame(commitSnapshot(model, request, canvas: canvas)) }
             if doneFirst { model.handleFrame(done) }
             try beforeFinal()
             model.handleFrame(status(request, operation: operation, state: state, sequence: 2))
@@ -636,8 +654,10 @@
             let (model, _) = try appQueueModel()
             model.sendComposerText("short")
             let item = try XCTUnwrap(model.queuedFollowUps.first)
-            model.editQueuedFollowUp(item, text: String(repeating: "x", count: 20_001))
-            XCTAssertFalse(model.queuedFollowUps.isEmpty, "an over-long edit deleted the follow-up and the edit")
+            let long = String(repeating: "x", count: 20_001)
+            model.editQueuedFollowUp(item, text: long)
+            XCTAssertTrue(model.queuedFollowUps.isEmpty)
+            XCTAssertEqual(model.composerDraft, long, "an over-long edit was lost")
         }
 
         func testTheServersFrameOrderSendsTheNextFollowUpInsteadOfHandingTheQueueBack() throws {
@@ -811,9 +831,9 @@
             XCTAssertEqual(model.composerDraft, "interrupt me")
         }
 
-        private func approvalCard(_ proposal: String) -> String {
+        private func approvalCard(_ proposal: String, id: String? = nil) -> String {
             """
-            {"type":"card","id":"au_approval_\(proposal)","title":"Confirm an action on Test Mac",
+            {"type":"card","id":"\(id ?? "au_approval_\(proposal)")","title":"Confirm an action on Test Mac",
              "content":[{"type":"text","variant":"body","content":"Open a site"},
               {"type":"button","label":"Approve","action":"remote_op_decision",
                "payload":{"proposal_id":"\(proposal)","decision":"approve"}},
@@ -824,18 +844,6 @@
 
         private let firstProposal = String(repeating: "ab", count: 16)
         private let secondProposal = String(repeating: "cd", count: 16)
-
-        private func showApprovalCard(_ model: AppModel, _ frames: [JSONValue], proposal: String) throws {
-            let generation = try XCTUnwrap(try lastMessage(frames)["request_generation"]?.stringValue)
-            model.handleFrame(
-                InboundFrame.parse(
-                    """
-                    {"type":"ui_upsert","chat_id":"\(chat)","connection_generation":"\(connection)",
-                     "request_generation":"\(generation)","base_render_revision":0,"frame_sequence":1,
-                     "ops":[{"op":"upsert","component_id":"approval","component":\(approvalCard(proposal))}]}
-                    """)!)
-            XCTAssertTrue(model.visibleCanvas.contains { $0.raw["id"]?.stringValue == "au_approval_\(proposal)" })
-        }
 
         // The card is on screen before the turn starts, as one left by an earlier answer would be.
         private func modelWithCardBeforeTheTurn() throws -> (AppModel, () -> [JSONValue]) {
@@ -852,8 +860,7 @@
         func testAnAnswerEndingOnANewApprovalCardHandsTheQueueBack() throws {
             let (model, sent) = try appQueueModel()
             model.sendComposerText("after the approval")
-            try showApprovalCard(model, sent(), proposal: firstProposal)
-            try finishTurn(model, sent())
+            try finishTurn(model, sent(), canvas: approvalCard(firstProposal))
             XCTAssertEqual(messages(sent()), ["start the deployment task"], "a new turn would make the card stale")
             XCTAssertTrue(model.queuedFollowUps.isEmpty)
             XCTAssertEqual(model.composerDraft, "after the approval")
@@ -865,7 +872,7 @@
         func testACardAlreadyShownWhenTheTurnBeganDoesNotStopTheQueue() throws {
             let (model, sent) = try modelWithCardBeforeTheTurn()
             model.sendComposerText("send me anyway")
-            try finishTurn(model, sent())
+            try finishTurn(model, sent(), canvas: approvalCard(firstProposal))
             XCTAssertEqual(messages(sent()), ["start the deployment task", "send me anyway"])
             XCTAssertEqual(model.composerDraft, "")
         }
@@ -873,8 +880,8 @@
         func testAReusedCardIdWithANewProposalHandsTheQueueBack() throws {
             let (model, sent) = try modelWithCardBeforeTheTurn()
             model.sendComposerText("after the new proposal")
-            try showApprovalCard(model, sent(), proposal: secondProposal)
-            try finishTurn(model, sent())
+            try finishTurn(
+                model, sent(), canvas: approvalCard(secondProposal, id: "au_approval_\(firstProposal)"))
             XCTAssertEqual(messages(sent()), ["start the deployment task"])
             XCTAssertEqual(model.composerDraft, "after the new proposal")
             XCTAssertEqual(
@@ -885,8 +892,6 @@
         func testACardRetiredDuringTheTurnLetsTheQueueSend() throws {
             let (model, sent) = try modelWithCardBeforeTheTurn()
             model.sendComposerText("after the card")
-            model.canvas = []
-            model.transientCanvas = []
             try finishTurn(model, sent())
             XCTAssertEqual(messages(sent()), ["start the deployment task", "after the card"])
         }
@@ -953,6 +958,163 @@
             XCTAssertEqual(
                 model.steerNotice,
                 "Your decision is still being carried out, so your queued messages are back in the composer.")
+        }
+
+        private let hitlCard = """
+            {"type":"card","id":"hitl_card","title":"Confirm",
+             "content":[{"type":"button","label":"Approve","action":"authorize_action",
+               "payload":{"hitl_request_id":"req-new-1","decision":"approve"}},
+              {"type":"button","label":"Decline","action":"authorize_action",
+               "payload":{"hitl_request_id":"req-new-1","decision":"decline"}}]}
+            """
+
+        func testANewCardInTheCommittedTranscriptHandsTheQueueBack() throws {
+            let (model, sent) = try appQueueModel()
+            model.sendComposerText("B")
+            let request = try XCTUnwrap(try lastMessage(sent())["request_generation"]?.stringValue)
+            let operation = UUID().uuidString.lowercased()
+            model.handleFrame(status(request, operation: operation, state: "running", sequence: 1))
+            model.handleFrame(
+                InboundFrame.parse(
+                    """
+                    {"type":"conversation_snapshot","schema_version":1,
+                     "snapshot_id":"\(UUID().uuidString.lowercased())","chat_id":"\(chat)",
+                     "connection_generation":"\(connection)","request_generation":"\(request)",
+                     "snapshot_purpose":"commit","render_revision":1,"committed_at":"2026-11-07T20:00:00Z",
+                     "transcript":[{"message_id":"u1","role":"user","created_at":"2026-11-07T20:00:00Z",
+                       "parts":[{"type":"text","text":"q"}],"attachments":[]},
+                       {"message_id":"a1","role":"assistant","created_at":"2026-11-07T20:00:01Z",
+                       "parts":[{"type":"text","text":"needs approval"},
+                        {"type":"components","components":[\(hitlCard)]}],"attachments":[]}],
+                     "canvas":{"target":"canvas","components":[]}}
+                    """)!)
+            model.handleFrame(done)
+            model.handleFrame(status(request, operation: operation, state: "completed", sequence: 2))
+            XCTAssertEqual(messages(sent()), ["start the deployment task"])
+            XCTAssertEqual(model.composerDraft, "B")
+        }
+
+        func testANewChatsTurnSendsTheNextFollowUpInTheServersOrder() throws {
+            let (model, sent) = try makeModel()
+            model.activeChatId = nil
+            negotiate(model, queueCapable: false)
+            armTurn(model)
+            model.handleFrame(InboundFrame.parse(#"{"type":"chat_created","payload":{"chat_id":"\#(chat)"}}"#)!)
+            model.sendComposerText("B")
+            try finishTurn(model, sent())
+            XCTAssertEqual(messages(sent()), ["start the deployment task", "B"])
+            XCTAssertEqual(model.composerDraft, "")
+        }
+
+        func testADeclineWhileAnAnswerRunsDoesNotStopTheQueue() throws {
+            let (model, sent) = try modelWithCardBeforeTheTurn()
+            model.sendComposerText("B")
+            model.currentApprovalDecisionSendOverride = { _, _ in true }
+            model.decideApproval(try XCTUnwrap(model.approvalPrompts.first), allow: false)
+            XCTAssertTrue(sent().contains { $0["action"] == .string("remote_op_decision") })
+            try finishTurn(model, sent())
+            XCTAssertEqual(messages(sent()), ["start the deployment task", "B"])
+            XCTAssertEqual(model.composerDraft, "")
+        }
+
+        func testAStaleApprovalRefusedWhileAnAnswerRunsDoesNotStopTheQueue() throws {
+            let (model, sent) = try modelWithCardBeforeTheTurn()
+            model.sendComposerText("B")
+            model.currentApprovalDecisionSendOverride = { _, _ in true }
+            model.decideApproval(try XCTUnwrap(model.approvalPrompts.first), allow: true)
+            let decision = try XCTUnwrap(sent().last { $0["action"] == .string("remote_op_decision") })
+            let request = try XCTUnwrap(decision["request_generation"]?.stringValue)
+            model.handleFrame(
+                status(
+                    request, operation: UUID().uuidString.lowercased(), state: "failed", sequence: 1,
+                    action: "remote_op_decision"))
+            try finishTurn(model, sent())
+            XCTAssertEqual(messages(sent()), ["start the deployment task", "B"])
+        }
+
+        func testAnInterruptRefusedAfterLeavingItsChatStaysWithThatChat() throws {
+            let (model, sent) = try appQueueModel()
+            let request = try XCTUnwrap(try lastMessage(sent())["request_generation"]?.stringValue)
+            model.sendComposerText("for chat A only")
+            model.interruptWithQueuedFollowUp(try XCTUnwrap(model.queuedFollowUps.first))
+            model.openChat(otherChat)
+            let operation = UUID().uuidString.lowercased()
+            model.handleFrame(status(request, operation: operation, state: "running", sequence: 1))
+            model.handleFrame(done)
+            try refuseSteer(model, sent(), code: "stale_turn")
+            XCTAssertTrue(model.queuedFollowUps.isEmpty)
+            model.handleFrame(status(request, operation: operation, state: "completed", sequence: 2))
+            XCTAssertFalse(model.composerDraft.contains("for chat A only"))
+            XCTAssertFalse(messages(sent()).contains("for chat A only"))
+            model.activeChatId = chat
+            XCTAssertEqual(model.queuedFollowUps.map(\.message), ["for chat A only"])
+        }
+
+        func testAPlainSteerRefusedAfterLeavingItsChatComesBackWhenItReopens() throws {
+            let (model, sent) = try appQueueModel()
+            model.composerReturnBinding = .steer
+            model.sendComposerText("steer for chat A")
+            model.openChat(otherChat)
+            try refuseSteer(model, sent(), code: "stale_turn")
+            XCTAssertFalse(model.composerDraft.contains("steer for chat A"))
+            model.openChat(chat)
+            XCTAssertTrue(model.composerDraft.contains("steer for chat A"))
+        }
+
+        func testOpeningAnotherChipSavesTheEditInProgress() async throws {
+            let (model, _) = try appQueueModel()
+            model.sendComposerText("alpha")
+            model.sendComposerText("bravo")
+            let mount = SurfaceMount(QueueChipsRow(), model: model, size: CGSize(width: 640, height: 120))
+            defer { mount.close() }
+            try await mount.settle()
+            try mount.click(text: "alpha")
+            try await mount.settle()
+            XCTAssertTrue(try mount.accessibility.contains { $0.identifier == "composer-queue-chip-editor" })
+            mount.type("first")
+            try await mount.settle()
+            try mount.click(text: "bravo")
+            try await mount.settle()
+            XCTAssertEqual(model.queuedFollowUps.map(\.message), ["first", "bravo"])
+        }
+
+        func testAQueueHandedBackMidEditKeepsTheTypedText() async throws {
+            let (model, sent) = try appQueueModel()
+            model.sendComposerText("edit me")
+            let mount = SurfaceMount(QueueChipsRow(), model: model, size: CGSize(width: 640, height: 120))
+            defer { mount.close() }
+            try await mount.settle()
+            try mount.click(text: "edit me")
+            try await mount.settle()
+            mount.type("typed instead")
+            try await mount.settle()
+            try finishTurn(model, sent(), state: "failed")
+            try await mount.settle()
+            XCTAssertEqual(model.composerDraft, "typed instead")
+        }
+
+        func testAnOverLongEditSavedOnFocusLossDoesNotSendTheOldText() throws {
+            let (model, sent) = try appQueueModel()
+            model.sendComposerText("short")
+            let item = try XCTUnwrap(model.queuedFollowUps.first)
+            model.beginEditingQueuedFollowUp(item)
+            try finishTurn(model, sent())
+            let long = String(repeating: "x", count: 20_001)
+            model.editQueuedFollowUp(item, text: long)
+            model.endEditingQueuedFollowUp()
+            XCTAssertEqual(messages(sent()), ["start the deployment task"])
+            XCTAssertEqual(model.composerDraft, long)
+        }
+
+        func testAModeChangeKeepsAnUnsavedChatsQueue() throws {
+            let (model, _) = try makeModel()
+            model.activeChatId = nil
+            negotiate(model, queueCapable: false)
+            armTurn(model)
+            model.sendComposerText("for the unsaved chat")
+            model.openChat(otherChat)
+            negotiate(model, queueCapable: true)
+            XCTAssertTrue(model.composerDraft.contains("for the unsaved chat"))
         }
 
         private func continuityUUID4Value(_ text: String) -> String? {
