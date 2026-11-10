@@ -110,6 +110,10 @@
                                     .accessibilityValue(model.activeChatId == chat.id ? "Active conversation" : "")
                                     .help(chat.displayTitle)
                                     .contextMenu {
+                                        Button("Audit for this chat") {
+                                            model.openChatAudit(chat.id)
+                                        }
+                                        .accessibilityIdentifier("chat-audit-\(chat.id)")
                                         Button("Delete conversation", role: .destructive) {
                                             model.requestChatDeletion(chat)
                                         }

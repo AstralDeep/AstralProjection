@@ -74,7 +74,7 @@ enum LLMOperationReconciliation {
 @Observable
 final class AppModel: NSObject {
 
-    enum Screen: Equatable { case chat, agents, history, audit, surface }
+    enum Screen: Equatable { case chat, agents, history, surface }
 
     struct ChatTurn: Identifiable, Equatable {
         let id: String
@@ -532,11 +532,9 @@ final class AppModel: NSObject {
     var agents: [Agent] = []
     var history: [ChatSummary] = []
     var historyTitle = "Recent chats"
-    var audit: [AuditEvent] = []
     var agentsLoading = false
     var historyLoading = false
     var historyLoaded = false
-    var auditLoading = false
 
     var chromeMenu: ChromeMenuModel?
     var consolePresentation: ConsolePresentation?
@@ -2420,7 +2418,6 @@ final class AppModel: NSObject {
         agents = []
         history = []
         historyTitle = "Recent chats"
-        audit = []
 
         let logoutGeneration = sessionGeneration
         await socket?.stop()
@@ -2923,7 +2920,6 @@ final class AppModel: NSObject {
             transientCanvas = nil
             agentsLoading = false
             historyLoading = false
-            auditLoading = false
             statusText = nil
         case .sendDropped(let total):
             bannerIsError = true
@@ -4295,7 +4291,6 @@ final class AppModel: NSObject {
         transientCanvas = nil
         agentsLoading = false
         historyLoading = false
-        auditLoading = false
         statusText = nil
         asyncDetached = false
         if code == "chat_not_found" || code == "conversation_not_found" {
@@ -7718,11 +7713,9 @@ final class AppModel: NSObject {
         screen = target
         agentsLoading = target == .agents || agentsLoading
         historyLoading = target == .history || historyLoading
-        auditLoading = target == .audit || auditLoading
         switch target {
         case .agents: sendEvent("discover_agents")
         case .history: sendEvent("get_history")
-        case .audit: loadAudit()
         case .chat, .surface: break
         }
     }
@@ -8097,12 +8090,9 @@ final class AppModel: NSObject {
         sendEvent("discover_agents")
     }
 
-    private func loadAudit() {
-        Task {
-            let events = await rest.audit()
-            audit = events
-            auditLoading = false
-        }
+    func openChatAudit(_ chatId: String) {
+        guard !chatId.isEmpty, chatId.utf8.count <= 256 else { return }
+        openSurface("audit", params: .object(["conversation_id": .string(chatId)]))
     }
 
     func viewCanvasSnapshot(_ index: Int) {

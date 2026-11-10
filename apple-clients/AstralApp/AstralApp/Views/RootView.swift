@@ -131,7 +131,6 @@ struct RootView: View {
         case .chat: ChatShell()
         case .agents: AgentsView()
         case .history: HistoryView()
-        case .audit: AuditView()
         case .surface: SurfaceView()
         }
     }

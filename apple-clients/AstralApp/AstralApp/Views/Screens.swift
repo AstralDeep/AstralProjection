@@ -1,6 +1,6 @@
-// Native settings surfaces reached from the top-bar gear: Agents (per-tool permission toggles), Audit
-// (hash-chained event log), and the SDUI Surface screen with a load-timeout retry; 1:1 with Android's
-// Screens.kt.
+// Native settings surfaces reached from the top-bar gear: Agents (per-tool permission toggles) and the SDUI
+// Surface screen with a load-timeout retry; 1:1 with Android's Screens.kt. Audit history stays on the
+// server-rendered audit surface, which every client opens with chrome_open.
 
 import AstralCore
 import SwiftUI
@@ -153,65 +153,6 @@ private struct AgentCard: View {
         }
     }
 #endif
-
-struct AuditView: View {
-    @Environment(AppModel.self) var model
-    @Environment(ThemeStore.self) var theme
-    private var p: AstralPalette { theme.palette }
-
-    var body: some View {
-        Group {
-            if model.auditLoading && model.audit.isEmpty {
-                SkeletonList()
-            } else if model.audit.isEmpty {
-                Text("No audit events.").foregroundStyle(p.muted)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(model.audit, id: \.identity) { event in
-                            AuditCard(event: event)
-                        }
-                    }
-                    .padding(16)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(p.bg)
-    }
-}
-
-private struct AuditCard: View {
-    @Environment(ThemeStore.self) var theme
-    let event: AuditEvent
-    @State private var expanded = false
-    private var p: AstralPalette { theme.palette }
-
-    var body: some View {
-        Button {
-            withAnimation { expanded.toggle() }
-        } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text([event.eventClass, event.action].compactMap { $0 }.joined(separator: " · "))
-                    .font(ConsoleTypography.subheadline.weight(.semibold)).foregroundStyle(p.text)
-                Text([event.outcome, event.recordedAt].compactMap { $0 }.joined(separator: "  "))
-                    .font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                if expanded {
-                    if let od = event.outcomeDetail { Text(od).font(ConsoleTypography.caption).foregroundStyle(p.text) }
-                    if let d = event.detail { Text(d).font(ConsoleTypography.mono(12)).foregroundStyle(p.text) }
-                    if let id = event.id {
-                        Text("id: \(id)").font(ConsoleTypography.caption2).foregroundStyle(p.muted)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(p.surface2, in: RoundedRectangle(cornerRadius: AstralRadius.md))
-        }
-        .buttonStyle(.plain)
-    }
-}
 
 struct SurfaceView: View {
     @Environment(AppModel.self) var model

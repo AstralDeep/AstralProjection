@@ -105,7 +105,7 @@ function htmlShell() {
       <div id="astral-start-intro"></div>
       <div id="astral-start-permission"></div>
       <div id="astral-status"></div>
-      <form id="astral-form"><textarea id="astral-input" rows="2"></textarea><button type="submit">Send</button></form>
+      <form id="astral-form"><textarea id="astral-input" rows="2"></textarea><button type="button" id="astral-stop-btn" hidden>Stop response</button><button type="submit" id="astral-send-btn">Send</button></form>
       <div id="astral-start-examples"></div>
       <div id="astral-start-more"></div>
       <section id="astral-canvas">
@@ -120,6 +120,7 @@ function htmlShell() {
       <div id="astral-voice-turn-notice"><span id="astral-voice-turn-notice-title"></span><span id="astral-voice-turn-notice-message"></span></div>
       <button id="astral-bg-btn" type="button" aria-pressed="false"></button>
       <div id="astral-slash-menu" class="hidden"></div>
+      <div id="astral-composer-controls"></div>
       <div id="astral-modal"></div>
     </main>
     <div id="astral-fullscreen" class="astral-fullscreen" role="dialog" aria-modal="true" aria-labelledby="astral-fs-title" hidden>
@@ -133,8 +134,9 @@ function htmlShell() {
 }
 
 
-async function installHarness(page, { locator = true, url = "https://candidate.example/" } = {}) {
-  await page.addInitScript(({ token }) => {
+async function installHarness(page, { locator = true, url = "https://candidate.example/", steer = false } = {}) {
+  await page.addInitScript(({ token, steerAck }) => {
+    window.__steerAck = steerAck;
     window.__ASTRAL_TOKEN__ = token;
     window.__ASTRAL_RESUMED__ = true;
     window.__socketEvents = [];
@@ -159,6 +161,11 @@ async function installHarness(page, { locator = true, url = "https://candidate.e
         this.sent = [];
         window.__sockets.push(this);
         queueMicrotask(() => {
+          if (window.__serverDown) {
+            this.readyState = 3;
+            this.onclose?.();
+            return;
+          }
           this.readyState = FakeWebSocket.OPEN;
           this.onopen?.();
         });
@@ -176,9 +183,15 @@ async function installHarness(page, { locator = true, url = "https://candidate.e
 
         if (frame.type === "register_ui") {
           queueMicrotask(() => {
+            if (window.__dropAfterRegister) {
+              this.close();
+              return;
+            }
             this.receive({
               type: "rote_config",
-              device_profile: { device_type: "browser" },
+              device_profile: window.__steerAck
+                ? { device_type: "browser", turn_steer: window.__steerAck }
+                : { device_type: "browser" },
             });
           });
         }
@@ -195,7 +208,7 @@ async function installHarness(page, { locator = true, url = "https://candidate.e
     }
 
     window.WebSocket = FakeWebSocket;
-  }, { token: TOKEN });
+  }, { token: TOKEN, steerAck: steer ? { version: 1, queue_capable: false } : null });
 
   await page.route("https://candidate.example/**", (route) => route.fulfill({
     contentType: "text/html",
@@ -2450,3 +2463,1748 @@ for (const retirement of ["disconnected", "mandatory", "removed"]) {
     expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).chat_id, LOCATOR_KEY)).toBe(CHAT_ID);
   });
 }
+
+
+const THIRD_CHAT_ID = "33333333-3333-4333-8333-333333333333";
+const EARLIER_TURN_WAIT = "Finishing the previous reply. This chat will open when it ends.";
+
+async function startTurnInChat(page, options = {}) {
+  await installHarness(page, options);
+  const { frame: registrationFrame } = await registration(page);
+  await receive(page, snapshot(registrationFrame));
+  await page.locator("#astral-input").fill("A long request");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  const message = await page.evaluate(() => window.__socketEvents.findLast((event) => (
+    event.frame.action === "chat_message")).frame);
+  const turnScope = {
+    connection_generation: registrationFrame.connection_generation,
+    request_generation: message.request_generation,
+  };
+  await receive(page, operationStatus(turnScope, OPERATION_A, 0, "accepted"));
+  await receive(page, operationStatus(turnScope, OPERATION_A, 1, "running"));
+  return { registrationFrame, turnScope };
+}
+
+async function openChatFromHistory(page, chatId) {
+  await page.evaluate((id) => {
+    const button = document.createElement("button");
+    button.className = "astral-action";
+    button.dataset.action = "load_chat";
+    button.dataset.payload = JSON.stringify({ chat_id: id });
+    document.body.appendChild(button);
+    button.click();
+    button.remove();
+  }, chatId);
+}
+
+async function sentLoads(page) {
+  return page.evaluate(() => window.__socketEvents
+    .filter((event) => event.frame.type === "ui_event" && event.frame.action === "load_chat")
+    .map((event) => event.frame));
+}
+
+test("opening another chat during a running turn holds the load until the turn ends", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+
+  expect(await sentLoads(page)).toHaveLength(0);
+  const status = page.locator("#astral-status");
+  await expect(status).toHaveText(EARLIER_TURN_WAIT);
+  await expect(page.locator("#astral-chat")).not.toContainText("Committed answer");
+  await expect(page.locator("#astral-canvas")).not.toContainText("ROTE-adapted canvas");
+  await expect(page.locator("body")).toHaveClass(/astral-chat-active/u);
+  expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key)).chat_id, LOCATOR_KEY))
+    .toBe(OTHER_CHAT_ID);
+
+  await receive(page, { type: "chat_status", status: "thinking", message: "Left turn status" });
+  await receive(page, { type: "chat_step", step: { name: "left_tool", status: "in_progress" } });
+  await receive(page, { type: "tool_progress", tool_name: "left_tool", message: "Left progress" });
+  await expect(status).toHaveText(EARLIER_TURN_WAIT);
+  expect(await sentLoads(page)).toHaveLength(0);
+
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const loads = await sentLoads(page);
+  expect(loads).toHaveLength(1);
+  expect(loads[0].payload).toEqual(expect.objectContaining({
+    chat_id: OTHER_CHAT_ID,
+    connection_generation: turnScope.connection_generation,
+    snapshot_purpose: "hydration",
+  }));
+  await expect(status).not.toHaveText(EARLIER_TURN_WAIT);
+
+  await receive(page, snapshot({
+    connection_generation: turnScope.connection_generation,
+    request_generation: loads[0].request_generation,
+  }, { chat_id: OTHER_CHAT_ID, snapshot_id: SNAPSHOT_B }));
+  await expect(page.locator("#astral-chat")).toContainText("Committed answer");
+  await expect(status).toHaveText("");
+});
+
+test("only the last chat opened during the wait loads and reopening it changes nothing", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await openChatFromHistory(page, THIRD_CHAT_ID);
+  await openChatFromHistory(page, THIRD_CHAT_ID);
+  expect(await sentLoads(page)).toHaveLength(0);
+
+  await receive(page, { type: "chat_status", status: "done", message: "" });
+  const loads = await sentLoads(page);
+  expect(loads).toHaveLength(1);
+  expect(loads[0].payload.chat_id).toBe(THIRD_CHAT_ID);
+
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  expect(await sentLoads(page)).toHaveLength(1);
+});
+
+test("an immediate cancel keeps the wait until the left turn finishes unwinding", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+
+  await receive(page, { type: "chat_status", status: "done", message: "Cancelled" });
+  expect(await sentLoads(page)).toHaveLength(0);
+  await expect(page.locator("#astral-status")).toHaveText(EARLIER_TURN_WAIT);
+
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "cancelled", {
+    error: { code: "cancelled_by_user", message: "Cancelled" },
+  }));
+  const loads = await sentLoads(page);
+  expect(loads).toHaveLength(1);
+  expect(loads[0].payload.chat_id).toBe(OTHER_CHAT_ID);
+});
+
+test("a disconnect drops the held load and reconnecting hydrates the chat being opened", async ({ page }) => {
+  await startTurnInChat(page);
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await page.waitForFunction(() => window.__sockets.length === 2
+    && window.__sockets[1].sent.some((frame) => frame.type === "register_ui"), null, { timeout: 10000 });
+
+  const reconnect = await page.evaluate(() => window.__sockets[1].sent.find((frame) => frame.type === "register_ui"));
+  expect(reconnect.resume.active_chat_id).toBe(OTHER_CHAT_ID);
+  await receive(page, { type: "chat_status", status: "done", message: "" });
+  expect(await sentLoads(page)).toHaveLength(0);
+  await expect(page.locator("#astral-status")).not.toHaveText(EARLIER_TURN_WAIT);
+});
+
+test("a left turn's completion ends its submission so the next switch loads at once", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  expect(await sentLoads(page)).toHaveLength(1);
+
+  await openChatFromHistory(page, CHAT_ID);
+  const loads = await sentLoads(page);
+  expect(loads).toHaveLength(2);
+  expect(loads[1].payload.chat_id).toBe(CHAT_ID);
+  await expect(page.locator("#astral-status")).not.toHaveText(EARLIER_TURN_WAIT);
+});
+
+test("new chat during a running turn shows none of the left turn's output or status", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await page.locator("#astral-newchat-btn").click();
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+  const leftFrame = {
+    chat_id: CHAT_ID,
+    connection_generation: turnScope.connection_generation,
+    request_generation: turnScope.request_generation,
+    base_render_revision: 0,
+  };
+
+  await receive(page, { ...leftFrame, type: "ui_stream_data", stream_id: "left-stream", session_id: CHAT_ID,
+    seq: 0, components: [], html: "<p>Left streamed text</p>", raw: "", terminal: false, error: null, frame_sequence: 1 });
+  await receive(page, { ...leftFrame, type: "ui_upsert", frame_sequence: 2,
+    ops: [{ op: "upsert", component_id: "left-card", html: '<div data-component-id="left-card">Left card</div>' }] });
+  await receive(page, { ...leftFrame, type: "ui_render", target: "chat", html: "<p>Left reply</p>", frame_sequence: 3 });
+  await receive(page, { ...leftFrame, type: "ui_update", html: "<p>Left update</p>", frame_sequence: 4 });
+  await receive(page, { ...leftFrame, type: "ui_append", html: "<p>Left append</p>", frame_sequence: 5 });
+  await receive(page, { type: "chat_step", chat_id: CHAT_ID, step: { name: "left_tool", status: "completed" } });
+  await receive(page, { type: "chat_status", status: "thinking", message: "Left turn status" });
+  await receive(page, { type: "tool_progress", chat_id: CHAT_ID, tool_name: "left_tool", message: "Left progress" });
+
+  for (const text of ["Left streamed text", "Left card", "Left reply", "Left update", "Left append"]) {
+    await expect(page.locator("body")).not.toContainText(text);
+  }
+  await expect(page.locator("#astral-status")).not.toContainText("Left");
+
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  await receive(page, { type: "chat_status", status: "thinking", message: "New chat status" });
+  await expect(page.locator("#astral-status")).toHaveText("New chat status");
+});
+
+test("an owner change drops a held load so the new owner's status is shown", async ({ page }) => {
+  await startTurnInChat(page);
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await page.evaluate(({ token }) => {
+    window.__sessionToken = token;
+    window.__sessionSubject = "other-user";
+  }, { token: OTHER_TOKEN });
+  await receive(page, { type: "auth_required" });
+  await page.waitForFunction(() => window.__sockets.length === 2
+    && window.__sockets[1].sent.some((frame) => frame.type === "register_ui"));
+
+  await receive(page, { type: "chat_status", status: "thinking", message: "New owner status" });
+  await expect(page.locator("#astral-status")).toHaveText("New owner status");
+  expect(await sentLoads(page)).toHaveLength(0);
+});
+
+test("an admission refusal of the left message ends the wait", async ({ page }) => {
+  await installHarness(page);
+  const { frame: registrationFrame } = await registration(page);
+  await receive(page, snapshot(registrationFrame));
+  await page.locator("#astral-input").fill("A long request");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  const message = await page.evaluate(() => window.__socketEvents.findLast((event) => (
+    event.frame.action === "chat_message")).frame);
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  expect(await sentLoads(page)).toHaveLength(0);
+
+  await receive(page, { type: "error", accepted: false, code: "capacity_exceeded", message: "Busy right now",
+    retry_after_ms: null, retryable: false, submission_id: message.submission_id });
+  const loads = await sentLoads(page);
+  expect(loads).toHaveLength(1);
+  expect(loads[0].payload.chat_id).toBe(OTHER_CHAT_ID);
+});
+
+test("a queued first message's chat creation cannot take over the chat being opened", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  const { frame: registrationFrame } = await registration(page);
+  await page.locator("#astral-input").fill("First message");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  const message = await page.evaluate(() => window.__socketEvents.findLast((event) => (
+    event.frame.action === "chat_message")).frame);
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await expect(page.locator("#astral-status")).toHaveText(EARLIER_TURN_WAIT);
+
+  await receive(page, { type: "chat_created", payload: { chat_id: THIRD_CHAT_ID } });
+  expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key)).chat_id, LOCATOR_KEY))
+    .toBe(OTHER_CHAT_ID);
+  await receive(page, operationStatus({
+    connection_generation: registrationFrame.connection_generation,
+    request_generation: message.request_generation,
+  }, OPERATION_B, 0, "completed", { chat_id: THIRD_CHAT_ID }));
+  const loads = await sentLoads(page);
+  expect(loads).toHaveLength(1);
+  expect(loads[0].payload.chat_id).toBe(OTHER_CHAT_ID);
+});
+
+test("returning to the running chat while waiting keeps its status, steps and failure out of view", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await openChatFromHistory(page, CHAT_ID);
+  const status = page.locator("#astral-status");
+  await expect(status).toHaveText(EARLIER_TURN_WAIT);
+
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "running", { label: "Left running label" }));
+  await receive(page, { type: "chat_step", chat_id: CHAT_ID, step: { name: "left_tool", status: "in_progress" } });
+  await receive(page, { type: "tool_progress", chat_id: CHAT_ID, tool_name: "left_tool", message: "Left progress" });
+  await expect(status).toHaveText(EARLIER_TURN_WAIT);
+  expect(await sentLoads(page)).toHaveLength(0);
+
+  await receive(page, operationStatus(turnScope, OPERATION_A, 3, "failed"));
+  await expect(page.locator("body")).not.toContainText("Visible terminal failure");
+  const loads = await sentLoads(page);
+  expect(loads).toHaveLength(1);
+  expect(loads[0].payload.chat_id).toBe(CHAT_ID);
+});
+
+async function sentCancels(page) {
+  return page.evaluate(() => window.__socketEvents
+    .filter((event) => event.frame.type === "ui_event" && event.frame.action === "cancel_task")
+    .map((event) => event.frame));
+}
+
+test("Stop shows only while this chat's turn runs and keeps the typed draft", async ({ page }) => {
+  await installHarness(page);
+  const { frame: registrationFrame } = await registration(page);
+  await receive(page, snapshot(registrationFrame));
+  const stop = page.locator("#astral-stop-btn");
+  const sendButton = page.locator("#astral-send-btn");
+  await expect(stop).toBeHidden();
+  await expect(sendButton).toBeVisible();
+
+  await page.locator("#astral-input").fill("A long request");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  await expect(stop).toBeVisible();
+  await expect(sendButton).toBeVisible();
+  await page.locator("#astral-input").fill("Draft still being written");
+
+  await stop.click();
+  const cancels = await sentCancels(page);
+  expect(cancels).toHaveLength(1);
+  expect(cancels[0]).toEqual(expect.objectContaining({ session_id: CHAT_ID }));
+  expect(cancels[0].payload).toEqual({
+    submission_id: cancels[0].submission_id,
+    request_generation: cancels[0].request_generation,
+  });
+  expect(cancels[0].submission_id).toMatch(/^[0-9a-f-]{36}$/u);
+  await expect(page.locator("#astral-input")).toHaveValue("Draft still being written");
+});
+
+test("Stop hides when the turn ends and while disconnected", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  const stop = page.locator("#astral-stop-btn");
+  await expect(stop).toBeVisible();
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  await expect(stop).toBeHidden();
+
+  await page.locator("#astral-input").fill("Second request");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  await expect(stop).toBeVisible();
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(stop).toBeHidden();
+  await stop.evaluate((button) => button.click());
+  expect(await sentCancels(page)).toHaveLength(0);
+});
+
+test("Escape in the composer stops the turn unless the slash menu is open", async ({ page }) => {
+  await startTurnInChat(page);
+  const composer = page.locator("#astral-input");
+  await page.evaluate(() => document.querySelector("#astral-slash-menu").classList.remove("hidden"));
+  await composer.press("Escape");
+  expect(await sentCancels(page)).toHaveLength(0);
+
+  await page.evaluate(() => document.querySelector("#astral-slash-menu").classList.add("hidden"));
+  await composer.fill("Keep this text");
+  await composer.press("Escape");
+  expect(await sentCancels(page)).toHaveLength(1);
+  await expect(composer).toHaveValue("Keep this text");
+});
+
+test("Escape with no turn running sends nothing", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await page.locator("#astral-input").press("Escape");
+  expect(await sentCancels(page)).toHaveLength(0);
+});
+
+test("Stop stays available while a chat waits to open but not in a new chat beside a left turn", async ({ page }) => {
+  await startTurnInChat(page);
+  const stop = page.locator("#astral-stop-btn");
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await expect(stop).toBeVisible();
+  await stop.click();
+  const cancels = await sentCancels(page);
+  expect(cancels).toHaveLength(1);
+  expect(cancels[0].session_id).toBe(OTHER_CHAT_ID);
+
+  await page.locator("#astral-newchat-btn").click();
+  await expect(stop).toBeHidden();
+});
+
+test("Stop sends one cancel per turn and returns for the next turn", async ({ page }) => {
+  const { registrationFrame, turnScope } = await startTurnInChat(page);
+  const stop = page.locator("#astral-stop-btn");
+  await stop.click();
+  await expect(stop).toBeHidden();
+  await receive(page, { type: "chat_status", status: "done", message: "Cancelled" });
+  await page.locator("#astral-input").press("Escape");
+  await page.locator("#astral-input").evaluate((composer) => composer.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Escape", repeat: true, bubbles: true, cancelable: true })));
+  expect(await sentCancels(page)).toHaveLength(1);
+  await expect(stop).toBeHidden();
+
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  await page.locator("#astral-input").fill("Next request");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  const next = await page.evaluate(() => window.__socketEvents.findLast((event) => (
+    event.frame.action === "chat_message")).frame);
+  await receive(page, operationStatus({
+    connection_generation: registrationFrame.connection_generation,
+    request_generation: next.request_generation,
+  }, OPERATION_B, 0, "running"));
+  await expect(stop).toBeVisible();
+  await page.locator("#astral-input").press("Escape");
+  expect(await sentCancels(page)).toHaveLength(2);
+});
+
+test("Escape closes an open modal without cancelling the turn", async ({ page }) => {
+  await startTurnInChat(page);
+  await receive(page, { type: "chrome_render", region: "modal", html: "<div>Settings</div>" });
+  await page.locator("#astral-input").focus();
+  await page.locator("#astral-input").press("Escape");
+  expect(await sentCancels(page)).toHaveLength(0);
+  await expect(page.locator("#astral-stop-btn")).toBeVisible();
+});
+
+test("Stop stays hidden in a new chat whose first message queues behind a left turn", async ({ page }) => {
+  await startTurnInChat(page);
+  await page.locator("#astral-newchat-btn").click();
+  await page.locator("#astral-input").fill("First message in the new chat");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  await expect(page.locator("#astral-stop-btn")).toBeHidden();
+  await page.locator("#astral-input").press("Escape");
+  expect(await sentCancels(page)).toHaveLength(0);
+});
+
+test("Stop covers a turn resumed by an approval", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const stop = page.locator("#astral-stop-btn");
+  await expect(stop).toBeHidden();
+  await receive(page, operationStatus({
+    connection_generation: turnScope.connection_generation,
+    request_generation: "99999999-9999-4999-8999-999999999999",
+  }, OPERATION_C, 0, "running", { action: "authorize_action", surface: "chat" }));
+  await expect(stop).toBeVisible();
+  await stop.click();
+  expect(await sentCancels(page)).toHaveLength(1);
+});
+
+test("focus returns to the composer when a focused Stop hides", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await page.locator("#astral-stop-btn").focus();
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  await expect(page.locator("#astral-input")).toBeFocused();
+});
+
+test("opening another chat during an approval-resumed turn holds the load", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const approvalScope = {
+    connection_generation: turnScope.connection_generation,
+    request_generation: "99999999-9999-4999-8999-999999999999",
+  };
+  await receive(page, operationStatus(approvalScope, OPERATION_C, 0, "running", { action: "authorize_action", surface: "chat" }));
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  expect(await sentLoads(page)).toHaveLength(0);
+  await expect(page.locator("#astral-status")).toHaveText(EARLIER_TURN_WAIT);
+  await receive(page, operationStatus(approvalScope, OPERATION_C, 1, "completed", { action: "authorize_action", surface: "chat" }));
+  const loads = await sentLoads(page);
+  expect(loads).toHaveLength(1);
+  expect(loads[0].payload.chat_id).toBe(OTHER_CHAT_ID);
+});
+
+test("a background task ending during a live turn in the open chat does not reload it", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await receive(page, { type: "task_completed", payload: {
+    task_id: OPERATION_C, chat_id: CHAT_ID, status: "completed", summary: "Report ready",
+  } });
+  await expect(page.locator("#astral-toasts")).toContainText("Report ready");
+  expect(await sentLoads(page)).toHaveLength(0);
+
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  expect(await sentLoads(page)).toHaveLength(1);
+  await receive(page, { type: "task_completed", payload: {
+    task_id: OPERATION_D, chat_id: CHAT_ID, status: "completed", summary: "Second report",
+  } });
+  const loads = await sentLoads(page);
+  expect(loads).toHaveLength(2);
+  expect(loads.map((load) => load.payload.chat_id)).toEqual([CHAT_ID, CHAT_ID]);
+});
+
+test("a background task ending while its chat waits to open loads it once when the turn ends", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await receive(page, { type: "task_completed", payload: {
+    task_id: OPERATION_C, chat_id: OTHER_CHAT_ID, status: "completed", summary: "Done",
+  } });
+  expect(await sentLoads(page)).toHaveLength(0);
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const loads = await sentLoads(page);
+  expect(loads).toHaveLength(1);
+  expect(loads[0].payload.chat_id).toBe(OTHER_CHAT_ID);
+});
+
+for (const ending of ["commit_then_task", "failed", "cancelled"]) {
+  test(`a reload skipped during a live turn runs when the turn ends (${ending})`, async ({ page }) => {
+    const { turnScope } = await startTurnInChat(page);
+    if (ending === "commit_then_task") {
+      await receive(page, snapshot(turnScope, { snapshot_purpose: "commit", render_revision: 1, snapshot_id: SNAPSHOT_B }));
+    }
+    await receive(page, { type: "task_completed", payload: {
+      task_id: OPERATION_C, chat_id: CHAT_ID, status: "completed", summary: "Report ready",
+    } });
+    expect(await sentLoads(page)).toHaveLength(0);
+    const terminal = ending === "cancelled"
+      ? operationStatus(turnScope, OPERATION_A, 2, "cancelled", { error: { code: "cancelled_by_user", message: "Cancelled" } })
+      : operationStatus(turnScope, OPERATION_A, 2, ending === "failed" ? "failed" : "completed");
+    await receive(page, terminal);
+    const loads = await sentLoads(page);
+    expect(loads).toHaveLength(1);
+    expect(loads[0].payload.chat_id).toBe(CHAT_ID);
+  });
+}
+
+test("a reload skipped for an unaccepted message runs when the message is refused", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await page.locator("#astral-input").fill("A request");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  const message = await page.evaluate(() => window.__socketEvents.findLast((event) => (
+    event.frame.action === "chat_message")).frame);
+  await receive(page, { type: "task_completed", payload: {
+    task_id: OPERATION_C, chat_id: CHAT_ID, status: "completed", summary: "Report ready",
+  } });
+  expect(await sentLoads(page)).toHaveLength(0);
+  await receive(page, { type: "error", accepted: false, code: "capacity_exceeded", message: "Busy right now",
+    retry_after_ms: null, retryable: false, submission_id: message.submission_id });
+  expect(await sentLoads(page)).toHaveLength(1);
+});
+
+test("a retryable background task that did not finish shows as an error", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await receive(page, { type: "task_completed", payload: { task_id: OPERATION_E, chat_id: OTHER_CHAT_ID, status: "retryable" } });
+  await expect(page.locator("#astral-toasts .astral-toast").last()).toHaveClass(/astral-toast-error/u);
+});
+
+for (const [status, summary, expected] of [
+  ["failed", "   ", "The background task did not finish."],
+  ["retryable", "", "The background task did not finish."],
+  ["completed", " \n ", "Background task completed"],
+  ["failed", "  Quota exceeded  ", "Quota exceeded"],
+]) {
+  test(`a background task summary of ${JSON.stringify(summary)} with status ${status} is never blank`, async ({ page }) => {
+    await installHarness(page);
+    await receive(page, snapshot((await registration(page)).frame));
+    await receive(page, { type: "task_completed", payload: {
+      task_id: OPERATION_E, chat_id: OTHER_CHAT_ID, status, summary,
+    } });
+    await expect(page.locator("#astral-toasts .astral-toast").last()).toContainText(expected);
+  });
+}
+
+async function failReconnects(page) {
+  await page.evaluate(() => {
+    const Recorded = window.WebSocket;
+    window.__socketTimes = [];
+    window.WebSocket = class extends Recorded {
+      constructor(url) {
+        super(url);
+        window.__socketTimes.push(Date.now());
+      }
+    };
+    window.__serverDown = true;
+    window.__closedAt = Date.now();
+    window.__sockets.at(-1).close();
+  });
+}
+
+async function reconnectGaps(page) {
+  return page.evaluate(() => window.__socketTimes.map((time, index) => (
+    time - (index === 0 ? window.__closedAt : window.__socketTimes[index - 1]))));
+}
+
+test("reconnect keeps retrying through a long outage with capped backoff and recovers", async ({ page }) => {
+  await page.clock.install();
+  await installHarness(page);
+  await failReconnects(page);
+  await page.clock.runFor(30 * 60000);
+
+  const gaps = await reconnectGaps(page);
+  expect(gaps.length).toBeGreaterThan(25);
+  for (const gap of gaps) {
+    expect(gap).toBeGreaterThanOrEqual(1000);
+    expect(gap).toBeLessThanOrEqual(60000);
+  }
+  for (const gap of gaps.slice(-10)) expect(gap).toBeGreaterThanOrEqual(30000);
+  await expect(page.locator("#astral-status")).toHaveText("Disconnected");
+
+  await page.evaluate(() => { window.__serverDown = false; });
+  await page.clock.runFor(60000);
+  await expect.poll(() => page.evaluate(() => window.__sockets.at(-1).sent
+    .some((frame) => frame.type === "register_ui"))).toBe(true);
+  const registration = await page.evaluate(() => window.__sockets.at(-1).sent.find((frame) => frame.type === "register_ui"));
+  expect(registration.resume.active_chat_id).toBe(CHAT_ID);
+});
+
+test("reconnect starts within two seconds and restarts the backoff after a success", async ({ page }) => {
+  await page.clock.install();
+  await installHarness(page);
+  await failReconnects(page);
+  await page.clock.runFor(10 * 60000);
+  const first = (await reconnectGaps(page))[0];
+  expect(first).toBeGreaterThanOrEqual(1000);
+  expect(first).toBeLessThanOrEqual(2000);
+
+  await page.evaluate(() => { window.__serverDown = false; });
+  await page.clock.runFor(60000);
+  await expect.poll(() => page.evaluate(() => window.__sockets.at(-1).readyState)).toBe(1);
+  await page.evaluate(() => {
+    window.__serverDown = true;
+    window.__closedAt = Date.now();
+    window.__socketTimes = [];
+    window.__sockets.at(-1).close();
+  });
+  await page.clock.runFor(2000);
+  const restarted = await page.evaluate(() => window.__socketTimes.map((time) => time - window.__closedAt));
+  expect(restarted.length).toBeGreaterThanOrEqual(1);
+  expect(restarted[0]).toBeLessThanOrEqual(2000);
+});
+
+test("a server that accepts and then drops the socket still gets backed-off retries", async ({ page }) => {
+  await page.clock.install();
+  await installHarness(page);
+  await page.evaluate(() => { window.__dropAfterRegister = true; });
+  await failReconnects(page);
+  await page.evaluate(() => { window.__serverDown = false; });
+  await page.clock.runFor(10 * 60000);
+  const gaps = await reconnectGaps(page);
+  expect(gaps.length).toBeLessThan(30);
+  for (const gap of gaps.slice(-5)) expect(gap).toBeGreaterThanOrEqual(30000);
+});
+
+test("a refresh racing an auth recovery leaves exactly one open socket", async ({ page }) => {
+  await page.clock.install();
+  await installHarness(page);
+  await page.evaluate(() => {
+    window.__pending = [];
+    window.fetch = () => new Promise((resolve) => window.__pending.push(() => resolve({
+      json: async () => ({ authenticated: true, access_token: window.__sessionToken, resumed: true, user_id: "continuity-user" }),
+    })));
+    window.__sockets.at(-1).receive({ type: "auth_required" });
+    window.__sockets.at(-1).close();
+  });
+  await page.clock.runFor(2500);
+  const pending = await page.evaluate(() => window.__pending.length);
+  for (let index = 0; index < pending; index += 1) {
+    await page.evaluate(() => window.__pending.shift()());
+    await page.clock.runFor(100);
+  }
+  expect(await page.evaluate(() => window.__sockets.filter((socket) => socket.readyState === 1).length)).toBe(1);
+});
+
+test("a signed-out answer during an outage goes to sign-in instead of retrying", async ({ page }) => {
+  await page.clock.install();
+  await installHarness(page);
+  await failReconnects(page);
+  await page.evaluate(() => {
+    window.fetch = async () => ({ json: async () => ({ authenticated: false }) });
+  });
+  await page.clock.runFor(5000);
+  await page.waitForURL(/\/auth\/login/u);
+});
+
+test("coming back online retries at once instead of waiting out the backoff", async ({ page }) => {
+  await page.clock.install();
+  await installHarness(page);
+  await failReconnects(page);
+  await page.clock.runFor(10 * 60000);
+  await page.evaluate(() => { window.__serverDown = false; });
+  const before = await page.evaluate(() => window.__sockets.length);
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await page.clock.runFor(100);
+  await expect.poll(() => page.evaluate(() => window.__sockets.length)).toBe(before + 1);
+  await expect.poll(() => page.evaluate(() => window.__sockets.at(-1).sent
+    .some((frame) => frame.type === "register_ui"))).toBe(true);
+});
+
+async function sendInOpenChat(page, text) {
+  const { frame: registrationFrame } = await registration(page);
+  await page.locator("#astral-input").fill(text);
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  const message = await page.evaluate(() => window.__socketEvents.findLast((event) => (
+    event.frame.action === "chat_message")).frame);
+  return { connection_generation: registrationFrame.connection_generation, request_generation: message.request_generation };
+}
+
+const DROP_NOTICE = "The connection dropped before your message was saved. It is back in the composer.";
+
+test("a dropped connection puts an unsaved message and its files back ahead of the new draft", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await stageExistingFile(page, "file-1", "notes.txt");
+  await sendInOpenChat(page, "Summarize my notes");
+  await expect(page.locator("#astral-attachments")).not.toContainText("notes.txt");
+  await page.locator("#astral-input").fill("Also add dates");
+  await page.evaluate(() => window.__sockets.at(-1).close());
+
+  await expect(page.locator("#astral-input")).toHaveValue("Summarize my notes\n\nAlso add dates");
+  await expect(page.locator("#astral-attachments")).toContainText("notes.txt");
+  await expect(page.locator("#astral-toasts")).toContainText(DROP_NOTICE);
+});
+
+test("a message whose commit arrived is not restored after a drop", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  const scope = await sendInOpenChat(page, "Saved request");
+  await receive(page, snapshot(scope, { snapshot_purpose: "commit", render_revision: 1, snapshot_id: SNAPSHOT_B }));
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await expect(page.locator("body")).not.toContainText(DROP_NOTICE);
+});
+
+test("a message whose turn already ended is not restored after a drop", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  const scope = await sendInOpenChat(page, "Finished request");
+  await receive(page, operationStatus(scope, OPERATION_A, 0, "completed"));
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("");
+});
+
+test("an unsaved message is not restored into another chat", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await sendInOpenChat(page, "Request for chat one");
+  await page.locator("#astral-newchat-btn").click();
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await expect(page.locator("body")).not.toContainText(DROP_NOTICE);
+});
+
+test("a first message in a new chat is restored into that chat after a drop", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await sendInOpenChat(page, "First question");
+  await receive(page, { type: "chat_created", payload: { chat_id: OTHER_CHAT_ID } });
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("First question");
+});
+
+test("an owner change never restores the previous owner's unsaved message", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await sendInOpenChat(page, "Owner A private request");
+  await page.evaluate(({ token }) => {
+    window.__sessionToken = token;
+    window.__sessionSubject = "other-user";
+  }, { token: OTHER_TOKEN });
+  await receive(page, { type: "auth_required" });
+  await page.waitForFunction(() => window.__sockets.length === 2
+    && window.__sockets[1].sent.some((frame) => frame.type === "register_ui"));
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).not.toHaveValue(/Owner A private request/u);
+  await expect(page.locator("body")).not.toContainText(DROP_NOTICE);
+});
+
+async function clickUiAction(page, payload, { example = false } = {}) {
+  await page.evaluate(({ value, insideExample }) => {
+    const host = document.createElement("div");
+    if (insideExample) host.className = "astral-agent-example";
+    const button = document.createElement("button");
+    button.dataset.uiAction = "chat_message";
+    button.dataset.uiPayload = JSON.stringify(value);
+    host.append(button);
+    document.body.append(host);
+    button.click();
+    host.remove();
+  }, { value: payload, insideExample: example });
+}
+
+test("a background send is never restored after a drop", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await page.locator("#astral-bg-btn").click();
+  await sendInOpenChat(page, "Background job");
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await expect(page.locator("body")).not.toContainText(DROP_NOTICE);
+});
+
+test("an example prompt comes back once after a drop", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await clickUiAction(page, { message: "Example prompt" }, { example: true });
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("Example prompt");
+});
+
+test("a message from a server button is restored after a drop", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await clickUiAction(page, { message: "From a button" });
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("From a button");
+});
+
+test("a first message abandoned with New chat is not restored", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await sendInOpenChat(page, "Abandoned question");
+  await page.locator("#astral-newchat-btn").click();
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await expect(page.locator("body")).not.toContainText(DROP_NOTICE);
+});
+
+test("a refused message is not restored by a later drop", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await sendInOpenChat(page, "Refused request");
+  const message = await page.evaluate(() => window.__socketEvents.findLast((event) => (
+    event.frame.action === "chat_message")).frame);
+  await receive(page, { type: "error", accepted: false, code: "capacity_exceeded", message: "Busy right now",
+    retry_after_ms: null, retryable: false, submission_id: message.submission_id });
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("body")).not.toContainText(DROP_NOTICE);
+});
+
+test("restored files go ahead of files staged since", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await stageExistingFile(page, "file-1", "first.txt");
+  await sendInOpenChat(page, "With a file");
+  await stageExistingFile(page, "file-2", "second.txt");
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-attachments")).toContainText(/first\.txt[\s\S]*second\.txt/u);
+});
+
+async function submitComposer(page, text) {
+  await page.locator("#astral-input").fill(text);
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+}
+
+async function sentActions(page, name) {
+  return page.evaluate((actionName) => window.__socketEvents
+    .filter((event) => event.frame.type === "ui_event" && event.frame.action === actionName)
+    .map((event) => event.frame), name);
+}
+
+function nextTurnScope(turnScope, message) {
+  return { connection_generation: turnScope.connection_generation, request_generation: message.request_generation };
+}
+
+const QUEUED_ROWS = "#astral-queue .astral-queued";
+
+test("registration asks for steering and the legacy composer stays without the acknowledgment", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  const { frame } = await registration(page);
+  expect(frame.capabilities).toContain("turn_steer_v1");
+  expect(frame.device.turn_steer_v1).toBe(true);
+
+  await submitComposer(page, "Sent the old way");
+  expect((await sentActions(page, "chat_message")).map((sent) => sent.payload.message))
+    .toEqual(["A long request", "Sent the old way"]);
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
+  await expect(page.locator("#astral-side-question-btn")).toHaveCount(0);
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  expect(await sentActions(page, "chat_steer")).toHaveLength(0);
+});
+
+test("while an answer runs, Enter queues and the finished answer sends one message at a time", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await expect(page.locator("#astral-input")).toHaveAttribute("placeholder", /Queue a follow-up/u);
+  await submitComposer(page, "First follow-up");
+  await submitComposer(page, "Second follow-up");
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(2);
+  await expect(page.locator(QUEUED_ROWS).first()).toContainText("First follow-up");
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  expect(await sentActions(page, "chat_message")).toHaveLength(1);
+
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  let messages = await sentActions(page, "chat_message");
+  expect(messages.map((sent) => sent.payload.message)).toEqual(["A long request", "First follow-up"]);
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(1);
+
+  const secondScope = nextTurnScope(turnScope, messages.at(-1));
+  await receive(page, operationStatus(secondScope, OPERATION_B, 0, "running"));
+  await receive(page, operationStatus(secondScope, OPERATION_B, 1, "completed"));
+  messages = await sentActions(page, "chat_message");
+  expect(messages.map((sent) => sent.payload.message).at(-1)).toBe("Second follow-up");
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
+
+  await receive(page, operationStatus(nextTurnScope(turnScope, messages.at(-1)), OPERATION_C, 0, "completed"));
+  await expect(page.locator("#astral-input")).not.toHaveAttribute("placeholder", /Queue a follow-up/u);
+  await submitComposer(page, "Sent right away");
+  expect((await sentActions(page, "chat_message")).at(-1).payload.message).toBe("Sent right away");
+});
+
+for (const state of ["failed", "retryable", "cancelled"]) {
+  test(`a ${state} answer puts the queue back in the composer ahead of the draft`, async ({ page }) => {
+    const { turnScope } = await startTurnInChat(page, { steer: true });
+    await submitComposer(page, "Queued one");
+    await submitComposer(page, "Queued two");
+    await page.locator("#astral-input").fill("Draft in progress");
+    await receive(page, operationStatus(turnScope, OPERATION_A, 2, state));
+    await expect(page.locator("#astral-input")).toHaveValue("Queued one\n\nQueued two\n\nDraft in progress");
+    await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
+    await expect(page.locator("body")).toContainText("queued messages are back in the composer");
+    expect(await sentActions(page, "chat_message")).toHaveLength(1);
+  });
+}
+
+test("Stop sends one cancel and puts the queue back in the composer right away", async ({ page }) => {
+  await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Queued before Stop");
+  await page.locator("#astral-input").fill("Still typing");
+  await page.locator("#astral-stop-btn").click();
+  expect(await sentActions(page, "cancel_task")).toHaveLength(1);
+  await expect(page.locator("#astral-input")).toHaveValue("Queued before Stop\n\nStill typing");
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
+});
+
+test("Interrupt steers with the queued text and a refusal returns it to the composer", async ({ page }) => {
+  await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Use metric units");
+  await page.locator(QUEUED_ROWS).getByRole("button", { name: "Interrupt" }).click();
+  const [steer] = await sentActions(page, "chat_steer");
+  expect(steer.session_id).toBe(CHAT_ID);
+  expect(Object.keys(steer.payload).sort()).toEqual(["client_message_id", "message", "request_generation", "submission_id"]);
+  expect(steer.payload).toEqual(expect.objectContaining({
+    message: "Use metric units", submission_id: steer.submission_id, request_generation: steer.request_generation,
+  }));
+  expect(steer.payload.client_message_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
+  await expect(page.locator(".astral-bubble-steer.is-pending")).toContainText("Use metric units");
+  await expect(page.locator(".astral-bubble-steer .astral-turn-pill")).toHaveText(
+    await page.locator(".astral-turn-user:not(.astral-bubble-steer) .astral-turn-pill").last().textContent());
+
+  await receive(page, { type: "chat_steer_refused", chat_id: CHAT_ID, client_message_id: steer.payload.client_message_id,
+    code: "approval_pending", message: "Answer the approval first; a steer cannot answer it." });
+  await expect(page.locator(".astral-bubble-steer")).toHaveCount(0);
+  await expect(page.locator("#astral-input")).toHaveValue("Use metric units");
+  await expect(page.locator("body")).toContainText("Decide the approval first; an interruption cannot answer it.");
+});
+
+test("an interruption the answer outran is sent next, ahead of later queued messages", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "First: use metric");
+  await submitComposer(page, "Second: then summarize");
+  await page.locator(QUEUED_ROWS).first().getByRole("button", { name: "Interrupt" }).click();
+  const [steer] = await sentActions(page, "chat_steer");
+  await receive(page, { type: "chat_steer_refused", chat_id: CHAT_ID, client_message_id: steer.payload.client_message_id,
+    code: "stale_turn", message: "The turn ended before this steer could be applied." });
+  await expect(page.locator(QUEUED_ROWS).first()).toContainText("First: use metric");
+  await expect(page.locator("body")).toContainText("so it will be sent next");
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  expect((await sentActions(page, "chat_message")).at(-1).payload.message).toBe("First: use metric");
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(1);
+  await expect(page.locator("#astral-input")).toHaveValue("");
+});
+
+test("a recorded interruption stays in the feed and unknown receipts change nothing", async ({ page }) => {
+  await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Only the last week");
+  await page.locator(QUEUED_ROWS).getByRole("button", { name: "Interrupt" }).click();
+  const [steer] = await sentActions(page, "chat_steer");
+  await receive(page, { type: "chat_steer_refused", chat_id: CHAT_ID,
+    client_message_id: "99999999-9999-4999-8999-999999999999", code: "stale_turn", message: "Not ours." });
+  await receive(page, { type: "chat_steer_refused", chat_id: CHAT_ID, client_message_id: steer.payload.client_message_id,
+    code: "made_up", message: "Unknown code." });
+  await expect(page.locator(".astral-bubble-steer.is-pending")).toHaveCount(1);
+  await receive(page, { type: "chat_steer_recorded", chat_id: CHAT_ID,
+    client_message_id: steer.payload.client_message_id, skipped_calls: [] });
+  await expect(page.locator(".astral-bubble-steer")).toContainText("Only the last week");
+  await expect(page.locator(".astral-bubble-steer.is-pending")).toHaveCount(0);
+  await receive(page, { type: "chat_steer_refused", chat_id: CHAT_ID, client_message_id: steer.payload.client_message_id,
+    code: "stale_turn", message: "Too late." });
+  await expect(page.locator("#astral-input")).toHaveValue("");
+});
+
+test("a queued message with files cannot interrupt and is sent with its files", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await stageExistingFile(page, "queued-file", "notes.txt");
+  await submitComposer(page, "Read this file");
+  const row = page.locator(QUEUED_ROWS);
+  await expect(row).toContainText("(1 file)");
+  await expect(row.getByRole("button", { name: "Interrupt" })).toBeDisabled();
+  await expect(page.locator("#astral-attachments")).not.toContainText("notes.txt");
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const sent = (await sentActions(page, "chat_message")).at(-1);
+  expect(sent.payload.message).toBe("Read this file");
+  expect(sent.payload.attachments).toEqual([expect.objectContaining({ attachment_id: "queued-file", filename: "notes.txt" })]);
+});
+
+test("queued messages can be edited, cancelled and deleted", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Frist draft");
+  await submitComposer(page, "Delete me");
+  const first = page.locator(QUEUED_ROWS).first();
+  await first.getByRole("button", { name: "Edit" }).click();
+  const field = first.getByRole("textbox", { name: "Edit queued message" });
+  await expect(field).toBeFocused();
+  await field.fill("Throwaway change");
+  await field.press("Escape");
+  await expect(first).toContainText("Frist draft");
+  expect(await sentActions(page, "cancel_task")).toHaveLength(0);
+
+  await first.getByRole("button", { name: "Edit" }).click();
+  await first.getByRole("textbox", { name: "Edit queued message" }).fill("First draft");
+  await first.getByRole("textbox", { name: "Edit queued message" }).press("Enter");
+  await expect(first).toContainText("First draft");
+  await page.locator(QUEUED_ROWS).nth(1).getByRole("button", { name: "Delete" }).click();
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(1);
+
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  expect((await sentActions(page, "chat_message")).at(-1).payload.message).toBe("First draft");
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
+});
+
+test("saving an empty edit deletes the queued message", async ({ page }) => {
+  await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Gone soon");
+  await page.locator(QUEUED_ROWS).getByRole("button", { name: "Edit" }).click();
+  await page.locator(QUEUED_ROWS).getByRole("textbox").fill("   ");
+  await page.locator(QUEUED_ROWS).getByRole("button", { name: "Save" }).click();
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
+});
+
+test("a message being edited when the answer finishes waits and is sent as saved", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Before edit");
+  await page.locator(QUEUED_ROWS).getByRole("button", { name: "Edit" }).click();
+  await page.locator(QUEUED_ROWS).getByRole("textbox").fill("After edit");
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  expect(await sentActions(page, "chat_message")).toHaveLength(1);
+  await expect(page.locator(QUEUED_ROWS).getByRole("textbox")).toHaveValue("After edit");
+  await page.locator(QUEUED_ROWS).getByRole("button", { name: "Save" }).click();
+  expect((await sentActions(page, "chat_message")).at(-1).payload.message).toBe("After edit");
+});
+
+test("a dropped connection returns queued and unconfirmed interruptions to the composer", async ({ page }) => {
+  await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Steer text");
+  await page.locator(QUEUED_ROWS).getByRole("button", { name: "Interrupt" }).click();
+  await submitComposer(page, "Queued text");
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  // The turn's own message was never saved, so it comes back first
+  await expect(page.locator("#astral-input")).toHaveValue("A long request\n\nSteer text\n\nQueued text");
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
+  await expect(page.locator(".astral-bubble-steer")).toHaveCount(0);
+  await expect(page.locator("body")).toContainText("The connection dropped, so your queued messages are back in the composer.");
+});
+
+test("an owner change erases the queue and pending interruptions", async ({ page }) => {
+  await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Private steer");
+  await page.locator(QUEUED_ROWS).getByRole("button", { name: "Interrupt" }).click();
+  await submitComposer(page, "Private queued");
+  await page.evaluate(({ otherToken }) => {
+    window.__sessionToken = otherToken;
+    window.__sessionSubject = "other-user";
+  }, { otherToken: OTHER_TOKEN });
+  await receive(page, { type: "auth_required" });
+  await page.waitForFunction(() => window.__sockets.length === 2
+    && window.__sockets[1].sent.some((frame) => frame.type === "register_ui"));
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await expect(page.locator("body")).not.toContainText("Private steer");
+  await expect(page.locator("body")).not.toContainText("Private queued");
+});
+
+test("a queue stays with its chat and returns to the composer when reopened after the answer", async ({ page }) => {
+  const { registrationFrame, turnScope } = await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "For the first chat");
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
+  await submitComposer(page, "Typed while the other chat waits");
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
+  const waiting = (await sentActions(page, "chat_message")).at(-1);
+  expect(waiting.payload.message).toBe("Typed while the other chat waits");
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  expect((await sentActions(page, "chat_message")).map((sent) => sent.payload.message)).not.toContain("For the first chat");
+  const waitingScope = nextTurnScope(turnScope, waiting);
+  await receive(page, operationStatus(waitingScope, OPERATION_B, 0, "running", { chat_id: OTHER_CHAT_ID }));
+  await receive(page, operationStatus(waitingScope, OPERATION_B, 1, "completed", { chat_id: OTHER_CHAT_ID }));
+  await expect(page.locator("#astral-input")).toHaveValue("");
+
+  await openChatFromHistory(page, CHAT_ID);
+  await expect(page.locator("#astral-input")).toHaveValue("For the first chat");
+  await expect(page.locator("body")).toContainText("finished while you were in another chat");
+  expect(registrationFrame.capabilities).toContain("turn_steer_v1");
+});
+
+test("New chat clears a queue that belongs to an unsaved chat", async ({ page }) => {
+  await installHarness(page, { locator: false, steer: true });
+  const { frame: registrationFrame } = await registration(page);
+  await submitComposer(page, "First question");
+  const message = (await sentActions(page, "chat_message"))[0];
+  const turnScope = { connection_generation: registrationFrame.connection_generation, request_generation: message.request_generation };
+  await receive(page, operationStatus(turnScope, OPERATION_A, 0, "running", { chat_id: null }));
+  await submitComposer(page, "Queued in the unsaved chat");
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(1);
+  await page.locator("#astral-newchat-btn").click();
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
+  await expect(page.locator("body")).toContainText("Queued messages cleared for the new chat.");
+  await expect(page.locator("#astral-input")).toHaveValue("");
+});
+
+test("a new chat's queue follows it when the server names the chat", async ({ page }) => {
+  await installHarness(page, { locator: false, steer: true });
+  const { frame: registrationFrame } = await registration(page);
+  await submitComposer(page, "First question");
+  const message = (await sentActions(page, "chat_message"))[0];
+  const turnScope = { connection_generation: registrationFrame.connection_generation, request_generation: message.request_generation };
+  await receive(page, operationStatus(turnScope, OPERATION_A, 0, "running", { chat_id: null }));
+  await submitComposer(page, "Follows the new chat");
+  await receive(page, { type: "chat_created", payload: { chat_id: CHAT_ID } });
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(1);
+  await receive(page, operationStatus(turnScope, OPERATION_A, 1, "completed"));
+  expect((await sentActions(page, "chat_message")).at(-1).payload.message).toBe("Follows the new chat");
+});
+
+test("the queue holds sixteen messages and keeps the seventeenth in the composer", async ({ page }) => {
+  await startTurnInChat(page, { steer: true });
+  for (let index = 1; index <= 16; index += 1) await submitComposer(page, `Queued ${index}`);
+  await submitComposer(page, "One too many");
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(16);
+  await expect(page.locator("#astral-input")).toHaveValue("One too many");
+  await expect(page.locator("body")).toContainText("Up to 16 messages can wait at once.");
+});
+
+test("a side question is asked in its own dialog and its answer is shown as text", async ({ page }) => {
+  await startTurnInChat(page, { steer: true });
+  await page.locator("#astral-side-question-btn").click();
+  const dialog = page.getByRole("dialog", { name: "Side question" });
+  await expect(dialog).toBeVisible();
+  const question = dialog.getByRole("textbox", { name: "Side question" });
+  await expect(question).toBeFocused();
+  await question.fill("What does eGFR mean?");
+  await question.press("Enter");
+  const [asked] = await sentActions(page, "side_question");
+  expect(Object.keys(asked.payload).sort()).toEqual(["client_message_id", "question", "request_generation", "submission_id"]);
+  expect(asked.payload.question).toBe("What does eGFR mean?");
+  await expect(dialog.getByRole("button", { name: "Ask" })).toBeDisabled();
+
+  await receive(page, { type: "side_question_result", client_message_id: "99999999-9999-4999-8999-999999999999", answer: "Not ours" });
+  await expect(dialog).not.toContainText("Not ours");
+  await receive(page, { type: "side_question_result", client_message_id: asked.payload.client_message_id,
+    answer: "<img src=x onerror=window.__pwned=1>Estimated glomerular filtration rate." });
+  await expect(dialog.locator(".astral-side-question-answer")).toHaveText(
+    "<img src=x onerror=window.__pwned=1>Estimated glomerular filtration rate.");
+  expect(await page.evaluate(() => window.__pwned)).toBeUndefined();
+  await expect(page.locator("#astral-chat")).not.toContainText("glomerular");
+
+  await question.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  expect(await sentActions(page, "cancel_task")).toHaveLength(0);
+  await expect(page.locator("#astral-stop-btn")).toBeVisible();
+});
+
+test("the side question control appears only with the acknowledgment", async ({ page }) => {
+  await installHarness(page);
+  await expect(page.locator("#astral-side-question-btn")).toHaveCount(0);
+});
+
+test("returning to a chat while its answer still runs does not strand the queue", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Queued in the first chat");
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(1);
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await openChatFromHistory(page, CHAT_ID);
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const load = (await sentLoads(page)).at(-1);
+  expect(load.payload.chat_id).toBe(CHAT_ID);
+  expect((await sentActions(page, "chat_message")).map((frame) => frame.payload.message)).toEqual(["A long request"]);
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(1);
+  const loadScope = nextTurnScope(turnScope, load);
+  await receive(page, snapshot(loadScope, { snapshot_id: SNAPSHOT_B, render_revision: 1 }));
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
+  expect((await sentActions(page, "chat_message")).at(-1).payload.message).toBe("Queued in the first chat");
+  await expect(page.locator("#astral-chat")).toContainText("Committed answer");
+});
+
+test("a chat reopened mid-answer gives its queue back when its history does not load", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Queued in the first chat");
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await openChatFromHistory(page, CHAT_ID);
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const loadScope = nextTurnScope(turnScope, (await sentLoads(page)).at(-1));
+  await receive(page, operationStatus(loadScope, OPERATION_B, 0, "failed", { action: "load_chat" }));
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
+  await expect(page.locator("#astral-input")).toHaveValue("Queued in the first chat");
+  await expect(page.locator("#astral-toasts")).toContainText("The chat did not reload");
+  expect((await sentActions(page, "chat_message")).map((frame) => frame.payload.message)).toEqual(["A long request"]);
+});
+
+test("a queue typed during an approval-resumed turn is settled when that turn completes", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const approvalScope = {
+    connection_generation: turnScope.connection_generation,
+    request_generation: "99999999-9999-4999-8999-999999999999",
+  };
+  await receive(page, operationStatus(approvalScope, OPERATION_C, 0, "running", { action: "authorize_action", surface: "chat" }));
+  await submitComposer(page, "After the approval");
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(1);
+  await receive(page, operationStatus(approvalScope, OPERATION_C, 1, "completed", { action: "authorize_action", surface: "chat" }));
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
+  expect((await sentActions(page, "chat_message")).at(-1).payload.message).toBe("After the approval");
+});
+
+test("saving an unchanged edit of a files-only queued message keeps the message and its file", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await stageExistingFile(page, "queued-file", "notes.txt");
+  await submitComposer(page, "");
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(1);
+  await page.locator(QUEUED_ROWS).getByRole("button", { name: "Edit" }).click();
+  await page.locator(QUEUED_ROWS).getByRole("button", { name: "Save" }).click();
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(1);
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const sent = (await sentActions(page, "chat_message")).at(-1);
+  expect(sent.payload.attachments).toEqual([expect.objectContaining({ attachment_id: "queued-file" })]);
+});
+
+test("Stop names the queued files that do not fit back in the composer", async ({ page }) => {
+  await startTurnInChat(page, { steer: true });
+  for (let index = 1; index <= 6; index += 1) await stageExistingFile(page, `first-${index}`, `first-${index}.txt`);
+  await submitComposer(page, "First with files");
+  for (let index = 1; index <= 6; index += 1) await stageExistingFile(page, `second-${index}`, `second-${index}.txt`);
+  await submitComposer(page, "Second with files");
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(2);
+  await page.locator("#astral-stop-btn").click();
+  await expect(page.locator("#astral-input")).toHaveValue("First with files\n\nSecond with files");
+  await expect(page.locator("#astral-attachments .astral-chip")).toHaveCount(10);
+  await expect(page.locator("body")).toContainText("Only 10 files fit in the composer. Attach these again: second-5.txt, second-6.txt");
+});
+
+test("a message typed while a queued edit holds the queue waits behind it", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Queued A");
+  await submitComposer(page, "Queued B");
+  await page.locator(QUEUED_ROWS).first().getByRole("button", { name: "Edit" }).click();
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  expect(await sentActions(page, "chat_message")).toHaveLength(1);
+  await submitComposer(page, "Typed C");
+  expect((await sentActions(page, "chat_message")).map((frame) => frame.payload.message)).not.toContain("Typed C");
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(3);
+  await page.locator(QUEUED_ROWS).first().getByRole("button", { name: "Save" }).click();
+  expect((await sentActions(page, "chat_message")).at(-1).payload.message).toBe("Queued A");
+});
+
+test("an unsaved chat's refused interruption does not land in the next new chat's composer", async ({ page }) => {
+  await installHarness(page, { locator: false, steer: true });
+  const { frame: registrationFrame } = await registration(page);
+  await submitComposer(page, "First question");
+  const message = (await sentActions(page, "chat_message"))[0];
+  const turnScope = { connection_generation: registrationFrame.connection_generation, request_generation: message.request_generation };
+  await receive(page, operationStatus(turnScope, OPERATION_A, 0, "running", { chat_id: null }));
+  await submitComposer(page, "Steer for the old chat");
+  await page.locator(QUEUED_ROWS).getByRole("button", { name: "Interrupt" }).click();
+  const [steer] = await sentActions(page, "chat_steer");
+  await page.locator("#astral-newchat-btn").click();
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await receive(page, { type: "chat_steer_refused", client_message_id: steer.payload.client_message_id,
+    code: "stale_turn", message: "The turn ended before this steer could be applied." });
+  await expect(page.locator("#astral-input")).toHaveValue("");
+});
+
+test("a side question closed before its answer is picked back up when reopened", async ({ page }) => {
+  await startTurnInChat(page, { steer: true });
+  await page.locator("#astral-side-question-btn").click();
+  const dialog = page.getByRole("dialog", { name: "Side question" });
+  await dialog.getByRole("textbox", { name: "Side question" }).fill("First question");
+  await dialog.getByRole("button", { name: "Ask" }).click();
+  const [asked] = await sentActions(page, "side_question");
+  await dialog.getByRole("button", { name: "Close side question" }).click();
+  await expect(page.locator("#astral-side-question-btn")).toBeFocused();
+  await page.locator("#astral-side-question-btn").click();
+  await expect(dialog.getByRole("textbox", { name: "Side question" })).toHaveValue("First question");
+  await expect(dialog.getByRole("button", { name: "Ask" })).toBeDisabled();
+  await receive(page, { type: "side_question_result", client_message_id: asked.payload.client_message_id, answer: "First answer" });
+  await expect(dialog.locator(".astral-side-question-answer")).toHaveText("First answer");
+  expect(await sentActions(page, "side_question")).toHaveLength(1);
+});
+
+test("the side question dialog keeps Tab inside and returns focus when its menu item is hidden", async ({ page }) => {
+  await startTurnInChat(page, { steer: true });
+  await page.evaluate(() => document.querySelector("#astral-side-question-btn").addEventListener("click", () => {
+    document.querySelector("#astral-composer-controls").style.display = "none";
+  }));
+  await page.locator("#astral-side-question-btn").click();
+  const dialog = page.getByRole("dialog", { name: "Side question" });
+  const question = dialog.getByRole("textbox", { name: "Side question" });
+  await expect(question).toBeFocused();
+  for (let index = 0; index < 4; index += 1) {
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => !!document.activeElement.closest(".astral-side-question"))).toBe(true);
+  }
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator("#astral-input")).toBeFocused();
+  expect(await sentActions(page, "cancel_task")).toHaveLength(0);
+});
+
+test("a tiny web window registers and resizes as mobile, never as a watch", async ({ page }) => {
+  await page.setViewportSize({ width: 180, height: 700 });
+  await installHarness(page);
+  const { frame } = await registration(page);
+  expect(frame.device.device_type).toBe("mobile");
+  await page.setViewportSize({ width: 150, height: 700 });
+  await page.waitForFunction(() => window.__socketEvents.some((event) => event.frame.action === "update_device"));
+  const updates = await page.evaluate(() => window.__socketEvents
+    .filter((event) => event.frame.action === "update_device").map((event) => event.frame.payload.device.device_type));
+  expect(updates.length).toBeGreaterThan(0);
+  expect(updates).not.toContain("watch");
+  expect(updates.at(-1)).toBe("mobile");
+});
+
+test("a browser on a watch registers as mobile", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "userAgent", { get: () => "Mozilla/5.0 (Watch; watchOS 26) AppleWebKit/605" });
+  });
+  await page.setViewportSize({ width: 320, height: 700 });
+  await installHarness(page);
+  expect((await registration(page)).frame.device.device_type).toBe("mobile");
+});
+
+test("widths that flap across the breakpoints never report a watch", async ({ page }) => {
+  await page.setViewportSize({ width: 150, height: 700 });
+  await installHarness(page);
+  expect((await registration(page)).frame.device.device_type).toBe("mobile");
+  const updates = () => page.evaluate(() => window.__socketEvents
+    .filter((event) => event.frame.action === "update_device").map((event) => event.frame.payload.device.device_type));
+  for (const [width, kind] of [[1440, "browser"], [199, "mobile"], [700, "tablet"], [201, "mobile"], [1440, "browser"]]) {
+    await page.setViewportSize({ width, height: 700 });
+    await expect.poll(async () => (await updates()).at(-1)).toBe(kind);
+  }
+  expect(await updates()).not.toContain("watch");
+});
+
+test("a page hidden at load and shown before the server replies reports itself as a desktop browser", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.addInitScript(() => {
+    const original = Object.getOwnPropertyDescriptor(window, "innerWidth");
+    window.__hidden = true;
+    Object.defineProperty(window, "innerWidth", { configurable: true,
+      get() { return window.__hidden ? 0 : original.get.call(window); } });
+    let Impl;
+    Object.defineProperty(window, "WebSocket", { configurable: true, get() { return Impl; }, set(Base) {
+      Impl = class extends Base {
+        receive(frame) {
+          if (frame.type === "rote_config" && !window.__roteReleased) { window.__releaseRote = () => { window.__roteReleased = true; super.receive(frame); }; return; }
+          super.receive(frame);
+        }
+      };
+    } });
+  });
+  await installHarness(page);
+  expect((await registration(page)).frame.device.device_type).toBe("mobile");
+  // The tab becomes visible at desktop width before the server's rote_config arrives
+  await page.evaluate(() => { window.__hidden = false; window.dispatchEvent(new Event("resize")); });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => window.__releaseRote());
+  await page.waitForTimeout(600);
+  const updates = await page.evaluate(() => window.__socketEvents
+    .filter((event) => event.frame.action === "update_device").map((event) => event.frame.payload.device.device_type));
+  expect(updates.at(-1)).toBe("browser");
+});
+
+test("reconnecting with an unchanged window sends no extra device report", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await installHarness(page);
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => window.__socketEvents.filter((event) => event.frame.action === "update_device").length)).toBe(0);
+});
+
+async function newChatThenType(page, text) {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await page.locator("#astral-newchat-btn").click();
+  await page.locator("#astral-input").fill(text);
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  return page.evaluate(() => window.__socketEvents.findLast((event) => event.frame.action === "new_chat").frame);
+}
+
+async function sentChatMessages(page) {
+  return page.evaluate(() => window.__socketEvents
+    .filter((event) => event.frame.action === "chat_message").map((event) => event.frame));
+}
+
+test("a message sent before the new chat exists waits and goes into that chat", async ({ page }) => {
+  const newChat = await newChatThenType(page, "First question");
+  expect(await sentChatMessages(page)).toHaveLength(0);
+  await expect(page.locator("#astral-status")).toContainText("Starting the new chat");
+  await page.locator("#astral-input").fill("And a second thought");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  await receive(page, { type: "chat_created", submission_id: newChat.submission_id,
+    payload: { chat_id: OTHER_CHAT_ID, from_message: false } });
+  const messages = await sentChatMessages(page);
+  expect(messages).toHaveLength(1);
+  expect(messages[0].payload.message).toBe("First question\n\nAnd a second thought");
+  expect(messages[0].payload.chat_id).toBe(OTHER_CHAT_ID);
+  expect(messages[0].session_id).toBe(OTHER_CHAT_ID);
+  await page.locator("#astral-input").fill("Sent right away");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  expect((await sentChatMessages(page)).at(-1).payload.message).toBe("Sent right away");
+});
+
+test("a refused new chat puts the waiting message back in the composer", async ({ page }) => {
+  const newChat = await newChatThenType(page, "Held question");
+  await receive(page, { type: "error", accepted: false, code: "capacity_exceeded", message: "Busy right now",
+    retry_after_ms: null, retryable: false, submission_id: newChat.submission_id });
+  await expect(page.locator("#astral-input")).toHaveValue("Held question");
+  await expect(page.locator("body")).toContainText("The new chat did not start, so your message is back in the composer.");
+  expect(await sentChatMessages(page)).toHaveLength(0);
+});
+
+test("a failed new chat puts the waiting message back in the composer", async ({ page }) => {
+  const newChat = await newChatThenType(page, "Held question");
+  const scope = { connection_generation: newChat.connection_generation, request_generation: newChat.request_generation };
+  await receive(page, operationStatus(scope, OPERATION_A, 0, "failed", { action: "new_chat", chat_id: null }));
+  await expect(page.locator("#astral-input")).toHaveValue("Held question");
+  expect(await sentChatMessages(page)).toHaveLength(0);
+});
+
+test("a dropped connection puts a message waiting for the new chat back in the composer", async ({ page }) => {
+  await newChatThenType(page, "Held question");
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("Held question");
+  expect(await sentChatMessages(page)).toHaveLength(0);
+});
+
+test("an owner change drops a message waiting for the new chat", async ({ page }) => {
+  const newChat = await newChatThenType(page, "Private held question");
+  await page.evaluate(({ token }) => {
+    window.__sessionToken = token;
+    window.__sessionSubject = "other-user";
+  }, { token: OTHER_TOKEN });
+  await receive(page, { type: "auth_required" });
+  await page.waitForFunction(() => window.__sockets.length === 2
+    && window.__sockets[1].sent.some((frame) => frame.type === "register_ui"));
+  await receive(page, { type: "chat_created", submission_id: newChat.submission_id,
+    payload: { chat_id: OTHER_CHAT_ID, from_message: false } });
+  expect(await sentChatMessages(page)).toHaveLength(0);
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await expect(page.locator("body")).not.toContainText("Private held question");
+});
+
+test("a message waiting for an unanswered new chat is sent after ten seconds", async ({ page }) => {
+  await page.clock.install();
+  await newChatThenType(page, "Eventually sent");
+  expect(await sentChatMessages(page)).toHaveLength(0);
+  await page.clock.runFor(9000);
+  expect(await sentChatMessages(page)).toHaveLength(0);
+  await page.clock.runFor(1500);
+  const messages = await sentChatMessages(page);
+  expect(messages.map((frame) => frame.payload.message)).toEqual(["Eventually sent"]);
+  await receive(page, { type: "chat_created", payload: { chat_id: OTHER_CHAT_ID, from_message: false } });
+  expect(await sentChatMessages(page)).toHaveLength(1);
+});
+
+const activeLocator = (page) => page.evaluate((key) => JSON.parse(localStorage.getItem(key) || "null")?.chat_id ?? null, LOCATOR_KEY);
+
+test("two New chat clicks send the waiting message into the chat the user ends up in", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await page.locator("#astral-newchat-btn").click();
+  await page.locator("#astral-newchat-btn").click();
+  await page.locator("#astral-input").fill("Typed after a double click");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  // The real server answers a plain new_chat with an uncorrelated chat_created, one per new_chat
+  await receive(page, { type: "chat_created", payload: { chat_id: OTHER_CHAT_ID, from_message: false } });
+  await receive(page, { type: "chat_created", payload: { chat_id: THIRD_CHAT_ID, from_message: false } });
+  const messages = await sentChatMessages(page);
+  expect(messages).toHaveLength(1);
+  expect(messages[0].payload.chat_id).toBe(await activeLocator(page));
+});
+
+test("a chat_created for another request does not take the waiting message", async ({ page }) => {
+  const newChat = await newChatThenType(page, "Held question");
+  const foreign = "99999999-9999-4999-8999-999999999999";
+  const generation = "12345678-1234-4234-8234-123456789abc";
+  await receive(page, { type: "chat_created", schema_version: "1", connection_generation: newChat.connection_generation,
+    submission_id: foreign, request_generation: generation,
+    payload: { schema_version: "1", chat_id: THIRD_CHAT_ID, from_message: false,
+      connection_generation: newChat.connection_generation, submission_id: foreign, request_generation: generation } });
+  expect(await sentChatMessages(page)).toHaveLength(0);
+});
+
+test("an offline New chat holds a message typed before the new chat exists", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await page.clock.install({ time: new Date("2026-09-11T12:00:00Z") });
+  await page.clock.pauseAt(new Date("2026-09-11T12:00:01Z"));
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await page.locator("#astral-newchat-btn").click();
+  await page.locator("#astral-input").fill("Typed offline after New chat");
+  await page.locator("#astral-input").press("Enter");
+  await page.clock.runFor(5000);
+  const frames = await page.evaluate(() => window.__socketEvents.filter((event) => event.frame.type === "ui_event").map((event) => event.frame.action));
+  expect(frames).toContain("new_chat");
+  // Before chat_created arrives, nothing should have been sent without a chat id
+  const early = await sentChatMessages(page);
+  expect(early.map((frame) => frame.payload.chat_id)).toEqual([]);
+});
+
+test("merged waiting messages keep to ten files and leave the rest in the composer", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await page.locator("#astral-newchat-btn").click();
+  for (const batch of [0, 1]) {
+    for (let i = 0; i < 6; i += 1) await stageExistingFile(page, `file-${batch}-${i}`, `f${batch}${i}.txt`);
+    await page.locator("#astral-input").fill(`Batch ${batch}`);
+    await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  }
+  await receive(page, { type: "chat_created", payload: { chat_id: OTHER_CHAT_ID, from_message: false } });
+  const messages = await sentChatMessages(page);
+  expect(messages).toHaveLength(1);
+  expect(messages[0].payload.attachments).toHaveLength(10);
+  await expect(page.locator("#astral-attachments .astral-chip")).toHaveCount(2);
+});
+
+test("a second New chat click keeps saying a message is waiting", async ({ page }) => {
+  await newChatThenType(page, "Held question");
+  await page.locator("#astral-newchat-btn").click();
+  await expect(page.locator("#astral-status")).toContainText("Starting the new chat");
+});
+
+test("a new chat completed before chat_created still releases on chat_created", async ({ page }) => {
+  const newChat = await newChatThenType(page, "Held question");
+  const scope = { connection_generation: newChat.connection_generation, request_generation: newChat.request_generation };
+  await receive(page, operationStatus(scope, OPERATION_A, 0, "accepted", { action: "new_chat", chat_id: null }));
+  await receive(page, operationStatus(scope, OPERATION_A, 1, "completed", { action: "new_chat", chat_id: null }));
+  expect(await sentChatMessages(page)).toHaveLength(0);
+  await receive(page, { type: "chat_created", payload: { chat_id: OTHER_CHAT_ID, from_message: false } });
+  const messages = await sentChatMessages(page);
+  expect(messages).toHaveLength(1);
+  expect(messages[0].payload.chat_id).toBe(OTHER_CHAT_ID);
+  await expect(page.locator("#astral-status")).not.toContainText("Starting the new chat");
+});
+
+test("a chat_created from a message does not release the waiting message", async ({ page }) => {
+  await newChatThenType(page, "Held question");
+  await receive(page, { type: "chat_created", payload: { chat_id: THIRD_CHAT_ID, from_message: true } });
+  expect(await sentChatMessages(page)).toHaveLength(0);
+  await receive(page, { type: "chat_created", payload: { chat_id: OTHER_CHAT_ID, from_message: false } });
+  expect((await sentChatMessages(page)).map((frame) => frame.payload.chat_id)).toEqual([OTHER_CHAT_ID]);
+});
+
+test("a reloaded chat shows when each message was sent, while a new message shows now", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-07-16T15:42:00Z"));
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame, {
+    transcript: [
+      { message_id: "user-1", role: "user", created_at: "2026-07-16T09:05:00Z",
+        parts: [{ type: "text", text: "Morning question" }], attachments: [] },
+      { message_id: "assistant-1", role: "assistant", created_at: "2026-07-16T09:06:00Z",
+        parts: [{ type: "text", text: "Morning answer" }], attachments: [] },
+    ],
+  }));
+  const label = (iso) => page.evaluate((value) => {
+    const stamp = new Date(value);
+    return ("0" + stamp.getHours()).slice(-2) + ":" + ("0" + stamp.getMinutes()).slice(-2);
+  }, iso);
+  await expect(page.locator(".astral-turn-time").first()).toHaveText(await label("2026-07-16T09:05:00Z"));
+  await page.locator("#astral-input").fill("Afternoon question");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  await expect(page.locator(".astral-turn-time").last()).toHaveText(await label("2026-07-16T15:42:00Z"));
+});
+
+async function lastNewChatFrame(page) {
+  return page.evaluate(() => window.__socketEvents.findLast((event) => event.frame.action === "new_chat").frame);
+}
+
+test("a New chat answered while another chat waits to open does not hold that chat's messages", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await page.locator("#astral-newchat-btn").click();
+  const newChat = await lastNewChatFrame(page);
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  expect(newChat.action).toBe("new_chat");
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  // The server runs New chat after the turn, and a plain new_chat answer carries no request id
+  await receive(page, { type: "chat_created", payload: { chat_id: THIRD_CHAT_ID, from_message: false } });
+  const loads = await sentLoads(page);
+  expect(loads.at(-1).payload.chat_id).toBe(OTHER_CHAT_ID);
+  await receive(page, snapshot({ connection_generation: turnScope.connection_generation,
+    request_generation: loads.at(-1).request_generation }, { chat_id: OTHER_CHAT_ID, snapshot_id: SNAPSHOT_B }));
+  await submitComposer(page, "Question for the other chat");
+  await expect(page.locator("#astral-status")).not.toContainText("Starting the new chat");
+  const messages = await sentChatMessages(page);
+  expect(messages.at(-1).payload.message).toBe("Question for the other chat");
+  expect(messages.at(-1).payload.chat_id).toBe(OTHER_CHAT_ID);
+});
+
+test("a message typed for a New chat comes back instead of going into a chat opened afterwards", async ({ page }) => {
+  await page.clock.install();
+  const { turnScope } = await startTurnInChat(page);
+  await page.locator("#astral-newchat-btn").click();
+  await submitComposer(page, "Meant for the new chat");
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await expect(page.locator("#astral-input")).toHaveValue("Meant for the new chat");
+  await expect(page.locator("#astral-toasts")).toContainText("You opened another chat");
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  await page.clock.runFor(11000);
+  const messages = await sentChatMessages(page);
+  expect(messages.filter((frame) => frame.payload.message === "Meant for the new chat")).toHaveLength(0);
+});
+
+test("a queued message equal to the unsaved one both come back after a drop", async ({ page }) => {
+  await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "A long request");
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(1);
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("A long request\n\nA long request");
+});
+
+test("a background reload waits behind a queued follow-up and then runs once", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Queued follow-up");
+  await receive(page, { type: "task_completed", payload: {
+    task_id: OPERATION_C, chat_id: CHAT_ID, status: "completed", summary: "Report ready" } });
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const messages = await sentActions(page, "chat_message");
+  expect(messages.at(-1).payload.message).toBe("Queued follow-up");
+  expect(await sentLoads(page)).toHaveLength(0);
+  const second = nextTurnScope(turnScope, messages.at(-1));
+  await receive(page, operationStatus(second, OPERATION_B, 0, "running"));
+  await receive(page, operationStatus(second, OPERATION_B, 1, "completed"));
+  expect(await sentLoads(page)).toHaveLength(1);
+});
+
+test("a first message left for a New chat cannot make its chat the open one", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await registration(page);
+  await page.locator("#astral-input").fill("First message");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  await page.locator("#astral-newchat-btn").click();
+  await receive(page, { type: "chat_created", payload: { chat_id: THIRD_CHAT_ID, from_message: true } });
+  expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key) || "null")?.chat_id ?? null, LOCATOR_KEY))
+    .toBeNull();
+  await page.locator("#astral-input").fill("For the new chat");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  // The message waits for the New chat's own answer
+  await receive(page, { type: "chat_created", payload: { chat_id: OTHER_CHAT_ID, from_message: false } });
+  const message = await page.evaluate(() => window.__socketEvents.findLast((event) => (
+    event.frame.action === "chat_message")).frame);
+  expect(message.payload.message).toBe("For the new chat");
+  expect(message.payload.chat_id).toBe(OTHER_CHAT_ID);
+});
+
+test("a refused queued message returns the rest of the queue to the composer", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "First follow-up");
+  await submitComposer(page, "Second follow-up");
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const sent = (await sentActions(page, "chat_message")).at(-1);
+  expect(sent.payload.message).toBe("First follow-up");
+  await receive(page, { type: "error", accepted: false, code: "capacity_exceeded", message: "Busy right now",
+    retry_after_ms: null, retryable: false, submission_id: sent.submission_id });
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
+  await expect(page.locator("#astral-input")).toHaveValue("First follow-up\n\nSecond follow-up");
+  await expect(page.locator("#astral-toasts")).toContainText("Your message was not accepted");
+});
+
+test("an unconfirmed interruption for a chat left behind survives a drop ahead of its queue", async ({ page }) => {
+  await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Steer text");
+  await page.locator(QUEUED_ROWS).getByRole("button", { name: "Interrupt" }).click();
+  await submitComposer(page, "Queued text");
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await page.waitForFunction(() => window.__socketEvents.filter((event) => event.frame.type === "register_ui").length >= 2,
+    null, { timeout: 15000 });
+  await openChatFromHistory(page, CHAT_ID);
+  await expect(page.locator("#astral-input")).toHaveValue(/Steer text[\s\S]*Queued text/u);
+});
+
+test("removing the queued message being edited after the answer ends lets the next send go out", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Queued A");
+  await page.locator(QUEUED_ROWS).getByRole("button", { name: "Edit" }).click();
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  await page.locator(".astral-queued-edit").fill("");
+  await page.locator(QUEUED_ROWS).getByRole("button", { name: "Save" }).click();
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
+  await submitComposer(page, "Typed C");
+  await expect(page.locator(QUEUED_ROWS)).toHaveCount(0);
+  expect((await sentActions(page, "chat_message")).at(-1).payload.message).toBe("Typed C");
+});
+
+test("a queued message keeps the Background choice it was queued with", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Foreground follow-up");
+  await page.locator("#astral-bg-btn").click();
+  await submitComposer(page, "Background follow-up");
+  await expect(page.locator("#astral-bg-btn")).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator(QUEUED_ROWS).nth(1)).toContainText("Background follow-up (background)");
+  await page.locator("#astral-bg-btn").click();
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const first = (await sentActions(page, "chat_message")).at(-1);
+  expect(first.payload.message).toBe("Foreground follow-up");
+  expect(first.payload.async_mode).toBeUndefined();
+  await expect(page.locator("#astral-bg-btn")).toHaveAttribute("aria-pressed", "true");
+  await receive(page, operationStatus(nextTurnScope(turnScope, first), OPERATION_B, 0, "completed"));
+  const second = (await sentActions(page, "chat_message")).at(-1);
+  expect(second.payload.message).toBe("Background follow-up");
+  expect(second.payload.async_mode).toBe(true);
+  await expect(page.locator("#astral-bg-btn")).toHaveAttribute("aria-pressed", "true");
+});
+
+test("queued row buttons name the message they act on", async ({ page }) => {
+  await startTurnInChat(page, { steer: true });
+  await submitComposer(page, "Check the dosage table");
+  const row = page.locator(QUEUED_ROWS);
+  for (const name of ["Interrupt", "Edit", "Delete"]) {
+    await expect(row.getByRole("button", { name })).toHaveAccessibleDescription("Check the dosage table");
+  }
+});
+
+test("an abandoned New chat's answer cannot take over the chat opened while a turn runs", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await page.locator("#astral-newchat-btn").click();
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  const load = (await sentLoads(page)).at(-1);
+  expect(load.payload.chat_id).toBe(OTHER_CHAT_ID);
+  await receive(page, { type: "chat_created", payload: { chat_id: THIRD_CHAT_ID, from_message: false } });
+  await receive(page, snapshot(nextTurnScope(turnScope, load), { chat_id: OTHER_CHAT_ID, snapshot_id: SNAPSHOT_B }));
+  await expect(page.locator("#astral-chat")).toContainText("Committed answer");
+  expect(JSON.parse(await page.evaluate((key) => localStorage.getItem(key), LOCATOR_KEY)).chat_id).toBe(OTHER_CHAT_ID);
+  await submitComposer(page, "For the other chat");
+  expect((await sentActions(page, "chat_message")).at(-1).payload.chat_id).toBe(OTHER_CHAT_ID);
+});
+
+test("a message for a second New chat skips the answer to the first one the user left", async ({ page }) => {
+  const { turnScope } = await startTurnInChat(page);
+  await page.locator("#astral-newchat-btn").click();
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await page.locator("#astral-newchat-btn").click();
+  await submitComposer(page, "For the second new chat");
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  await receive(page, { type: "chat_created", payload: { chat_id: THIRD_CHAT_ID, from_message: false } });
+  expect((await sentChatMessages(page)).filter((frame) => frame.payload.message === "For the second new chat"))
+    .toHaveLength(0);
+  const fourth = "44444444-aaaa-4aaa-8aaa-444444444444";
+  await receive(page, { type: "chat_created", payload: { chat_id: fourth, from_message: false } });
+  const message = (await sentChatMessages(page)).at(-1);
+  expect(message.payload.message).toBe("For the second new chat");
+  expect(message.payload.chat_id).toBe(fourth);
+});
+
+test("a message for a New chat behind a running turn waits for the turn instead of timing out", async ({ page }) => {
+  await page.clock.install();
+  const { turnScope } = await startTurnInChat(page);
+  await page.locator("#astral-newchat-btn").click();
+  await submitComposer(page, "Meant for the new chat");
+  await page.clock.runFor(15000);
+  expect((await sentChatMessages(page)).filter((frame) => frame.payload.message === "Meant for the new chat"))
+    .toHaveLength(0);
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  await receive(page, { type: "chat_created", payload: { chat_id: OTHER_CHAT_ID, from_message: false } });
+  const message = (await sentChatMessages(page)).at(-1);
+  expect(message.payload.message).toBe("Meant for the new chat");
+  expect(message.payload.chat_id).toBe(OTHER_CHAT_ID);
+});
+
+test("the New chat fallback still sends after the earlier turn ends without an answer", async ({ page }) => {
+  await page.clock.install();
+  const { turnScope } = await startTurnInChat(page);
+  await page.locator("#astral-newchat-btn").click();
+  await submitComposer(page, "Meant for the new chat");
+  await receive(page, operationStatus(turnScope, OPERATION_A, 2, "completed"));
+  await page.clock.runFor(11000);
+  expect((await sentChatMessages(page)).at(-1).payload.message).toBe("Meant for the new chat");
+});
+
+test("Stop pressed before the server starts the turn comes back once it starts", async ({ page }) => {
+  await installHarness(page);
+  const { frame: registrationFrame } = await registration(page);
+  await receive(page, snapshot(registrationFrame));
+  const scope = await sendInOpenChat(page, "A long request");
+  const stop = page.locator("#astral-stop-btn");
+  await stop.click();
+  await expect(stop).toBeHidden();
+  await receive(page, operationStatus(scope, OPERATION_A, 0, "accepted"));
+  await expect(stop).toBeHidden();
+  await receive(page, operationStatus(scope, OPERATION_A, 1, "running"));
+  await expect(stop).toBeVisible();
+  await stop.click();
+  expect(await sentCancels(page)).toHaveLength(2);
+  await receive(page, operationStatus(scope, OPERATION_A, 2, "running"));
+  await expect(stop).toBeHidden();
+});
+
+test("a message cut off in a chat left mid-answer comes back when that chat is opened again", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  const scope = await sendInOpenChat(page, "Request for chat one");
+  await receive(page, operationStatus(scope, OPERATION_A, 0, "running"));
+  await openChatFromHistory(page, OTHER_CHAT_ID);
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await expect(page.locator("#astral-toasts")).toContainText("your message in another chat was saved");
+  await page.waitForFunction(() => window.__socketEvents.filter((event) => event.frame.type === "register_ui").length >= 2,
+    null, { timeout: 15000 });
+  await openChatFromHistory(page, CHAT_ID);
+  await expect(page.locator("#astral-input")).toHaveValue("Request for chat one");
+});

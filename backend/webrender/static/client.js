@@ -33,6 +33,32 @@
   var operationSubmissionByGeneration = Object.create(null);
   var operationSubmissionById = Object.create(null);
   var operationSubmissionOrdinal = 0;
+  // The server runs load_chat after the turn in progress, and that turn's chat_status frames carry no chat id.
+  var runningChatTurns = Object.create(null);
+  var leftChatTurns = Object.create(null);
+  var heldChatLoad = null;
+  var cancelledChatTurns = Object.create(null);
+  var TURN_ACTIONS = { chat_message: true, authorize_action: true, remote_op_decision: true };
+  var pendingTaskReload = null;
+  var unsettledChatSend = null;
+  // Steering, the queue and side questions run only after the server acknowledges turn_steer_v1
+  var turnSteerAck = null;
+  var queuedFollowUps = Object.create(null);
+  var queueSendWaiting = Object.create(null);
+  var queuedSendSubmission = null;
+  var unsentByChat = Object.create(null);
+  var pendingSteers = Object.create(null);
+  var sideQuestionRequestId = null;
+  var sideQuestionRoot = null;
+  var sideQuestionAsked = "";
+  var MAX_QUEUED_FOLLOW_UPS = 16;
+  var queueHost = null;
+  var composerPlaceholder = null;
+  // A message sent before new_chat answers would make a second chat, so it waits for the new chat's id
+  var newChatWait = null;
+  // The server answers each plain new_chat in order, so an answer to one the user walked away from is skipped
+  var newChatAnswers = [];
+  var NEW_CHAT_WAIT_MS = 10000;
   var agentLifecycleById = Object.create(null);
   var ACCOUNT_SESSION_KEY = "astraldeep.active_chat.account.v1";
   var VOICE_DEVICE_KEY = "astraldeep.voice.device.v1";
@@ -405,9 +431,21 @@
   }
 
   function clearPrivateAccountState() {
+    if (newChatWait && newChatWait.timer) clearTimeout(newChatWait.timer);
+    newChatWait = null;
     accountPrivacyEpoch += 1;
     retireOwnerSurface();
+    unsettledChatSend = null;
+    unsentByChat = Object.create(null);
+    newChatAnswers = [];
     if (input) input.value = "";
+    queuedFollowUps = Object.create(null);
+    queueSendWaiting = Object.create(null);
+    queuedSendSubmission = null;
+    Object.keys(pendingSteers).forEach(dropPendingSteer);
+    turnSteerAck = null;
+    syncSteerControls();
+    renderQueue();
     (pendingActions || []).forEach(function (entry) { clearTimeout(entry.timer); });
     pendingActions = [];
     clearStagedAttachments();
@@ -466,6 +504,14 @@
       clearActiveChatLocator("account_switch", null, previousKey);
       activeChatId = null;
       requestState = null;
+      runningChatTurns = Object.create(null);
+      leftChatTurns = Object.create(null);
+      cancelledChatTurns = Object.create(null);
+      heldChatLoad = null;
+      newChatAnswers = [];
+      syncStopControl();
+      pendingTaskReload = null;
+      unsettledChatSend = null;
     }
     var changed = activeChatLocatorKey !== nextKey;
     activeChatLocatorKey = nextKey;
@@ -517,6 +563,9 @@
     activeChatId = chatId;
     syncVoiceVisibleChat(chatId);
     if (purpose) openRequest(purpose, chatId);
+    if (unsentByChat[chatId]) restoreUnsentForOpenedChat(chatId);
+    renderQueue();
+    settleQueue(false, "The answer finished while you were in another chat, so your queued messages are back in the composer.");
     return true;
   }
 
@@ -572,9 +621,11 @@
     });
   }
 
-  function turnClock() {
-    var now = new Date();
-    return ("0" + now.getHours()).slice(-2) + ":" + ("0" + now.getMinutes()).slice(-2);
+  // A saved message shows when it was sent; a live one shows now
+  function turnClock(createdAt) {
+    var stamp = typeof createdAt === "string" && isRfc3339Utc(createdAt) ? new Date(createdAt) : new Date();
+    if (isNaN(stamp.getTime())) stamp = new Date();
+    return ("0" + stamp.getHours()).slice(-2) + ":" + ("0" + stamp.getMinutes()).slice(-2);
   }
 
   var bodyResizeObserver = typeof window.ResizeObserver !== "undefined"
@@ -833,7 +884,7 @@
   }
   function isChatActive() {
     if (document.body.getAttribute("data-astral-view") === "start") return false;
-    if (turnCounter > 0) return true;
+    if (turnCounter > 0 || heldChatLoad !== null) return true;
     if (chat && chat.children.length > 0) {
       var bubbles = chat.querySelectorAll(".astral-turn, .astral-chat-bubble, .astral-turn-card, .astral-bubble-user, .astral-turn-assistant");
       for (var i = 0; i < bubbles.length; i++) {
@@ -972,9 +1023,8 @@
 
   function detectDeviceType() {
     var ua = navigator.userAgent.toLowerCase(), vw = window.innerWidth;
-    if (/watch|watchos/.test(ua)) return "watch";
+    // The server treats watch as a native app and sends it no web markup, so even a tiny or hidden page is mobile
     if (/smart-?tv|hbbtv|netcast|viera|nettv|roku|web0s/.test(ua)) return "tv";
-    if (vw <= 200) return "watch";
     if (/ipad|tablet|playbook|silk/.test(ua) || (vw > 480 && vw <= 1024 && /android/.test(ua))) return "tablet";
     if (/android|iphone|ipod|blackberry|iemobile|opera mini/.test(ua) || vw <= 480) return "mobile";
     if (vw <= 1024) return "tablet";
@@ -1006,12 +1056,15 @@
   }
 
   var lastCapabilitySignature = "";
+  function capabilitySignature(caps) {
+    return [caps.viewport_width, caps.viewport_height, caps.device_type,
+      caps.pixel_ratio, caps.microphone_permission, caps.connection_type,
+      caps.reduced_motion, caps.pointer_type].join("|");
+  }
   function maybeReportCapabilities(force) {
     if (!isSocketReady()) return;
     var caps = detectDeviceCapabilities();
-    var sig = [caps.viewport_width, caps.viewport_height, caps.device_type,
-      caps.pixel_ratio, caps.microphone_permission, caps.connection_type,
-      caps.reduced_motion, caps.pointer_type].join("|");
+    var sig = capabilitySignature(caps);
     if (!force && sig === lastCapabilitySignature) return;
     lastCapabilitySignature = sig;
     if (window.__ASTRAL_PARITY__ && window.__ASTRAL_PARITY__.notifyViewportRegistered) {
@@ -5645,6 +5698,7 @@
     if (local.shows_status) {
       setStatus(local.label, true, "operation-submission:" + requestGeneration);
     }
+    syncStopControl();
     return { payload: body, submissionId: submissionId, requestGeneration: requestGeneration };
   }
 
@@ -5653,6 +5707,7 @@
     if (!local) return false;
     delete operationSubmissionByGeneration[requestGeneration];
     delete operationSubmissionById[local.submission_id];
+    syncStopControl();
     return true;
   }
 
@@ -5874,6 +5929,9 @@
       });
       return submission;
     }
+    if (name === "chat_message") {
+      recordUnsettledChatSend(submission, submission.payload.message, [], !!submission.payload.async_mode);
+    }
     send(frame);
     return submission;
   }
@@ -5917,10 +5975,12 @@
       };
     }
     var device = detectDeviceCapabilities();
+    device.turn_steer_v1 = true;
+    lastCapabilitySignature = capabilitySignature(device);
     send({
       type: "register_ui",
       token: token,
-      capabilities: ["render", "stream", "voice", "guidance_notes_v1", "guidance_selection_v1", "work_read_v1", "work_continuity_v1"],
+      capabilities: ["render", "stream", "voice", "guidance_notes_v1", "guidance_selection_v1", "work_read_v1", "work_continuity_v1", "turn_steer_v1"],
       session_id: "ui-" + Date.now(),
       device_id: voiceDeviceId,
       device: device,
@@ -5931,13 +5991,641 @@
   }
 
   function loadActiveChat(chatId) {
+    if (heldChatLoad && heldChatLoad.chatId === chatId) return;
+    if (newChatWait && chatId !== activeChatId) endNewChatWait(false, "You opened another chat, so your message is back in the composer.");
+    if (chatId !== activeChatId) newChatAnswers.forEach(function (answer) { answer.abandoned = true; });
+    var leavesRunningTurn = chatId !== activeChatId && (heldChatLoad !== null || chatTurnRunning());
     if (!selectActiveChat(chatId, "hydration")) return;
+    if (leavesRunningTurn) {
+      leaveRunningChatTurns();
+      heldChatLoad = { chatId: chatId, generation: requestState.generation };
+      hideSkeleton();
+      resetFeed();
+      setHTML(canvas, "");
+      setWorkspaceView("work");
+      setStatus("Finishing the previous reply. This chat will open when it ends.", true, "earlier-turn");
+      syncStopControl();
+      return;
+    }
+    sendChatLoad(chatId);
+  }
+
+  function sendChatLoad(chatId) {
+    if (pendingTaskReload === chatId) pendingTaskReload = null;
     action("load_chat", {
       chat_id: chatId,
       connection_generation: connectionGeneration,
       request_generation: requestState.generation,
       snapshot_purpose: "hydration",
     });
+  }
+
+  function chatTurnRunning() {
+    return Object.keys(runningChatTurns).length > 0 || Object.keys(operationSubmissionByGeneration)
+      .some(function (generation) { return TURN_ACTIONS[operationSubmissionByGeneration[generation].action]; });
+  }
+
+  function liveTurnInView() {
+    if (heldChatLoad !== null) return true;
+    return Object.keys(runningChatTurns).some(function (generation) { return !leftChatTurns[generation]; })
+      || Object.keys(operationSubmissionByGeneration).some(function (generation) {
+        var local = operationSubmissionByGeneration[generation];
+        return local.action === "chat_message" && !leftChatTurns[generation]
+          && (local.chat_id === null || local.chat_id === activeChatId);
+      });
+  }
+
+  function flushPendingTaskReload() {
+    if (pendingTaskReload === null || liveTurnInView()) return;
+    var chatId = pendingTaskReload;
+    pendingTaskReload = null;
+    if (chatId === activeChatId) loadActiveChat(chatId);
+  }
+
+  function leaveRunningChatTurns() {
+    lastChatStatusText = "";
+    Object.keys(runningChatTurns).forEach(function (generation) { leftChatTurns[generation] = true; });
+    Object.keys(operationSubmissionByGeneration).forEach(function (generation) {
+      if (TURN_ACTIONS[operationSubmissionByGeneration[generation].action]) leftChatTurns[generation] = true;
+    });
+  }
+
+  function chatTurnRunningElsewhere() {
+    return heldChatLoad !== null || Object.keys(leftChatTurns).length > 0;
+  }
+
+  function leftTurnFrame(frame) {
+    return !activeChatId && isCanonicalUuid4(frame.chat_id) && chatTurnRunningElsewhere();
+  }
+
+  function trackChatTurn(frame) {
+    if (!TURN_ACTIONS[frame.action] || !isCanonicalUuid4(frame.request_generation)
+        || frame.connection_generation !== connectionGeneration) return;
+    if (frame.terminal) {
+      delete runningChatTurns[frame.request_generation];
+      delete leftChatTurns[frame.request_generation];
+      delete cancelledChatTurns[frame.request_generation];
+      return;
+    }
+    var generation = frame.request_generation;
+    var started = frame.state === "running" || runningChatTurns[generation] === "started";
+    // A Stop sent before the server started this turn did not reach it, so Stop comes back for it
+    if (started && cancelledChatTurns[generation] === "unstarted") delete cancelledChatTurns[generation];
+    runningChatTurns[generation] = started ? "started" : true;
+  }
+
+  function finishWaitingForEarlierTurn() {
+    var held = heldChatLoad;
+    if (!held) return;
+    heldChatLoad = null;
+    restoreActiveStatusOrClear(["earlier-turn"]);
+    syncStopControl();
+    if (activeChatId === held.chatId && requestState && requestState.generation === held.generation) {
+      sendChatLoad(held.chatId);
+    }
+  }
+
+  function cancellableTurns() {
+    var generations = Object.keys(runningChatTurns).concat(Object.keys(operationSubmissionByGeneration)
+      .filter(function (generation) { return TURN_ACTIONS[operationSubmissionByGeneration[generation].action]; }));
+    // While a chat waits to open, Stop ends the turn it waits behind
+    return generations.filter(function (generation) {
+      return heldChatLoad !== null ? leftChatTurns[generation] === true : !leftChatTurns[generation];
+    });
+  }
+
+  function canCancelTurn() {
+    if (!isSocketReady()) return false;
+    // A turn left for a new chat still owns the socket, so a cancel here would stop it
+    if (heldChatLoad === null && Object.keys(leftChatTurns).length > 0) return false;
+    return cancellableTurns().some(function (generation) { return !cancelledChatTurns[generation]; });
+  }
+
+  function syncStopControl() {
+    var stopButton = document.getElementById("astral-stop-btn");
+    if (!stopButton) return;
+    var stoppable = canCancelTurn();
+    if (!stoppable && document.activeElement === stopButton && input) {
+      try { input.focus(); } catch (e) {}
+    }
+    // Inline display because .astral-send-btn sets display, which outranks the hidden attribute
+    stopButton.hidden = !stoppable;
+    stopButton.style.display = stoppable ? "" : "none";
+    syncQueueControls();
+  }
+
+  // The server cancels whichever turn runs on this socket, the same as the macOS Stop
+  function stopTurn() {
+    if (!canCancelTurn()) return false;
+    cancellableTurns().forEach(function (generation) {
+      cancelledChatTurns[generation] = runningChatTurns[generation] === "started" ? true : "unstarted";
+    });
+    var submissionId = randomUuid4();
+    var requestGeneration = randomUuid4();
+    send({
+      type: "ui_event",
+      action: "cancel_task",
+      session_id: activeChatId || null,
+      submission_id: submissionId,
+      request_generation: requestGeneration,
+      payload: { submission_id: submissionId, request_generation: requestGeneration },
+    });
+    syncStopControl();
+    restoreQueueToComposer(null);
+    return true;
+  }
+
+  var STEER_REFUSALS = {
+    stale_turn: "The answer finished before your interruption reached it. Your text is back in the composer.",
+    not_running: "No answer is running, so your interruption is back in the composer.",
+    approval_pending: "Decide the approval first; an interruption cannot answer it. Your text is back in the composer.",
+    invalid_input: "This interruption was not accepted. Your text is back in the composer.",
+    capacity_exceeded: "Too many interruptions are waiting. Your text is back in the composer.",
+  };
+
+  function readTurnSteerAck(profile) {
+    var ack = profile && profile.turn_steer;
+    return ack && typeof ack === "object" && Object.keys(ack).sort().join(",") === "queue_capable,version"
+      && ack.version === 1 && typeof ack.queue_capable === "boolean" ? ack : null;
+  }
+
+  function queueKey() { return activeChatId || ""; }
+  function activeQueue() { return queuedFollowUps[queueKey()] || []; }
+
+  // Only a turn in the open chat can be steered; a chat waiting behind another chat's turn sends as before
+  function steeringApplies() {
+    return !!turnSteerAck && heldChatLoad === null && Object.keys(leftChatTurns).length === 0 && canCancelTurn();
+  }
+
+  function queueFollowUp(text, attachments, background) {
+    var key = queueKey();
+    var items = queuedFollowUps[key] || [];
+    if (items.length >= MAX_QUEUED_FOLLOW_UPS) {
+      showToast("Up to " + MAX_QUEUED_FOLLOW_UPS + " messages can wait at once. Your text is still in the composer.", "warning");
+      return false;
+    }
+    items.push({ id: randomUuid4(), text: text, attachments: attachments, background: !!background,
+      editing: false, draft: "" });
+    queuedFollowUps[key] = items;
+    renderQueue();
+    return true;
+  }
+
+  function takeQueue(key) {
+    var items = queuedFollowUps[key] || [];
+    delete queuedFollowUps[key];
+    delete queueSendWaiting[key];
+    return items;
+  }
+
+  function putTextsInComposer(texts) {
+    if (!input) return;
+    input.value = texts.concat([input.value]).filter(function (text) { return text && text.trim(); }).join("\n\n");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  // Queued text and files go back ahead of the draft, the same as the macOS Stop
+  function restoreQueueToComposer(notice) {
+    var items = takeQueue(queueKey());
+    renderQueue();
+    if (!items.length) return false;
+    putTextsInComposer(items.map(function (item) { return item.editing ? item.draft : item.text; }));
+    var restored = [];
+    items.forEach(function (item) { restored = restored.concat(item.attachments); });
+    var dropped = [];
+    if (restored.length) {
+      var uids = restored.map(function (entry) { return entry.uid; });
+      var combined = restored.concat(stagedAttachments.filter(function (entry) {
+        return uids.indexOf(entry.uid) === -1; }));
+      dropped = combined.slice(MAX_ATTACHMENTS);
+      stagedAttachments = combined.slice(0, MAX_ATTACHMENTS);
+      renderAttachments();
+    }
+    if (notice) showToast(notice, "warning");
+    if (dropped.length) {
+      showToast("Only " + MAX_ATTACHMENTS + " files fit in the composer. Attach these again: "
+        + dropped.map(function (entry) { return entry.filename; }).join(", "), "warning");
+    }
+    return true;
+  }
+
+  // A completed answer sends the next queued message; any other ending gives the queue back
+  function settleQueue(completedHere, notice) {
+    var key = queueKey();
+    var items = queuedFollowUps[key];
+    if (!items || !items.length) { delete queueSendWaiting[key]; return; }
+    if (!isSocketReady() || heldChatLoad !== null || chatTurnRunning() || Object.keys(leftChatTurns).length) return;
+    if (!completedHere || !turnSteerAck) { restoreQueueToComposer(notice); return; }
+    // Sending now would replace the history load of a chat reopened mid-answer
+    if (items[0].editing || reloadingOpenChat()) { queueSendWaiting[key] = true; return; }
+    delete queueSendWaiting[key];
+    var next = items.shift();
+    if (!items.length) delete queuedFollowUps[key];
+    renderQueue();
+    queuedSendSubmission = doSendChat(next.text, next.attachments, !!next.background);
+  }
+
+  function reloadingOpenChat() {
+    return !!(requestState && requestState.purpose === "hydration" && !requestState.snapshotApplied
+      && requestState.chatId === (activeChatId || null));
+  }
+
+  function settleQueueAfterReload(frame) {
+    if (frame.action !== "load_chat" || !frame.terminal || !requestState
+        || frame.request_generation !== requestState.generation || !queueSendWaiting[queueKey()]) return;
+    if (requestState.snapshotApplied) sendWaitingQueued();
+    else restoreQueueToComposer("The chat did not reload, so your queued messages are back in the composer.");
+  }
+
+  function restoreRefusedQueuedSend(submissionId) {
+    var refused = queuedSendSubmission;
+    if (!refused || refused.submissionId !== submissionId) return;
+    queuedSendSubmission = null;
+    if (refused.chatId !== (activeChatId || null)) return;
+    putTextsInComposer([refused.text]);
+    var uids = refused.attachments.map(function (entry) { return entry.uid; });
+    stagedAttachments = refused.attachments.concat(stagedAttachments.filter(function (entry) {
+      return uids.indexOf(entry.uid) === -1; })).slice(0, MAX_ATTACHMENTS);
+    renderAttachments();
+  }
+
+  function sendWaitingQueued() {
+    if (queueSendWaiting[queueKey()]) settleQueue(true, null);
+  }
+
+  function sendSteer(text) {
+    var clientMessageId = randomUuid4();
+    var submissionId = randomUuid4();
+    var requestGeneration = randomUuid4();
+    // An interruption belongs to the running turn, so it shares that turn's number
+    var built = createChatBubbleNode("user", Math.max(turnCounter, 1));
+    if (built.wrap) {
+      built.wrap.classList.add("astral-bubble-steer", "is-pending");
+      built.bubble.innerHTML = "<div>" + escapeText(text) + "</div>";
+      ensureTransientOverlay().chat.appendChild(built.wrap);
+      chat.scrollTop = chat.scrollHeight;
+    }
+    pendingSteers[clientMessageId] = { text: text, wrap: built.wrap, chatId: activeChatId || null };
+    send({
+      type: "ui_event",
+      action: "chat_steer",
+      session_id: activeChatId || null,
+      submission_id: submissionId,
+      request_generation: requestGeneration,
+      payload: { message: text, client_message_id: clientMessageId,
+        submission_id: submissionId, request_generation: requestGeneration },
+    });
+  }
+
+  function findQueued(id) {
+    return activeQueue().filter(function (item) { return item.id === id; })[0] || null;
+  }
+
+  function removeQueued(id) {
+    var key = queueKey();
+    var items = (queuedFollowUps[key] || []).filter(function (item) { return item.id !== id; });
+    if (items.length) queuedFollowUps[key] = items;
+    else delete queuedFollowUps[key];
+  }
+
+  function interruptWithQueued(id) {
+    var item = findQueued(id);
+    if (!item || item.attachments.length || !steeringApplies()) return;
+    var text = (item.editing ? item.draft : item.text).trim();
+    if (!text) return;
+    removeQueued(id);
+    renderQueue();
+    sendSteer(text);
+    if (input) { try { input.focus(); } catch (e) {} }
+  }
+
+  function dropPendingSteer(clientMessageId) {
+    var pending = pendingSteers[clientMessageId];
+    delete pendingSteers[clientMessageId];
+    if (pending && pending.wrap && pending.wrap.parentNode) pending.wrap.parentNode.removeChild(pending.wrap);
+    return pending;
+  }
+
+  function reduceSteerRecorded(frame) {
+    var allowed = ["chat_id", "client_message_id", "skipped_calls", "type"];
+    var pending = pendingSteers[frame.client_message_id];
+    if (!pending || Object.keys(frame).some(function (key) { return allowed.indexOf(key) === -1; })) return;
+    delete pendingSteers[frame.client_message_id];
+    if (pending.wrap) pending.wrap.classList.remove("is-pending");
+  }
+
+  function reduceSteerRefused(frame) {
+    if (!pendingSteers[frame.client_message_id] || !STEER_REFUSALS[frame.code]) return;
+    var pending = dropPendingSteer(frame.client_message_id);
+    if (frame.code === "stale_turn" && pending.chatId === (activeChatId || null) && chatTurnRunning()) {
+      // The answer moved on before the interruption applied, so it goes out next instead of being overtaken
+      var openKey = queueKey();
+      queuedFollowUps[openKey] = [{ id: randomUuid4(), text: pending.text, attachments: [], editing: false, draft: "" }]
+        .concat(queuedFollowUps[openKey] || []);
+      renderQueue();
+      showToast("The answer moved on before your interruption applied, so it will be sent next.", "info");
+      return;
+    }
+    if (pending.chatId === (activeChatId || null)) {
+      putTextsInComposer([pending.text]);
+      showToast(STEER_REFUSALS[frame.code], "warning");
+      return;
+    }
+    // Refused after a chat switch: keep it with its own chat, where it returns to the composer
+    var key = pending.chatId || "";
+    queuedFollowUps[key] = [{ id: randomUuid4(), text: pending.text, attachments: [], editing: false, draft: "" }]
+      .concat(queuedFollowUps[key] || []);
+  }
+
+  function returnPendingSteers() {
+    var here = [];
+    var elsewhere = Object.create(null);
+    Object.keys(pendingSteers).forEach(function (clientMessageId) {
+      var pending = dropPendingSteer(clientMessageId);
+      if (pending.chatId === (activeChatId || null)) { here.push(pending.text); return; }
+      (elsewhere[pending.chatId || ""] = elsewhere[pending.chatId || ""] || []).push(pending.text);
+    });
+    // An interruption for a chat the user left waits at the front of that chat's queue
+    Object.keys(elsewhere).forEach(function (key) {
+      queuedFollowUps[key] = elsewhere[key].map(function (text) {
+        return { id: randomUuid4(), text: text, attachments: [], editing: false, draft: "" };
+      }).concat(queuedFollowUps[key] || []);
+    });
+    if (here.length) putTextsInComposer(here);
+  }
+
+  function ensureQueueHost() {
+    if (queueHost || !form) return queueHost;
+    var anchor = form.querySelector(".astral-composer-row") || input;
+    if (!anchor || !form.contains(anchor)) return null;
+    queueHost = document.createElement("div");
+    queueHost.id = "astral-queue";
+    queueHost.className = "astral-queue";
+    queueHost.hidden = true;
+    queueHost.setAttribute("role", "list");
+    queueHost.setAttribute("aria-label", "Queued messages");
+    anchor.parentNode.insertBefore(queueHost, anchor);
+    queueHost.addEventListener("click", onQueueClick);
+    queueHost.addEventListener("keydown", onQueueKeydown);
+    queueHost.addEventListener("input", function (e) {
+      var row = e.target.closest && e.target.closest(".astral-queued");
+      var item = row && findQueued(row.getAttribute("data-queue-id"));
+      if (item && item.editing) item.draft = e.target.value;
+    });
+    return queueHost;
+  }
+
+  function queueButton(label, actionName, extraClass) {
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "astral-steer-btn" + (extraClass ? " " + extraClass : "");
+    button.setAttribute("data-queue-action", actionName);
+    button.textContent = label;
+    return button;
+  }
+
+  function renderQueue() {
+    var host = ensureQueueHost();
+    if (!host) return;
+    var items = activeQueue();
+    host.replaceChildren();
+    host.hidden = !items.length;
+    items.forEach(function (item) {
+      var row = document.createElement("div");
+      row.className = "astral-queued";
+      row.setAttribute("role", "listitem");
+      row.setAttribute("data-queue-id", item.id);
+      var label = document.createElement("span");
+      label.className = "astral-queued-label";
+      label.textContent = "Queued";
+      row.appendChild(label);
+      if (item.editing) {
+        var field = document.createElement("textarea");
+        field.className = "astral-field astral-queued-edit";
+        field.rows = 1;
+        field.value = item.draft;
+        field.setAttribute("aria-label", "Edit queued message");
+        row.appendChild(field);
+        row.appendChild(queueButton("Save", "save", "is-primary"));
+        row.appendChild(queueButton("Cancel", "cancel"));
+      } else {
+        var text = document.createElement("span");
+        text.className = "astral-queued-text";
+        text.id = "astral-queued-text-" + item.id;
+        var files = item.attachments.length;
+        text.textContent = item.text + (files ? " (" + files + (files === 1 ? " file)" : " files)") : "")
+          + (item.background ? " (background)" : "");
+        text.title = item.text;
+        row.appendChild(text);
+        ["Interrupt", "Edit", "Delete"].forEach(function (name) {
+          var button = queueButton(name, name.toLowerCase(), name === "Interrupt" ? "is-primary" : "");
+          button.setAttribute("aria-describedby", text.id);
+          row.appendChild(button);
+        });
+      }
+      host.appendChild(row);
+    });
+    syncQueueControls();
+  }
+
+  function syncQueueControls() {
+    var steering = steeringApplies();
+    if (input) {
+      if (composerPlaceholder === null) composerPlaceholder = input.getAttribute("placeholder") || "";
+      input.setAttribute("placeholder",
+        steering ? "Queue a follow-up…" : composerPlaceholder);
+    }
+    if (!queueHost) return;
+    Array.prototype.forEach.call(queueHost.querySelectorAll('[data-queue-action="interrupt"]'), function (button) {
+      var row = button.closest(".astral-queued");
+      var item = row && findQueued(row.getAttribute("data-queue-id"));
+      var hasFiles = !!(item && item.attachments.length);
+      button.disabled = !steering || hasFiles;
+      button.title = hasFiles ? "Messages with files cannot interrupt; this one waits for the answer to finish."
+        : steering ? "Send this now into the running answer" : "Nothing is running to interrupt";
+    });
+  }
+
+  function finishQueuedEdit(id, save) {
+    var item = findQueued(id);
+    if (!item || !item.editing) return;
+    var text = item.draft.trim();
+    if (save && !text && !item.attachments.length) removeQueued(id);
+    else {
+      if (save) item.text = text;
+      item.editing = false;
+      item.draft = "";
+    }
+    renderQueue();
+    if (input) { try { input.focus(); } catch (e) {} }
+    sendWaitingQueued();
+  }
+
+  function onQueueClick(e) {
+    var button = e.target.closest && e.target.closest("[data-queue-action]");
+    var row = button && button.closest(".astral-queued");
+    var id = row && row.getAttribute("data-queue-id");
+    var item = id && findQueued(id);
+    if (!item) return;
+    var actionName = button.getAttribute("data-queue-action");
+    if (actionName === "interrupt") interruptWithQueued(id);
+    else if (actionName === "edit") {
+      item.editing = true;
+      item.draft = item.text;
+      renderQueue();
+      var field = queueHost.querySelector('[data-queue-id="' + id + '"] .astral-queued-edit');
+      if (field) { try { field.focus(); field.setSelectionRange(field.value.length, field.value.length); } catch (err) {} }
+    } else if (actionName === "save" || actionName === "cancel") finishQueuedEdit(id, actionName === "save");
+    else if (actionName === "delete") {
+      removeQueued(id);
+      renderQueue();
+      if (input) { try { input.focus(); } catch (err) {} }
+      sendWaitingQueued();
+    }
+  }
+
+  function onQueueKeydown(e) {
+    if (!e.target.classList || !e.target.classList.contains("astral-queued-edit") || e.isComposing) return;
+    var row = e.target.closest(".astral-queued");
+    var id = row && row.getAttribute("data-queue-id");
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); finishQueuedEdit(id, true); }
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finishQueuedEdit(id, false); }
+  }
+
+  function syncSteerControls() {
+    var controls = document.getElementById("astral-composer-controls");
+    var button = document.getElementById("astral-side-question-btn");
+    if (!button && controls && turnSteerAck) {
+      button = document.createElement("button");
+      button.type = "button";
+      button.id = "astral-side-question-btn";
+      button.className = "astral-composer-menu-item";
+      button.setAttribute("role", "menuitem");
+      button.setAttribute("aria-haspopup", "dialog");
+      button.title = "Ask a side question without changing the running answer or the chat";
+      button.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>'
+        + '<span class="astral-menu-item-text">Ask a side question</span>';
+      button.addEventListener("click", openSideQuestion);
+      controls.insertBefore(button, controls.firstChild);
+    }
+    if (button) {
+      button.hidden = !turnSteerAck;
+      button.style.display = turnSteerAck ? "" : "none";
+    }
+    if (!turnSteerAck) { sideQuestionRequestId = null; closeSideQuestion(); }
+    syncQueueControls();
+  }
+
+  function openSideQuestion() {
+    if (!turnSteerAck || !isSocketReady()) return;
+    closeSideQuestion();
+    var returnFocus = document.activeElement;
+    var overlay = document.createElement("div");
+    overlay.className = "astral-modal-overlay astral-side-question";
+    overlay.innerHTML = '<div class="astral-modal-card" role="dialog" aria-modal="true" aria-labelledby="astral-side-question-title" tabindex="-1">'
+      + '<div class="astral-modal-header"><div class="astral-modal-heading">'
+      + '<div class="astral-modal-title" id="astral-side-question-title">Side question</div>'
+      + '<div class="astral-modal-subtitle">Answered here only. It does not change the running answer or the chat.</div></div>'
+      + '<button type="button" class="astral-modal-close" data-side-question="close" aria-label="Close side question">&times;</button></div>'
+      + '<form class="astral-side-question-body">'
+      + '<textarea class="astral-field astral-side-question-input" rows="3" maxlength="20000" aria-label="Side question"></textarea>'
+      + '<div class="astral-side-question-actions"><button type="submit" class="astral-steer-btn is-primary">Ask</button></div>'
+      + '<div class="astral-side-question-answer" role="status" aria-live="polite" hidden></div>'
+      + '</form></div>';
+    overlay.addEventListener("click", function (e) {
+      if (e.target === overlay || (e.target.closest && e.target.closest('[data-side-question="close"]'))) closeSideQuestion();
+    });
+    overlay.addEventListener("keydown", function (e) {
+      if (e.key === "Tab") { trapSideQuestionFocus(e); return; }
+      if (e.key !== "Escape" || e.isComposing) return;
+      e.preventDefault();
+      e.stopPropagation();
+      closeSideQuestion();
+    });
+    overlay.querySelector("form").addEventListener("submit", function (e) {
+      e.preventDefault();
+      askSideQuestion();
+    });
+    overlay.querySelector(".astral-side-question-input").addEventListener("keydown", function (e) {
+      if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+      e.preventDefault();
+      askSideQuestion();
+    });
+    overlay.returnFocus = returnFocus;
+    document.body.appendChild(overlay);
+    sideQuestionRoot = overlay;
+    // A question closed before its answer is still being answered, so the dialog picks it back up
+    if (sideQuestionRequestId) {
+      overlay.querySelector(".astral-side-question-input").value = sideQuestionAsked;
+      setSideQuestionAnswer("Thinking…", true);
+    }
+    try { overlay.querySelector(".astral-side-question-input").focus(); } catch (e) {}
+  }
+
+  function trapSideQuestionFocus(e) {
+    var focusable = Array.prototype.filter.call(
+      sideQuestionRoot.querySelectorAll("button, textarea"), function (el) { return !el.disabled; });
+    if (!focusable.length) return;
+    var first = focusable[0], last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
+
+  function closeSideQuestion() {
+    var overlay = sideQuestionRoot;
+    sideQuestionRoot = null;
+    if (!overlay) return;
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    // The menu item that opened the dialog is hidden by now, so focus goes back to the composer
+    var target = overlay.returnFocus;
+    if (!target || !target.focus || !document.contains(target) || !target.getClientRects().length) target = input;
+    if (target) { try { target.focus(); } catch (e) {} }
+  }
+
+  function setSideQuestionAnswer(text, busy) {
+    if (!sideQuestionRoot) return;
+    var answer = sideQuestionRoot.querySelector(".astral-side-question-answer");
+    var ask = sideQuestionRoot.querySelector('button[type="submit"]');
+    answer.hidden = !text;
+    answer.textContent = text || "";
+    answer.setAttribute("aria-busy", busy ? "true" : "false");
+    ask.disabled = !!busy;
+  }
+
+  function askSideQuestion() {
+    if (!sideQuestionRoot || sideQuestionRequestId || !turnSteerAck || !isSocketReady()) return;
+    var question = sideQuestionRoot.querySelector(".astral-side-question-input").value.trim();
+    if (!question) return;
+    var clientMessageId = randomUuid4();
+    var submissionId = randomUuid4();
+    var requestGeneration = randomUuid4();
+    sideQuestionRequestId = clientMessageId;
+    sideQuestionAsked = question;
+    setSideQuestionAnswer("Thinking…", true);
+    send({
+      type: "ui_event",
+      action: "side_question",
+      session_id: activeChatId || null,
+      submission_id: submissionId,
+      request_generation: requestGeneration,
+      payload: { question: question, client_message_id: clientMessageId,
+        submission_id: submissionId, request_generation: requestGeneration },
+    });
+  }
+
+  function reduceSideQuestionResult(frame) {
+    if (Object.keys(frame).sort().join(",") !== "answer,client_message_id,type"
+        || !sideQuestionRequestId || frame.client_message_id !== sideQuestionRequestId
+        || typeof frame.answer !== "string" || !frame.answer.trim()) return;
+    sideQuestionRequestId = null;
+    setSideQuestionAnswer(frame.answer, false);
+  }
+
+  function escapeBelongsElsewhere() {
+    var slashMenu = document.getElementById("astral-slash-menu");
+    return !!(tourState || sideQuestionRoot || menuOpen() || (modalRoot && modalRoot.innerHTML) || (fsRoot && !fsRoot.hidden)
+      || drawerOpen() || chromePop || (slashMenu && !slashMenu.classList.contains("hidden"))
+      || (composerMore && composerMore.getAttribute("aria-expanded") === "true"));
   }
 
   var plotlyLoading = false;
@@ -6360,7 +7048,7 @@
     return { nodes: nodes, envelopes: envelopes, workspace: sharedWorkspace };
   }
 
-  function createChatBubbleNode(role, turnNo) {
+  function createChatBubbleNode(role, turnNo, createdAt) {
     var wrap = document.createElement("div");
     wrap.className = "astral-turn " + (role === "user"
       ? "astral-turn-user" : "astral-turn-assistant");
@@ -6375,7 +7063,7 @@
       pill.textContent = "Turn " + number;
       var time = document.createElement("span");
       time.className = "astral-turn-time";
-      time.textContent = turnClock();
+      time.textContent = turnClock(createdAt);
       head.appendChild(pill);
       head.appendChild(time);
       wrap.appendChild(head);
@@ -6391,7 +7079,7 @@
   }
 
   function decodeSemanticMessage(message, turnNo) {
-    var built = createChatBubbleNode(message.role, turnNo);
+    var built = createChatBubbleNode(message.role, turnNo, message.created_at);
     var presentations = [];
     var hasVisibleContent = false;
     message.attachments.forEach(function (attachment) {
@@ -6575,6 +7263,8 @@
     if (submission && candidate.turnCount > (committedTurnsByChat[frame.chat_id] || 0)) {
       submission.user_row_committed = true;
     }
+    if (frame.snapshot_purpose === "commit" && unsettledChatSend
+        && unsettledChatSend.requestGeneration === frame.request_generation) unsettledChatSend = null;
     committedRevisionByChat[frame.chat_id] = frame.render_revision;
     committedTurnsByChat[frame.chat_id] = candidate.turnCount;
     lastSnapshotIdByChat[frame.chat_id] = frame.snapshot_id;
@@ -7154,10 +7844,12 @@
         break;
       case "conversation_snapshot":
         reduceConversationSnapshot(data);
+        if (requestState && requestState.purpose === "hydration" && requestState.snapshotApplied) sendWaitingQueued();
         break;
       case "ui_render":
         if (isLateWelcomeRender(data)) break;
         if (data.target === "history") { applyHistoryRender(data.html); }
+        else if (leftTurnFrame(data)) break;
         else if (activeChatId) reduceTransientFrame(data);
         else if (data.target === "chat") appendChatBubble("assistant", data.html);
         else {
@@ -7168,11 +7860,12 @@
         }
         break;
       case "ui_upsert":
+        if (leftTurnFrame(data)) break;
         if (activeChatId) reduceTransientFrame(data);
         else applyUpsert(data);
         break;
       case "ui_update":
-        if (isLateWelcomeRender(data)) break;
+        if (isLateWelcomeRender(data) || leftTurnFrame(data)) break;
         if (activeChatId) reduceTransientFrame(data);
         else {
           clearWelcomeSlots();
@@ -7181,6 +7874,7 @@
         }
         break;
       case "ui_append":
+        if (leftTurnFrame(data)) break;
         if (activeChatId) reduceTransientFrame(data);
         else { hideSkeleton(); hideCanvasEmpty(); appendHTML(canvas, data.html); }
         break;
@@ -7224,6 +7918,7 @@
         } else { gotoLogin(); }
         break;
       case "ui_stream_data": {
+        if (leftTurnFrame(data)) break;
         if (activeChatId) { reduceTransientFrame(data); break; }
         if (data.session_id && activeChatId && data.session_id !== activeChatId) return;
         var last = streamSeq[data.stream_id]; if (last == null) last = -1;
@@ -7262,6 +7957,12 @@
         break;
       case "chat_status":
         if (!scopedStatusMatches(data)) break;
+        if (chatTurnRunningElsewhere()) {
+          // "Cancelled" is sent at once; a turn still unwinding ends at the plain "done" that follows.
+          if ((data.status === "done" || data.status === "idle")
+              && (data.message !== "Cancelled" || !chatTurnRunning())) finishWaitingForEarlierTurn();
+          break;
+        }
         var chatStatusOwner = data.request_generation
           ? "operation-submission:" + data.request_generation
           : "chat-status";
@@ -7304,20 +8005,37 @@
       case "chat_step":
         // chat_step carries no generation, so it is scoped by chat id like tool_progress
         if (data.chat_id && activeChatId && data.chat_id !== activeChatId) break;
+        if (heldChatLoad || ((!data.chat_id || !activeChatId) && chatTurnRunningElsewhere())) break;
         renderStep(data.step);
         break;
       case "chat_created":
         if (correlatedVoiceChatCreated(data)) break;
+        if (data.payload && data.payload.from_message !== true && takeNewChatAnswer(data) === "abandoned") break;
+        if (heldChatLoad) break;
+        // A first message left for a New chat names its own chat, not the one now open
+        if (data.payload && data.payload.from_message === true && !activeChatId && chatTurnRunningElsewhere()) break;
         if (data.payload && isCanonicalUuid4(data.payload.chat_id)) {
+          var createdFor = data.submission_id || data.payload.submission_id;
+          var answersNewChat = !!newChatWait && data.payload.from_message !== true
+            && (!createdFor || createdFor === newChatWait.submissionId);
           persistActiveChatLocator(data.payload.chat_id);
           activeChatId = data.payload.chat_id;
           syncVoiceVisibleChat(activeChatId);
+          if (queuedFollowUps[""]) {
+            queuedFollowUps[activeChatId] = (queuedFollowUps[activeChatId] || []).concat(takeQueue(""));
+          }
+          Object.keys(pendingSteers).forEach(function (clientMessageId) {
+            if (pendingSteers[clientMessageId].chatId === null) pendingSteers[clientMessageId].chatId = activeChatId;
+          });
           if (requestState && !requestState.chatId) requestState.chatId = activeChatId;
+          if (unsettledChatSend && !unsettledChatSend.chatId && requestState
+              && unsettledChatSend.requestGeneration === requestState.generation) unsettledChatSend.chatId = activeChatId;
           var pending = document.querySelector('.astral-history-item[data-chat-id="pending-new-chat"]');
           if (pending) {
             pending.setAttribute("data-chat-id", activeChatId);
             pending.setAttribute("data-payload", JSON.stringify({ chat_id: activeChatId }));
           }
+          if (answersNewChat && (newChatWait.pending -= 1) <= 0) endNewChatWait(true);
         }
         break;
       case "chat_loaded":
@@ -7338,6 +8056,18 @@
       case "error": {
         if (!scopedStatusMatches(data)) break;
         var admissionRefusal = reduceAdmissionRefusal(data);
+        if (admissionRefusal && !chatTurnRunning()) finishWaitingForEarlierTurn();
+        // Nothing else will run after a refused message, so its queue goes back to the composer
+        if (admissionRefusal && !chatTurnRunning()) {
+          settleQueue(false, "Your message was not accepted, so your queued messages are back in the composer.");
+        }
+        if (admissionRefusal) restoreRefusedQueuedSend(data.submission_id);
+        if (admissionRefusal) forgetNewChatAnswer(data.submission_id, null);
+        if (admissionRefusal) flushPendingTaskReload();
+        if (admissionRefusal && unsettledChatSend && unsettledChatSend.submissionId === data.submission_id) {
+          unsettledChatSend = null;
+        }
+        if (admissionRefusal && newChatWait && data.submission_id === newChatWait.submissionId) endNewChatWait(false);
         var em = errorMessage(data);
         showToast(em, "error");
         hideSkeleton();
@@ -7363,11 +8093,16 @@
           bgTaskDone[tcp.task_id] = true;
           removeTaskChip(tcp.task_id);
         }
-        var tcFail = tcp.status === "failed";
-        var tcMsg = tcp.summary || ("Background task " + (tcp.status || "completed"));
+        var tcFail = tcp.status === "failed" || tcp.status === "retryable";
+        var tcSummary = typeof tcp.summary === "string" ? tcp.summary.trim() : "";
+        var tcMsg = tcSummary || (tcFail
+          ? "The background task did not finish."
+          : "Background task " + (tcp.status || "completed"));
         if (tcp.chat_id && tcp.chat_id === activeChatId) {
           showToast(tcMsg, tcFail ? "error" : "info");
-          loadActiveChat(tcp.chat_id);
+          // Reloading mid-turn would drop that turn, so the reload waits for it to end
+          pendingTaskReload = tcp.chat_id;
+          flushPendingTaskReload();
         } else if (tcp.chat_id) {
           showToast(tcMsg + " — tap to open", tcFail ? "error" : "info", function () {
             loadActiveChat(tcp.chat_id);
@@ -7382,6 +8117,7 @@
         if (!scopedStatusMatches(data)) break;
         var tpChat = data.session_id || data.chat_id;
         if (tpChat && activeChatId && tpChat !== activeChatId) break;
+        if (heldChatLoad || ((!tpChat || !activeChatId) && chatTurnRunningElsewhere())) break;
         if (data.terminal) { turnPhaseActive = false; setStatus(""); break; }
         var tpText = data.message || ((data.tool_name || "job") + " running…");
         if (!data.message && data.agent_id && agentNameById[data.agent_id]) {
@@ -7392,17 +8128,56 @@
         setStatus(tpText, true, "chat-status");
         break;
       }
-      case "operation_status":
-        reduceOperationStatus(data);
+      case "operation_status": {
+        var leftTurnStatus = leftChatTurns[data.request_generation] === true;
+        trackChatTurn(data);
+        var statusApplied = !leftTurnStatus && reduceOperationStatus(data);
+        if (statusApplied && newChatWait && data.terminal && data.state !== "completed"
+            && data.request_generation === newChatWait.generation) endNewChatWait(false);
+        if (data.action === "chat_message" && data.terminal && unsettledChatSend
+            && unsettledChatSend.requestGeneration === data.request_generation) unsettledChatSend = null;
+        if (TURN_ACTIONS[data.action] && data.terminal && data.connection_generation === connectionGeneration) {
+          // A turn left for another chat fails the scope check, so its submission ends here
+          finishOperationSubmission(data.request_generation);
+          if (!chatTurnRunning()) finishWaitingForEarlierTurn();
+          // A status the client skipped, such as for a chat left and reopened mid-answer, still ends the turn
+          var completedHere = data.state === "completed"
+            && (statusApplied || (data.chat_id || null) === (activeChatId || null));
+          settleQueue(completedHere, completedHere || data.state !== "completed"
+            ? "The answer did not finish, so your queued messages are back in the composer."
+            : "The answer finished in another chat, so your queued messages are back in the composer.");
+          flushPendingTaskReload();
+          if (!chatTurnRunning()) armNewChatWaitTimer();
+        }
+        if (data.terminal && data.state !== "completed") forgetNewChatAnswer(null, data.request_generation);
+        settleQueueAfterReload(data);
+        syncQueueControls();
         break;
+      }
       case "agent_lifecycle":
         reduceAgentLifecycle(data);
         break;
+      case "chat_steer_recorded":
+        reduceSteerRecorded(data);
+        break;
+      case "chat_steer_refused":
+        reduceSteerRefused(data);
+        break;
+      case "side_question_result":
+        reduceSideQuestionResult(data);
+        break;
       case "rote_config":
         applyDeviceProfile(data.device_profile && data.device_profile.device_type);
+        var hadSteering = !!turnSteerAck;
+        turnSteerAck = readTurnSteerAck(data.device_profile);
+        if (hadSteering && !turnSteerAck) { restoreQueueToComposer(null); returnPendingSteers(); }
+        syncSteerControls();
         if (!socketReady) {
           socketReady = true;
+          attempts = 0;
           setConnState("connected");
+          // A page shown or resized before this reply reports its device now, since earlier reports were skipped
+          maybeReportCapabilities(false);
           flushPendingActions();
           runVoicePreflight();
         }
@@ -7521,6 +8296,11 @@
     var ready = (typeof readyAttachments === "function") ? readyAttachments() : [];
     if (!message && !ready.length) return;
     setWorkspaceView("work");
+    if (newChatWait && isSocketReady()) {
+      if (typeof clearStagedAttachments === "function") clearStagedAttachments();
+      holdForNewChat(message, ready);
+      return;
+    }
     if (!isSocketReady()) {
       queueChatSend(message, ready);
       if (typeof clearStagedAttachments === "function") clearStagedAttachments();
@@ -7528,6 +8308,78 @@
     }
     doSendChat(message, ready);
     if (typeof clearStagedAttachments === "function") clearStagedAttachments();
+  }
+
+  function holdForNewChat(message, ready) {
+    var held = newChatWait.held || { message: "", ready: [] };
+    var room = Math.max(0, MAX_ATTACHMENTS - held.ready.length);
+    newChatWait.held = { message: [held.message, message].filter(Boolean).join("\n\n"),
+      ready: held.ready.concat(ready.slice(0, room)) };
+    // Files past the limit stay in the composer for the next message
+    if (ready.length > room) {
+      stagedAttachments = ready.slice(room).concat(stagedAttachments).slice(0, MAX_ATTACHMENTS);
+      renderAttachments();
+    }
+    setStatus("Starting the new chat…", true, "new-chat-wait");
+    // Without an answer the message still goes out without a chat id rather than waiting forever
+    armNewChatWaitTimer();
+  }
+
+  // A New chat queued while offline sets up the wait when it is finally sent
+  function requestNewChat() {
+    if (!isSocketReady()) {
+      queueOutboundAction({
+        label: "new_chat",
+        dispatch: requestNewChat,
+        onRefused: function () { showToast("“new chat” was not sent — still reconnecting.", "error"); },
+      });
+      return;
+    }
+    var earlierWait = newChatWait;
+    var submission = action("new_chat", {});
+    if (!submission || !submission.requestGeneration) return;
+    newChatAnswers.push({ submissionId: submission.submissionId, generation: submission.requestGeneration,
+      abandoned: false });
+    // Plain chat_created answers carry no id, so a message waits for the answer to the last New chat
+    newChatWait = { generation: submission.requestGeneration, submissionId: submission.submissionId,
+      pending: (earlierWait ? earlierWait.pending : 0) + 1,
+      held: earlierWait ? earlierWait.held : null, timer: earlierWait ? earlierWait.timer : null };
+    if (newChatWait.held) setStatus("Starting the new chat…", true, "new-chat-wait");
+  }
+
+  function takeNewChatAnswer(frame) {
+    var createdFor = frame.submission_id || frame.payload.submission_id;
+    var index = createdFor ? newChatAnswers.findIndex(function (answer) { return answer.submissionId === createdFor; }) : 0;
+    if (index < 0 || !newChatAnswers.length) return "unknown";
+    return newChatAnswers.splice(index, 1)[0].abandoned ? "abandoned" : "current";
+  }
+
+  function forgetNewChatAnswer(submissionId, generation) {
+    newChatAnswers = newChatAnswers.filter(function (answer) {
+      return answer.submissionId !== submissionId && answer.generation !== generation;
+    });
+  }
+
+  // While a turn runs elsewhere the server answers New chat only after it, so the wait starts when it ends
+  function armNewChatWaitTimer() {
+    if (!newChatWait || !newChatWait.held || newChatWait.timer || chatTurnRunning()) return;
+    newChatWait.timer = setTimeout(function () { endNewChatWait(true); }, NEW_CHAT_WAIT_MS);
+  }
+
+  function endNewChatWait(sendHeld, notice) {
+    var wait = newChatWait;
+    newChatWait = null;
+    if (wait && wait.timer) clearTimeout(wait.timer);
+    if (!wait || !wait.held) return;
+    restoreActiveStatusOrClear(["new-chat-wait"]);
+    if (sendHeld) { doSendChat(wait.held.message, wait.held.ready); return; }
+    if (input) {
+      input.value = [wait.held.message, input.value].filter(function (text) { return text && text.trim(); }).join("\n\n");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    stagedAttachments = wait.held.ready.concat(stagedAttachments).slice(0, MAX_ATTACHMENTS);
+    renderAttachments();
+    showToast(notice || "The new chat did not start, so your message is back in the composer.", "warning");
   }
 
   function queueChatSend(message, ready) {
@@ -7547,7 +8399,8 @@
       label: "chat_message",
       dispatch: function () {
         if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
-        doSendChat(message, ready);
+        if (newChatWait) holdForNewChat(message, ready);
+        else doSendChat(message, ready);
       },
       onRefused: function () {
         if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
@@ -7559,6 +8412,46 @@
       wrap.parentNode.removeChild(wrap);
       if (input && !input.value) input.value = message || "";
     }
+  }
+
+  function recordUnsettledChatSend(submission, message, attachments, background) {
+    // A background task keeps running after a drop, so resending its message would duplicate it
+    unsettledChatSend = background ? null : { submissionId: submission.submissionId,
+      requestGeneration: submission.requestGeneration, chatId: activeChatId || null,
+      text: message || "", attachments: attachments.slice() };
+  }
+
+  // A turn cut off by a dropped connection is not saved, so its message goes back to the composer like on macOS
+  function restoreUnsettledChatSend() {
+    var unsent = unsettledChatSend;
+    unsettledChatSend = null;
+    if (unsent && unsent.chatId && unsent.chatId !== (activeChatId || null)) {
+      unsentByChat[unsent.chatId] = unsent;
+      showToast("The connection dropped before your message in another chat was saved. "
+        + "It will be back in the composer when you open that chat.", "warning");
+      return false;
+    }
+    return putUnsentInComposer(unsent);
+  }
+
+  function restoreUnsentForOpenedChat(chatId) {
+    var unsent = unsentByChat[chatId];
+    delete unsentByChat[chatId];
+    putUnsentInComposer(unsent);
+  }
+
+  function putUnsentInComposer(unsent) {
+    if (!unsent || unsent.chatId !== (activeChatId || null) || !input) return false;
+    var draft = input.value;
+    input.value = unsent.text && draft ? unsent.text + "\n\n" + draft : (unsent.text || draft);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    var restoredUids = unsent.attachments.map(function (entry) { return entry.uid; });
+    stagedAttachments = unsent.attachments.concat(stagedAttachments.filter(function (entry) {
+      return restoredUids.indexOf(entry.uid) === -1;
+    })).slice(0, MAX_ATTACHMENTS);
+    renderAttachments();
+    showToast("The connection dropped before your message was saved. It is back in the composer.", "warning");
+    return true;
   }
 
   function firstFourWords(text) {
@@ -7610,7 +8503,8 @@
     list.insertBefore(btn, list.firstChild);
   }
 
-  function doSendChat(message, ready) {
+  function doSendChat(message, ready, queuedBackground) {
+    var background = queuedBackground === undefined ? bgArmed : queuedBackground;
     sealLiveTurn();
     openRequest("commit", activeChatId);
     var html = "";
@@ -7633,9 +8527,10 @@
         return { attachment_id: a.attachment_id, filename: a.filename, category: a.category };
       });
     }
-    if (bgArmed) payload.async_mode = true;
+    if (background) payload.async_mode = true;
     if (turnSelection) payload.selection = cloneTurnSelection(turnSelection);
     var submission = beginOperationSubmission("chat_message", payload, requestState.generation);
+    recordUnsettledChatSend(submission, message, ready, !!payload.async_mode);
     send({
       type: "ui_event",
       action: "chat_message",
@@ -7646,8 +8541,10 @@
       payload: submission.payload,
     });
     purgeWelcome();
-    if (bgArmed) setBgArmed(false);
-    else showSkeleton();
+    if (queuedBackground === undefined && bgArmed) setBgArmed(false);
+    if (!background) showSkeleton();
+    return { submissionId: submission.submissionId, chatId: activeChatId || null,
+      text: message || "", attachments: ready.slice() };
   }
 
   if (form) form.addEventListener("submit", function (e) {
@@ -7655,8 +8552,25 @@
     var v = input.value.trim();
     var hasReady = (typeof readyAttachments === "function") && readyAttachments().length;
     if (!v && !hasReady) return;
+    if (steeringApplies() || queueSendWaiting[queueKey()]) {
+      if (!queueFollowUp(v, readyAttachments(), bgArmed)) return;
+      input.value = "";
+      clearStagedAttachments();
+      if (bgArmed) setBgArmed(false);
+      return;
+    }
     input.value = "";
     sendChat(v);
+  });
+  if (input) input.addEventListener("keydown", function (e) {
+    if (e.key !== "Escape" || e.repeat || e.isComposing || e.keyCode === 229 || e.defaultPrevented) return;
+    if (escapeBelongsElsewhere()) return;
+    if (stopTurn()) e.preventDefault();
+  });
+  var stopButton = document.getElementById("astral-stop-btn");
+  if (stopButton) stopButton.addEventListener("click", function () {
+    stopTurn();
+    if (input) { try { input.focus(); } catch (e) {} }
   });
   if (input && input.tagName === "TEXTAREA") input.addEventListener("keydown", function (e) {
     if (e.key !== "Enter" || e.shiftKey || e.isComposing || e.keyCode === 229 || e.defaultPrevented) return;
@@ -7681,6 +8595,13 @@
       cancelledMessages += 1;
       return false;
     });
+    // A saved chat keeps its queue for when it is reopened; an unsaved one has nowhere to return
+    if (!activeChatId) {
+      cancelledMessages += takeQueue("").length;
+      Object.keys(pendingSteers).forEach(function (clientMessageId) {
+        if (pendingSteers[clientMessageId].chatId === null) { dropPendingSteer(clientMessageId); cancelledMessages += 1; }
+      });
+    }
     if (cancelledMessages) showToast("Queued messages cleared for the new chat.", "info");
     if (input) {
       input.value = "";
@@ -7690,7 +8611,10 @@
     if (attachInput) attachInput.value = "";
     closeAttachMenu();
     setBgArmed(false);
+    leaveRunningChatTurns();
+    unsettledChatSend = null;
     activeChatId = null;
+    heldChatLoad = null;
     timelineMode = false;
     streamSeq = {};
     streamChartPlot = {};
@@ -7698,7 +8622,8 @@
     resetFeed();
     showCanvasEmpty();
     setStatus("");
-    action("new_chat", {});
+    requestNewChat();
+    renderQueue();
     closeHistoryOverlay();
     setWorkspaceView("start");
     syncChatActiveState();
@@ -8950,6 +9875,42 @@
     window.visualViewport.addEventListener("scroll", positionTour);
   }
 
+  // Doubles from 2 s to a 60 s cap with jitter, like the macOS bootstrap retry, and never gives up
+  function reconnectDelayMs(attempt) {
+    var base = Math.min(60000, 2000 * Math.pow(2, Math.max(0, attempt - 1)));
+    return Math.round(base * (0.5 + Math.random() / 2));
+  }
+
+  var reconnectTimer = null;
+  var reconnectSocket = null;
+  function scheduleReconnect(socket) {
+    clearTimeout(reconnectTimer);
+    reconnectSocket = socket;
+    reconnectTimer = setTimeout(runReconnect, reconnectDelayMs(attempts));
+  }
+
+  function runReconnect() {
+    var socket = reconnectSocket;
+    reconnectTimer = null;
+    reconnectSocket = null;
+    if (accountSignedOut || !socket || ws !== socket) return;
+    // Refresh first so a register_ui after the access-token TTL recovers silently; a signed-out answer goes to login
+    refreshToken(true, function () {
+      // An owner change during the refresh clears ws, and its new owner still needs a socket
+      if (!accountSignedOut && (ws === socket || ws === null)) connect();
+    });
+  }
+
+  function reconnectNow() {
+    if (!reconnectTimer) return;
+    clearTimeout(reconnectTimer);
+    runReconnect();
+  }
+  window.addEventListener("online", reconnectNow);
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") reconnectNow();
+  });
+
   function connect() {
     if (accountSignedOut) return;
     var preserveVoiceControls = !!voiceRecoverableFence() || !!voicePendingEndFence;
@@ -8968,7 +9929,7 @@
     var thisSocket = ws;
     ws.onopen = function () {
       if (accountSignedOut || ws !== thisSocket) return;
-      attempts = 0; authRetried = false; setStatus("");
+      authRetried = false; setStatus("");
       setConnState("connecting", "Registering…");
       sendRegistration(firstConnect ? serverResumed : true);
       firstConnect = false;
@@ -8977,16 +9938,36 @@
       for (var tid in bgTaskChips) action("watch_task", { task_id: tid }, false);
     };
     ws.onmessage = function (event) {
-      if (!accountSignedOut && ws === thisSocket) onMessage(event);
+      if (!accountSignedOut && ws === thisSocket) {
+        onMessage(event);
+        syncStopControl();
+      }
     };
     ws.onerror = function () { try { thisSocket.close(); } catch (e) {} };
     ws.onclose = function () {
+      if (ws === thisSocket && !accountSignedOut) endNewChatWait(false);
       if (accountSignedOut || ws !== thisSocket) return;
       socketReady = false;
       if (ownerSurfaceRequest) { retireOwnerSurface(); setModal(""); }
       setConnState("offline", "Reconnecting — messages will queue");
       operationSubmissionByGeneration = Object.create(null);
       operationSubmissionById = Object.create(null);
+      // Registration on reconnect hydrates the active chat, so a held load is not sent
+      runningChatTurns = Object.create(null);
+      leftChatTurns = Object.create(null);
+      cancelledChatTurns = Object.create(null);
+      heldChatLoad = null;
+      newChatAnswers = [];
+      turnSteerAck = null;
+      // A draft that repeats the unsaved message is dropped before queued messages come back
+      if (unsettledChatSend && unsettledChatSend.chatId === (activeChatId || null) && input
+          && input.value.trim() === unsettledChatSend.text.trim()) input.value = "";
+      restoreQueueToComposer("The connection dropped, so your queued messages are back in the composer.");
+      returnPendingSteers();
+      syncSteerControls();
+      syncStopControl();
+      pendingTaskReload = null;
+      restoreUnsettledChatSend();
       clearVoiceBindingRenewal();
       voiceBinding = null;
       if (voiceSpeechBackend === "client_local" && voiceLocalPendingFinal) {
@@ -9001,10 +9982,7 @@
       setStatus("Disconnected"); attempts++;
       hideSkeleton();
       clearTransientOverlay();
-      // Refresh first so a register_ui after the access-token TTL recovers silently
-      if (attempts <= 10) setTimeout(function () {
-        refreshToken(false, function () { connect(); });
-      }, 3000);
+      scheduleReconnect(thisSocket);
     };
   }
   prepareAccountIdentity(token, null).then(function (ready) {
