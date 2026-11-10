@@ -10,12 +10,12 @@
     @testable import AstralCore
 
     final class ComputerCommandPlanTests: XCTestCase {
-        private func folder(_ name: String = #function) throws -> String {
+        private func folder() throws -> String {
             let base = FileManager.default.temporaryDirectory
                 .appendingPathComponent("plan-" + UUID().uuidString)
             try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
             addTeardownBlock { try? FileManager.default.removeItem(at: base) }
-            let root = base.appendingPathComponent(name, isDirectory: true)
+            let root = base.appendingPathComponent("workspace", isDirectory: true)
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             guard let pointer = realpath(root.path, nil) else {
                 throw ComputerHostError("failed", "The temporary folder could not be resolved.")

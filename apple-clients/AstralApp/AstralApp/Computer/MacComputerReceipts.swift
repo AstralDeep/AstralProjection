@@ -40,6 +40,10 @@
             self.directory = directory
             self.identity = identity
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            guard chmod(directory.path, 0o700) == 0 else {
+                throw ComputerHostError(
+                    "receipt_store_failed", "The receipt claim store directory is not usable.")
+            }
             var info = stat()
             guard lstat(directory.path, &info) == 0, info.st_mode & S_IFMT == S_IFDIR,
                 (info.st_mode & 0o777) == 0o700
