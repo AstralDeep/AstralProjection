@@ -5,6 +5,7 @@ import SwiftUI
 
 struct VoiceModelSetupView: View {
     @Bindable var controller: OnDeviceVoiceController
+    let onStart: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var confirmingDelete = false
 
@@ -83,7 +84,7 @@ struct VoiceModelSetupView: View {
         case .installed:
             Text("Installed").accessibilityIdentifier("voice-model-installed")
             if controller.conversationReady {
-                Button("Start voice") { Task { await controller.activate() } }
+                Button("Start voice", action: onStart)
                     .disabled(controller.isPreparing || controller.isRunning)
                     .accessibilityIdentifier("voice-model-start")
             } else {

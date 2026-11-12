@@ -17,6 +17,7 @@ struct RootView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var viewportWidth: CGFloat = 1024
+    @State private var voiceSetupStart: (@MainActor () -> Void)?
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
@@ -83,6 +84,30 @@ struct RootView: View {
         .background(p.bg.ignoresSafeArea())
         .background(viewportReporter)
         .onChange(of: reduceMotion) { _, _ in model.reportDeviceCapabilities() }
+        .sheet(
+            isPresented: Binding(
+                get: { model.onDeviceVoice.showingSetup },
+                set: { model.onDeviceVoice.showingSetup = $0 }),
+            onDismiss: {
+                let start = voiceSetupStart
+                voiceSetupStart = nil
+                start?()
+            },
+            content: {
+                VoiceModelSetupView(controller: model.onDeviceVoice) {
+                    let owner = model.downloadOwner
+                    let chat = model.activeChatId
+                    voiceSetupStart = { [model] in
+                        Task {
+                            guard model.signedIn, model.downloadOwner == owner, model.activeChatId == chat else {
+                                return
+                            }
+                            await model.activateVoice()
+                        }
+                    }
+                    model.onDeviceVoice.showingSetup = false
+                }
+            })
     }
 
     private var legacyShell: some View {
