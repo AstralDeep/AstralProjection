@@ -611,7 +611,7 @@ def test_runtime_manifests_bind_exact_owning_dependency_inventory() -> None:
             "1c73e51ca61a7aaeae421e76e4cf54e6e8f35b96a27b64a5bdcec5a531137531"
         ),
         "windows-client/requirements.in": (
-            "697e2bc0786468f3621d2e043af81d6721e6734816cbe00eca7901958921a58f"
+            "12d63482d37b6b66ad945937f28aaaf6541d185a229ea05e9d27cc47e717a841"
         ),
         "windows-client/requirements.txt": (
             "d301d1e3a1b523fda5c1488693cf9a7a4336504c0d168bd0f4e220c8b0302c95"

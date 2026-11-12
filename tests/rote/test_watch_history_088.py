@@ -1,5 +1,5 @@
-"""Tests cross-checking real watch descriptor/ROTE output (backend/rote/adapter.py,
-backend/rote/capabilities.py) against fixtures SwiftCore's CLI tests also consume,
+"""Tests cross-checking real watch descriptor/ROTE output (rote/adapter.py,
+rote/capabilities.py) against fixtures SwiftCore's CLI tests also consume,
 covering history enrichment and passive-detail adaptation.
 """
 

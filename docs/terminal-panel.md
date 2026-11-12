@@ -22,8 +22,8 @@ controls on a desktop. See [terminal-monitor.md](terminal-monitor.md).
   DCS/SOS/PM/APC, C0/C1 controls, and bidi/format characters are removed, invalid
   UTF-8 becomes U+FFFD, and output is bounded to the newest 2000 lines /
   32768 bytes with a visible truncation warning.
-- `backend/rote/terminal.py` validates the closed component tree per device and
-  `backend/rote/adapter.py` adapts it (`ComponentAdapter.adapt_terminal_surface`),
+- `rote/terminal.py` in `astral-rote` (AstralKernel `python/rote/`) validates the closed component tree per device and
+  `rote/adapter.py` adapts it (`ComponentAdapter.adapt_terminal_surface`),
   including the declared code-to-text fallback for profiles without code support.
 - The web renderer emits the panel through the shared escaped chrome renderer
   (`render_html`) wrapped in the shared modal shell (`render_modal_shell`), so the

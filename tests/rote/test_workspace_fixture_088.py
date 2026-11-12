@@ -1,5 +1,5 @@
-"""Tests confirming the cross-client welcome fixture (backend/rote/adapter.py,
-backend/rote/capabilities.py) survives native adaptation with its permissions,
+"""Tests confirming the cross-client welcome fixture (rote/adapter.py,
+rote/capabilities.py) survives native adaptation with its permissions,
 prompts, and identified/nested components intact.
 """
 
