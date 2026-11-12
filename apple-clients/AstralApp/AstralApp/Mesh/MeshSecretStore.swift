@@ -1,6 +1,7 @@
 // Device-only secret storage for the mesh keys and the restore marker, backed by the Keychain.
 // DeviceKeys reads and writes through the protocol so tests can substitute an in-memory store.
 
+import AstralCore
 import Foundation
 import Security
 
@@ -15,7 +16,7 @@ nonisolated protocol MeshSecretStore: Sendable {
 }
 
 nonisolated final class MeshKeychainStore: MeshSecretStore, @unchecked Sendable {
-    static let defaultService = "com.personalailabs.astraldeep.mesh-device"
+    static var defaultService: String { KeychainServices.name("mesh-device") }
 
     private let service: String
 

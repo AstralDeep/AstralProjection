@@ -76,7 +76,7 @@
             identity: PushIdentity, rest: PushRest, tokenProvider: @escaping @Sendable () async -> String?,
             incarnationProvider: @escaping @MainActor (String) -> String? = { _ in nil },
             system: PushNotificationSystem? = nil,
-            custody: any MeshKeyStorage = KeychainMeshKeyStorage(service: "com.personalailabs.astraldeep.push")
+            custody: any MeshKeyStorage = KeychainMeshKeyStorage(service: KeychainServices.name("push"))
         ) {
             self.identity = identity
             self.rest = rest

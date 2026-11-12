@@ -66,8 +66,8 @@ public final class InMemoryMeshKeyStorage: MeshKeyStorage, @unchecked Sendable {
 }
 
 public final class KeychainMeshKeyStorage: MeshKeyStorage, @unchecked Sendable {
-    private let service: String
-    public init(service: String = "com.personalailabs.astraldeep.mesh") { self.service = service }
+    public let service: String
+    public init(service: String = KeychainServices.name("mesh")) { self.service = service }
 
     private func query(_ key: String) -> [String: Any] {
         [

@@ -3,6 +3,15 @@
 
 import Foundation
 
+public enum KeychainServices {
+    public static let productionBundleIdentifier = "com.personalailabs.astraldeep"
+
+    public static func name(_ suffix: String, bundleIdentifier: String? = Bundle.main.bundleIdentifier) -> String {
+        let base = bundleIdentifier.flatMap { $0.isEmpty ? nil : $0 } ?? productionBundleIdentifier
+        return base + "." + suffix
+    }
+}
+
 public enum AstralConfig {
     static let serverBaseURLInfoKey = "ASTRALServerBaseURL"
     static let keycloakAuthorityInfoKey = "ASTRALKeycloakAuthority"

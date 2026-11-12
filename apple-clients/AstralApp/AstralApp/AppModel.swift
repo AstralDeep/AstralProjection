@@ -598,7 +598,7 @@ final class AppModel: NSObject {
     @ObservationIgnored private var bootstrapRun: BootstrapRun?
     @ObservationIgnored private var serverCustodyRequired = false
     @ObservationIgnored var serverSessionStorage: any MeshKeyStorage = KeychainMeshKeyStorage(
-        service: "com.personalailabs.astraldeep.server-session")
+        service: KeychainServices.name("server-session"))
     @ObservationIgnored var serverSessionTransport: @Sendable (URLRequest) async throws -> ServerSessionReply = {
         try await ServerSessionHTTP.request($0)
     }
