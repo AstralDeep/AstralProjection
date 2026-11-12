@@ -131,7 +131,7 @@ nonisolated final class DeviceKeys: @unchecked Sendable {
         if !fresh, let kept {
             installId = kept
         } else {
-            installId = UUID().uuidString
+            installId = try prepareNewInstall()
             try store.save(Data(installId.utf8), account: Account.marker)
         }
         defaults.set(installId, forKey: installKey)
@@ -140,6 +140,9 @@ nonisolated final class DeviceKeys: @unchecked Sendable {
         let state = try custodyState(marker: marker)
         if state == nil {
             guard try store.load(Account.operations) == nil, try store.load(Account.wrap) == nil else {
+                throw DeviceKeysError.corruptKey
+            }
+            guard try store.load(Account.identity) != nil, try store.load(Account.presence) != nil else {
                 throw DeviceKeysError.corruptKey
             }
             try store.save(Data([CustodyState.pending.rawValue]) + marker, account: Account.custody)
@@ -156,6 +159,19 @@ nonisolated final class DeviceKeys: @unchecked Sendable {
         if state != .ready {
             try store.save(Data([CustodyState.ready.rawValue]) + marker, account: Account.custody)
         }
+    }
+
+    private func prepareNewInstall() throws -> String {
+        for account in Account.keys {
+            guard try store.load(account) == nil else { throw DeviceKeysError.corruptKey }
+        }
+        if let pending = try store.load(Account.custody) {
+            guard pending.first == CustodyState.pending.rawValue else { throw DeviceKeysError.corruptKey }
+            return try Self.markerId(Data(pending.dropFirst()))
+        }
+        let installId = UUID().uuidString
+        try store.save(Data([CustodyState.pending.rawValue]) + Data(installId.utf8), account: Account.custody)
+        return installId
     }
 
     private static func markerId(_ marker: Data) throws -> String {

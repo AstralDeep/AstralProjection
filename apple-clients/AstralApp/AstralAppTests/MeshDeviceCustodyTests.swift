@@ -149,6 +149,56 @@ final class MeshDeviceCustodyTests: XCTestCase {
         XCTAssertFalse(upgraded.wasRestored)
     }
 
+    func testLegacyInstallRefusesMissingP256KeysWithoutReplacingRemainingKeys() throws {
+        for missing in [["identity-key"], ["presence-key"], ["identity-key", "presence-key"]] {
+            let store = MeshMemorySecretStore()
+            let defaults = defaults()
+            _ = try DeviceKeys(store: store, defaults: defaults, preferHardware: false)
+            for account in ["operations-key", "wrap-key", "local-keys-state"] + missing { try store.remove(account) }
+            let accounts = [
+                "identity-key", "presence-key", "operations-key", "wrap-key", "install-marker", "local-keys-state",
+            ]
+            let retained = try accounts.map { try store.load($0) }
+            XCTAssertThrowsError(try DeviceKeys(store: store, defaults: defaults, preferHardware: false)) {
+                XCTAssertEqual($0 as? DeviceKeysError, .corruptKey)
+            }
+            for (index, account) in accounts.enumerated() { XCTAssertTrue(try store.load(account) == retained[index]) }
+        }
+    }
+
+    func testMarkerlessLegacyKeysWithoutRecordedDefaultsRefuseWithoutMutation() throws {
+        for retained in [["identity-key"], ["presence-key"], ["identity-key", "presence-key"]] {
+            let store = MeshMemorySecretStore()
+            _ = try DeviceKeys(store: store, defaults: defaults(), preferHardware: false)
+            let accounts = [
+                "identity-key", "presence-key", "operations-key", "wrap-key", "install-marker", "local-keys-state",
+            ]
+            for account in accounts where !retained.contains(account) { try store.remove(account) }
+            let original = try accounts.map { try store.load($0) }
+            XCTAssertThrowsError(try DeviceKeys(store: store, defaults: defaults(), preferHardware: false)) {
+                XCTAssertEqual($0 as? DeviceKeysError, .corruptKey)
+            }
+            for (index, account) in accounts.enumerated() { XCTAssertTrue(try store.load(account) == original[index]) }
+        }
+    }
+
+    func testMarkerlessReadyOrMalformedStateRefusesWithoutMutation() throws {
+        let marker = Data(UUID().uuidString.utf8)
+        for state in [Data([2]) + marker, Data(), Data([0xFF]), Data([1]) + Data("invalid".utf8)] {
+            let store = MeshMemorySecretStore()
+            let defaults = defaults()
+            try store.save(state, account: "local-keys-state")
+            XCTAssertThrowsError(try DeviceKeys(store: store, defaults: defaults, preferHardware: false)) {
+                XCTAssertEqual($0 as? DeviceKeysError, .corruptKey)
+            }
+            XCTAssertEqual(try store.load("local-keys-state"), state)
+            for account in ["identity-key", "presence-key", "operations-key", "wrap-key", "install-marker"] {
+                XCTAssertNil(try store.load(account))
+            }
+            XCTAssertNil(defaults.string(forKey: "\(MeshKeychainStore.defaultService).install-id"))
+        }
+    }
+
     func testRestoreReplacesAllKeysAndRemainsPendingAcrossFailedInitialization() throws {
         let accounts = ["identity-key", "presence-key", "operations-key", "wrap-key"]
         let store = FailingCustodyStore()
