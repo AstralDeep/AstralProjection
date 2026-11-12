@@ -2,6 +2,7 @@
 // Shared identity and machine-local controls remain separate from generated workspace content.
 
 import AstralCore
+import AstralKernel
 import SwiftUI
 
 #if os(macOS)
@@ -338,6 +339,7 @@ struct AstralTopBar: View {
             if !model.accountName.isEmpty {
                 Text(model.accountName)
             }
+            Text("Kernel \(AstralKernelInfo.version)").accessibilityIdentifier("settings-kernel-version")
             Button(role: .destructive) {
                 Task { await model.signOut() }
             } label: {

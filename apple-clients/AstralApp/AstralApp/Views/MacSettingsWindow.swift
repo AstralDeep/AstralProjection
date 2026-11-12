@@ -4,6 +4,7 @@
 #if os(macOS)
     import AppKit
     import AstralCore
+    import AstralKernel
     import SwiftUI
 
     enum MacSettingsPane: String, CaseIterable {
@@ -73,6 +74,10 @@
                     }
                     .disabled(!host.available)
                     .accessibilityIdentifier("settings-computer-controls")
+                }
+                LabeledContent("Kernel") {
+                    Text(AstralKernelInfo.version).foregroundStyle(theme.palette.muted)
+                        .accessibilityIdentifier("settings-kernel-version")
                 }
                 Section("Notifications") {
                     LabeledContent("Status") {
