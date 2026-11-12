@@ -22,9 +22,9 @@
       "sha256": "50aefbc5c0c6d9f7593a9ad651565ed2dd57db88173be9864136520455f2b44c"
     },
     {
-      "bytes": 8055,
+      "bytes": 6988,
       "path": "config.json",
-      "sha256": "9898da6e6ad97fd5da9a2de3fd22f43cde5529f6d59cae22480fe7b6b3f0534e"
+      "sha256": "e065ab825f68d4f989350193c1f395563ad4c11cf2805658e54b88771796d8e8"
     },
     {
       "bytes": 382,
@@ -32,14 +32,14 @@
       "sha256": "fa4a9e00378a7c93d199787e6a219bdf48d4bbe85f563b6450c461de5f394853"
     },
     {
-      "bytes": 1254554103,
+      "bytes": 1254554360,
       "path": "model.safetensors",
-      "sha256": "8141c8892e2f2e94f8372fe0daee70aeca3165310f9afaf0256c0557a86a981e"
+      "sha256": "746e965266b3d595f22a65ac0923c5a9afa47d2866bce3587b8ece1a0b598ee1"
     },
     {
-      "bytes": 69858,
+      "bytes": 66811,
       "path": "model.safetensors.index.json",
-      "sha256": "652599daae3a3cb6eb09cd3347018204731d1107ae903f6c45762e00901f4d7f"
+      "sha256": "9a7f54923421b863381822778a17b1f3701746cbef8d9efb8bb2997604cf7f7c"
     },
     {
       "bytes": 466,
@@ -71,8 +71,8 @@
   "id": "lfm3-audio-2b-3bit-mlx",
   "license": "LFM Open License v1.0",
   "repository": "Kentucky-Open-Science/LFM3-Audio-2B-MLX-3bit",
-  "revision": "main",
+  "revision": "65619d48c5e4bc1552db24e07bc4a2ff2aa3cf49",
   "runtime": "mlx",
   "source": "LiquidAI/LFM3-Audio-2B-MLX-bf16@452469a1afe66dd4932d0e9237603229fa606c0d",
-  "total_bytes": 1419707295
+  "total_bytes": 1419703438
 }

@@ -17,10 +17,9 @@ and are excluded from backup. Voice settings are available from the microphone's
 context menu and include cancellation, retry and deletion.
 
 The source of the weights is `Kentucky-Open-Science/LFM3-Audio-2B-MLX-3bit` on Hugging Face.
-The bundled manifest pins the bytes and license attribution. Its repository
-revision remains `main` until the owner publishes the quantized artifact; release
-qualification must bind the uploaded commit and verify all manifest digests.
-This lane neither uploads weights nor modifies the owner's model directory.
+The bundled manifest pins revision `65619d48c5e4bc1552db24e07bc4a2ff2aa3cf49`, published by the
+owner on 2026-11-12, with every file's size and SHA-256 taken from that commit's `SHA256SUMS` and
+checked against Hugging Face's LFS hashes. The app refuses any file that does not match.
 
 ## Conversation integration
 
