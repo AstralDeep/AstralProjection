@@ -69,6 +69,13 @@
 	<string>AstralDeep uses on-device speech recognition only while you explicitly run a voice conversation. Spoken audio is processed on this device and is never uploaded.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>AstralDeep never captures photos or video. The real-time voice framework links camera APIs, so this permission text is required, but the app does not request camera access.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>AstralDeep finds your other devices on this network to keep your chats in sync.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_astral-mesh._udp</string>
+		<string>_astral-mesh._tcp</string>
+	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
