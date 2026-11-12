@@ -29,15 +29,22 @@ nonisolated protocol ConsentAuthenticating: Sendable {
 }
 
 nonisolated struct LocalAuthenticator: ConsentAuthenticating {
+    private let contextFactory: @Sendable () -> LAContext
+
+    init(contextFactory: @escaping @Sendable () -> LAContext = { LAContext() }) {
+        self.contextFactory = contextFactory
+    }
+
     func authenticate(reason: String, requiresBiometry: Bool) async throws -> LAContext {
-        let context = LAContext()
+        let context = contextFactory()
         var policy = LAPolicy.deviceOwnerAuthentication
         if requiresBiometry {
             var probe: NSError?
-            if context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &probe) {
-                policy = .deviceOwnerAuthenticationWithBiometrics
-                context.localizedFallbackTitle = ""
+            guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &probe) else {
+                throw ConsentDenial.denied
             }
+            policy = .deviceOwnerAuthenticationWithBiometrics
+            context.localizedFallbackTitle = ""
         }
         guard try await context.evaluatePolicy(policy, localizedReason: reason) else { throw ConsentDenial.denied }
         return context
