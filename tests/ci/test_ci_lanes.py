@@ -33,7 +33,6 @@ def test_independent_surface_applicability(path, expected):
         "contracts/ui_protocol.json",
         "contracts/fixtures/voice_075/client_local_conformance.json",
         "contracts/assets/font.woff",
-        "backend/rote/adapter.py",
         "src/astralprojection/__init__.py",
         "scripts/export_xccov_line_coverage.py",
         ".github/workflows/ci.yml",

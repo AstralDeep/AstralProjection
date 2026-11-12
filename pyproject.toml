@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Presentation, rendering, adaptation, and native clients for AstralDeep"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["astralprims==0.4.0"]
+dependencies = ["astralprims==0.4.0", "astral-rote==0.1.0"]
 authors = [{ name = "AstralDeep" }]
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -20,6 +20,11 @@ classifiers = [
 Repository = "https://github.com/AstralDeep/AstralProjection"
 Issues = "https://github.com/AstralDeep/AstralProjection/issues"
 
+[project.entry-points."astral_rote.surfaces"]
+guidance = "astralprojection.chrome.guidance:build_guidance_view"
+notes = "astralprojection.chrome.guidance:build_notes_view"
+terminal = "astralprojection.chrome.terminal:build_terminal_view"
+
 [project.optional-dependencies]
 dev = [
   "build>=1.2",
@@ -29,7 +34,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src", "backend", "."]
-include = ["astralprojection*", "webrender*", "rote*", "contracts"]
+include = ["astralprojection*", "webrender*", "contracts"]
 namespaces = false
 
 [tool.setuptools.package-data]

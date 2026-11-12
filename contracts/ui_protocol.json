@@ -1575,7 +1575,7 @@
         "shared_chrome_menu": "The control rides the shared chrome_menu model with no capability gate; every client that renders chrome_menu receives it.",
         "watch_menu_projection": "webrender.chrome.menu_model.project_watch_menu_model does not project this control to the wrist.",
         "owner_exclusion_T059": "Windows keeps its existing compatible layout; the feature-088 redesign is excluded by the owner's 2026-09-11 decision (T059).",
-        "rote_voice_profile": "backend/rote/capabilities.py gives the voice profile supports_interactivity False, so ComponentAdapter drops every action; a command surface cannot be completed by voice."
+        "rote_voice_profile": "rote/capabilities.py in astral-rote gives the voice profile supports_interactivity False, so ComponentAdapter drops every action; a command surface cannot be completed by voice."
       },
       "client_profiles": {
         "web": {
@@ -1643,7 +1643,7 @@
         },
         "voice": {
           "device_type": "voice",
-          "registration_source": "backend/rote/capabilities.py",
+          "registration_source": "rote/capabilities.py",
           "advertised_088_capabilities": [],
           "note": "a ROTE rendering profile of an already registered client, not a separate registration"
         }

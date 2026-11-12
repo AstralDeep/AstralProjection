@@ -1,4 +1,4 @@
-"""Tests for the watch's Work surface disposition (backend/rote/adapter.py,
+"""Tests for the watch's Work surface disposition (rote/adapter.py,
 backend/webrender/chrome/menu_model.py): artifact chrome and file-IO stay bounded to
 their supported hosts.
 """

@@ -2918,7 +2918,7 @@ class OrchestratorClient(QObject):
         return self._send_current_work(local, payload, is_current=is_current)
 
     def send_current_work_continuity(self, payload: dict, request_generation: str, *, is_current=lambda: True) -> bool:
-        from astralprojection.work_continuity import validate_continuity_payload
+        from rote.work_continuity import validate_continuity_payload
 
         _uuid4(request_generation, "request_generation")
         try:

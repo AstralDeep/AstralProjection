@@ -86,7 +86,7 @@ def _assert_core_trigger_and_python_coverage(text: str) -> None:
     assert "mkdir -p build/074/coverage" in python
     assert (
         "pytest -q -p no:cacheprovider "
-        "--cov=astralprojection --cov=rote --cov=webrender "
+        "--cov=astralprojection --cov=webrender "
         "--cov=scripts.merge_xccov_line_coverage --cov=scripts.build_offline_assets "
         "--cov=scripts.build_native_export --cov=scripts.android_coverage --cov=scripts.native_xccov_domain --cov=scripts.collect_xccov_native_domain --cov=scripts.export_xccov_line_coverage --cov=scripts.check_changed_coverage --cov=scripts.ci_review_diagnostics --cov=scripts.ci_lanes --cov=scripts.ci_apple_ui_products --cov=scripts.ci_retry_diagnostics --cov=scripts.check_regression_effectiveness --cov=scripts.swift_inactive_input --cov-branch "
         "--cov-report=xml:build/074/coverage/projection-python.xml"

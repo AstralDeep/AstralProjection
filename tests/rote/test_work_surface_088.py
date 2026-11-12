@@ -1,4 +1,4 @@
-"""Tests for the read-only Work surface (backend/rote/work.py,
+"""Tests for the read-only Work surface (rote/work.py,
 backend/webrender/chrome/menu_model.py): navigation descriptors, builder output,
 save-command vocabulary, and refusal of malformed or oversized payloads.
 """
