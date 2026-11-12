@@ -147,11 +147,14 @@
             }
         }
         func testMissingSelectionOpensChooserAndResumesOnlyTheCurrentIntent() async throws {
+            let voice = try await VoiceModelTestFixture.installed()
+            defer { try? FileManager.default.removeItem(at: voice.root) }
             for route in ["button", "event", "send", "component", "voice"] {
                 let server = ProjectCatalogServer(project: project)
                 await server.succeedCreations()
                 let model = AppModel(
-                    tokenStore: InMemoryTokenStore(), defaults: UserDefaults(suiteName: UUID().uuidString)!)
+                    tokenStore: InMemoryTokenStore(), defaults: UserDefaults(suiteName: UUID().uuidString)!,
+                    onDeviceVoiceController: voice.controller)
                 model.projects.bind(
                     scope: "owner",
                     client: RestClient(
@@ -442,9 +445,12 @@
         }
 
         func testVoiceWithoutSelectedProjectNeverCreatesAnUnscopedChat() async throws {
+            let voice = try await VoiceModelTestFixture.installed()
+            defer { try? FileManager.default.removeItem(at: voice.root) }
             let server = ProjectCatalogServer(project: project)
             let model = AppModel(
-                tokenStore: InMemoryTokenStore(), defaults: UserDefaults(suiteName: UUID().uuidString)!)
+                tokenStore: InMemoryTokenStore(), defaults: UserDefaults(suiteName: UUID().uuidString)!,
+                onDeviceVoiceController: voice.controller)
             model.projects.bind(
                 scope: "owner",
                 client: RestClient(

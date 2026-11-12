@@ -545,6 +545,16 @@
     @MainActor
     final class PushNotificationAppDelegate: NSObject, UIApplicationDelegate {
         func application(
+            _ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
+            completionHandler: @escaping () -> Void
+        ) {
+            if identifier == VoiceModelStore.backgroundIdentifier {
+                VoiceModelBackgroundEvents.store(completionHandler, for: identifier)
+            } else {
+                completionHandler()
+            }
+        }
+        func application(
             _ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
         ) { PushNotificationService.active?.handleRegisteredDeviceToken(deviceToken) }
         func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {

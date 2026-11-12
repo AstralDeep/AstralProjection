@@ -1192,6 +1192,12 @@ private struct VoiceComposerNotices: View {
     }
 
     var body: some View {
+        if let message = model.onDeviceVoice.message {
+            Text(message)
+                .font(ConsoleTypography.caption)
+                .foregroundStyle(p.muted)
+                .accessibilityIdentifier("on-device-voice-status")
+        }
         if let notice = model.voice.terminalNotice {
             VoiceTerminalNoticeView(notice: notice)
         }
@@ -1223,46 +1229,28 @@ private struct VoiceComposerControls: View {
     @Environment(ThemeStore.self) var theme
     private var p: AstralPalette { theme.palette }
 
-    private var showsDefaultControl: Bool {
-        model.voice.composer == nil && !model.voice.active
-            && model.voice.terminalNotice == nil
-    }
-
     var body: some View {
-        let controls = model.voice.composer?.controls.filter(\.visible) ?? []
-        if showsDefaultControl {
-            inlineIcon(icon: "mic.fill", busy: false, pressed: false)
-                .opacity(0.45)
-                .accessibilityIdentifier("voice-control-voice-start")
-                .accessibilityLabel("Start voice conversation")
-                .accessibilityValue("Checking voice availability")
-                .help("Checking voice availability…")
-        } else if !controls.isEmpty {
-            HStack(spacing: 2) {
-                ForEach(controls) { control in
-                    Button {
-                        Task { await model.performVoiceControl(control.action) }
-                    } label: {
-                        inlineIcon(
-                            icon: symbol(control.icon),
-                            busy: control.busy,
-                            pressed: control.pressed
-                        )
-                        .opacity(control.enabled ? 1 : 0.45)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!control.enabled || control.busy)
-                    .accessibilityIdentifier("voice-control-\(control.key)")
-                    .accessibilityLabel(control.label)
-                    .accessibilityValue(
-                        !control.enabled
-                            ? (model.voice.message ?? "Unavailable")
-                            : control.busy ? "In progress" : (control.pressed ? "On" : "Off")
-                    )
-                    .help(control.label)
-                }
+        @Bindable var voice = model.onDeviceVoice
+        HStack(spacing: 8) {
+            Button {
+                if voice.isRunning { voice.stop() } else { Task { await model.activateVoice() } }
+            } label: {
+                inlineIcon(
+                    icon: voice.isRunning ? "mic.slash.fill" : "mic.fill", busy: voice.isPreparing,
+                    pressed: voice.isRunning)
+            }
+            .buttonStyle(.plain)
+            .disabled(voice.isPreparing)
+            .accessibilityIdentifier(voice.isRunning ? "voice-control-voice-end" : "voice-control-voice-start")
+            .accessibilityLabel(voice.isRunning ? "End voice conversation" : "Start voice conversation")
+            .accessibilityValue(voice.isRunning ? "On" : "Off")
+            .help(voice.isRunning ? "End voice conversation" : "Start voice conversation")
+            .contextMenu {
+                Button("Voice settings") { voice.showingSetup = true }
+                    .accessibilityIdentifier("voice-model-settings")
             }
         }
+        .sheet(isPresented: $voice.showingSetup) { VoiceModelSetupView(controller: voice) }
     }
 
     @ViewBuilder
@@ -1286,18 +1274,6 @@ private struct VoiceComposerControls: View {
         )
     }
 
-    private func symbol(_ serverIcon: String) -> String {
-        switch serverIcon {
-        case "microphone": "mic.fill"
-        case "device-transfer": "arrow.triangle.2.circlepath"
-        case "stop": "stop.fill"
-        case "speaker-stop": "speaker.slash.fill"
-        case "speaker-muted": "speaker.slash"
-        case "speaker-consent": "speaker.wave.2.bubble"
-        case "chat": "bubble.left.and.bubble.right"
-        default: "waveform"
-        }
-    }
 }
 
 private struct VoiceTerminalNoticeView: View {

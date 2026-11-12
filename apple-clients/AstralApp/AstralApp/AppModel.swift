@@ -262,10 +262,14 @@ final class AppModel: NSObject {
     let redirectURI = AstralConfig.redirectURI
     let voiceDeviceId: String
     @ObservationIgnored let voice: AppleVoiceSessionController
+    @ObservationIgnored let onDeviceVoice: OnDeviceVoiceController
 
     var signedIn = false {
         didSet {
-            if oldValue && !signedIn { cancelChatDeletion() }
+            if oldValue && !signedIn {
+                cancelChatDeletion()
+                onDeviceVoice.disconnect()
+            }
             #if os(macOS)
                 if oldValue != signedIn {
                     syncMacNotificationBadge()
@@ -735,6 +739,7 @@ final class AppModel: NSObject {
         defaults: UserDefaults = .standard,
         webSocket: WSClient? = nil,
         voiceController: AppleVoiceSessionController? = nil,
+        onDeviceVoiceController: OnDeviceVoiceController? = nil,
         credentialClock: @escaping @Sendable () -> Date = { Date() },
         computerHost: LocalComputerHost? = nil,
         processActivity: (any ProcessActivityScheduling)? = nil
@@ -746,6 +751,7 @@ final class AppModel: NSObject {
             macBrowser = MacBrowserDriver(host: host, defaults: defaults)
         #endif
         self.voice = voiceController ?? AppleVoiceSessionController()
+        self.onDeviceVoice = onDeviceVoiceController ?? OnDeviceVoiceController()
         self.store = tokenStore
         if tokenStore is InMemoryTokenStore {
             meshKeyStorage = InMemoryMeshKeyStorage()
@@ -7135,6 +7141,10 @@ final class AppModel: NSObject {
     }
 
     func activateVoice() async {
+        if onDeviceVoice.store?.state != .installed {
+            await onDeviceVoice.activate()
+            return
+        }
         #if os(macOS)
             if needsProjectSelection() {
                 requestProjectChoice { [weak self] in Task { await self?.activateVoice() } }
@@ -7142,7 +7152,7 @@ final class AppModel: NSObject {
             }
             guard await prepareProjectChat() else { return }
         #endif
-        await voice.activate()
+        await onDeviceVoice.activate()
     }
 
     func performVoiceControl(_ action: VoiceControlAction) async {
@@ -7150,7 +7160,11 @@ final class AppModel: NSObject {
             await activateVoice()
             return
         }
-        await voice.perform(action)
+        switch action {
+        case .end, .microphone: onDeviceVoice.stop()
+        case .stopSpeech, .muteSpeech: onDeviceVoice.stop()
+        default: break
+        }
     }
 
     func voiceSceneBecameActive() {
@@ -7160,6 +7174,7 @@ final class AppModel: NSObject {
                 active: true, connectionGeneration: connected ? continuity.connectionGeneration : nil)
         #endif
         voice.sceneBecameActive()
+        onDeviceVoice.resume()
         reportDeviceCapabilities()
     }
 
@@ -7170,11 +7185,18 @@ final class AppModel: NSObject {
                 active: false, connectionGeneration: connected ? continuity.connectionGeneration : nil)
         #endif
         voice.sceneBecameInactive()
+        onDeviceVoice.suspend()
     }
 
-    func voiceAudioSessionInterrupted() { voice.audioSessionInterrupted() }
+    func voiceAudioSessionInterrupted() {
+        voice.audioSessionInterrupted()
+        onDeviceVoice.interruptionBegan()
+    }
 
-    func voiceAudioSessionInterruptionEnded() { voice.audioSessionInterruptionEnded() }
+    func voiceAudioSessionInterruptionEnded() {
+        voice.audioSessionInterruptionEnded()
+        onDeviceVoice.interruptionEnded()
+    }
 
     func voiceAudioRouteChanged() {
         voice.audioRouteChanged()
@@ -7183,11 +7205,20 @@ final class AppModel: NSObject {
 
     func voiceAudioEngineConfigurationChanged() { voice.audioEngineConfigurationChanged() }
 
-    func voiceSessionLocked() { voice.sessionLocked() }
+    func voiceSessionLocked() {
+        voice.sessionLocked()
+        onDeviceVoice.sessionLocked()
+    }
 
-    func voiceSessionUnlocked() { voice.sessionUnlocked() }
+    func voiceSessionUnlocked() {
+        voice.sessionUnlocked()
+        onDeviceVoice.sessionUnlocked()
+    }
 
-    func voiceApplicationWillTerminate() { voice.close() }
+    func voiceApplicationWillTerminate() {
+        voice.close()
+        onDeviceVoice.disconnect()
+    }
 
     func refineComponent(_ componentId: String, instruction: String) {
         let trimmed = instruction.trimmingCharacters(in: .whitespacesAndNewlines)

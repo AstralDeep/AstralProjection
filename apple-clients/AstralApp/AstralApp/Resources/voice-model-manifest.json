@@ -1,0 +1,78 @@
+{
+  "display_name": "LFM3-Audio-2B (3-bit)",
+  "files": [
+    {
+      "bytes": 10574,
+      "path": "LICENSE",
+      "sha256": "4d28ca14dedc0b3d0fcc2b3339f0e79931faa33874f3d24f522183a8fc70068c"
+    },
+    {
+      "bytes": 801,
+      "path": "audio_tokenizer/config.json",
+      "sha256": "13ac10473c6cf45618a3e9603f529c889683c9e28fa77e0d4f0ca6e686d0cbf4"
+    },
+    {
+      "bytes": 147143540,
+      "path": "audio_tokenizer/model.safetensors",
+      "sha256": "45984a872fdcf0b94cd0ec68822bbf26f0c6fcb580cfaba0f7fa3ee60355137f"
+    },
+    {
+      "bytes": 9342,
+      "path": "chat_template.jinja",
+      "sha256": "50aefbc5c0c6d9f7593a9ad651565ed2dd57db88173be9864136520455f2b44c"
+    },
+    {
+      "bytes": 8055,
+      "path": "config.json",
+      "sha256": "9898da6e6ad97fd5da9a2de3fd22f43cde5529f6d59cae22480fe7b6b3f0534e"
+    },
+    {
+      "bytes": 382,
+      "path": "generation_config.json",
+      "sha256": "fa4a9e00378a7c93d199787e6a219bdf48d4bbe85f563b6450c461de5f394853"
+    },
+    {
+      "bytes": 1254554103,
+      "path": "model.safetensors",
+      "sha256": "8141c8892e2f2e94f8372fe0daee70aeca3165310f9afaf0256c0557a86a981e"
+    },
+    {
+      "bytes": 69858,
+      "path": "model.safetensors.index.json",
+      "sha256": "652599daae3a3cb6eb09cd3347018204731d1107ae903f6c45762e00901f4d7f"
+    },
+    {
+      "bytes": 466,
+      "path": "preprocessor_config.json",
+      "sha256": "6c991f650c2ec718ffe752c78ac2af66b2085b05b25bff3b8fef57310cc100ee"
+    },
+    {
+      "bytes": 773,
+      "path": "processor_config.json",
+      "sha256": "c5cbf344413ace2f8a8d3518f7eaf1a64c9bea9767999a6ad8266e8d7dca5666"
+    },
+    {
+      "bytes": 92,
+      "path": "special_tokens_map.json",
+      "sha256": "7946f864cbfb62a1b041bda937244210a1a87f4a6cab3a48b791131b2cd57f88"
+    },
+    {
+      "bytes": 17908634,
+      "path": "tokenizer.json",
+      "sha256": "41927bd314d17d7d7fadb44e10cd0919f7b71528d7741596d8cbd15c6945ec44"
+    },
+    {
+      "bytes": 675,
+      "path": "tokenizer_config.json",
+      "sha256": "42f2b5f6d78447d5643e7390eb1b49e5d4fcacbb8eb4d6652f2dc9760caf1b0e"
+    }
+  ],
+  "format": "astral.voice-model-manifest/v1",
+  "id": "lfm3-audio-2b-3bit-mlx",
+  "license": "LFM Open License v1.0",
+  "repository": "AstralDeep/LFM3-Audio-2B-3bit-MLX",
+  "revision": "main",
+  "runtime": "mlx",
+  "source": "LiquidAI/LFM3-Audio-2B-MLX-bf16@452469a1afe66dd4932d0e9237603229fa606c0d",
+  "total_bytes": 1419707295
+}
