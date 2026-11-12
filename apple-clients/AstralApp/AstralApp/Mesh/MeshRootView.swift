@@ -63,6 +63,7 @@ struct MeshShell: View {
             TabView {
                 NavigationSplitView {
                     MeshChatListView(selection: $selectedChat)
+                        .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 420)
                 } detail: {
                     if selectedChat != nil {
                         MeshChatDetailView()
