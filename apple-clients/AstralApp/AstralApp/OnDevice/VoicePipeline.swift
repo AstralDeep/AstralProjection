@@ -210,6 +210,7 @@ final class VoicePipeline {
                 perform(barge.sentenceFinished(index: index, completed: false))
                 notifyIdleIfDrained()
             }
+            onFailure?("voice_synthesis_failed")
         }
     }
 

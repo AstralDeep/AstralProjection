@@ -1230,7 +1230,7 @@ private struct VoiceComposerControls: View {
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
-        @Bindable var voice = model.onDeviceVoice
+        let voice = model.onDeviceVoice
         HStack(spacing: 8) {
             Button {
                 if voice.isRunning { voice.stop() } else { Task { await model.activateVoice() } }
@@ -1250,7 +1250,6 @@ private struct VoiceComposerControls: View {
                     .accessibilityIdentifier("voice-model-settings")
             }
         }
-        .sheet(isPresented: $voice.showingSetup) { VoiceModelSetupView(controller: voice) }
     }
 
     @ViewBuilder

@@ -296,6 +296,18 @@ final class OnDeviceVoicePipelineTests: XCTestCase {
         pipeline.stop()
     }
 
+    func testSynthesisFailureIsReportedWithoutClaimingSpeechWasHeard() throws {
+        let pipeline = try makePipeline()
+        var reasons: [String] = []
+        pipeline.onFailure = { reasons.append($0) }
+        pipeline.handleRecognizer(.final("What time is it?"))
+        pipeline.answerDelta("The clock is unavailable.")
+        pipeline.handleSpeech(.failed(index: 0))
+        XCTAssertEqual(reasons, ["voice_synthesis_failed"])
+        XCTAssertTrue(link.spoken.isEmpty)
+        pipeline.stop()
+    }
+
     func testStoppedPipelineIgnoresLateEvents() throws {
         let pipeline = try makePipeline()
         pipeline.stop()
