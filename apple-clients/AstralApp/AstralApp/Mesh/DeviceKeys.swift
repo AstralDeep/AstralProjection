@@ -1,5 +1,5 @@
-// Holds this device's P-256 identity and presence keys, in the Secure Enclave when the hardware allows it.
-// MeshHostSigner signs through it, and the restore marker tells the app a backup restore left it without its old keys.
+// Holds this device's P-256 identity/presence keys and device-only Ed25519 operations and X25519 wrapping secrets.
+// MeshHostSigner uses P-256 keys, while trusted host code can read local secrets and the restore-aware install marker.
 
 import CryptoKit
 import Foundation
@@ -15,13 +15,24 @@ nonisolated final class DeviceKeys: @unchecked Sendable {
     private enum Account {
         static let identity = "identity-key"
         static let presence = "presence-key"
+        static let operations = "operations-key"
+        static let wrap = "wrap-key"
         static let marker = "install-marker"
+        static let custody = "local-keys-state"
+        static let keys = [identity, presence, operations, wrap]
     }
 
     private enum Tag: UInt8 {
         case secureEnclave = 1
         case software = 2
     }
+
+    private enum CustodyState: UInt8 {
+        case pending = 1
+        case ready = 2
+    }
+
+    private static let initializationLock = NSLock()
 
     private let store: MeshSecretStore
     private let defaults: UserDefaults
@@ -42,6 +53,8 @@ nonisolated final class DeviceKeys: @unchecked Sendable {
         self.defaults = defaults
         installKey = "\(service).install-id"
         restoreKey = "\(service).restore-pending"
+        Self.initializationLock.lock()
+        defer { Self.initializationLock.unlock() }
         try prepare(preferHardware: preferHardware)
     }
 
@@ -80,15 +93,38 @@ nonisolated final class DeviceKeys: @unchecked Sendable {
         try sign(message, account: Account.presence, context: authentication)
     }
 
+    func operationsSecret() throws -> Data {
+        _ = try installMarker()
+        return try curveSecret(Account.operations)
+    }
+
+    func operationsPublicKey() throws -> Data {
+        try Curve25519.Signing.PrivateKey(rawRepresentation: operationsSecret()).publicKey.rawRepresentation
+    }
+
+    func wrapSecret() throws -> Data {
+        _ = try installMarker()
+        return try curveSecret(Account.wrap)
+    }
+
+    func wrapPublicKey() throws -> Data {
+        try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: wrapSecret()).publicKey.rawRepresentation
+    }
+
+    func installMarker() throws -> Data {
+        guard let marker = try store.load(Account.marker) else { throw DeviceKeysError.corruptKey }
+        _ = try Self.markerId(marker)
+        guard try custodyState(marker: marker) == .ready else { throw DeviceKeysError.corruptKey }
+        return marker
+    }
+
     private func prepare(preferHardware: Bool) throws {
-        let kept = try store.load(Account.marker).flatMap { String(data: $0, encoding: .utf8) }
+        let kept = try store.load(Account.marker).map(Self.markerId)
         let recorded = defaults.string(forKey: installKey)
         var fresh = false
         if let recorded, kept != recorded {
-            try store.remove(Account.identity)
-            try store.remove(Account.presence)
-            try store.remove(Account.marker)
             defaults.set(true, forKey: restoreKey)
+            for account in Account.keys + [Account.custody, Account.marker] { try store.remove(account) }
             fresh = true
         }
         let installId: String
@@ -100,13 +136,64 @@ nonisolated final class DeviceKeys: @unchecked Sendable {
         }
         defaults.set(installId, forKey: installKey)
         restored = defaults.bool(forKey: restoreKey)
+        let marker = Data(installId.utf8)
+        let state = try custodyState(marker: marker)
+        if state == nil {
+            guard try store.load(Account.operations) == nil, try store.load(Account.wrap) == nil else {
+                throw DeviceKeysError.corruptKey
+            }
+            try store.save(Data([CustodyState.pending.rawValue]) + marker, account: Account.custody)
+        }
+        if state == .ready {
+            for account in Account.keys {
+                guard try store.load(account) != nil else { throw DeviceKeysError.corruptKey }
+            }
+        }
         identityHardware = try ensureKey(Account.identity, hardware: preferHardware, presence: false)
         presenceHardware = try ensureKey(Account.presence, hardware: preferHardware, presence: true)
+        try ensureCurveKey(Account.operations)
+        try ensureCurveKey(Account.wrap)
+        if state != .ready {
+            try store.save(Data([CustodyState.ready.rawValue]) + marker, account: Account.custody)
+        }
+    }
+
+    private static func markerId(_ marker: Data) throws -> String {
+        guard let value = String(data: marker, encoding: .utf8), UUID(uuidString: value) != nil else {
+            throw DeviceKeysError.corruptKey
+        }
+        return value
+    }
+
+    private func custodyState(marker: Data) throws -> CustodyState? {
+        guard let value = try store.load(Account.custody) else { return nil }
+        guard let first = value.first, let state = CustodyState(rawValue: first), value.dropFirst() == marker else {
+            throw DeviceKeysError.corruptKey
+        }
+        return state
+    }
+
+    private func curveSecret(_ account: String) throws -> Data {
+        guard let secret = try store.load(account), secret.count == 32 else { throw DeviceKeysError.corruptKey }
+        return secret
+    }
+
+    private func ensureCurveKey(_ account: String) throws {
+        if try store.load(account) != nil {
+            _ = try curveSecret(account)
+            return
+        }
+        let secret =
+            account == Account.operations
+            ? Curve25519.Signing.PrivateKey().rawRepresentation
+            : Curve25519.KeyAgreement.PrivateKey().rawRepresentation
+        try store.save(secret, account: account)
     }
 
     private func ensureKey(_ account: String, hardware: Bool, presence: Bool) throws -> Bool {
         if let blob = try store.load(account) {
             guard let first = blob.first, let tag = Tag(rawValue: first) else { throw DeviceKeysError.corruptKey }
+            do { _ = try publicKey(account: account, context: nil) } catch { throw DeviceKeysError.corruptKey }
             return tag == .secureEnclave
         }
         if hardware, let rep = try? Self.makeSecureEnclaveKey(presence: presence) {
