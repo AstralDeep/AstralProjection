@@ -644,7 +644,7 @@ struct StatusLine: View {
     }
 }
 
-private struct ChatBubble: View {
+struct ChatBubble: View {
     @Environment(ThemeStore.self) var theme
     let turn: AppModel.ChatTurn
     private var p: AstralPalette { theme.palette }

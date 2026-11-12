@@ -23,6 +23,10 @@ private struct CompactCardContentKey: EnvironmentKey { static let defaultValue =
 
 private struct CompactChipKey: EnvironmentKey { static let defaultValue: Bool? = nil }
 
+private struct MeshActionKey: EnvironmentKey {
+    static let defaultValue: (@MainActor @Sendable (String, String) -> Void)? = nil
+}
+
 extension EnvironmentValues {
     var astralComponentActionOwner: AstralComponent? {
         get { self[ComponentActionOwnerKey.self] }
@@ -55,6 +59,10 @@ extension EnvironmentValues {
     var astralCompactChip: Bool? {
         get { self[CompactChipKey.self] }
         set { self[CompactChipKey.self] = newValue }
+    }
+    var astralMeshAction: (@MainActor @Sendable (String, String) -> Void)? {
+        get { self[MeshActionKey.self] }
+        set { self[MeshActionKey.self] = newValue }
     }
 }
 
@@ -90,6 +98,7 @@ struct ComponentView: View {
     @Environment(\.astralCompactSettings) private var compactSettings
     @Environment(\.astralCompactCardContent) private var compactCardContent
     @Environment(\.astralCompactChip) private var compactChip
+    @Environment(\.astralMeshAction) private var meshAction
     @State private var slotWidth: CGFloat = 0
 
     private var p: AstralPalette { theme.palette }
@@ -704,7 +713,11 @@ struct ComponentView: View {
         let button = Button {
             guard !chip.inert else { return }
             let payload = component.raw["payload"]?.objectValue ?? [:]
-            if action == "load_chat" {
+            if let meshAction, let capability = component.raw["capability"]?.stringValue,
+                let componentId = component.componentId
+            {
+                meshAction(componentId, capability)
+            } else if action == "load_chat" {
                 navigate(payload)
             } else if action == "component_action" {
                 invoke(payload)

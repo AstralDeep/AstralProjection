@@ -526,6 +526,7 @@ struct BannerBar: View {
 struct SignInView: View {
     @Environment(AppModel.self) var model
     @Environment(ThemeStore.self) var theme
+    @Environment(AppModeStore.self) private var modeStore: AppModeStore?
 
     var body: some View {
         VStack(spacing: 28) {
@@ -545,6 +546,12 @@ struct SignInView: View {
             }
             .buttonStyle(.borderedProminent)
             .accessibilityLabel("Sign in with single sign-on")
+            if let modeStore {
+                Button("Use a personal mesh instead") { modeStore.choose(.mesh) }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(theme.palette.accent)
+                    .accessibilityIdentifier("signin.personal-mesh")
+            }
             if let error = model.signInError {
                 Text(error).font(ConsoleTypography.footnote).foregroundStyle(theme.palette.error)
                     .multilineTextAlignment(.center)

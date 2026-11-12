@@ -17,6 +17,9 @@ import SwiftUI
 @main
 struct AstralApp: App {
     @State private var model: AppModel
+    @State private var modeStore = AppModeStore()
+    @State private var consent: ConsentCoordinator
+    @State private var mesh: MeshRuntime
     #if os(macOS)
         @StateObject private var updates: UpdateCoordinator
         @State private var updateRequirement: UpdateRequirement?
@@ -36,6 +39,19 @@ struct AstralApp: App {
             let launchModel = AppModel()
         #endif
         _model = State(initialValue: launchModel)
+        let coordinator = ConsentCoordinator()
+        _consent = State(initialValue: coordinator)
+        #if DEBUG
+            if let scenario = MeshUITestFixture.requestedScenario() {
+                let fixture = MeshUITestFixture.install(scenario, consent: coordinator)
+                _modeStore = State(initialValue: fixture.mode)
+                _mesh = State(initialValue: fixture.runtime)
+            } else {
+                _mesh = State(initialValue: MeshRuntimeBuilder.live(consent: coordinator))
+            }
+        #else
+            _mesh = State(initialValue: MeshRuntimeBuilder.live(consent: coordinator))
+        #endif
         #if os(macOS)
             lifecycle = MacAppLifecycle(handlers: .live(launchModel))
             let busy: @MainActor () -> Bool = { [launchModel] in
@@ -51,6 +67,14 @@ struct AstralApp: App {
     }
 
     @ViewBuilder private var gatedRoot: some View {
+        if modeStore.usesMesh {
+            MeshRootView()
+        } else {
+            nodeRoot
+        }
+    }
+
+    @ViewBuilder private var nodeRoot: some View {
         #if os(macOS)
             if let updateRequirement {
                 UpdateRequiredView(requirement: updateRequirement, coordinator: updates)
@@ -66,6 +90,9 @@ struct AstralApp: App {
         WindowGroup("AstralDeep", id: "main") {
             gatedRoot
                 .environment(model)
+                .environment(modeStore)
+                .environment(consent)
+                .environment(mesh)
                 .font(ConsoleTypography.body)
                 .environment(model.themeStore)
                 .tint(model.themeStore.palette.primary)
@@ -93,7 +120,13 @@ struct AstralApp: App {
                             return
                         }
                     #endif
-                    if !unitTestHost { await model.bootstrap() }
+                    if !unitTestHost, !modeStore.usesMesh { await model.bootstrap() }
+                }
+                .onChange(of: modeStore.mode) { _, mode in
+                    #if os(macOS)
+                        guard updateRequirement == nil else { return }
+                    #endif
+                    if mode == .node, !unitTestHost { Task { await model.bootstrap() } }
                 }
                 .onChange(of: scenePhase) { _, phase in
                     switch phase {
