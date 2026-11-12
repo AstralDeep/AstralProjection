@@ -1,6 +1,7 @@
 // Drives VoicePipeline end to end with fake audio, transcriber, kernel link and model under a controlled clock.
 // Covers turn flow, integrity labels, the absence of any approval path, interruption records and acknowledgement rules.
 
+import AVFoundation
 import XCTest
 
 @testable import AstralDeep
@@ -49,6 +50,27 @@ final class OnDeviceVoicePipelineTests: XCTestCase {
         XCTAssertFalse(pipeline.isRunning)
     }
 
+    func testSilentListeningDoesNotFeedTheModelAndSpeechIncludesItsOnset() throws {
+        let pipeline = try makePipeline()
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 160))
+        buffer.frameLength = 160
+        for _ in 0..<100 { audio.onMicrophone?(buffer) }
+        XCTAssertEqual(transcriber.appendedFrames, 0)
+        audio.onVoiceActivity?(true)
+        audio.onMicrophone?(buffer)
+        XCTAssertGreaterThan(transcriber.appendedFrames, 160)
+        audio.onVoiceActivity?(false)
+        XCTAssertEqual(transcriber.partialFlushes, 1)
+        pipeline.stop()
+    }
+
+    func testAudioStartFailureCleansUpTheGraph() throws {
+        audio.startError = .voiceProcessingUnavailable
+        XCTAssertThrowsError(try makePipeline())
+        XCTAssertTrue(audio.stopped)
+    }
+
     func testSpokenTurnReachesTheKernelAsAnOwnerTranscript() throws {
         let pipeline = try makePipeline()
         speak(pipeline, "what time is it")
@@ -71,6 +93,17 @@ final class OnDeviceVoicePipelineTests: XCTestCase {
         pipeline.stop()
     }
 
+    func testLateFinalFromATimedOutSegmentCannotSubmitAnotherTurn() throws {
+        let pipeline = try makePipeline()
+        let identifier = UUID()
+        speak(pipeline, "turn on the lights")
+        clock.advance(1)
+        pipeline.tick()
+        pipeline.handleRecognizer(.final("Turn on the lights.", segmentID: identifier))
+        XCTAssertEqual(link.turns.map(\.text), ["turn on the lights"])
+        pipeline.stop()
+    }
+
     func testSessionNotStartedByTheOwnerProducesUntrustedTranscripts() throws {
         let pipeline = try makePipeline(trigger: .programmatic)
         speak(pipeline, "send the report")
@@ -83,14 +116,19 @@ final class OnDeviceVoicePipelineTests: XCTestCase {
         let sources: [VoiceAudioSource] = [.deviceMicrophone, .file, .call, .other]
         for source in sources {
             for trigger in [VoiceSessionTrigger.ownerGesture, .pushToTalk, .programmatic] {
-                let turn = OwnerVoiceTurn.make(text: "hello", source: source, trigger: trigger, riskyActionPending: false)
+                let turn = OwnerVoiceTurn.make(
+                    text: "hello", source: source, trigger: trigger, riskyActionPending: false)
                 let expected: VoiceTranscriptIntegrity =
                     source == .deviceMicrophone && trigger != .programmatic ? .owner : .untrusted
                 XCTAssertEqual(turn?.integrity, expected, "\(source) \(trigger)")
             }
         }
-        XCTAssertNil(OwnerVoiceTurn.make(text: "  ", source: .deviceMicrophone, trigger: .ownerGesture, riskyActionPending: false))
-        XCTAssertNil(OwnerVoiceTurn.make(text: "bad\u{0}text", source: .deviceMicrophone, trigger: .ownerGesture, riskyActionPending: false))
+        XCTAssertNil(
+            OwnerVoiceTurn.make(
+                text: "  ", source: .deviceMicrophone, trigger: .ownerGesture, riskyActionPending: false))
+        XCTAssertNil(
+            OwnerVoiceTurn.make(
+                text: "bad\u{0}text", source: .deviceMicrophone, trigger: .ownerGesture, riskyActionPending: false))
     }
 
     func testSayingYesToAPendingRiskyActionIsOnlyEverATranscript() throws {
@@ -148,7 +186,8 @@ final class OnDeviceVoicePipelineTests: XCTestCase {
         XCTAssertEqual(audio.volumes.last, 1)
         XCTAssertEqual(link.cancelledTurns, 1)
         XCTAssertEqual(link.cancelledTools, ["lookup"])
-        XCTAssertEqual(link.spoken, [VoiceSpokenRecord(kind: .answer, text: "Once upon a time there was a fox. It ran")])
+        XCTAssertEqual(
+            link.spoken, [VoiceSpokenRecord(kind: .answer, text: "Once upon a time there was a fox. It ran")])
         pipeline.answerDelta("More text that must stay silent.")
         XCTAssertEqual(audio.spoken.count, 2)
         pipeline.stop()

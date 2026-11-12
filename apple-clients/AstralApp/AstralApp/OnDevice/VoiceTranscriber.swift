@@ -6,12 +6,13 @@ import Foundation
 import Speech
 
 nonisolated enum VoiceRecognizerEvent: Equatable, Sendable {
-    case partial(String)
-    case final(String)
+    case partial(String, segmentID: UUID? = nil)
+    case final(String, segmentID: UUID? = nil)
     case failed(String)
 }
 
 nonisolated enum VoiceTranscriberKind: String, Equatable, Sendable {
+    case mlx
     case speechAnalyzer = "speech_analyzer"
     case onDeviceRecognizer = "on_device_recognizer"
 }
@@ -26,13 +27,20 @@ nonisolated enum VoiceTranscriberError: Error, Equatable {
 
 nonisolated protocol VoiceStreamingTranscriber: AnyObject, Sendable {
     var kind: VoiceTranscriberKind { get }
+    var segmentID: UUID? { get }
     func setEventHandler(_ handler: @escaping @Sendable (VoiceRecognizerEvent) -> Void)
     func prepare() async throws
     func beginSegment() throws
     func append(_ buffer: AVAudioPCMBuffer)
+    func flushPartial()
     func endSegment()
     func cancelSegment()
     func shutdown()
+}
+
+extension VoiceStreamingTranscriber {
+    nonisolated var segmentID: UUID? { nil }
+    nonisolated func flushPartial() {}
 }
 
 nonisolated struct VoiceTranscriberSelection {
@@ -289,7 +297,7 @@ nonisolated final class SpeechAnalyzerTranscriber: VoiceStreamingTranscriber, @u
             return finished
         }
         current?.input.finish()
-        current?.tasks.forEach { $0.cancel() }
+        for task in current?.tasks ?? [] { task.cancel() }
         if let analyzer = current?.analyzer { Task { await analyzer.cancelAndFinishNow() } }
     }
 

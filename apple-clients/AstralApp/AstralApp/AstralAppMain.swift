@@ -80,6 +80,7 @@ struct AstralApp: App {
                 )
                 .preferredColorScheme(model.themeStore.colorScheme)
                 .task {
+                    await model.onDeviceVoice.store?.attach()
                     #if DEBUG
                         if let scenario = FirstLoginUITestFixture.requestedScenario() {
                             FirstLoginUITestFixture.install(scenario, on: model)

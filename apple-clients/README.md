@@ -224,9 +224,11 @@ caching to automate this development-only migration.
 - **Encryption**: `ITSAppUsesNonExemptEncryption = false` in both Info.plists.
 - **Microphone disclosure**: both app Info.plists declare a narrowly worded
   `NSMicrophoneUsageDescription`. Capture starts only after the user activates
-  conversation mode and stops on end/background/ownership loss. ASR and TTS
-  run on the server; the apps do not use Apple's Speech framework or retain
-  microphone/generated audio.
+  conversation mode and stops on end/background/ownership loss. The iOS/macOS
+  chat microphone uses the downloaded MLX voice model; its size, installation,
+  conversation-link contract and qualification limits are documented in
+  [On-device Apple voice](ONDEVICE-VOICE.md). The watch retains its existing
+  bounded server audio bridge pending phone-satellite integration.
 - **BYO client-side agents (features 057/058) are AUTHOR-ONLY on these builds.**
   The App Sandbox forbids spawning arbitrary child processes / executing the
   packaged interpreter, so a Mac App Store build cannot *host* a user-authored

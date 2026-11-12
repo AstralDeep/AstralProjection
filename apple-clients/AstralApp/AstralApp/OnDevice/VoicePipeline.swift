@@ -20,6 +20,7 @@ final class VoicePipeline {
     private struct AwaitingFinal {
         let fallback: String
         let deadline: TimeInterval
+        let segmentID: UUID?
     }
 
     var onFailure: ((String) -> Void)?
@@ -48,6 +49,7 @@ final class VoicePipeline {
     private var deferredSpeak: BargeInAction?
     private var userTalking = false
     private var ticker: Task<Void, Never>?
+    private var microphonePreRoll: [AVAudioPCMBuffer] = []
 
     init(
         audio: VoiceDuplexAudio, transcriber: VoiceStreamingTranscriber, fastPath: VoiceFastPath?,
@@ -78,7 +80,13 @@ final class VoicePipeline {
         transcriber.setEventHandler { [weak self] event in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.handleRecognizer(event) } }
         }
-        try audio.start()
+        do {
+            try audio.start()
+        } catch {
+            audio.stop()
+            transcriber.shutdown()
+            throw error
+        }
         running = true
         if mode == .handsFree { openSegment() }
         let warming = fastPath
@@ -107,6 +115,7 @@ final class VoicePipeline {
         acknowledgementPlaying = nil
         deferredSpeak = nil
         acceptingAnswer = false
+        microphonePreRoll = []
     }
 
     func beginPushToTalk() {
@@ -151,6 +160,7 @@ final class VoicePipeline {
     func handleVoiceActivity(_ active: Bool) {
         guard running else { return }
         userTalking = active
+        if !active { transcriber.flushPartial() }
         if active { stopAcknowledgement() }
         syncPlayedProgress()
         perform(barge.voiceActivity(active: active))
@@ -160,15 +170,18 @@ final class VoicePipeline {
     func handleRecognizer(_ event: VoiceRecognizerEvent) {
         guard running else { return }
         switch event {
-        case .partial(let text):
+        case .partial(let text, let segmentID):
+            guard segmentID == nil || segmentID == transcriber.segmentID else { return }
             syncPlayedProgress()
             perform(barge.partialTranscript(text))
             if !barge.isSpeaking { handle(detector.partial(text)) }
-        case .final(let text):
+        case .final(let text, let segmentID):
             if let waiting = awaitingFinal {
+                guard segmentID == nil || segmentID == waiting.segmentID else { return }
                 awaitingFinal = nil
                 submitTurn(text.isEmpty ? waiting.fallback : text)
             } else {
+                guard segmentID == nil || segmentID == transcriber.segmentID else { return }
                 if !segmentOpen { openSegment() }
                 submitTurn(text)
             }
@@ -213,6 +226,17 @@ final class VoicePipeline {
 
     private func captureMicrophone(_ buffer: AVAudioPCMBuffer) {
         guard running, detector.mode == .handsFree || holdingKey else { return }
+        if detector.mode == .handsFree, !userTalking {
+            microphonePreRoll.append(buffer)
+            while microphonePreRoll.count > 1,
+                microphonePreRoll.reduce(0, { $0 + Double($1.frameLength) / $1.format.sampleRate }) > 0.15
+            {
+                microphonePreRoll.removeFirst()
+            }
+            return
+        }
+        for onset in microphonePreRoll { transcriber.append(onset) }
+        microphonePreRoll = []
         transcriber.append(buffer)
     }
 
@@ -234,7 +258,8 @@ final class VoicePipeline {
             case .discardDraft:
                 fastPath?.discard()
             case .endOfTurn(let text):
-                awaitingFinal = AwaitingFinal(fallback: text, deadline: clock.now + configuration.finalTimeout)
+                awaitingFinal = AwaitingFinal(
+                    fallback: text, deadline: clock.now + configuration.finalTimeout, segmentID: transcriber.segmentID)
                 transcriber.endSegment()
                 segmentOpen = false
                 if detector.mode == .handsFree { openSegment() }

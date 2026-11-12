@@ -80,6 +80,16 @@
 
         @MainActor
         static func workspaceActionsModel() -> AppModel? {
+            if let scenario = requestedScenario(), [.voiceComposer, .voiceTerminal].contains(scenario) {
+                guard ProcessInfo.processInfo.environment["ASTRAL_UI_TESTING"] == "1",
+                    let defaults = UserDefaults(suiteName: "VoiceUITest.\(UUID().uuidString)"),
+                    let manifest = try? VoiceModelManifest.bundled()
+                else { preconditionFailure("Invalid voice UI-test configuration.") }
+                let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+                    "voice-ui-\(UUID().uuidString)")
+                let voice = OnDeviceVoiceController(store: VoiceModelStore(manifest: manifest, root: root))
+                return AppModel(tokenStore: InMemoryTokenStore(), defaults: defaults, onDeviceVoiceController: voice)
+            }
             if let scenario = requestedScenario(),
                 [.workspaceHistory, .workspaceNavigation, .workspaceNavigationMandatory].contains(scenario)
             {

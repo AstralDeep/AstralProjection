@@ -1,5 +1,5 @@
 // The public entry point of the voice model: loads the downloaded files, then runs speech recognition, speech synthesis, speech-to-speech and text chat with streamed text and PCM callbacks.
-// The Apple app's voice pipeline owns one engine, calls it one request at a time, and cancels a running request by cancelling the calling task.
+// The Apple app shares one engine whose request-local cursors yield between slots, letting microphone recognition interrupt synthesis; cancelling the calling task retires that request.
 
 import Foundation
 import MLX
@@ -76,18 +76,18 @@ public actor LFM3AudioEngine {
     public func transcribe(
         audio: [Float], language: String = "English", options: LFM3Sampling = LFM3Sampling(),
         handlers: LFM3Handlers = LFM3Handlers()
-    ) throws -> LFM3Result {
+    ) async throws -> LFM3Result {
         let messages = [
             LFM3Message(role: .system, text: "Perform ASR in \(language)."),
             LFM3Message(role: .user, parts: [.audio(audio)]),
         ]
-        return try run(messages, mode: .text, options: options, handlers: handlers)
+        return try await run(messages, mode: .text, options: options, handlers: handlers)
     }
 
     public func synthesize(
         text: String, language: String = "English", voice: String = "female", options: LFM3Sampling = LFM3Sampling(),
         handlers: LFM3Handlers = LFM3Handlers()
-    ) throws -> LFM3Result {
+    ) async throws -> LFM3Result {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw LFM3Error.invalidInput("speech needs text")
         }
@@ -95,29 +95,29 @@ public actor LFM3AudioEngine {
             LFM3Message(role: .system, text: "Perform TTS in \(language) using a \(voice) voice."),
             LFM3Message(role: .user, text: text),
         ]
-        return try run(messages, mode: .audio, options: options, handlers: handlers)
+        return try await run(messages, mode: .audio, options: options, handlers: handlers)
     }
 
     public func chat(
         messages: [LFM3Message], options: LFM3Sampling = LFM3Sampling(), handlers: LFM3Handlers = LFM3Handlers()
-    ) throws -> LFM3Result {
-        try run(messages, mode: .text, options: options, handlers: handlers)
+    ) async throws -> LFM3Result {
+        try await run(messages, mode: .text, options: options, handlers: handlers)
     }
 
     public func speechToSpeech(
         audio: [Float], systemPrompt: String = "Respond with interleaved text and audio.",
         options: LFM3Sampling = LFM3Sampling(), handlers: LFM3Handlers = LFM3Handlers()
-    ) throws -> LFM3Result {
+    ) async throws -> LFM3Result {
         let messages = [
             LFM3Message(role: .system, text: systemPrompt), LFM3Message(role: .user, parts: [.audio(audio)]),
         ]
-        return try run(messages, mode: nil, options: options, handlers: handlers)
+        return try await run(messages, mode: nil, options: options, handlers: handlers)
     }
 
     func run(
         _ messages: [LFM3Message], mode: GenerationMode?, options: LFM3Sampling, handlers: LFM3Handlers,
         frameOrder: [[Int]]? = nil
-    ) throws -> LFM3Result {
+    ) async throws -> LFM3Result {
         let started = Date()
         let prepared = try prompts.prepare(messages)
         var features: MLXArray?
@@ -143,10 +143,11 @@ public actor LFM3AudioEngine {
         var emittedText = ""
         var frames = [[Int32]]()
         var flushed = false
-        try model.streamSlots(ids: prepared.tokenIDs, features: features, mode: mode, options: generation) { slot in
+        let cursor = try model.generation(ids: prepared.tokenIDs, features: features, mode: mode, options: generation)
+        while let slot = try cursor.next() {
             allTokens.append(slot.token)
             if let codes = slot.codes {
-                if codes[0] == eosCode { return false }
+                if codes[0] == eosCode { break }
                 frames.append(codes)
                 streamer.append(codes)
                 if let onAudio = handlers.onAudio, streamer.pendingCount >= (flushed ? chunkFrames : firstChunkFrames) {
@@ -162,8 +163,9 @@ public actor LFM3AudioEngine {
                     emittedText = decoded
                 }
             }
-            return true
+            await Task.yield()
         }
+        try Task.checkCancellation()
         if let onAudio = handlers.onAudio, !frames.isEmpty {
             let pcm = try streamer.flush(final: true)
             if !pcm.isEmpty { onAudio(pcm) }

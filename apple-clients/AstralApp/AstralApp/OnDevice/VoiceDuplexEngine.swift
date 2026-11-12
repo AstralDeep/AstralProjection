@@ -34,8 +34,6 @@ final class VoiceDuplexEngine: VoiceDuplexAudio {
     private final class Playback {
         let index: Int
         let text: String
-        var rawMarkers: [(range: NSRange, offset: Double)] = []
-        var sourceFormat: AVAudioFormat?
         var scheduled = 0
         var played = 0
         var synthesisDone = false
@@ -55,23 +53,26 @@ final class VoiceDuplexEngine: VoiceDuplexAudio {
 
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
-    private let synthesizer = AVSpeechSynthesizer()
+    private let inference: any VoiceModelInference
     private let activity = VoiceActivityBox()
     private let playbackFormat: AVAudioFormat
-    private let locale: String
     private var playback: Playback?
+    private var synthesis: Task<Void, Never>?
+    private var receiving: Task<Void, Never>?
     private var generation = 0
-    private var converter: AVAudioConverter?
     private var running = false
+    private var hasTap = false
+    private var playerAttached = false
     private var configurationObserver: (any NSObjectProtocol)?
 
-    init(locale: String? = nil) {
-        self.locale = locale ?? AppleLocalSpeechObservation.configuredLocale
-        playbackFormat = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
+    init(inference: any VoiceModelInference) {
+        self.inference = inference
+        playbackFormat = AVAudioFormat(standardFormatWithSampleRate: 24_000, channels: 1)!
     }
 
     func start() throws {
         guard !running else { return }
+        defer { if !running { stop() } }
         #if os(iOS)
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(
@@ -87,6 +88,7 @@ final class VoiceDuplexEngine: VoiceDuplexAudio {
         input.voiceProcessingOtherAudioDuckingConfiguration = AVAudioVoiceProcessingOtherAudioDuckingConfiguration(
             enableAdvancedDucking: false, duckingLevel: .min)
         engine.attach(player)
+        playerAttached = true
         engine.connect(player, to: engine.mainMixerNode, format: playbackFormat)
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0 else { throw VoiceDuplexError.noInputFormat }
@@ -95,14 +97,16 @@ final class VoiceDuplexEngine: VoiceDuplexAudio {
         input.installTap(onBus: 0, bufferSize: 1_024, format: format) { [weak self] buffer, _ in
             let duration = Double(buffer.frameLength) / buffer.format.sampleRate
             let change = box.process(level: EnergyVoiceActivityDetector.level(of: buffer), duration: duration)
+            guard let copied = Self.copyMicrophoneBuffer(buffer) else { return }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self, self.running else { return }
-                    self.onMicrophone?(buffer)
+                    self.onMicrophone?(copied)
                     if let change { self.onVoiceActivity?(change) }
                 }
             }
         }
+        hasTap = true
         engine.prepare()
         try engine.start()
         running = true
@@ -114,18 +118,37 @@ final class VoiceDuplexEngine: VoiceDuplexAudio {
     }
 
     func stop() {
-        guard running else { return }
         running = false
         if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
         configurationObserver = nil
         haltPlayback()
-        engine.inputNode.removeTap(onBus: 0)
+        if hasTap {
+            engine.inputNode.removeTap(onBus: 0)
+            hasTap = false
+        }
         engine.stop()
-        engine.detach(player)
+        if playerAttached {
+            engine.detach(player)
+            playerAttached = false
+        }
         try? engine.inputNode.setVoiceProcessingEnabled(false)
         #if os(iOS)
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         #endif
+    }
+
+    nonisolated static func copyMicrophoneBuffer(_ source: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        guard let destination = AVAudioPCMBuffer(pcmFormat: source.format, frameCapacity: source.frameLength) else {
+            return nil
+        }
+        destination.frameLength = source.frameLength
+        let inputs = UnsafeMutableAudioBufferListPointer(source.mutableAudioBufferList)
+        let outputs = UnsafeMutableAudioBufferListPointer(destination.mutableAudioBufferList)
+        for index in inputs.indices {
+            guard let input = inputs[index].mData, let output = outputs[index].mData else { return nil }
+            output.copyMemory(from: input, byteCount: Int(inputs[index].mDataByteSize))
+        }
+        return destination
     }
 
     func setVolume(_ volume: Float) {
@@ -133,7 +156,7 @@ final class VoiceDuplexEngine: VoiceDuplexAudio {
     }
 
     func speak(index: Int, text: String) {
-        guard running, let voice = AVSpeechSynthesisVoice(language: locale) else {
+        guard running, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             onEvent?(.failed(index: index))
             return
         }
@@ -142,65 +165,71 @@ final class VoiceDuplexEngine: VoiceDuplexAudio {
         let token = generation
         let current = Playback(index: index, text: text)
         playback = current
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = voice
-        synthesizer.write(
-            utterance,
-            toBufferCallback: { [weak self] buffer in
-                guard let pcm = buffer as? AVAudioPCMBuffer else { return }
-                DispatchQueue.main.async {
-                    MainActor.assumeIsolated { self?.receive(buffer: pcm, token: token) }
+        let (stream, continuation) = AsyncStream<SynthesisEvent>.makeStream()
+        let inference = inference
+        synthesis = Task.detached {
+            do {
+                try await inference.synthesize(text) { samples in continuation.yield(.audio(samples)) }
+                if !Task.isCancelled { continuation.yield(.finished) }
+            } catch {
+                if !Task.isCancelled { continuation.yield(.failed) }
+            }
+            continuation.finish()
+        }
+        receiving = Task { [weak self] in
+            for await event in stream {
+                guard let self, token == self.generation, !Task.isCancelled else { return }
+                switch event {
+                case .audio(let samples): self.receive(samples: samples, token: token)
+                case .finished:
+                    current.synthesisDone = true
+                    self.completeIfDrained(current)
+                case .failed:
+                    self.haltPlayback()
+                    self.onEvent?(.failed(index: index))
                 }
-            },
-            toMarkerCallback: { [weak self] markers in
-                let words = markers.filter { $0.mark == .word }
-                    .map { (range: $0.textRange, offset: Double($0.byteSampleOffset)) }
-                DispatchQueue.main.async {
-                    MainActor.assumeIsolated { self?.receive(markers: words, token: token) }
-                }
-            })
+            }
+        }
     }
 
     func stopSpeaking() { haltPlayback() }
 
     func playedProgress() -> VoiceSpeechProgress? {
-        guard let current = playback, current.started, !current.finished,
-            let format = current.sourceFormat,
-            let nodeTime = player.lastRenderTime, let playerTime = player.playerTime(forNodeTime: nodeTime)
-        else { return nil }
-        let heard = max(0, Double(playerTime.sampleTime) / playerTime.sampleRate)
-        let bytesPerFrame = Double(max(1, format.streamDescription.pointee.mBytesPerFrame))
-        let timeline = VoiceSpeechTimeline.make(
-            text: current.text, wordRanges: current.rawMarkers,
-            secondsPerOffsetUnit: 1 / (bytesPerFrame * format.sampleRate))
-        return VoiceSpeechProgress(index: current.index, characters: timeline.charactersSpoken(atSeconds: heard))
+        guard let current = playback, current.started, !current.finished else { return nil }
+        // The model emits no word alignment, so interrupted speech never claims an estimated prefix was heard.
+        return VoiceSpeechProgress(index: current.index, characters: 0)
     }
 
     private func haltPlayback() {
         generation += 1
-        if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
+        synthesis?.cancel()
+        receiving?.cancel()
+        synthesis = nil
+        receiving = nil
         player.stop()
         playback = nil
     }
 
-    private func receive(markers: [(range: NSRange, offset: Double)], token: Int) {
-        guard token == generation, let current = playback else { return }
-        current.rawMarkers += markers
+    private enum SynthesisEvent: Sendable {
+        case audio([Float])
+        case finished
+        case failed
     }
 
-    private func receive(buffer: AVAudioPCMBuffer, token: Int) {
+    private func receive(samples: [Float], token: Int) {
         guard token == generation, let current = playback else { return }
-        if buffer.frameLength == 0 {
-            current.synthesisDone = true
-            completeIfDrained(current)
-            return
-        }
-        current.sourceFormat = buffer.format
-        guard let converted = convert(buffer) else {
+        guard !samples.isEmpty else { return }
+        guard
+            let converted = AVAudioPCMBuffer(
+                pcmFormat: playbackFormat, frameCapacity: AVAudioFrameCount(samples.count)),
+            let channel = converted.floatChannelData?[0]
+        else {
             current.finished = true
             onEvent?(.failed(index: current.index))
             return
         }
+        converted.frameLength = AVAudioFrameCount(samples.count)
+        samples.withUnsafeBufferPointer { channel.update(from: $0.baseAddress!, count: $0.count) }
         current.scheduled += 1
         player.scheduleBuffer(converted, completionCallbackType: .dataPlayedBack) { [weak self] _ in
             DispatchQueue.main.async {
@@ -221,32 +250,7 @@ final class VoiceDuplexEngine: VoiceDuplexAudio {
     private func completeIfDrained(_ current: Playback) {
         guard current.synthesisDone, current.played >= current.scheduled, !current.finished else { return }
         current.finished = true
-        onEvent?(.finished(index: current.index))
-    }
-
-    private func convert(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
-        if buffer.format == playbackFormat { return buffer }
-        if converter == nil || converter?.inputFormat != buffer.format {
-            converter = AVAudioConverter(from: buffer.format, to: playbackFormat)
-        }
-        guard let converter else { return nil }
-        let ratio = playbackFormat.sampleRate / buffer.format.sampleRate
-        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1_024
-        guard let output = AVAudioPCMBuffer(pcmFormat: playbackFormat, frameCapacity: capacity) else {
-            return nil
-        }
-        var supplied = false
-        var failure: NSError?
-        let status = converter.convert(to: output, error: &failure) { _, inputStatus in
-            if supplied {
-                inputStatus.pointee = .noDataNow
-                return nil
-            }
-            supplied = true
-            inputStatus.pointee = .haveData
-            return buffer
-        }
-        return status == .error || failure != nil ? nil : output
+        onEvent?(current.scheduled > 0 ? .finished(index: current.index) : .failed(index: current.index))
     }
 
     private func restartAfterConfigurationChange() {

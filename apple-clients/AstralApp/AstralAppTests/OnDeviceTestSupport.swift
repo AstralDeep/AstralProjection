@@ -28,8 +28,12 @@ final class FakeDuplexAudio: VoiceDuplexAudio {
     var started = false
     var stopped = false
     var progress: VoiceSpeechProgress?
+    var startError: VoiceDuplexError?
 
-    func start() throws { started = true }
+    func start() throws {
+        if let startError { throw startError }
+        started = true
+    }
     func stop() { stopped = true }
     func speak(index: Int, text: String) { spoken.append((index, text)) }
     func stopSpeaking() { stopSpeakingCount += 1 }
@@ -43,11 +47,14 @@ final class FakeTranscriber: VoiceStreamingTranscriber, @unchecked Sendable {
     private(set) var begun = 0
     private(set) var ended = 0
     private(set) var shutdowns = 0
+    private(set) var appendedFrames = 0
+    private(set) var partialFlushes = 0
 
     func setEventHandler(_ handler: @escaping @Sendable (VoiceRecognizerEvent) -> Void) {}
     func prepare() async throws {}
     func beginSegment() throws { lock.withLock { begun += 1 } }
-    func append(_ buffer: AVAudioPCMBuffer) {}
+    func append(_ buffer: AVAudioPCMBuffer) { lock.withLock { appendedFrames += Int(buffer.frameLength) } }
+    func flushPartial() { lock.withLock { partialFlushes += 1 } }
     func endSegment() { lock.withLock { ended += 1 } }
     func cancelSegment() {}
     func shutdown() { lock.withLock { shutdowns += 1 } }

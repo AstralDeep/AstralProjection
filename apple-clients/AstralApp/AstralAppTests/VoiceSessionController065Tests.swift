@@ -36,7 +36,7 @@ final class VoiceSessionController065Tests: XCTestCase {
         install(controller, replaceSender: false)
         controller.updateVisibleChatLocally(nil)
 
-        await model.activateVoice()
+        await controller.activate()
         XCTAssertEqual(wires.last?.payload["action"]?.stringValue, "new_chat")
         XCTAssertEqual(api.startCount, 0)
         model.handleFrame(newVoiceChatFrame())

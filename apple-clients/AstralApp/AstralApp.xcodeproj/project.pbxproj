@@ -10,6 +10,7 @@
 		AD0900000000000000000013 /* WorkspaceActionLoopback.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD0900000000000000000014; };
 		AD0900000000000000000011 /* WatchConsoleFixtures.json in Resources */ = {isa = PBXBuildFile; fileRef = AD0900000000000000000012; };
 		AA00000000000000000000A4 /* AstralCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA00000000000000000000A2 /* AstralCore */; };
+		AF1030000000000000000003 /* AstralVoiceModel in Frameworks */ = {isa = PBXBuildFile; productRef = AF1030000000000000000002 /* AstralVoiceModel */; };
 		AA00000000000000000000A5 /* AstralCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA00000000000000000000A3 /* AstralCore */; };
 		AA00000000000000000000C1 /* AstralWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000B1 /* AstralWatch.app */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		AC6500000000000000000003 /* LiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = AC6500000000000000000002 /* LiveKit */; };
@@ -129,6 +130,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA00000000000000000000A4 /* AstralCore in Frameworks */,
+				AF1030000000000000000003 /* AstralVoiceModel in Frameworks */,
 				AC6500000000000000000003 /* LiveKit in Frameworks */,
 				AF1020000000000000000006 /* AstralSparkle in Frameworks */,
 			);
@@ -237,6 +239,7 @@
 			name = AstralApp;
 			packageProductDependencies = (
 				AA00000000000000000000A2 /* AstralCore */,
+				AF1030000000000000000002 /* AstralVoiceModel */,
 				AC6500000000000000000002 /* LiveKit */,
 				AF1020000000000000000005 /* AstralSparkle */,
 			);
@@ -410,6 +413,7 @@
 			packageReferences = (
 				AA00000000000000000000A1 /* XCLocalSwiftPackageReference "../AstralCore" */,
 				AF1020000000000000000004 /* XCLocalSwiftPackageReference "../AstralSparkle" */,
+				AF1030000000000000000001 /* XCLocalSwiftPackageReference "../AstralVoiceModel" */,
 				AC6500000000000000000001 /* XCRemoteSwiftPackageReference "client-sdk-swift" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -1245,6 +1249,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../AstralSparkle;
 		};
+		AF1030000000000000000001 /* XCLocalSwiftPackageReference "../AstralVoiceModel" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../AstralVoiceModel;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -1278,6 +1286,11 @@
 			productName = AstralSparkle;
 		};
 		AD0881000000000000000002 /* AstralCore */ = {isa = XCSwiftPackageProductDependency; productName = AstralCore; };
+		AF1030000000000000000002 /* AstralVoiceModel */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AF1030000000000000000001 /* XCLocalSwiftPackageReference "../AstralVoiceModel" */;
+			productName = AstralVoiceModel;
+		};
 /* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 222F501F2FFD60D80016B0D6 /* Project object */;

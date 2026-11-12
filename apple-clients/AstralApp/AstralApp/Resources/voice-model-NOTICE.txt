@@ -1,0 +1,10 @@
+LFM3-Audio-2B (3-bit MLX)
+
+This is a modified version of LiquidAI/LFM3-Audio-2B-MLX-bf16, revision
+452469a1afe66dd4932d0e9237603229fa606c0d, by Liquid AI, Inc.
+
+Changes made: the language backbone weights were quantized to 3 bits with affine
+quantization and group size 64, using MLX 0.32.4 and MLX Audio 0.6.5. The speech
+components keep their original precision. No other file was changed.
+
+The work is licensed under the LFM Open License v1.0. See LICENSE.
