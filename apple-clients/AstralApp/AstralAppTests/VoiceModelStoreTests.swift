@@ -25,7 +25,7 @@ final class VoiceModelStoreTests: XCTestCase {
         var fields: [String: Any] = [
             "display_name": "LFM3-Audio-2B (3-bit)", "format": VoiceModelManifest.supportedFormat,
             "id": "lfm3-audio-2b-3bit-mlx", "license": "LFM Open License v1.0",
-            "repository": "AstralDeep/LFM3-Audio-2B-3bit-MLX", "revision": "main", "runtime": "mlx",
+            "repository": "Kentucky-Open-Science/LFM3-Audio-2B-MLX-3bit", "revision": "main", "runtime": "mlx",
             "source": "LiquidAI/LFM3-Audio-2B-MLX-bf16@452469a1afe66dd4932d0e9237603229fa606c0d",
         ]
         let files = VoiceModelManifest.requiredFiles.map { path -> [String: Any] in

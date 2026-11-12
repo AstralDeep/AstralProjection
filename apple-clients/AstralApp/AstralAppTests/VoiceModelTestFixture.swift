@@ -19,7 +19,7 @@ struct VoiceModelTestFixture {
         let manifest = VoiceModelManifest(
             displayName: "LFM3-Audio-2B (3-bit)", format: VoiceModelManifest.supportedFormat,
             id: "lfm3-audio-2b-3bit-mlx", license: "LFM Open License v1.0",
-            repository: "AstralDeep/LFM3-Audio-2B-3bit-MLX", revision: "main", runtime: "mlx",
+            repository: "Kentucky-Open-Science/LFM3-Audio-2B-MLX-3bit", revision: "main", runtime: "mlx",
             source: "LiquidAI/LFM3-Audio-2B-MLX-bf16", totalBytes: Int64(files.count), files: files)
         let device = VoiceDeviceProfile(
             platform: .mac, isAppleSilicon: true, isSimulator: false, physicalMemoryBytes: 16 << 30)

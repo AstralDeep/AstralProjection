@@ -68,7 +68,7 @@ nonisolated struct VoiceModelManifest: Codable, Equatable, Sendable {
 
     func validate() throws {
         guard format == Self.supportedFormat, runtime == "mlx" else { throw Invalid.unsupportedFormat }
-        guard id == "lfm3-audio-2b-3bit-mlx", repository == "AstralDeep/LFM3-Audio-2B-3bit-MLX",
+        guard id == "lfm3-audio-2b-3bit-mlx", repository == "Kentucky-Open-Science/LFM3-Audio-2B-MLX-3bit",
             revision == "main" || (revision.count == 40 && revision.allSatisfy({ $0.isHexDigit && !$0.isUppercase }))
         else { throw Invalid.unexpectedModel }
         guard !files.isEmpty else { throw Invalid.emptyFileList }

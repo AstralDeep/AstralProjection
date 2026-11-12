@@ -16,7 +16,7 @@ connections require separate confirmation. Files live under Application Support
 and are excluded from backup. Voice settings are available from the microphone's
 context menu and include cancellation, retry and deletion.
 
-The source of the weights is `AstralDeep/LFM3-Audio-2B-3bit-MLX` on Hugging Face.
+The source of the weights is `Kentucky-Open-Science/LFM3-Audio-2B-MLX-3bit` on Hugging Face.
 The bundled manifest pins the bytes and license attribution. Its repository
 revision remains `main` until the owner publishes the quantized artifact; release
 qualification must bind the uploaded commit and verify all manifest digests.
