@@ -16,7 +16,7 @@ final class KernelServiceTests: XCTestCase {
     private func headerJSON(feed: String) -> String {
         let body = "sha256:" + String(repeating: "0", count: 64)
         return
-            "{\"feed\":\"\(feed)\",\"seq\":0,\"prev\":null,\"after\":[],\"clock\":{\"ms\":1,\"n\":0},\"scope\":\"mesh\",\"type\":\"chat.message\",\"labels\":[],\"key\":\"mesh/1\",\"body\":\"\(body)\"}"
+            "{\"v\":1,\"feed\":\"\(feed)\",\"seq\":1,\"prev\":null,\"after\":[],\"clock\":{\"ms\":1,\"n\":0},\"scope\":\"mesh\",\"type\":\"settings.set\",\"labels\":{\"integrity\":\"owner\",\"confidentiality\":\"private\"},\"key\":\"ck:AAAAAAAAAAAAAAAAAAAAAA\",\"body\":\"\(body)\"}"
     }
 
     func testVersionAndStore() throws {
@@ -24,7 +24,7 @@ final class KernelServiceTests: XCTestCase {
         let service = try KernelService(dataDirectory: makeDirectory(), localOnly: true)
         XCTAssertEqual(service.version, AstralKernelInfo.version)
         let info = try service.openStore()
-        XCTAssertEqual(info.schemaVersion, 1)
+        XCTAssertEqual(info.schemaVersion, 2)
         XCTAssertTrue(info.path.hasSuffix("kernel.sqlite3"))
     }
 
@@ -35,9 +35,9 @@ final class KernelServiceTests: XCTestCase {
         let signed = try service.signEventHeader(json: headerJSON(feed: feed), secret: secret)
         let verified = try service.verifyEventHeader(json: signed)
         XCTAssertEqual(verified.feed, feed)
-        XCTAssertEqual(verified.seq, 0)
+        XCTAssertEqual(verified.seq, 1)
         XCTAssertTrue(verified.eventId.hasPrefix("sha256:"))
-        let tampered = signed.replacingOccurrences(of: "\"mesh\"", with: "\"chat\"")
+        let tampered = signed.replacingOccurrences(of: "\"owner\"", with: "\"untrusted\"")
         XCTAssertThrowsError(try service.verifyEventHeader(json: tampered)) { error in
             guard case KernelError.Verification = error else {
                 return XCTFail("unexpected error \(error)")
