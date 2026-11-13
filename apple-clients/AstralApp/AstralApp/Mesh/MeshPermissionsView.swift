@@ -61,9 +61,16 @@ struct MeshToolRow: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(MeshPresentation.toolTitle(tool)).font(ConsoleTypography.headline)
-                Text(tool.name).font(.system(.caption, design: .monospaced)).foregroundStyle(p.muted).lineLimit(1)
+                if tool.deviceId == nil {
+                    Text(tool.name).font(.system(.caption, design: .monospaced)).foregroundStyle(p.muted).lineLimit(1)
+                } else {
+                    Text("On " + mesh.memberLabel(tool.deviceId)).font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                }
                 Text(tool.summary).font(ConsoleTypography.subheadline).foregroundStyle(p.muted)
-                Text(detail).font(ConsoleTypography.footnote).foregroundStyle(p.muted)
+                Text(detail).font(ConsoleTypography.footnote).foregroundStyle(p.text)
+                if let note = MeshPresentation.toolNote(tool) {
+                    Text(note).font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                }
                 if granted {
                     Label("Granted", systemImage: "checkmark.circle.fill")
                         .font(ConsoleTypography.footnote).foregroundStyle(p.success)

@@ -117,19 +117,22 @@ nonisolated enum MeshPresentation {
     }
 
     static func toolTitle(_ tool: MeshToolEntry) -> String {
-        if let title = tool.annotations.title { return title }
+        if tool.deviceId == nil, let title = tool.annotations.title { return title }
         let words = tool.name.replacingOccurrences(of: "_", with: " ").replacingOccurrences(of: ".", with: " ")
-        return words.prefix(1).uppercased() + words.dropFirst()
+        return tool.deviceId == nil ? words.prefix(1).uppercased() + words.dropFirst() : tool.name
     }
 
     static func toolEffect(_ tool: MeshToolEntry) -> String {
-        if let note = tool.annotations.note { return note }
         switch tool.effect {
         case .meshRead: return "Reads only. Stays on your mesh."
-        case .meshWrite: return tool.annotations.readOnly == true ? "Reads only." : "Can change things on your mesh."
+        case .meshWrite: return "Can change things on your mesh."
         case .outwardRead: return "Reads from outside your mesh."
         case .outsideEffect: return "Can make changes outside your mesh."
         }
+    }
+
+    static func toolNote(_ tool: MeshToolEntry) -> String? {
+        tool.deviceId == nil ? tool.annotations.note : nil
     }
 
     static func countdown(until date: Date, now: Date) -> String? {
