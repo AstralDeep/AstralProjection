@@ -54,6 +54,7 @@ runs:
         if [[ "$PRESENTATION_MEASURE_COVERAGE" == "true" ]]; then
           [[ "$PRESENTATION_EXTERNAL_LOCK" == "tooling/python-ci/requirements.lock.txt" ]] || { echo "coverage requires the Python owner CI lock" >&2; exit 2; }
           "$PRESENTATION_PYTHON" -m pip install --require-hashes -r tooling/python-ci/requirements.lock.txt
+          "$PRESENTATION_PYTHON" -m coverage erase
           runner+=(-m coverage run --branch --append "--include=$PWD/scripts/install_presentation_components.py")
         elif [[ "$PRESENTATION_MEASURE_COVERAGE" != "false" ]]; then
           echo "measure-coverage must be true or false" >&2

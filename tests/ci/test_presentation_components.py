@@ -133,6 +133,7 @@ def test_installer_coverage_is_opt_in_and_preserved_by_the_python_owner_job():
     assert "${" not in lock
     assert 'default: "false"' in action
     assert '[[ "$PRESENTATION_EXTERNAL_LOCK" == "tooling/python-ci/requirements.lock.txt" ]]' in action
+    assert action.index("coverage erase") < action.index("coverage run --branch --append")
     assert "coverage run --branch --append" in action
     assert workflow.count('measure-coverage: "true"') == 1
     assert "--cov-branch --cov-append" in workflow
