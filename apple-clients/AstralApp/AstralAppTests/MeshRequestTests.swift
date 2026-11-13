@@ -135,6 +135,7 @@ final class MeshRequestTests: XCTestCase {
         let closed = request("r1", chat: chat, from: phone, to: me, state: .refused, code: "request.busy")
         h.kernel.setRequests([closed])
         await h.runtime.answer(closed)
+        await h.runtime.settle()
         XCTAssertEqual(h.runtime.notice, "That request can no longer change.")
         XCTAssertFalse(h.kernel.calls.contains { $0.name == "runTurn" })
     }
