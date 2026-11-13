@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pytest
 
+from wheel_dependencies import copy_dependencies
+
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLE_DIR = REPOSITORY_ROOT / "examples" / "mcp_a2a_host"
 EXAMPLE_PATH = EXAMPLE_DIR / "example.py"
@@ -354,6 +356,7 @@ def test_example_runs_from_a_freshly_built_installed_wheel(tmp_path) -> None:
     )
     with zipfile.ZipFile(wheels[0]) as archive:
         archive.extractall(site_packages)
+    copy_dependencies(wheels[0], site_packages)
     probe = subprocess.run(
         [str(python), "-I", "-c", "import astralprojection;print(astralprojection.__file__)"],
         capture_output=True,

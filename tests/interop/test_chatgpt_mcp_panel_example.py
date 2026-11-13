@@ -5,8 +5,6 @@ The loopback checks verify HTTP serving; the web suite separately executes the a
 from __future__ import annotations
 
 import ast
-import importlib.metadata
-import shutil
 import hashlib
 import importlib.util
 import json
@@ -19,7 +17,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
-from packaging.requirements import Requirement
+from wheel_dependencies import copy_dependencies
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLE_DIR = REPOSITORY_ROOT / "examples" / "chatgpt_mcp_panel"
@@ -133,26 +131,7 @@ def wheel_python(tmp_path_factory) -> str:
     )
     with zipfile.ZipFile(wheels[0]) as archive:
         archive.extractall(site_packages)
-    pending = ["astralprims"]
-    copied: set[str] = set()
-    while pending:
-        name = pending.pop()
-        if name in copied:
-            continue
-        dependency = importlib.metadata.distribution(name)
-        copied.add(name)
-        for requirement in dependency.requires or []:
-            parsed = Requirement(requirement)
-            if parsed.marker is None or parsed.marker.evaluate({"extra": ""}):
-                pending.append(parsed.name)
-        for member in dependency.files or []:
-            if ".." in member.parts:
-                continue
-            source = dependency.locate_file(member)
-            destination = Path(site_packages) / member
-            if source.is_file():
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(source, destination)
+    copy_dependencies(wheels[0], site_packages)
     probe = subprocess.run(
         [str(python), "-I", "-c", "import astralprojection, webrender.targets.chatgpt_panel;print(astralprojection.__file__)"],
         capture_output=True,

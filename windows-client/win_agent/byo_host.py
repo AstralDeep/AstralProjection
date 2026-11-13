@@ -42,7 +42,7 @@ BYO_RUNTIME_CONTRACT_VERSION = 3
 LEGACY_RUNTIME_DISPOSITIONS = {2: "dispatch_mediated_only"}
 PACKAGED_RUNTIME_LOCK_ARTIFACT = "requirements-release.lock.txt"
 PACKAGED_RUNTIME_LOCK_SHA256 = (
-    "cd04dd23361ee769f57ea1d046b0b5e10aa50bb41ebe65c4683d7518c9e9a079"
+    "bcbc222b7f306f501c80bde5f6347a1b37efadcb4c911cfac32637b47b435c0d"
 )
 BUNDLE_FILE_NAMES = (
     "agent_main.py",
