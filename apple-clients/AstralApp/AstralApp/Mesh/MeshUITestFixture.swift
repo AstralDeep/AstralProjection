@@ -101,7 +101,7 @@
                     requestId: "sha256:" + String(repeating: "3", count: 64), chatId: chat, fromMember: me,
                     toMember: phone, state: .claimed, text: "Check the calendar for Friday", refusalCode: nil,
                     tool: "calendar.read", createdAt: now.addingTimeInterval(-120)),
-            ])
+            ], notify: false)
             kernel.setPending([pendingConsent()])
         }
 

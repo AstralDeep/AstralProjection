@@ -961,6 +961,7 @@ final class MeshRuntime {
     }
 
     private func handle(_ change: MeshKernelChange) async {
+        guard kernel != nil else { return }
         switch change {
         case .chatChanged(let chatId):
             await refreshChats()

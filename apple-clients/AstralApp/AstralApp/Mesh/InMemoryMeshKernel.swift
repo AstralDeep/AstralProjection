@@ -502,9 +502,9 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         }
     }
 
-    func setRequests(_ value: [MeshRequest]) {
+    func setRequests(_ value: [MeshRequest], notify: Bool = true) {
         lock.withLock { requestsValue = value }
-        listener.onChange(.chatChanged(chatId: nil))
+        if notify { listener.onChange(.chatChanged(chatId: nil)) }
     }
 
     private struct EditableRequest {

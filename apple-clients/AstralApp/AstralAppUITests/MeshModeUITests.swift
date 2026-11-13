@@ -72,7 +72,8 @@ final class MeshModeUITests: XCTestCase {
         XCTAssertTrue(element("mesh.restore.error").waitForExistence(timeout: 5))
         XCTAssertFalse(element("mesh.restored.title").exists)
 
-        replace(words, with: (0..<24).map { "word" + String(UnicodeScalar(UInt8(97 + $0))) }.joined(separator: " "))
+        words.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: " wrongword".count) + " wordx")
+        XCTAssertTrue(element("mesh.restore.count").label.contains("24 of 24"))
         submit.tap()
         XCTAssertTrue(element("mesh.restored.title").waitForExistence(timeout: 10))
         XCTAssertTrue(element("mesh.restored.device").exists)
@@ -102,7 +103,7 @@ final class MeshModeUITests: XCTestCase {
 
     func testPermissionsAndMailboxLiveInSettings() {
         launch("shell")
-        XCTAssertTrue(element("mesh.strip.sync").waitForExistence(timeout: 10))
+        XCTAssertTrue(element("mesh.consent.review").waitForExistence(timeout: 10))
         selectTab("Settings")
         XCTAssertTrue(element("mesh.settings.permissions").waitForExistence(timeout: 5))
         element("mesh.settings.permissions").tap()
