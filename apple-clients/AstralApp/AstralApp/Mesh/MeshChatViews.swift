@@ -199,11 +199,11 @@ struct MeshMessageRow: View {
         }
     }
 
-    private var surfaceAction: @MainActor @Sendable (String, String) -> Void {
+    private var surfaceAction: @MainActor @Sendable (String, String, [String: JSONValue]) -> Void {
         let surfaces = row.message?.surfaceIds ?? []
-        return { componentId, capability in
+        return { componentId, capability, args in
             guard let surfaceId = surfaces.first else { return }
-            Task { await mesh.act(surfaceId: surfaceId, componentId: componentId, capability: capability) }
+            Task { await mesh.act(surfaceId: surfaceId, componentId: componentId, capability: capability, args: args) }
         }
     }
 
@@ -322,7 +322,7 @@ struct MeshSyncStrip: View {
     var body: some View {
         VStack(spacing: 0) {
             if mesh.status.stopped {
-                strip("The mesh is stopped. Nothing will run until you recover it.", color: p.error, id: "stopped")
+                strip("The mesh is stopped. Nothing will run until you resume it in Devices.", color: p.error, id: "stopped")
             }
             if let notice = mesh.networkNotice {
                 strip(notice, color: p.warning, id: "network")

@@ -31,9 +31,12 @@ nonisolated final class KernelHostSigner: AstralKernel.HostSigner, @unchecked Se
         guard prompt.signingInput == message else { throw ConsentPromptError.invalidInput }
         let built: ConsentPrompt
         switch prompt.kind {
-        case .rosterAdd, .rosterRemove, .stop:
+        case .rosterAdd, .rosterRemove, .stop, .resume:
             built = try ConsentPrompt.roster(signingInput: message)
-            let expected = [.rosterAdd: "roster.add", .rosterRemove: "roster.remove", .stop: "roster.stop"][prompt.kind]
+            let expected = [
+                .rosterAdd: "roster.add", .rosterRemove: "roster.remove", .stop: "roster.stop",
+                .resume: "roster.resume",
+            ][prompt.kind]
             guard built.effect == expected else { throw ConsentPromptError.invalidInput }
         case .other where prompt.title == "create_mesh":
             built = try ConsentPrompt.roster(signingInput: message)

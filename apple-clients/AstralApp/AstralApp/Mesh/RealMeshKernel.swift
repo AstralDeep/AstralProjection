@@ -1,6 +1,7 @@
 // The production MeshKernel: it opens the generated Kernel with the device custody keys, host signer, on-device model and local tools, and maps every call onto the host's Mesh types.
 // It resumes runs after opening, ticks them from a timer, starts the network once this device is enrolled, and keeps queued-message anchors for the chat tree.
 
+import AstralCore
 import AstralKernel
 import Foundation
 
@@ -133,6 +134,8 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
 
     func raiseStop() throws { try mapped { _ = try kernel.raiseStop() } }
 
+    func resumeStop() throws { try mapped { _ = try kernel.resumeStop() } }
+
     func reattest(idToken: String) throws { try mapped { try kernel.reattest(idToken: idToken) } }
 
     func exportBackup(path: String) throws { try mapped { _ = try kernel.exportBackup(path: path) } }
@@ -193,9 +196,18 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
         }
     }
 
-    func act(surfaceId: String, componentId: String, action: String) throws {
-        throw MeshKernelError.unavailable("This build cannot run actions from a surface yet.")
+    func act(surfaceId: String, componentId: String, capability: String, args: [String: JSONValue]) async throws
+        -> MeshActResult
+    {
+        do {
+            let body = try JSONEncoder().encode(JSONValue.object(["capability": .string(capability), "args": .object(args)]))
+            let result = try await kernel.act(
+                surfaceId: surfaceId, componentId: componentId, actionJson: String(decoding: body, as: UTF8.self))
+            return MeshActResult(status: result.status, code: result.code, text: result.text)
+        } catch { throw KernelMapping.error(error) }
     }
+
+    func restoreMarker() -> Data? { kernel.restoreMarker() }
 
     func runTurn(chatId: String) async throws {
         do { _ = try await kernel.runTurn(chatId: chatId) } catch { throw KernelMapping.error(error) }

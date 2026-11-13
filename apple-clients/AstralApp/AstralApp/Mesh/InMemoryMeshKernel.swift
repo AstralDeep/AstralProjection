@@ -34,6 +34,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
             name: "current_datetime", summary: "Returns the current date and time.", effect: .meshRead, deviceId: nil)
     ]
 
+    var actResult = MeshActResult(status: "ok", code: nil, text: "Done")
     var recoveryWords: [String] = (1...24).map { "word\($0)" }
     var hasLocalMesh = false
     var turnScript: [MeshTurnEvent] = [
@@ -187,6 +188,14 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         listener.onChange(.allowanceChanged)
     }
 
+    func resumeStop() throws {
+        try record("resumeStop")
+        try consentGate()
+        lock.withLock { status.stopped = false }
+        listener.onChange(.rosterChanged)
+        listener.onChange(.allowanceChanged)
+    }
+
     func reattest(idToken: String) throws {
         try record("reattest", idToken)
         lock.withLock { status.attested = true }
@@ -254,8 +263,12 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         return eventId
     }
 
-    func act(surfaceId: String, componentId: String, action: String) throws {
-        try record("act", surfaceId + "/" + componentId + "/" + action)
+    func act(surfaceId: String, componentId: String, capability: String, args: [String: JSONValue]) async throws
+        -> MeshActResult
+    {
+        let detail = args.keys.sorted().map { $0 + "=" + String(describing: args[$0]!) }.joined(separator: ",")
+        try record("act", surfaceId + "/" + componentId + "/" + capability + (detail.isEmpty ? "" : "?" + detail))
+        return actResult
     }
 
     func runTurn(chatId: String) async throws {

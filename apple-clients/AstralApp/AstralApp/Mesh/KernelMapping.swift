@@ -13,7 +13,7 @@ nonisolated enum KernelMapping {
         let enrolled = value.state == .enrolled
         return MeshStatus(
             hasMesh: enrolled, meshId: value.meshId, deviceId: value.deviceId.isEmpty ? nil : value.deviceId,
-            attested: !value.unattested, stopped: false, hardwareBacked: value.hardwareBacked, stopLevel: value.stop)
+            attested: !value.unattested, stopped: value.stopped, hardwareBacked: value.hardwareBacked, stopLevel: value.stop)
     }
 
     static func deviceKind(_ text: String) -> MeshDeviceKind { MeshDeviceKind(rawValue: text) ?? .node }

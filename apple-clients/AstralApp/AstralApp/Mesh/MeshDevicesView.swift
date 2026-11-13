@@ -46,15 +46,30 @@ struct MeshDevicesView: View {
                 .accessibilityIdentifier("mesh.devices.add")
             }
             Section {
-                Button(role: .destructive) {
-                    confirmingStop = true
-                } label: {
-                    Label("Emergency stop", systemImage: "hand.raised.fill")
+                if mesh.status.stopped {
+                    Label("The mesh is stopped. No device runs actions.", systemImage: "hand.raised.fill")
+                        .foregroundStyle(p.error)
+                        .accessibilityIdentifier("mesh.devices.halted")
+                    Button {
+                        Task { await mesh.resume() }
+                    } label: {
+                        Label("Resume the mesh with biometrics", systemImage: "play.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("mesh.devices.resume")
+                } else {
+                    Button(role: .destructive) {
+                        confirmingStop = true
+                    } label: {
+                        Label("Emergency stop", systemImage: "hand.raised.fill")
+                    }
+                    .accessibilityIdentifier("mesh.devices.stop")
                 }
-                .accessibilityIdentifier("mesh.devices.stop")
             } footer: {
                 Text(
-                    mesh.status.stopLevel == 0
+                    mesh.status.stopped
+                        ? "Resuming asks for your approval and lets every device run actions again."
+                        : mesh.status.stopLevel == 0
                         ? "Every device refuses actions that were already in progress."
                         : "Stopped \(mesh.status.stopLevel) times. Every device refuses actions that were already in progress.")
             }

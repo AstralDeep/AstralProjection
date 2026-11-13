@@ -355,6 +355,39 @@ final class RealMeshKernelTests: XCTestCase {
         await kernel.stopNetwork()
     }
 
+    func testAStoppedMeshShowsHaltedAndResumesWithABiometricConsent() async throws {
+        let mac = try await open("Mac")
+        _ = try await createMesh(mac)
+        let marker = try XCTUnwrap(mac.kernel.restoreMarker())
+        XCTAssertEqual(marker, try mac.keys.installMarker())
+        let kernel = mac.kernel
+        let before = mac.presenter.prompts.count
+        try await Task.detached { try kernel.raiseStop() }.value
+        let halted = try await kernel.meshStatus()
+        XCTAssertTrue(halted.stopped)
+        XCTAssertEqual(halted.stopLevel, 1)
+        mac.presenter.approve = false
+        let denied = await Task.detached { () -> Error? in
+            do {
+                try kernel.resumeStop()
+                return nil
+            } catch { return error }
+        }.value
+        XCTAssertEqual(denied as? MeshKernelError, .consentDenied)
+        let still = try await kernel.meshStatus()
+        XCTAssertTrue(still.stopped)
+        mac.presenter.approve = true
+        try await Task.detached { try kernel.resumeStop() }.value
+        let prompt = try XCTUnwrap(mac.presenter.prompts.last)
+        XCTAssertEqual(prompt.effect, "roster.resume")
+        XCTAssertEqual(prompt.actionTitle, "Resume the mesh")
+        XCTAssertTrue(prompt.requiresBiometry)
+        XCTAssertGreaterThan(mac.presenter.prompts.count, before + 1)
+        let resumed = try await kernel.meshStatus()
+        XCTAssertFalse(resumed.stopped)
+        await kernel.stopNetwork()
+    }
+
     func testToolsListThisDevicesToolsThenPeerToolsWithoutDuplicates() async throws {
         let peerId = "sha256:" + String(repeating: "7", count: 64)
         let schema = #"{"type":"object","properties":{},"additionalProperties":false}"#
@@ -468,8 +501,12 @@ final class RealMeshKernelTests: XCTestCase {
         XCTAssertTrue(try mac.kernel.modelProviders().isEmpty)
         let allowance = try mac.kernel.allowance()
         XCTAssertNotNil(allowance.modelTokensLimit)
-        XCTAssertThrowsError(try mac.kernel.act(surfaceId: "s", componentId: "c", action: "a")) { error in
-            guard case MeshKernelError.unavailable = error else { return XCTFail("\(error)") }
+        do {
+            _ = try await mac.kernel.act(surfaceId: "sha256:none", componentId: "c", capability: "cap", args: [:])
+            XCTFail("an unknown surface must be refused")
+        } catch {
+            guard case MeshKernelError.refused(let text) = error else { return XCTFail("\(error)") }
+            XCTAssertTrue(text.contains("surface.unknown_surface"))
         }
         do {
             try await mac.kernel.takeOverRun(runId: "missing")

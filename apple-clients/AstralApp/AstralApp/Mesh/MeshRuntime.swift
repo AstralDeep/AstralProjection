@@ -723,6 +723,12 @@ final class MeshRuntime {
         await refreshSync()
     }
 
+    func resume() async {
+        await perform { try $0.resumeStop() }
+        await refreshStatus()
+        await refreshAllowance()
+    }
+
     func raiseStop() async {
         await perform { try $0.raiseStop() }
         await refreshStatus()
@@ -838,8 +844,15 @@ final class MeshRuntime {
         _ = await send("Before doing anything else, check whether \(outcome.tool) already completed. Do not repeat it.")
     }
 
-    func act(surfaceId: String, componentId: String, capability: String) async {
-        await perform { try $0.act(surfaceId: surfaceId, componentId: componentId, action: capability) }
+    func act(surfaceId: String, componentId: String, capability: String, args: [String: JSONValue] = [:]) async {
+        let result = await attempt {
+            try await $0.act(surfaceId: surfaceId, componentId: componentId, capability: capability, args: args)
+        }
+        guard let result else { return }
+        if result.refused {
+            notice = KernelMapping.failureText(code: result.code ?? result.status, fallback: "That action did not run.")
+        }
+        if let chatId = currentChatId { await reloadChat(chatId) }
     }
 
     func saveProvider(baseURL: String, model: String, key: String) async -> MeshProviderInputError? {

@@ -121,15 +121,15 @@ final class KernelMappingTests: XCTestCase {
         let status = KernelMapping.status(
             AstralKernel.MeshStatus(
                 state: .enrolled, meshId: "m", deviceId: "d", feed: "f", marker: .matches, members: 2, unattested: true,
-                attestationDueS: nil, stop: 3, hardwareBacked: true, endpoint: .stopped, pairingOpen: false))
+                attestationDueS: nil, stop: 3, stopped: true, hardwareBacked: true, endpoint: .stopped, pairingOpen: false))
         XCTAssertTrue(status.hasMesh)
         XCTAssertFalse(status.attested)
-        XCTAssertFalse(status.stopped)
+        XCTAssertTrue(status.stopped)
         XCTAssertEqual(status.stopLevel, 3)
         let restored = KernelMapping.status(
             AstralKernel.MeshStatus(
                 state: .restored, meshId: "m", deviceId: "d", feed: "f", marker: .mismatch, members: 2, unattested: false,
-                attestationDueS: nil, stop: 0, hardwareBacked: false, endpoint: .stopped, pairingOpen: false))
+                attestationDueS: nil, stop: 0, stopped: false, hardwareBacked: false, endpoint: .stopped, pairingOpen: false))
         XCTAssertFalse(restored.hasMesh)
 
         let allowance = KernelMapping.allowance(
@@ -292,6 +292,12 @@ final class KernelMappingTests: XCTestCase {
         let stopPrompt = try AstralDeep.ConsentPrompt.roster(signingInput: Data(("astral.roster/v1\n" + stop).utf8))
         XCTAssertEqual(stopPrompt.effect, "roster.stop")
         XCTAssertEqual(stopPrompt.actionTitle, "Stop the mesh")
+        let resume = stop.replacingOccurrences(of: #""type":"stop""#, with: #""type":"resume""#)
+        let resumePrompt = try AstralDeep.ConsentPrompt.roster(signingInput: Data(("astral.roster/v1\n" + resume).utf8))
+        XCTAssertEqual(resumePrompt.effect, "roster.resume")
+        XCTAssertEqual(resumePrompt.actionTitle, "Resume the mesh")
+        XCTAssertEqual(resumePrompt.target, "Resume counter 2")
+        XCTAssertTrue(resumePrompt.requiresBiometry)
         let zero = stop.replacingOccurrences(of: #""counter":2"#, with: #""counter":0"#)
         XCTAssertThrowsError(try AstralDeep.ConsentPrompt.roster(signingInput: Data(("astral.roster/v1\n" + zero).utf8)))
         _ = key

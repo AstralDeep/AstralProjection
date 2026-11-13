@@ -24,7 +24,7 @@ private struct CompactCardContentKey: EnvironmentKey { static let defaultValue =
 private struct CompactChipKey: EnvironmentKey { static let defaultValue: Bool? = nil }
 
 private struct MeshActionKey: EnvironmentKey {
-    static let defaultValue: (@MainActor @Sendable (String, String) -> Void)? = nil
+    static let defaultValue: (@MainActor @Sendable (String, String, [String: JSONValue]) -> Void)? = nil
 }
 
 extension EnvironmentValues {
@@ -60,7 +60,7 @@ extension EnvironmentValues {
         get { self[CompactChipKey.self] }
         set { self[CompactChipKey.self] = newValue }
     }
-    var astralMeshAction: (@MainActor @Sendable (String, String) -> Void)? {
+    var astralMeshAction: (@MainActor @Sendable (String, String, [String: JSONValue]) -> Void)? {
         get { self[MeshActionKey.self] }
         set { self[MeshActionKey.self] = newValue }
     }
@@ -716,7 +716,7 @@ struct ComponentView: View {
             if let meshAction, let capability = component.raw["capability"]?.stringValue,
                 let componentId = component.componentId
             {
-                meshAction(componentId, capability)
+                meshAction(componentId, capability, payload)
             } else if action == "load_chat" {
                 navigate(payload)
             } else if action == "component_action" {
@@ -2121,6 +2121,7 @@ struct InputComponent: View {
     @Environment(ThemeStore.self) var theme
     @Environment(AppModel.self) var model
     @Environment(\.astralCompactSettings) private var compactSettings
+    @Environment(\.astralMeshAction) private var meshAction
     @State private var value = ""
     @State private var editingOwner = UUID()
     @State private var initialValue = ""
@@ -2164,7 +2165,11 @@ struct InputComponent: View {
     private func submit() {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        if let action = component.raw["action"]?.stringValue {
+        if let meshAction, let capability = component.raw["capability"]?.stringValue,
+            let componentId = component.componentId
+        {
+            meshAction(componentId, capability, ["value": .string(trimmed)])
+        } else if let action = component.raw["action"]?.stringValue {
             model.emit(action, payload: ["value": .string(trimmed)])
         } else {
             model.emit("chat_message", payload: ["message": .string(trimmed)])

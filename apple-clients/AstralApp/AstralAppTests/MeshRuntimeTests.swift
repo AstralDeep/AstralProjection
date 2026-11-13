@@ -500,5 +500,40 @@ final class MeshRuntimeTests: XCTestCase {
         await h.runtime.open()
         await h.runtime.act(surfaceId: "s", componentId: "c", capability: "cap")
         XCTAssertTrue(h.kernel.calls.contains(.init(name: "act", detail: "s/c/cap")))
+        XCTAssertNil(h.runtime.notice)
+    }
+
+    func testSurfaceInputsSendTheirValueAndARefusalShowsItsCode() async {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        await h.runtime.act(surfaceId: "s", componentId: "c", capability: "cap", args: ["value": .string("hi")])
+        XCTAssertTrue(h.kernel.calls.contains { $0.name == "act" && $0.detail.hasPrefix("s/c/cap?value=") })
+        h.kernel.actResult = MeshActResult(status: "refused", code: "gate.permission_denied", text: "")
+        await h.runtime.act(surfaceId: "s", componentId: "c", capability: "cap")
+        XCTAssertEqual(h.runtime.notice, KernelMapping.failureText(code: "gate.permission_denied", fallback: "That action did not run."))
+        XCTAssertTrue(h.runtime.notice?.contains("safety check") == true)
+        h.runtime.notice = nil
+        h.kernel.actResult = MeshActResult(status: "error", code: nil, text: "boom")
+        await h.runtime.act(surfaceId: "s", componentId: "c", capability: "cap")
+        XCTAssertEqual(h.runtime.notice, "That action did not run. (error)")
+    }
+
+    func testAHaltedMeshCanBeResumedThroughTheConsentGate() async {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        await h.runtime.raiseStop()
+        XCTAssertTrue(h.runtime.status.stopped)
+        h.kernel.consentGate = { throw MeshKernelError.consentDenied }
+        await h.runtime.resume()
+        XCTAssertTrue(h.runtime.status.stopped)
+        XCTAssertEqual(h.runtime.notice, "The approval was denied.")
+        h.kernel.consentGate = {}
+        h.runtime.notice = nil
+        await h.runtime.resume()
+        XCTAssertFalse(h.runtime.status.stopped)
+        XCTAssertNil(h.runtime.notice)
+        XCTAssertEqual(h.kernel.calls.filter { $0.name == "resumeStop" }.count, 2)
     }
 }

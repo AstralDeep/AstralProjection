@@ -74,6 +74,14 @@ nonisolated struct MeshMailboxState: Equatable, Sendable {
         configured: false, status: .disabled, lastError: nil, lastOk: nil, pendingNotices: 0, truncated: false)
 }
 
+nonisolated struct MeshActResult: Equatable, Sendable {
+    let status: String
+    let code: String?
+    let text: String
+
+    var refused: Bool { code != nil || status != "ok" }
+}
+
 nonisolated struct MeshPairingOffer: Equatable, Sendable {
     let shortCode: String
     let payload: String
@@ -426,6 +434,7 @@ nonisolated protocol MeshKernel: Sendable {
     func roster() async throws -> [MeshMember]
     func removeDevice(memberId: String) throws
     func raiseStop() throws
+    func resumeStop() throws
     func reattest(idToken: String) throws
     func exportBackup(path: String) throws
 
@@ -434,7 +443,8 @@ nonisolated protocol MeshKernel: Sendable {
     func createChat(title: String) throws -> String
     func sendMessage(chatId: String, text: String, continues: String?) throws -> String
     func fork(chatId: String, eventId: String) throws -> String
-    func act(surfaceId: String, componentId: String, action: String) throws
+    func act(surfaceId: String, componentId: String, capability: String, args: [String: JSONValue]) async throws
+        -> MeshActResult
 
     func runTurn(chatId: String) async throws
     func steer(chatId: String, text: String) throws

@@ -165,15 +165,17 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
             }
             for feed in removal.body.cutoff.keys { _ = try keyBytes(feed, count: 32) }
             target = removal.body.device
-        case "stop":
+        case "stop", "resume":
             guard Set(body.keys) == ["counter"], let counter = body["counter"] as? Int, counter >= 1 else {
                 throw ConsentPromptError.invalidInput
             }
-            target = "Stop counter " + String(counter)
+            target = (header.type == "stop" ? "Stop counter " : "Resume counter ") + String(counter)
         default:
             throw ConsentPromptError.invalidInput
         }
-        let titles = ["add": "Add device", "remove": "Remove device", "stop": "Stop the mesh"]
+        let titles = [
+            "add": "Add device", "remove": "Remove device", "stop": "Stop the mesh", "resume": "Resume the mesh",
+        ]
         var prompt = ConsentPrompt(
             actionTitle: titles[header.type] ?? "Roster change",
             effect: "roster." + header.type, target: target,
