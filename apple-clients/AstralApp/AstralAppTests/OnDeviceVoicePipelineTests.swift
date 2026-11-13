@@ -307,6 +307,28 @@ final class OnDeviceVoicePipelineTests: XCTestCase {
         pipeline.stop()
     }
 
+    func testFactualFastPathOutputCannotCreateASecondSpokenAnswerOrHistoryRecord() async throws {
+        let model = FakeOnDeviceModel(mode: .respond(.text("2 plus 2 equals 4.")))
+        let fast = VoiceFastPath(model: model)
+        let pipeline = VoicePipeline(audio: audio, transcriber: transcriber, fastPath: fast, link: link, clock: clock)
+        try pipeline.start(trigger: .ownerGesture)
+        defer { pipeline.stop() }
+        speak(pipeline, "what is two plus two")
+        pipeline.handleRecognizer(.final("What is two plus two?"))
+        let completed = await waitUntil { model.requests.count == 1 && !fast.hasDraft }
+        XCTAssertTrue(completed)
+        XCTAssertTrue(audio.spoken.isEmpty)
+        pipeline.answerDelta("2 plus 2 is 4. ")
+        pipeline.answerFinished()
+        XCTAssertEqual(audio.spoken.map(\.text), ["2 plus 2 is 4."])
+        audio.progress = VoiceSpeechProgress(index: 0, characters: "2 plus 2 is 4.".count)
+        pipeline.handleVoiceActivity(true)
+        clock.advance(0.3)
+        pipeline.handleRecognizer(.partial("Wait"))
+        XCTAssertEqual(link.cancelledTurns, 1)
+        XCTAssertEqual(link.spoken, [VoiceSpokenRecord(kind: .answer, text: "2 plus 2 is 4.")])
+    }
+
     func testSpeakingOverAnAcknowledgementStopsIt() async throws {
         let pipeline = try makePipeline(model: FakeOnDeviceModel(mode: .respond(.text("Sure."))))
         speak(pipeline, "what time is it")

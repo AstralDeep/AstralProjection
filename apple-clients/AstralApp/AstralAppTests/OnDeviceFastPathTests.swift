@@ -1,9 +1,8 @@
 // Verifies the fast path: drafts start on a stable partial, are discarded when the person keeps talking, and yield only short, safe acknowledgements.
 // A scripted model stands in for the system model.
 
-import XCTest
-
 @testable import AstralDeep
+import XCTest
 
 @MainActor
 final class OnDeviceFastPathTests: XCTestCase {
@@ -63,6 +62,14 @@ final class OnDeviceFastPathTests: XCTestCase {
         let acknowledgement = await fast.acknowledgement(forFinal: "set a timer")
         XCTAssertEqual(acknowledgement, "Okay.")
         XCTAssertEqual(model.requests.last?.messages.last?.text, "set a timer")
+    }
+
+    func testFactualAnswersAndActionClaimsCannotBecomeAcknowledgements() async {
+        for text in ["2 plus 2 equals 4.", "It is noon.", "Your transfer is complete.", "The door is unlocked."] {
+            let fast = VoiceFastPath(model: FakeOnDeviceModel(mode: .respond(.text(text))))
+            let acknowledgement = await fast.acknowledgement(forFinal: "What is two plus two?")
+            XCTAssertNil(acknowledgement, text)
+        }
     }
 
     func testUnavailableModelProducesNothing() async {

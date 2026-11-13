@@ -6,6 +6,9 @@ import Foundation
 nonisolated enum VoiceAcknowledgement {
     static let maximumWords = 8
     static let maximumCharacters = 80
+    private static let phrases: Set<String> = [
+        "Okay.", "Sure.", "One moment.", "Sure, one moment.", "Let me check.", "I heard you.",
+    ]
 
     static func sanitize(_ raw: String) -> String? {
         var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -13,7 +16,7 @@ nonisolated enum VoiceAcknowledgement {
         if let firstLine = text.split(whereSeparator: \.isNewline).first { text = String(firstLine) }
         text = text.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty, text.count <= maximumCharacters, !text.contains("?"),
-            text.split(whereSeparator: \.isWhitespace).count <= maximumWords
+            text.split(whereSeparator: \.isWhitespace).count <= maximumWords, phrases.contains(text)
         else { return nil }
         return text
     }
@@ -24,7 +27,9 @@ nonisolated enum VoiceAcknowledgement {
                 OnDeviceMessage(
                     role: .system,
                     text:
-                        "You are the instant spoken reply of a voice assistant. Say one short acknowledgement of at most eight words that shows you heard the request. Do not answer it, state facts, or ask a question."
+                        "Choose exactly one acknowledgement from this list: "
+                        + phrases.sorted().joined(separator: " | ")
+                        + " Do not answer the request, state facts, claim an action happened, or add any other words."
                 ),
                 OnDeviceMessage(role: .user, text: transcript),
             ],
