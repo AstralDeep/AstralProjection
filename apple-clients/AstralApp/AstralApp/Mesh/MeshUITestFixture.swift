@@ -40,8 +40,14 @@
             let mode = AppModeStore(defaults: defaults)
             mode.choose(.mesh)
             let hasMesh = scenario == .shell
-            let factory: MeshKernelFactory = { _, _, _, _, listener in
+            let factory: MeshKernelFactory = { _, signer, _, _, listener in
                 let kernel = InMemoryMeshKernel(listener: listener, hasMesh: hasMesh)
+                kernel.actionSigner = { pending in
+                    let prompt = try ConsentPrompt.action(
+                        canonicalAction: pending.canonicalAction, canonicalArguments: pending.canonicalArguments,
+                        signingInput: pending.signingInput)
+                    _ = try signer.presenceSign(prompt: prompt, message: pending.signingInput)
+                }
                 kernel.recoveryWords = (0..<24).map { "word" + String(UnicodeScalar(UInt8(97 + $0))) }
                 kernel.hasLocalMesh = true
                 kernel.autoJoin = MeshJoinRequest(

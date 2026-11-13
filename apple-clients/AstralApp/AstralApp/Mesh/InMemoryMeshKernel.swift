@@ -45,6 +45,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     ]
     var turnReply = "Hello there"
     var consentGate: @Sendable () throws -> Void = {}
+    var actionSigner: (@Sendable (MeshPendingConsent) throws -> Void)?
     var failure: MeshKernelError?
     var turnError: MeshKernelError?
     var previewResult = MeshPairingPreview(
@@ -394,7 +395,12 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
 
     func resolveConsent(requestId: String, approve: Bool) throws {
         try record("resolveConsent", requestId + (approve ? ":approve" : ":deny"))
-        if approve { try consentGate() }
+        if approve {
+            try consentGate()
+            if let actionSigner, let pending = lock.withLock({ consents.first { $0.requestId == requestId } }) {
+                try actionSigner(pending)
+            }
+        }
         lock.withLock { consents.removeAll { $0.requestId == requestId } }
     }
 

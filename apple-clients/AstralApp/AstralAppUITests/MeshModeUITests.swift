@@ -127,6 +127,32 @@ final class MeshModeUITests: XCTestCase {
         XCTAssertTrue(element("mesh.mailbox.status").label.contains("No mailbox is set"))
     }
 
+    func testReviewOpensTheConsentSheetWithTheActionAndDenyClosesIt() {
+        launch("shell")
+        let review = element("mesh.consent.review")
+        XCTAssertTrue(review.waitForExistence(timeout: 10))
+        review.tap()
+        XCTAssertTrue(element("consent.sheet").waitForExistence(timeout: 10))
+        XCTAssertTrue(element("consent.title").exists)
+        XCTAssertTrue(element("consent.target").exists)
+        XCTAssertTrue(element("consent.arguments").exists)
+        XCTAssertTrue(element("consent.approve").exists)
+        XCTAssertTrue(element("consent.deny").exists)
+        attach("mesh-consent-sheet")
+        element("consent.deny").tap()
+        XCTAssertTrue(element("mesh.consent.review").waitForNonExistence(timeout: 10))
+        XCTAssertFalse(element("consent.sheet").exists)
+    }
+
+    func testDenyOnTheBannerDismissesTheApprovalWithoutASheet() {
+        launch("shell")
+        let deny = element("mesh.consent.deny")
+        XCTAssertTrue(deny.waitForExistence(timeout: 10))
+        deny.tap()
+        XCTAssertTrue(element("mesh.consent.review").waitForNonExistence(timeout: 10))
+        XCTAssertFalse(element("consent.sheet").exists)
+    }
+
     func testOutcomeUnknownCardOffersCheckOrLeave() {
         launch("shell")
         let chat = element("mesh.chat.chat-1")
