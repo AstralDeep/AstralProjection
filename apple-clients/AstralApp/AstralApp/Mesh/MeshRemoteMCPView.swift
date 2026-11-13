@@ -32,7 +32,7 @@ nonisolated struct MeshRemoteMCPTool: Identifiable, Equatable, Sendable {
         let annotations = MeshToolAnnotations(json: annotationsJSON)
         return MeshToolEntry(
             name: id, summary: description,
-            effect: annotations.readOnly == true ? .outwardRead : .outsideEffect,
+            effect: .outsideEffect,
             deviceId: nil, annotations: annotations)
     }
 }

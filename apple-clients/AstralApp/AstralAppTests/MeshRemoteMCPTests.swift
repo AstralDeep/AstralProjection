@@ -29,7 +29,7 @@ final class MeshRemoteMCPTests: XCTestCase {
         await h.runtime.grant(tool.entry)
         XCTAssertTrue(h.runtime.isGranted(tool.entry))
         XCTAssertEqual(tool.entry.name, "weather__lookup")
-        XCTAssertEqual(tool.entry.effect, .outwardRead)
+        XCTAssertEqual(tool.entry.effect, .outsideEffect)
         let changed = MeshRemoteMCPTool(
             server: "weather", endpoint: "https://weather.example/mcp", configurationRevision: "reviewed-config",
             name: "lookup", description: "Changed weather", inputSchemaJSON: "{}",
