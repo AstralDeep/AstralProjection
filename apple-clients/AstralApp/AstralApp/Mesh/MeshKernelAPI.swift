@@ -181,6 +181,23 @@ nonisolated struct MeshChatView: Equatable, Sendable {
     let status: MeshChatStatus
 }
 
+nonisolated enum MeshRequestState: String, Equatable, Sendable {
+    case pending, claimed, answered, refused, cancelled
+}
+
+nonisolated struct MeshRequest: Identifiable, Equatable, Sendable {
+    let requestId: String
+    let chatId: String
+    let fromMember: String?
+    let toMember: String
+    let state: MeshRequestState
+    let text: String
+    let refusalCode: String?
+    let tool: String?
+    let createdAt: Date
+    var id: String { requestId }
+}
+
 nonisolated struct MeshPendingConsent: Identifiable, Equatable, Sendable {
     enum Kind: String, Equatable, Sendable { case action, roster }
     let requestId: String
@@ -369,6 +386,12 @@ nonisolated protocol MeshKernel: Sendable {
     func interrupt(chatId: String) throws
     func pendingConsents() throws -> [MeshPendingConsent]
     func resolveConsent(requestId: String, approve: Bool) throws
+
+    func chatRequests(chatId: String) throws -> [MeshRequest]
+    func pendingRequestsForMe() throws -> [MeshRequest]
+    func sendRequest(chatId: String, text: String, toMember: String) throws -> String
+    func claimRequest(requestId: String) throws
+    func refuseRequest(requestId: String, code: String) throws
 
     func recordSpoken(chatId: String, kind: VoiceSpokenKind, text: String) throws
 

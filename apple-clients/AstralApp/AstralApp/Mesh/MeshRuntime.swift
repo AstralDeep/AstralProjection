@@ -114,6 +114,28 @@ nonisolated enum MeshUnknownChoice: Equatable, Sendable {
     case checkFirst
 }
 
+nonisolated enum MeshRequestRefusal: String, CaseIterable, Sendable {
+    case busy = "request.busy"
+    case notNow = "request.not_now"
+    case declined = "request.declined"
+
+    var title: String {
+        switch self {
+        case .busy: return "Busy right now"
+        case .notNow: return "Not now"
+        case .declined: return "I do not want this"
+        }
+    }
+
+    var reason: String {
+        switch self {
+        case .busy: return "the device was busy"
+        case .notNow: return "not now"
+        case .declined: return "the owner declined"
+        }
+    }
+}
+
 nonisolated enum MeshProviderInputError: Error, Equatable, Sendable {
     case invalidURL
     case insecureURL
@@ -184,6 +206,8 @@ final class MeshRuntime {
     private(set) var providers: [MeshModelProvider] = []
     private(set) var runs: [MeshRun] = []
     private(set) var proposals: [MeshProposal] = []
+    private(set) var chatRequests: [MeshRequest] = []
+    private(set) var requestsForMe: [MeshRequest] = []
     private(set) var creation = MeshCreationState.idle
     private(set) var join = MeshJoinState.idle
     private(set) var restore = MeshRestoreState.idle
@@ -331,6 +355,8 @@ final class MeshRuntime {
         pendingConsents = []
         runs = []
         proposals = []
+        chatRequests = []
+        requestsForMe = []
         turns = [:]
     }
 
@@ -346,6 +372,7 @@ final class MeshRuntime {
         guard status.hasMesh else { return }
         await refreshRoster()
         await refreshChats()
+        await refreshRequests()
         await refreshSync()
         await refreshConsents()
         await refreshAllowance()
@@ -372,6 +399,58 @@ final class MeshRuntime {
 
     func refreshChats() async {
         if let value = await attempt({ try $0.listChats() }) { chats = value }
+    }
+
+    func refreshRequests() async {
+        if let value = await attempt({ try $0.pendingRequestsForMe() }) { requestsForMe = value }
+    }
+
+    func memberLabel(_ memberId: String?) -> String {
+        guard let memberId else { return "A device" }
+        return members.first { $0.memberId == memberId }?.label ?? "Another device"
+    }
+
+    func sendRequest(_ text: String, to member: MeshMember, in chatId: String? = nil) async -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !member.isThisDevice else { return false }
+        if status.stopped {
+            notice = MeshKernelError.stopped.message
+            return false
+        }
+        let chat: String
+        if let chatId = chatId ?? currentChatId {
+            chat = chatId
+        } else if let created = await attempt({ [title = Self.title(from: trimmed)] in try $0.createChat(title: title) }) {
+            chat = created
+        } else {
+            return false
+        }
+        let memberId = member.memberId
+        guard await attempt({ try $0.sendRequest(chatId: chat, text: trimmed, toMember: memberId) }) != nil else {
+            return false
+        }
+        await refreshChats()
+        if chat == currentChatId { await reloadChat(chat) }
+        return true
+    }
+
+    func answer(_ request: MeshRequest) async {
+        let id = request.requestId
+        let claimed: Void? = await attempt { try $0.claimRequest(requestId: id) }
+        guard claimed != nil else {
+            await refreshRequests()
+            return
+        }
+        await refreshRequests()
+        if request.chatId == currentChatId { await reloadChat(request.chatId) }
+        if turns[request.chatId]?.running != true { startTurn(chatId: request.chatId) }
+    }
+
+    func refuse(_ request: MeshRequest, because reason: MeshRequestRefusal) async {
+        let id = request.requestId
+        await perform { try $0.refuseRequest(requestId: id, code: reason.rawValue) }
+        await refreshRequests()
+        if request.chatId == currentChatId { await reloadChat(request.chatId) }
     }
 
     func refreshSync() async {
@@ -557,12 +636,14 @@ final class MeshRuntime {
         selectedHead = nil
         headPinned = false
         currentChat = nil
+        chatRequests = []
         await reloadChat(chatId)
     }
 
     func closeChat() {
         currentChatId = nil
         currentChat = nil
+        chatRequests = []
         selectedHead = nil
         headPinned = false
     }
@@ -754,6 +835,9 @@ final class MeshRuntime {
         guard let view = await attempt({ try $0.chat(chatId: chatId) }) else { return }
         guard currentChatId == chatId else { return }
         currentChat = view
+        if let value = await attempt({ try $0.chatRequests(chatId: chatId) }), currentChatId == chatId {
+            chatRequests = value
+        }
         if let head = selectedHead, !view.messages.contains(where: { $0.eventId == head }) {
             selectedHead = nil
             headPinned = false
@@ -769,6 +853,7 @@ final class MeshRuntime {
         switch change {
         case .chatChanged(let chatId):
             await refreshChats()
+            await refreshRequests()
             if let current = currentChatId, chatId == nil || chatId == current { await reloadChat(current) }
         case .syncStateChanged:
             await refreshSync()

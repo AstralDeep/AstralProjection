@@ -26,6 +26,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     private var offer: MeshPairingOffer?
     private var runsValue: [MeshRun] = []
     private var proposalsValue: [MeshProposal] = []
+    private var requestsValue: [MeshRequest] = []
 
     var recoveryWords: [String] = (1...24).map { "word\($0)" }
     var hasLocalMesh = false
@@ -301,6 +302,58 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         lock.withLock { consents.removeAll { $0.requestId == requestId } }
     }
 
+    func chatRequests(chatId: String) throws -> [MeshRequest] {
+        try record("chatRequests", chatId)
+        return lock.withLock { requestsValue.filter { $0.chatId == chatId }.sorted { $0.createdAt < $1.createdAt } }
+    }
+
+    func pendingRequestsForMe() throws -> [MeshRequest] {
+        try record("pendingRequestsForMe")
+        return lock.withLock {
+            requestsValue.filter { $0.toMember == status.deviceId && $0.state == .pending }
+                .sorted { $0.createdAt < $1.createdAt }
+        }
+    }
+
+    func sendRequest(chatId: String, text: String, toMember: String) throws -> String {
+        try record("sendRequest", chatId + "|" + toMember + "|" + text)
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw MeshKernelError.refused(KernelMapping.failureText(code: "request.empty"))
+        }
+        let id = nextId("request")
+        let now = clock()
+        try lock.withLock {
+            guard chats[chatId] != nil else { throw MeshKernelError.notFound }
+            guard toMember != status.deviceId else {
+                throw MeshKernelError.refused(KernelMapping.failureText(code: "request.self_addressed"))
+            }
+            guard members.contains(where: { $0.memberId == toMember }) else {
+                throw MeshKernelError.refused(KernelMapping.failureText(code: "request.unknown_member"))
+            }
+            requestsValue.append(
+                MeshRequest(
+                    requestId: id, chatId: chatId, fromMember: status.deviceId, toMember: toMember, state: .pending,
+                    text: text, refusalCode: nil, tool: nil, createdAt: now))
+        }
+        listener.onChange(.chatChanged(chatId: chatId))
+        return id
+    }
+
+    func claimRequest(requestId: String) throws {
+        try record("claimRequest", requestId)
+        let chat = try changeRequest(requestId, allowed: [.pending, .claimed]) { $0.state = .claimed }
+        listener.onChange(.chatChanged(chatId: chat))
+    }
+
+    func refuseRequest(requestId: String, code: String) throws {
+        try record("refuseRequest", requestId + "|" + code)
+        let chat = try changeRequest(requestId, allowed: [.pending, .claimed]) {
+            $0.state = .refused
+            $0.refusalCode = code
+        }
+        listener.onChange(.chatChanged(chatId: chat))
+    }
+
     func recordSpoken(chatId: String, kind: VoiceSpokenKind, text: String) throws {
         try record("recordSpoken", chatId + ":" + text)
     }
@@ -400,6 +453,40 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
                 status: .reversed, detail: proposal.detail, tools: proposal.tools, untrusted: proposal.untrusted,
                 gatePassed: proposal.gatePassed, replayPassed: proposal.replayPassed,
                 ownerReasons: proposal.ownerReasons, hygiene: proposal.hygiene)
+        }
+    }
+
+    func setRequests(_ value: [MeshRequest]) {
+        lock.withLock { requestsValue = value }
+        listener.onChange(.chatChanged(chatId: nil))
+    }
+
+    private struct EditableRequest {
+        var state: MeshRequestState
+        var refusalCode: String?
+    }
+
+    private func changeRequest(
+        _ id: String, allowed: Set<MeshRequestState>, _ edit: (inout EditableRequest) -> Void
+    ) throws -> String {
+        try lock.withLock {
+            guard let index = requestsValue.firstIndex(where: { $0.requestId == id }) else {
+                throw MeshKernelError.refused(KernelMapping.failureText(code: "request.unknown"))
+            }
+            let request = requestsValue[index]
+            guard request.toMember == status.deviceId else {
+                throw MeshKernelError.refused(KernelMapping.failureText(code: "request.not_target"))
+            }
+            guard allowed.contains(request.state) else {
+                throw MeshKernelError.refused(KernelMapping.failureText(code: "request." + request.state.rawValue))
+            }
+            var editable = EditableRequest(state: request.state, refusalCode: request.refusalCode)
+            edit(&editable)
+            requestsValue[index] = MeshRequest(
+                requestId: request.requestId, chatId: request.chatId, fromMember: request.fromMember,
+                toMember: request.toMember, state: editable.state, text: request.text,
+                refusalCode: editable.refusalCode, tool: request.tool, createdAt: request.createdAt)
+            return request.chatId
         }
     }
 

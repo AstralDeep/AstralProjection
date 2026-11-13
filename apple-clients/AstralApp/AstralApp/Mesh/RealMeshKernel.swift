@@ -211,6 +211,24 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
         try mapped { try kernel.resolveConsent(requestId: requestId, approve: approve) }
     }
 
+    func chatRequests(chatId: String) throws -> [MeshRequest] {
+        try mapped { try kernel.chatRequests(chatId: chatId).map(KernelMapping.request) }
+    }
+
+    func pendingRequestsForMe() throws -> [MeshRequest] {
+        try mapped { try kernel.pendingRequestsForMe().map(KernelMapping.request) }
+    }
+
+    func sendRequest(chatId: String, text: String, toMember: String) throws -> String {
+        try mapped { try kernel.sendRequest(chatId: chatId, text: text, toMember: toMember, continues: nil, call: nil) }
+    }
+
+    func claimRequest(requestId: String) throws { try mapped { _ = try kernel.claimRequest(requestId: requestId) } }
+
+    func refuseRequest(requestId: String, code: String) throws {
+        try mapped { _ = try kernel.refuseRequest(requestId: requestId, code: code) }
+    }
+
     func recordSpoken(chatId: String, kind: VoiceSpokenKind, text: String) throws {
         try mapped {
             _ = try kernel.recordSpoken(chatId: chatId, kind: kind == .answer ? .answer : .acknowledgement, text: text)

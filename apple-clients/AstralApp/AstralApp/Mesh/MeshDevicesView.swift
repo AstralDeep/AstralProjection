@@ -1,4 +1,4 @@
-// The devices screen: members with attestation, last seen and path, removal, the emergency stop, and the add-a-device flow.
+// The devices screen: members with attestation, last seen and path, requests for this device, a request to another member, removal, the emergency stop, and the add-a-device flow.
 // Removing or adding a device is signed through the host consent sheet, so every roster change asks for biometrics.
 
 import SwiftUI
@@ -18,9 +18,15 @@ struct MeshDevicesView: View {
 
     var body: some View {
         List {
+            if !mesh.requestsForMe.isEmpty {
+                Section("Requests for this device") {
+                    ForEach(mesh.requestsForMe) { MeshRequestRow(request: $0) }
+                }
+                .accessibilityIdentifier("mesh.devices.requests")
+            }
             Section("Members") {
                 ForEach(mesh.members) { member in
-                    MeshMemberRow(member: member, sync: mesh.sync.devices.first { $0.memberId == member.memberId })
+                    memberRow(member)
                         .swipeActions {
                             if !member.isThisDevice {
                                 Button("Remove", role: .destructive) { removing = member }
@@ -71,6 +77,23 @@ struct MeshDevicesView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Every device refuses actions that were already in progress. New requests start fresh.")
+        }
+    }
+}
+
+extension MeshDevicesView {
+    @ViewBuilder
+    fileprivate func memberRow(_ member: MeshMember) -> some View {
+        let row = MeshMemberRow(member: member, sync: mesh.sync.devices.first { $0.memberId == member.memberId })
+        if member.isThisDevice {
+            row
+        } else {
+            NavigationLink {
+                MeshSendRequestView(member: member)
+            } label: {
+                row
+            }
+            .accessibilityHint("Send a request to this device")
         }
     }
 }

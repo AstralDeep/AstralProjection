@@ -119,4 +119,20 @@ nonisolated enum MeshPresentation {
         case .declined(let reason): return "Declined: " + reason + "."
         }
     }
+
+    static func requestState(_ state: MeshRequestState) -> String {
+        switch state {
+        case .pending: return "Waiting for the device"
+        case .claimed: return "Being answered"
+        case .answered: return "Answered"
+        case .refused: return "Refused"
+        case .cancelled: return "Cancelled"
+        }
+    }
+
+    static func requestRefusal(_ code: String?) -> String {
+        guard let code else { return "Refused" }
+        if let known = MeshRequestRefusal(rawValue: code) { return "Refused: " + known.reason }
+        return "Refused (" + code + ")"
+    }
 }

@@ -84,7 +84,22 @@
                     message(
                         "e", "d", .owner, "Move gym to Friday", now.addingTimeInterval(-60), delivery: .queued),
                 ], surfaces: [planSurface()])
-            _ = chat
+            let me = "sha256:" + String(repeating: "b", count: 64)
+            let phone = "sha256:" + String(repeating: "c", count: 64)
+            kernel.setRequests([
+                MeshRequest(
+                    requestId: "sha256:" + String(repeating: "1", count: 64), chatId: chat, fromMember: phone,
+                    toMember: me, state: .pending, text: "Summarize today's lab notes", refusalCode: nil, tool: nil,
+                    createdAt: now.addingTimeInterval(-300)),
+                MeshRequest(
+                    requestId: "sha256:" + String(repeating: "2", count: 64), chatId: chat, fromMember: me,
+                    toMember: phone, state: .refused, text: "Print the weekly plan", refusalCode: "request.busy",
+                    tool: nil, createdAt: now.addingTimeInterval(-500)),
+                MeshRequest(
+                    requestId: "sha256:" + String(repeating: "3", count: 64), chatId: chat, fromMember: me,
+                    toMember: phone, state: .claimed, text: "Check the calendar for Friday", refusalCode: nil,
+                    tool: "calendar.read", createdAt: now.addingTimeInterval(-120)),
+            ])
             kernel.setPending([pendingConsent()])
         }
 

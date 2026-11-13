@@ -238,6 +238,71 @@ final class RealMeshKernelTests: XCTestCase {
         await fresh.kernel.stopNetwork()
     }
 
+    func testRequestsAreSentClaimedAndRefusedBetweenTwoPairedKernels() async throws {
+        let mac = try await open("Mac")
+        let phone = try await open("Phone", kind: .pocket)
+        _ = try await createMesh(mac)
+        try await mac.kernel.startNetwork()
+        let chat = try mac.kernel.createChat(title: "asks")
+        let offer = try await phone.kernel.createPairingOffer()
+        try await mac.kernel.approvePairing(payload: offer.payload)
+        try await until("the phone to join") { try await phone.kernel.meshStatus().hasMesh }
+        let roster = try await mac.kernel.roster()
+        let macId = try XCTUnwrap(roster.first(where: \.isThisDevice)?.memberId)
+        let phoneId = try XCTUnwrap(roster.first { !$0.isThisDevice }?.memberId)
+        try await until("the phone to list the chat") { try phone.kernel.listChats().contains { $0.chatId == chat } }
+
+        XCTAssertThrowsError(try mac.kernel.sendRequest(chatId: chat, text: "  ", toMember: phoneId)) {
+            XCTAssertEqual($0 as? MeshKernelError, .refused("Write the request first."))
+        }
+        XCTAssertThrowsError(try mac.kernel.sendRequest(chatId: chat, text: "hi", toMember: macId)) {
+            XCTAssertEqual($0 as? MeshKernelError, .refused("Choose another device. This one cannot ask itself."))
+        }
+        XCTAssertThrowsError(try mac.kernel.sendRequest(chatId: chat, text: "hi", toMember: "sha256:nobody")) {
+            XCTAssertEqual($0 as? MeshKernelError, .refused("That device is not in your mesh."))
+        }
+        XCTAssertTrue(try mac.kernel.chatRequests(chatId: chat).isEmpty)
+
+        let first = try mac.kernel.sendRequest(chatId: chat, text: "Print the plan", toMember: phoneId)
+        try await until("the phone to see the request") {
+            try phone.kernel.pendingRequestsForMe().contains { $0.requestId == first }
+        }
+        let seen = try XCTUnwrap(try phone.kernel.pendingRequestsForMe().first { $0.requestId == first })
+        XCTAssertEqual(seen.state, .pending)
+        XCTAssertEqual(seen.text, "Print the plan")
+        XCTAssertEqual(seen.fromMember, macId)
+        XCTAssertEqual(seen.toMember, phoneId)
+        XCTAssertEqual(seen.chatId, chat)
+        XCTAssertTrue(try mac.kernel.pendingRequestsForMe().isEmpty)
+        XCTAssertThrowsError(try mac.kernel.claimRequest(requestId: first)) {
+            XCTAssertEqual($0 as? MeshKernelError, .refused("That request is addressed to another device."))
+        }
+
+        try phone.kernel.claimRequest(requestId: first)
+        try phone.kernel.claimRequest(requestId: first)
+        try await until("the mac to see the claim") {
+            try mac.kernel.chatRequests(chatId: chat).first { $0.requestId == first }?.state == .claimed
+        }
+
+        let second = try mac.kernel.sendRequest(chatId: chat, text: "Second", toMember: phoneId)
+        try await until("the phone to see the second request") {
+            try phone.kernel.pendingRequestsForMe().contains { $0.requestId == second }
+        }
+        try phone.kernel.refuseRequest(requestId: second, code: MeshRequestRefusal.busy.rawValue)
+        try await until("the mac to see the refusal") {
+            try mac.kernel.chatRequests(chatId: chat).first { $0.requestId == second }?.state == .refused
+        }
+        let refused = try XCTUnwrap(try mac.kernel.chatRequests(chatId: chat).first { $0.requestId == second })
+        XCTAssertEqual(refused.refusalCode, "request.busy")
+        XCTAssertThrowsError(try phone.kernel.refuseRequest(requestId: second, code: "request.busy")) {
+            XCTAssertEqual($0 as? MeshKernelError, .refused("That request can no longer change."))
+        }
+        XCTAssertThrowsError(try phone.kernel.refuseRequest(requestId: first, code: "Not A Code")) { _ in }
+        XCTAssertTrue(try phone.kernel.pendingRequestsForMe().isEmpty)
+        await mac.kernel.stopNetwork()
+        await phone.kernel.stopNetwork()
+    }
+
     private func phoneViewWhenCaughtUp(_ device: Device, chat: String, count: Int) async throws -> MeshChatView {
         try await until("the phone view") { (try? device.kernel.chat(chatId: chat))?.messages.count == count }
         return try device.kernel.chat(chatId: chat)

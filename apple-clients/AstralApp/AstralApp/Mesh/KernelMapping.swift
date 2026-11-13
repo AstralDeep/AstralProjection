@@ -154,6 +154,20 @@ nonisolated enum KernelMapping {
         }
     }
 
+    static func request(_ view: RequestView) -> MeshRequest {
+        let state: MeshRequestState
+        switch view.state {
+        case .pending: state = .pending
+        case .claimed: state = .claimed
+        case .answered: state = .answered
+        case .refused: state = .refused
+        case .cancelled: state = .cancelled
+        }
+        return MeshRequest(
+            requestId: view.id, chatId: view.chatId, fromMember: view.fromDevice, toMember: view.toDevice,
+            state: state, text: view.text, refusalCode: view.code, tool: view.call?.tool, createdAt: date(view.clock))
+    }
+
     static func unknownOutcome(_ info: UnknownOutcomeInfo) -> MeshUnknownOutcome {
         unknownOutcome(callId: info.callId, tool: info.toolName)
     }
@@ -255,6 +269,14 @@ nonisolated enum KernelMapping {
         ("recovery.no_keys", "The words are valid, but no key of this mesh could be opened with them."),
         ("backup.decrypt_failed", "That backup could not be opened with these words."),
         ("backup.malformed", "That file is not a mesh backup."),
+        ("request.empty", "Write the request first."),
+        ("request.too_large", "That request is too long."),
+        ("request.unknown_member", "That device is not in your mesh."),
+        ("request.self_addressed", "Choose another device. This one cannot ask itself."),
+        ("request.not_target", "That request is addressed to another device."),
+        ("request.already_claimed", "That request is already claimed."),
+        ("request.unknown", "That request is no longer in this chat."),
+        ("request.", "That request can no longer change."),
         ("custody.restore_needs_new_keys", "This install was restored from a backup. Join your mesh again to use it."),
         ("custody.", "This device's keys do not match its stored mesh."),
         ("chat.empty_message", "Write a message first."),

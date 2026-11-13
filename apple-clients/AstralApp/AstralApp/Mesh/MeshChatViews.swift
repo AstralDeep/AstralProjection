@@ -81,6 +81,7 @@ struct MeshChatDetailView: View {
                     ForEach(mesh.displayRows) { row in
                         MeshMessageRow(row: row)
                     }
+                    MeshChatRequestList()
                     MeshTurnActivityView()
                     Color.clear.frame(height: 1).id("mesh-bottom")
                 }
@@ -105,6 +106,7 @@ struct MeshChatDetailView: View {
                 .textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("mesh.composer")
                 .onSubmit(send)
+            requestMenu
             Button {
                 Task { await model.onDeviceVoice.activate() }
             } label: {
@@ -132,6 +134,24 @@ struct MeshChatDetailView: View {
             .accessibilityIdentifier("mesh.composer.send")
         }
         .padding(12)
+    }
+
+    private var otherMembers: [MeshMember] { mesh.members.filter { !$0.isThisDevice } }
+
+    private var requestMenu: some View {
+        Menu {
+            ForEach(otherMembers) { member in
+                Button("Send to " + member.label) {
+                    let text = draft
+                    Task { if await mesh.sendRequest(text, to: member) { draft = "" } }
+                }
+            }
+        } label: {
+            Image(systemName: "paperplane")
+        }
+        .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || otherMembers.isEmpty)
+        .accessibilityLabel("Send as a request to another device")
+        .accessibilityIdentifier("mesh.composer.request")
     }
 
     private func send() {
