@@ -127,3 +127,5 @@ Desktop.ini
 
 # Coding-agent local state
 .claude/
+
+.presentation-sources/

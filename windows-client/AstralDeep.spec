@@ -22,6 +22,13 @@ from PyInstaller.utils.win32.versioninfo import (
     VarStruct, VSVersionInfo,
 )
 
+import subprocess
+
+_presentation_output = pathlib.Path(os.environ.get("ASTRAL_PRESENTATION_OUTPUT", "build/presentation"))
+if not _presentation_output.is_absolute():
+    _presentation_output = pathlib.Path(SPECPATH).parent / _presentation_output
+subprocess.run([sys.executable, str(pathlib.Path(SPECPATH).parent / "scripts/install_presentation_components.py"), "verify", "--output", str(_presentation_output)], check=True)
+
 sys.path.insert(0, str(pathlib.Path(SPECPATH)))
 from astral_client.deployment import (
     resolve_effective_profile,
@@ -170,6 +177,9 @@ hiddenimports = (
     + collect_submodules("sigstore")
     # The frozen exe is every BYO worker's interpreter, so astralprims must resolve inside it
     + collect_submodules("astralprims")
+    + collect_submodules("rote")
+    + collect_submodules("linkify_it")
+    + collect_submodules("uc_micro")
     # websockets resolves connect through a runtime __import__, so collect it explicitly
     + collect_submodules("websockets")
     + ["PySide6.QtCharts", "PySide6.QtMultimedia", "PySide6.QtTextToSpeech", "websockets",
@@ -221,7 +231,8 @@ a = Analysis(
         ("asr-helper/helper-source-hashes.json", "asr-helper"),
         ("asr-helper/publish/helper-build-provenance.json", "asr-helper"),
     ]
-    + collect_data_files("livekit", include_py_files=False),
+    + collect_data_files("livekit", include_py_files=False)
+    + collect_data_files("astralprims", include_py_files=False),
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},

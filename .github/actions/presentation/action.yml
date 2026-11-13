@@ -1,0 +1,55 @@
+name: Install pinned presentation components
+description: Build and verify local Primitives and ROTE wheels after locked external dependencies.
+inputs:
+  projection-root:
+    description: Projection checkout root relative to the workspace
+    default: .
+  python:
+    description: Exact Python interpreter executable
+    default: python
+  output:
+    description: Presentation wheel receipt directory relative to Projection
+    default: build/presentation
+  external-lock:
+    description: Hash-locked external runtime or CI dependencies
+    default: windows-client/requirements-release.lock.txt
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      with:
+        persist-credentials: false
+        repository: AstralDeep/AstralDeep
+        ref: f8fd34175a67bddec91b39445567e73ffc50f5c7
+        path: .presentation-sources/Deep
+    - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      with:
+        persist-credentials: false
+        repository: AstralDeep/AstralPrimitives
+        ref: f4314c8258c09383f9474a8c9f1ce35df44d62b9
+        path: .presentation-sources/Primitives
+    - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      with:
+        persist-credentials: false
+        repository: AstralDeep/AstralKernel
+        ref: d02e4ea15098016855dc99a579590a21c6e65b12
+        path: .presentation-sources/Kernel
+    - shell: bash
+      working-directory: ${{ inputs.projection-root }}
+      env:
+        PRESENTATION_PYTHON: ${{ inputs.python }}
+        PRESENTATION_OUTPUT: ${{ inputs.output }}
+        PRESENTATION_EXTERNAL_LOCK: ${{ inputs.external-lock }}
+      run: |
+        set -euo pipefail
+        if [[ "$PRESENTATION_PYTHON" == */* && "$PRESENTATION_PYTHON" != /* && "$PRESENTATION_PYTHON" != ?:* ]]; then
+          PRESENTATION_PYTHON="$GITHUB_WORKSPACE/$PRESENTATION_PYTHON"
+        fi
+        "$PRESENTATION_PYTHON" -m pip install --require-hashes -r apple-clients/NodePack/build-requirements.lock
+        "$PRESENTATION_PYTHON" scripts/install_presentation_components.py install \
+          --deep-source "$GITHUB_WORKSPACE/.presentation-sources/Deep" \
+          --primitives-source "$GITHUB_WORKSPACE/.presentation-sources/Primitives" \
+          --kernel-source "$GITHUB_WORKSPACE/.presentation-sources/Kernel" \
+          --external-lock "$PRESENTATION_EXTERNAL_LOCK" \
+          --output "$PRESENTATION_OUTPUT"
+        "$PRESENTATION_PYTHON" -c "import os; from pathlib import Path; print('ASTRAL_PRESENTATION_OUTPUT=' + str(Path(os.environ['PRESENTATION_OUTPUT']).resolve()))" >> "$GITHUB_ENV"

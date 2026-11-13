@@ -602,7 +602,7 @@ def test_voice_075_scalar_limit_vectors_are_boundary_exact_and_digest_bound() ->
 def test_runtime_manifests_bind_exact_owning_dependency_inventory() -> None:
     immutable_manifests = {
         "tooling/python-ci/requirements.lock.txt": (
-            "ed268e071ad98432ae418a6ac54189f64ae26e02049b9a7c49bbceffaf820171"
+            "536b4ffe4e0c2a1850b693c3a06cd9471278e4a19669df61d511962e026f54c7"
         ),
         "tooling/web-ci/package.json": (
             "9528a7ec636f65b4071c38367f8ba487a1c7034657feb7612e4391524986b157"
@@ -611,16 +611,16 @@ def test_runtime_manifests_bind_exact_owning_dependency_inventory() -> None:
             "1c73e51ca61a7aaeae421e76e4cf54e6e8f35b96a27b64a5bdcec5a531137531"
         ),
         "windows-client/requirements.in": (
-            "12d63482d37b6b66ad945937f28aaaf6541d185a229ea05e9d27cc47e717a841"
+            "c1a6e75360df5151f7b1c1d0a4c808881cd1df0e16c424b9d3475742f1458404"
         ),
         "windows-client/requirements.txt": (
             "d301d1e3a1b523fda5c1488693cf9a7a4336504c0d168bd0f4e220c8b0302c95"
         ),
         "windows-client/requirements-release.lock.txt": (
-            "cd04dd23361ee769f57ea1d046b0b5e10aa50bb41ebe65c4683d7518c9e9a079"
+            "bcbc222b7f306f501c80bde5f6347a1b37efadcb4c911cfac32637b47b435c0d"
         ),
         "windows-client/deployment/runtime-lock-contract.json": (
-            "24a819186b94951bba81e2f280aa00258cf99cbf02b0363a9e5bada1f8a62bd8"
+            "b3ef5ea7cbeced022eb2ba244dc2b734e001b3f0e0f68091dcad503f66aff693"
         ),
         "android-client/buildscript-gradle.lockfile": (
             "9e0750c539a1715561bb7018f3f24010f2542a7400b953abc4958959c9616750"
@@ -638,10 +638,10 @@ def test_runtime_manifests_bind_exact_owning_dependency_inventory() -> None:
             "791fc52e6127684e57906c31d1ad53058c175643037edc8f4c0792d7a185ae0f"
         ),
         "apple-clients/AstralApp/AstralApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved": (
-            "5cf70218d493aa617c2a4f33831214104e76b93eb70d23ef924a3039afbfcc73"
+            "4ba2b3e4e606670083d31322ff4f5c96f3f36526e030ced4ae3e443a67f0e1ed"
         ),
         "pyproject.toml": (
-            "e4384cda1aec04d50a46d2134a6d9524b3a3ec3d1000e4d052a437cf44741e3b"
+            "555ed6fde85a0e95eaca783c59a94bdd79ae54edcbe0bf5971083f92702bef17"
         ),
     }
     assert set(immutable_manifests) == {
@@ -664,7 +664,7 @@ def test_runtime_manifests_bind_exact_owning_dependency_inventory() -> None:
         assert hashlib.sha256((ROOT / relative).read_bytes()).hexdigest() == expected, relative
 
     project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert 'dependencies = ["astralprims==0.4.0"]' in project
+    assert 'dependencies = ["astralprims==0.13.0", "astral-rote==0.1.0"]' in project
     apple = (ROOT / "apple-clients" / "AstralCore" / "Package.swift").read_text(
         encoding="utf-8"
     )
