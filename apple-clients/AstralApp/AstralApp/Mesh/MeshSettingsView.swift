@@ -12,19 +12,25 @@ struct MeshSettingsView: View {
 
     var body: some View {
         Form {
-            Section("Model") {
-                NavigationLink("Model provider") { MeshModelProviderView() }
-                    .accessibilityIdentifier("mesh.settings.models")
-                NavigationLink("Allowance") { MeshAllowanceView() }
-                    .accessibilityIdentifier("mesh.settings.allowance")
+            Section("Assistant") {
+                NavigationLink { MeshModelProviderView() } label: {
+                    Label("Model provider", systemImage: "sparkles")
+                }
+                .accessibilityIdentifier("mesh.settings.models")
+                NavigationLink { MeshPermissionsView() } label: {
+                    Label("Tool permissions", systemImage: "checkmark.shield")
+                }
+                .accessibilityIdentifier("mesh.settings.permissions")
+                NavigationLink { MeshAllowanceView() } label: {
+                    Label("Allowance", systemImage: "gauge.with.dots.needle.33percent")
+                }
+                .accessibilityIdentifier("mesh.settings.allowance")
             }
             Section("Network") {
-                NavigationLink("Mailbox") { MeshMailboxView() }
-                    .accessibilityIdentifier("mesh.settings.mailbox")
-            }
-            Section("Assistant") {
-                NavigationLink("Tool permissions") { MeshPermissionsView() }
-                    .accessibilityIdentifier("mesh.settings.permissions")
+                NavigationLink { MeshMailboxView() } label: {
+                    Label("Mailbox", systemImage: "tray")
+                }
+                .accessibilityIdentifier("mesh.settings.mailbox")
             }
             Section("This mesh") {
                 if let meshId = mesh.status.meshId {
@@ -35,15 +41,21 @@ struct MeshSettingsView: View {
                 if let version = mesh.kernelVersion { LabeledContent("Runtime", value: version) }
             }
             Section {
-                Button("Connect to a node") { confirmingNode = true }
+                Button("Use a Node Instead") { confirmingNode = true }
                     .accessibilityIdentifier("mesh.settings.node")
+            } header: {
+                Text("Server")
             } footer: {
-                Text("Switches this app to a server-backed account. Your mesh stays on this device.")
+                Text("Switches this app to a server account. Your mesh stays on this device.")
             }
         }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .meshReadableWidth()
+        .background(p.bg)
         .navigationTitle("Settings")
         .confirmationDialog("Switch to a node?", isPresented: $confirmingNode, titleVisibility: .visible) {
-            Button("Connect to a node") { modeStore.choose(.node) }
+            Button("Use a Node") { modeStore.choose(.node) }
             Button("Cancel", role: .cancel) {}
         }
     }
@@ -111,6 +123,10 @@ struct MeshModelProviderView: View {
                 .accessibilityIdentifier("mesh.models.save")
             }
         }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .meshReadableWidth()
+        .background(p.bg)
         .navigationTitle("Model provider")
     }
 }
@@ -160,6 +176,10 @@ struct MeshAllowanceView: View {
                 Text("The allowance is not known yet.").foregroundStyle(p.muted)
             }
         }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .meshReadableWidth()
+        .background(p.bg)
         .navigationTitle("Allowance")
     }
 }
@@ -211,6 +231,10 @@ struct MeshMailboxView: View {
                 }
             }
         }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .meshReadableWidth()
+        .background(p.bg)
         .navigationTitle("Mailbox")
         .onAppear { address = mesh.mailboxAddress ?? "" }
         .task {

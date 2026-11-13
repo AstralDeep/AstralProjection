@@ -4,6 +4,37 @@
 import AstralCore
 import SwiftUI
 
+struct MeshChatRow: View {
+    let chat: MeshChatSummary
+    @Environment(ThemeStore.self) private var theme
+    private var p: AstralPalette { theme.palette }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(chat.title).font(ConsoleTypography.headline).lineLimit(1)
+            if !chat.preview.isEmpty {
+                Text(MeshModelText.plainPreview(chat.preview))
+                    .font(ConsoleTypography.footnote).foregroundStyle(p.muted).lineLimit(2)
+            }
+            if chat.queuedCount > 0 || chat.branchCount > 0 {
+                HStack(spacing: 10) {
+                    if chat.queuedCount > 0 {
+                        Label("\(chat.queuedCount) waiting to send", systemImage: "clock")
+                            .accessibilityIdentifier("mesh.chat.queued.\(chat.chatId)")
+                    }
+                    if chat.branchCount > 0 {
+                        Label(chat.branchCount == 1 ? "1 branch" : "\(chat.branchCount) branches", systemImage: "arrow.triangle.branch")
+                    }
+                }
+                .font(ConsoleTypography.caption).foregroundStyle(p.muted)
+            }
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("mesh.chat.\(chat.chatId)")
+    }
+}
+
 struct MeshChatListView: View {
     @Environment(MeshRuntime.self) private var mesh
     @Environment(ThemeStore.self) private var theme
@@ -12,31 +43,21 @@ struct MeshChatListView: View {
 
     var body: some View {
         List(selection: $selection) {
-            if mesh.chats.isEmpty {
-                Text("No chats yet. Start one with the plus button.")
-                    .foregroundStyle(p.muted)
-                    .accessibilityIdentifier("mesh.chats.empty")
-            }
             ForEach(mesh.chats) { chat in
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(chat.title).font(ConsoleTypography.headline).lineLimit(1)
-                    if !chat.preview.isEmpty {
-                        Text(MeshModelText.plainPreview(chat.preview))
-                            .font(ConsoleTypography.footnote).foregroundStyle(p.muted).lineLimit(2)
-                    }
-                    HStack(spacing: 10) {
-                        if chat.queuedCount > 0 {
-                            Label("\(chat.queuedCount) queued", systemImage: "clock")
-                        }
-                        if chat.branchCount > 0 {
-                            Label("\(chat.branchCount) branches", systemImage: "arrow.triangle.branch")
-                        }
-                    }
-                    .font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                MeshChatRow(chat: chat).tag(chat.chatId)
+            }
+        }
+        .overlay {
+            if mesh.chats.isEmpty {
+                ContentUnavailableView {
+                    Label("No chats yet", systemImage: "bubble.left.and.bubble.right")
+                } description: {
+                    Text("Start one and it shows up on every device.")
+                } actions: {
+                    Button("New Chat") { Task { selection = await mesh.newChat() } }
+                        .buttonStyle(.borderedProminent)
                 }
-                .tag(chat.chatId)
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("mesh.chat.\(chat.chatId)")
+                .accessibilityIdentifier("mesh.chats.empty")
             }
         }
         .navigationTitle("Chats")
@@ -45,7 +66,7 @@ struct MeshChatListView: View {
                 Button {
                     Task { selection = await mesh.newChat() }
                 } label: {
-                    Label("New chat", systemImage: "square.and.pencil")
+                    Label("New Chat", systemImage: "square.and.pencil")
                 }
                 .accessibilityIdentifier("mesh.chats.new")
             }
@@ -63,7 +84,9 @@ struct MeshChatDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            MeshSyncStrip()
+            #if os(iOS)
+                MeshSyncStrip()
+            #endif
             transcript
             Divider().overlay(p.border)
             composer
@@ -102,7 +125,9 @@ struct MeshChatDetailView: View {
                     MeshTurnActivityView()
                     Color.clear.frame(height: 1).id("mesh-bottom")
                 }
-                .padding(.horizontal, 12).padding(.vertical, 8)
+                .padding(.horizontal, 16).padding(.vertical, 12)
+                .frame(maxWidth: 780)
+                .frame(maxWidth: .infinity)
             }
             .accessibilityIdentifier("mesh.transcript")
             .onChange(of: mesh.displayRows.count) { _, _ in
@@ -117,40 +142,54 @@ struct MeshChatDetailView: View {
     private var running: Bool { mesh.currentTurn?.running == true }
 
     private var composer: some View {
-        HStack(alignment: .bottom, spacing: 8) {
+        HStack(alignment: .bottom, spacing: 10) {
             TextField(running ? "Steer the answer" : "Message", text: $draft, axis: .vertical)
-                .lineLimit(1...5)
-                .textFieldStyle(.roundedBorder)
+                .lineLimit(1...6)
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .background(p.surface2, in: RoundedRectangle(cornerRadius: 20))
+                .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(p.border, lineWidth: 1))
                 .accessibilityIdentifier("mesh.composer")
                 .onSubmit(send)
             Button {
                 Task { await model.onDeviceVoice.activate() }
             } label: {
-                Image(systemName: model.onDeviceVoice.isRunning ? "mic.fill" : "mic")
+                Image(systemName: model.onDeviceVoice.isRunning ? "mic.fill" : "mic").font(.title3)
+                    .frame(width: 32, height: 32)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.plain)
+            .foregroundStyle(p.accent)
+            .help("Talk")
             .accessibilityLabel("Talk")
             .accessibilityIdentifier("mesh.composer.mic")
             if running {
                 Button {
                     Task { await mesh.interrupt() }
                 } label: {
-                    Image(systemName: "stop.fill")
+                    Image(systemName: "stop.circle.fill").font(.title).frame(width: 32, height: 32)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.plain)
+                .foregroundStyle(p.accent)
+                .help("Stop")
                 .accessibilityLabel("Stop")
                 .accessibilityIdentifier("mesh.composer.stop")
             }
             Button(action: send) {
-                Image(systemName: "arrow.up.circle.fill").font(.title2)
+                Image(systemName: "arrow.up.circle.fill").font(.title).frame(width: 32, height: 32)
             }
             .buttonStyle(.plain)
-            .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .foregroundStyle(canSend ? p.accent : p.muted)
+            .disabled(!canSend)
+            .help(running ? "Steer" : "Send")
             .accessibilityLabel(running ? "Steer" : "Send")
             .accessibilityIdentifier("mesh.composer.send")
         }
-        .padding(12)
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(maxWidth: 780)
+        .frame(maxWidth: .infinity)
     }
+
+    private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     private var otherMembers: [MeshMember] { mesh.members.filter { !$0.isThisDevice } }
 
@@ -192,7 +231,7 @@ struct MeshMessageRow: View {
                 .environment(\.astralMeshAction, surfaceAction)
             if let message = row.message {
                 if message.delivery == .queued {
-                    Label("Queued", systemImage: "clock")
+                    Label("Waiting to send", systemImage: "clock")
                         .font(ConsoleTypography.caption).foregroundStyle(p.muted)
                         .accessibilityIdentifier("mesh.message.queued")
                 }
@@ -281,7 +320,7 @@ struct MeshTurnActivityView: View {
                     Text("Stopped").font(ConsoleTypography.footnote).foregroundStyle(p.muted)
                 }
                 if turn.answeredOnDevice {
-                    Label("Answered on this device. Add a model in Settings for full answers.", systemImage: "iphone")
+                    Label("Answered on this device. Add a model in Settings for fuller answers.", systemImage: "cpu")
                         .font(ConsoleTypography.footnote).foregroundStyle(p.muted)
                         .accessibilityIdentifier("mesh.turn.on-device")
                 }
@@ -309,19 +348,20 @@ struct MeshUnknownOutcomeCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Outcome unknown: \(outcome.tool)", systemImage: "questionmark.circle")
+            Label("Not sure this ran: \(outcome.tool)", systemImage: "questionmark.circle")
                 .font(ConsoleTypography.headline).foregroundStyle(p.warning)
             Text(MeshModelText.plainPreview(outcome.summary)).font(ConsoleTypography.footnote)
-            Text("The step was sent, but no result came back. It will not be repeated on its own.")
+            Text("The step was sent but no answer came back. It will not run again by itself.")
                 .font(ConsoleTypography.footnote).foregroundStyle(p.muted)
             HStack {
-                Button("Check first") { Task { await mesh.resolveUnknown(outcome, choice: .checkFirst) } }
+                Button("Check it") { Task { await mesh.resolveUnknown(outcome, choice: .checkFirst) } }
                     .buttonStyle(.borderedProminent)
                     .accessibilityIdentifier("mesh.unknown.check")
                 Button("Leave it") { Task { await mesh.resolveUnknown(outcome, choice: .leaveAsUnknown) } }
                     .buttonStyle(.bordered)
                     .accessibilityIdentifier("mesh.unknown.leave")
             }
+            .controlSize(.regular)
         }
         .padding(12)
         .background(p.surface2, in: RoundedRectangle(cornerRadius: AstralRadius.md))
@@ -331,6 +371,7 @@ struct MeshUnknownOutcomeCard: View {
 }
 
 struct MeshSyncStrip: View {
+    var showsSync = true
     @Environment(MeshRuntime.self) private var mesh
     @Environment(ThemeStore.self) private var theme
     private var p: AstralPalette { theme.palette }
@@ -338,12 +379,14 @@ struct MeshSyncStrip: View {
     var body: some View {
         VStack(spacing: 0) {
             if mesh.status.stopped {
-                strip("The mesh is stopped. Nothing will run until you resume it in Devices.", color: p.error, id: "stopped")
+                strip("Every device is stopped. Resume it in Devices.", color: p.error, id: "stopped")
             }
             if let notice = mesh.networkNotice {
                 strip(notice, color: p.warning, id: "network")
             }
-            strip(MeshPresentation.syncLine(mesh.syncSummary), color: p.muted, id: "sync")
+            if showsSync, case .waiting = mesh.syncSummary {
+                strip(MeshPresentation.syncLine(mesh.syncSummary), color: p.muted, id: "sync")
+            }
         }
     }
 
@@ -364,31 +407,34 @@ struct MeshConsentCards: View {
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             ForEach(mesh.pendingConsents) { request in
                 let prompt = mesh.prompt(for: request)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(prompt?.actionTitle ?? "Unreadable approval request").font(ConsoleTypography.headline)
-                    if let prompt {
-                        Text(prompt.target).font(ConsoleTypography.footnote).foregroundStyle(p.muted)
-                        if let source = prompt.untrustedSource {
+                HStack(spacing: 10) {
+                    Image(systemName: "hand.raised.fill").foregroundStyle(p.warning).accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(prompt?.actionTitle ?? "Unreadable approval request")
+                            .font(ConsoleTypography.subheadline.weight(.semibold)).lineLimit(1)
+                        if let source = prompt?.untrustedSource {
                             Label("Influenced by untrusted content", systemImage: "exclamationmark.triangle.fill")
                                 .font(ConsoleTypography.caption).foregroundStyle(p.warning)
                                 .accessibilityLabel("Influenced by untrusted content: \(source)")
+                        } else {
+                            Text("Needs your approval").font(ConsoleTypography.caption).foregroundStyle(p.muted)
                         }
                     }
-                    HStack {
-                        if prompt != nil {
-                            Button("Review") { Task { await mesh.review(request) } }
-                                .buttonStyle(.borderedProminent)
-                                .accessibilityIdentifier("mesh.consent.review")
-                        }
-                        Button("Deny", role: .destructive) { Task { await mesh.deny(request) } }
-                            .buttonStyle(.bordered)
-                            .accessibilityIdentifier("mesh.consent.deny")
+                    Spacer(minLength: 8)
+                    if prompt != nil {
+                        Button("Review") { Task { await mesh.review(request) } }
+                            .buttonStyle(.borderedProminent)
+                            .accessibilityIdentifier("mesh.consent.review")
                     }
+                    Button("Deny", role: .destructive) { Task { await mesh.deny(request) } }
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("mesh.consent.deny")
                 }
-                .padding(12)
+                .controlSize(.small)
+                .padding(.horizontal, 12).padding(.vertical, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(p.surface2, in: RoundedRectangle(cornerRadius: AstralRadius.md))
                 .accessibilityElement(children: .contain)
@@ -396,6 +442,6 @@ struct MeshConsentCards: View {
             }
         }
         .padding(.horizontal, mesh.pendingConsents.isEmpty ? 0 : 12)
-        .padding(.top, mesh.pendingConsents.isEmpty ? 0 : 8)
+        .padding(.vertical, mesh.pendingConsents.isEmpty ? 0 : 6)
     }
 }

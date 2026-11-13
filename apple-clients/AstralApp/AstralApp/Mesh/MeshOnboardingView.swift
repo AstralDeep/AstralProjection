@@ -8,6 +8,7 @@ struct MeshOnboardingView: View {
     @Environment(AppModeStore.self) private var modeStore
     @Environment(ThemeStore.self) private var theme
     @State private var recovering = false
+    @State private var joining = false
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
@@ -20,10 +21,19 @@ struct MeshOnboardingView: View {
                     .accessibilityLabel("AstralDeep")
                 if recovering {
                     MeshRestoreView { recovering = false }
-                } else if mesh.join == .idle || mesh.join == .starting {
-                    choices
-                } else {
+                } else if case .offered = mesh.join {
                     MeshJoinView()
+                } else if case .accepted(let accepted) = mesh.join {
+                    MeshJoinAcceptedView(accepted: accepted)
+                } else if joining || isFailedJoin {
+                    MeshJoinStartView(
+                        onShowCode: { Task { await mesh.beginJoin() } },
+                        onBack: {
+                            joining = false
+                            mesh.cancelJoin()
+                        })
+                } else {
+                    choices
                 }
             }
             .frame(maxWidth: 420)
@@ -52,7 +62,7 @@ struct MeshOnboardingView: View {
         .disabled(busy)
         .accessibilityIdentifier("mesh.create")
         Button {
-            Task { await mesh.beginJoin() }
+            joining = true
         } label: {
             Text("Join my mesh").frame(maxWidth: .infinity).padding(.vertical, 6)
         }
@@ -76,6 +86,11 @@ struct MeshOnboardingView: View {
         if case .failed(let message) = mesh.join {
             error(message)
         }
+    }
+
+    private var isFailedJoin: Bool {
+        if case .failed = mesh.join { return true }
+        return false
     }
 
     private var busy: Bool {
@@ -118,53 +133,76 @@ struct MeshJoinView: View {
 
     var body: some View {
         VStack(spacing: 18) {
-            Text("Join my mesh").font(ConsoleTypography.title2).accessibilityAddTraits(.isHeader)
+            Text("Show this on your other device").font(ConsoleTypography.title2).accessibilityAddTraits(.isHeader)
             if case .offered(let offer) = mesh.join {
-                Text("On a device that is already on your mesh, open Devices and choose Add Device. Then scan this code or send it there.")
-                    .font(ConsoleTypography.subheadline)
-                    .foregroundStyle(p.muted)
-                    .multilineTextAlignment(.center)
-                    .accessibilityIdentifier("mesh.join.instructions")
-                Text(MeshPresentation.groupedCode(offer.shortCode))
-                    .font(.system(size: 40, weight: .semibold, design: .monospaced))
-                    .minimumScaleFactor(0.5)
-                    .lineLimit(1)
-                    .accessibilityLabel("Comparison code " + offer.shortCode.map(String.init).joined(separator: " "))
-                    .accessibilityIdentifier("mesh.join.code")
-                MeshQRCodeView(text: offer.payload).frame(maxWidth: 260)
-                HStack(spacing: 12) {
-                    ShareLink(item: offer.payload) {
-                        Label("Share", systemImage: "square.and.arrow.up")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityHint("Send the pairing code with AirDrop or Messages")
-                    .accessibilityIdentifier("mesh.join.share")
-                    Button {
-                        copied = ComponentPasteboard.copy(offer.payload)
-                    } label: {
-                        Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
-                    }
-                    .buttonStyle(.bordered)
-                    .accessibilityLabel(copied ? "Copied pairing code" : "Copy pairing code")
-                    .accessibilityIdentifier("mesh.join.copy")
+                MeshExpiring(expiresAt: offer.expiresAt) { expired in
+                    if expired { expiredOffer } else { offerBody(offer) }
                 }
-                .controlSize(.large)
-                Text("Check that the other device shows the same code, then approve it there.")
-                    .font(ConsoleTypography.footnote)
-                    .foregroundStyle(p.muted)
-                    .multilineTextAlignment(.center)
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Waiting for your other device to approve").font(ConsoleTypography.footnote)
-                        .foregroundStyle(p.muted)
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("mesh.join.waiting")
             } else if case .failed(let message) = mesh.join {
                 Text(message).foregroundStyle(p.error).accessibilityIdentifier("mesh.join.error")
             }
             Button("Cancel") { mesh.cancelJoin() }
+                .keyboardShortcut(.cancelAction)
                 .accessibilityIdentifier("mesh.join.cancel")
+        }
+    }
+
+    private var expiredOffer: some View {
+        VStack(spacing: 14) {
+            Text("The code ran out of time.").font(ConsoleTypography.title3)
+                .accessibilityIdentifier("mesh.join.error")
+            Button {
+                Task {
+                    mesh.cancelJoin()
+                    await mesh.beginJoin()
+                }
+            } label: {
+                Text("Start again").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent).controlSize(.large)
+            .accessibilityIdentifier("mesh.join.restart")
+        }
+    }
+
+    private func offerBody(_ offer: MeshPairingOffer) -> some View {
+        VStack(spacing: 18) {
+            Text("On a device that is already on your mesh, open Devices, choose Add Device, then use the code from the new device. Scan this code or send it there.")
+                .font(ConsoleTypography.subheadline)
+                .foregroundStyle(p.muted)
+                .multilineTextAlignment(.center)
+                .accessibilityIdentifier("mesh.join.instructions")
+            Text(MeshPresentation.groupedCode(offer.shortCode))
+                .font(.system(size: 40, weight: .semibold, design: .monospaced))
+                .minimumScaleFactor(0.5)
+                .lineLimit(1)
+                .accessibilityLabel("Comparison code " + offer.shortCode.map(String.init).joined(separator: " "))
+                .accessibilityIdentifier("mesh.join.code")
+            MeshQRCodeView(text: offer.payload).frame(maxWidth: 260)
+            if let expires = offer.expiresAt { MeshCountdownLabel(expiresAt: expires) }
+            HStack(spacing: 12) {
+                ShareLink(item: offer.payload) {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityHint("Send the pairing code with AirDrop or Messages")
+                .accessibilityIdentifier("mesh.join.share")
+                Button {
+                    copied = ComponentPasteboard.copy(offer.payload)
+                } label: {
+                    Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel(copied ? "Copied pairing code" : "Copy pairing code")
+                .accessibilityIdentifier("mesh.join.copy")
+            }
+            .controlSize(.large)
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Waiting for your other device to approve").font(ConsoleTypography.footnote)
+                    .foregroundStyle(p.muted)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("mesh.join.waiting")
         }
     }
 }

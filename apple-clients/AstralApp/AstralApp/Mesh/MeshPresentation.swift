@@ -116,6 +116,30 @@ nonisolated enum MeshPresentation {
         }
     }
 
+    static func countdown(until date: Date, now: Date) -> String? {
+        let seconds = Int(date.timeIntervalSince(now).rounded(.up))
+        guard seconds > 0 else { return nil }
+        return "\(seconds / 60):" + String(format: "%02d", seconds % 60)
+    }
+
+    static func invitationCode(_ code: String) -> String {
+        let clean = code.filter { !$0.isWhitespace && $0 != "-" }
+        guard clean.count == 8 else { return code }
+        return String(clean.prefix(4)) + " " + String(clean.suffix(4))
+    }
+
+    static func verificationAge(_ date: Date?, now: Date = Date()) -> String {
+        guard let date else { return "Not verified" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return "Verified " + formatter.localizedString(for: date, relativeTo: now)
+    }
+
+    static func added(_ date: Date?) -> String {
+        guard let date else { return "Unknown" }
+        return date.formatted(.dateTime.month(.abbreviated).day().year())
+    }
+
     static func groupedCode(_ code: String) -> String {
         let digits = Array(code)
         guard digits.count == 8 else { return code }

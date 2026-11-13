@@ -1,5 +1,5 @@
-// The add-a-device sheet shown on a device that is already on the mesh: start on the new device, bring its pairing code here, compare the codes and approve.
-// It drives MeshRuntime's add-device state, so approval is signed through the consent sheet and a failure leaves the person on the code step.
+// The add-a-device sheet on a device that is already on the mesh: it shows an invitation for the new device to scan, with the older direction of bringing the new device's code here as a fallback.
+// It drives MeshRuntime's invite and add-device state, so approval is signed through the consent sheet and a failure leaves the person where they were.
 
 import SwiftUI
 import UniformTypeIdentifiers
@@ -8,9 +8,17 @@ struct MeshAddDeviceSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(MeshRuntime.self) private var mesh
 
+    @State private var usingCode = false
+
     var body: some View {
         NavigationStack {
-            MeshAddDeviceView()
+            Group {
+                if usingCode {
+                    MeshAddDeviceView()
+                } else {
+                    MeshInviteView { usingCode = true }
+                }
+            }
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button(closeTitle) { dismiss() }
@@ -21,11 +29,12 @@ struct MeshAddDeviceSheet: View {
         #if os(macOS)
             .frame(minWidth: 520, minHeight: 560)
         #endif
-        .interactiveDismissDisabled(mesh.addDevice == .approving)
+        .interactiveDismissDisabled(mesh.addDevice == .approving || mesh.invite == .approving)
     }
 
     private var closeTitle: String {
         if case .added = mesh.addDevice { return "Done" }
+        if case .added = mesh.invite { return "Done" }
         return "Cancel"
     }
 }
@@ -86,7 +95,7 @@ struct MeshAddDeviceView: View {
         VStack(spacing: 24) {
             header(
                 1, icon: "iphone.and.arrow.forward", title: "Open AstralDeep on the new device",
-                text: "Choose Join my mesh. The new device shows a pairing code for you to bring here.")
+                text: "Choose Join my mesh, then Show a code on this device instead. The new device shows a pairing code for you to bring here.")
             Button {
                 step = .code
             } label: {

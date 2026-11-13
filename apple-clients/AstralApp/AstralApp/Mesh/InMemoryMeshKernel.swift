@@ -36,6 +36,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
             name: "current_datetime", summary: "Returns the current date and time.", effect: .meshRead, deviceId: nil)
     ]
 
+    var autoJoin: MeshJoinRequest?
     var actResult = MeshActResult(status: "ok", code: nil, text: "Done")
     var recoveryWords: [String] = (1...24).map { "word\($0)" }
     var hasLocalMesh = false
@@ -135,6 +136,12 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
 
     func createInvitation() async throws -> MeshInvitation {
         try record("createInvitation")
+        if let request = lock.withLock({ autoJoin }) {
+            Task {
+                try? await Task.sleep(for: .seconds(6))
+                listener.onChange(.joinRequested(request))
+            }
+        }
         return MeshInvitation(
             code: "K7QM-39XD", payload: "astral-invite:v1:invitation", expiresAt: clock().addingTimeInterval(600))
     }

@@ -34,7 +34,7 @@ struct MeshDevicesView: View {
                     if !member.attested { MeshVerifyButton() }
                 }
             }
-            Section("Other devices") {
+            Section {
                 ForEach(otherDevices) { member in
                     NavigationLink(value: member.memberId) { MeshDeviceRow(member: member, sync: sync(of: member)) }
                         .accessibilityIdentifier("mesh.member.\(member.memberId.suffix(8))")
@@ -60,6 +60,10 @@ struct MeshDevicesView: View {
                     Label("Add Device", systemImage: "plus.circle.fill")
                 }
                 .accessibilityIdentifier("mesh.devices.add")
+            } header: {
+                Text("Other devices")
+            } footer: {
+                Text(MeshPresentation.syncLine(mesh.syncSummary))
             }
             MeshSafetySection()
         }
@@ -97,7 +101,7 @@ extension View {
     @ViewBuilder
     func meshReadableWidth() -> some View {
         #if os(macOS)
-            frame(maxWidth: 640).frame(maxWidth: .infinity)
+            frame(maxWidth: 720).frame(maxWidth: .infinity)
         #else
             self
         #endif

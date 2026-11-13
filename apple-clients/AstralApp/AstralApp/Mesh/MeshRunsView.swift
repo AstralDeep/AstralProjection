@@ -10,10 +10,11 @@ struct MeshRunsView: View {
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
-        List {
+        Form {
             Section("Runs") {
                 if mesh.runs.isEmpty {
-                    Text("No runs yet.").foregroundStyle(p.muted).accessibilityIdentifier("mesh.runs.none")
+                    Text("Nothing is running. Goals, schedules and watches you start in a chat show here.")
+                        .foregroundStyle(p.muted).accessibilityIdentifier("mesh.runs.none")
                 }
                 ForEach(mesh.runs) { run in
                     MeshRunRow(run: run) { takenOver = $0 }
@@ -21,7 +22,8 @@ struct MeshRunsView: View {
             }
             Section("Learning") {
                 if mesh.proposals.isEmpty {
-                    Text("Nothing has been proposed to learn.").foregroundStyle(p.muted)
+                    Text("Nothing to review. Habits the assistant learns show here for your approval.")
+                        .foregroundStyle(p.muted)
                         .accessibilityIdentifier("mesh.learning.none")
                 }
                 ForEach(mesh.proposals) { proposal in
@@ -29,6 +31,10 @@ struct MeshRunsView: View {
                 }
             }
         }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .meshReadableWidth()
+        .background(p.bg)
         .navigationTitle("Runs")
         .refreshable {
             await mesh.refreshRuns()

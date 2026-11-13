@@ -9,6 +9,8 @@ struct MeshDeviceDetailView: View {
     @Environment(ThemeStore.self) private var theme
     @Environment(\.dismiss) private var dismiss
     @State private var removing: MeshMember?
+    @State private var renaming = false
+    @State private var draft = ""
     private var p: AstralPalette { theme.palette }
 
     private var member: MeshMember? { mesh.members.first { $0.memberId == memberId } }
@@ -49,6 +51,21 @@ struct MeshDeviceDetailView: View {
             }
             if !member.attested { verification(member) }
             Section("Details") {
+                LabeledContent("Name") {
+                    HStack {
+                        Text(member.label)
+                        Button("Rename") {
+                            draft = member.label
+                            renaming = true
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityIdentifier("mesh.device.rename")
+                    }
+                }
+                LabeledContent("Added", value: MeshPresentation.added(member.addedAt))
+                    .accessibilityIdentifier("mesh.device.added")
+                LabeledContent("Verification", value: MeshPresentation.verificationAge(member.attested ? member.attestedAt ?? member.addedAt : nil))
+                    .accessibilityIdentifier("mesh.device.verified")
                 LabeledContent("Kind", value: member.isThisDevice ? "This " + MeshPresentation.kind(member.kind).lowercased() : MeshPresentation.kind(member.kind))
                 if !member.isThisDevice {
                     LabeledContent("Last seen", value: lastSeen(sync?.lastSeen ?? member.lastSeen))
@@ -84,6 +101,13 @@ struct MeshDeviceDetailView: View {
         .meshReadableWidth()
         .background(p.bg)
         .meshRemoveConfirmation($removing)
+        .alert("Rename Device", isPresented: $renaming) {
+            TextField("Name", text: $draft)
+            Button("Save") { Task { _ = await mesh.renameDevice(member, to: draft) } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This name shows on every device.")
+        }
     }
 
     @ViewBuilder

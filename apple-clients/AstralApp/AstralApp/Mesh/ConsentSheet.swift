@@ -76,7 +76,7 @@ struct ConsentSheet: View {
 
     private var argumentsField: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Arguments").font(.caption).foregroundStyle(.secondary)
+            Text("Arguments").font(.subheadline).foregroundStyle(.secondary)
             Text(prompt.arguments.isEmpty ? "None" : prompt.arguments)
                 .font(.system(.footnote, design: .monospaced))
                 .textSelection(.enabled)
@@ -90,7 +90,7 @@ struct ConsentSheet: View {
 
     private func field(_ name: String, _ value: String, id: String, monospaced: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(name).font(.caption).foregroundStyle(.secondary)
+            Text(name).font(.subheadline).foregroundStyle(.secondary)
             Text(value)
                 .font(monospaced ? .system(.body, design: .monospaced) : .body)
                 .textSelection(.enabled)
