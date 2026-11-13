@@ -5,7 +5,7 @@ import SwiftUI
 
 extension AppModeStore {
     func canEnterPersonalMesh(from model: AppModel) -> Bool {
-        guard !usesMesh, !model.mandatorySurface, !model.turnActive,
+        guard !usesMesh, !model.mandatorySurface, !model.turnActive, model.waitingApprovals == 0,
             !model.onDeviceVoice.isRunning, !model.onDeviceVoice.isPreparing
         else { return false }
         #if os(macOS)

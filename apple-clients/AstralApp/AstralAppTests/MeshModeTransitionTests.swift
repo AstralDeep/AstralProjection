@@ -28,6 +28,37 @@ final class MeshModeTransitionTests: XCTestCase {
         XCTAssertTrue(model.signedIn)
     }
 
+    func testPendingApprovalCardKeepsTheNodeSessionVisibleAfterTheTurnEnds() throws {
+        let (model, mode, _) = try makeState()
+        model.connected = true
+        XCTAssertTrue(model.beginConversationConnection(UUID().uuidString.lowercased()))
+        model.activeChatId = "33333333-3333-4333-8333-333333333333"
+        let proposal = String(repeating: "ab", count: 16)
+        let buttons = [("Approve", "approve"), ("Decline", "decline")].map { label, decision in
+            JSONValue.object([
+                "type": .string("button"), "label": .string(label), "action": .string("remote_op_decision"),
+                "payload": .object(["proposal_id": .string(proposal), "decision": .string(decision)]),
+            ])
+        }
+        model.canvas = [
+            AstralComponent(
+                type: "card",
+                raw: .object([
+                    "type": .string("card"), "id": .string("au_approval_" + proposal),
+                    "title": .string("Confirm an action on this device"),
+                    "content": .array(
+                        [
+                            .object(["type": .string("text"), "content": .string("Open a reviewed page.")])
+                        ] + buttons),
+                ]))
+        ]
+        XCTAssertGreaterThan(model.waitingApprovals, 0)
+        XCTAssertFalse(model.turnActive)
+        XCTAssertFalse(model.mandatorySurface)
+        XCTAssertFalse(mode.enterPersonalMesh(from: model))
+        XCTAssertEqual(mode.mode, .node)
+    }
+
     func testVoicePreparationAndCaptureKeepTheNodeSessionVisible() async throws {
         let fixture = try await VoiceModelTestFixture.installed()
         defer { try? FileManager.default.removeItem(at: fixture.root) }
