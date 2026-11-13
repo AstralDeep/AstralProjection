@@ -22,6 +22,7 @@ struct AstralApp: App {
     @State private var mesh: MeshRuntime
     #if os(macOS)
         @StateObject private var updates: UpdateCoordinator
+        @State private var nodeHost = MacNodeHostStore()
         @State private var updateRequirement: UpdateRequirement?
         private let lifecycle: MacAppLifecycle
     #endif
@@ -93,6 +94,9 @@ struct AstralApp: App {
                 .environment(modeStore)
                 .environment(consent)
                 .environment(mesh)
+                #if os(macOS)
+                    .environment(nodeHost)
+                #endif
                 .font(ConsoleTypography.body)
                 .environment(model.themeStore)
                 .tint(model.themeStore.palette.primary)

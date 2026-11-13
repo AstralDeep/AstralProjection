@@ -64,6 +64,9 @@ struct MeshSettingsView: View {
                 }
                 .accessibilityIdentifier("mesh.settings.mailbox")
             }
+            #if os(macOS)
+                MacNodeHostSection()
+            #endif
             Section("Your mesh") {
                 if let meshId = mesh.status.meshId {
                     LabeledContent("Mesh ID") {

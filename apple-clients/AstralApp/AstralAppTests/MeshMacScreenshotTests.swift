@@ -23,6 +23,7 @@
 
             func host<V: View>(_ view: V, width: CGFloat, height: CGFloat) -> some View {
                 view.environment(model).environment(mode).environment(consent).environment(runtime)
+                    .environment(MacNodeHostStore())
                     .font(ConsoleTypography.body)
                     .environment(model.themeStore)
                     .tint(model.themeStore.palette.primary)
