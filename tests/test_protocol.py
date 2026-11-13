@@ -751,7 +751,14 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
     assert paths == sorted(paths)
     assert len(paths) == len(set(paths))
     assert len(extraction["entries"]) == 519
-    assert sum(entry.get("resultStatus") == "removed" for entry in record["entries"]) == 20
+    removed = {entry["path"] for entry in record["entries"] if entry.get("resultStatus") == "removed"}
+    assert len(removed) == 31
+    assert {path for path in removed if path.startswith(("backend/rote/", "tests/rote/"))} == {
+        "backend/rote/__init__.py", "backend/rote/adapter.py", "backend/rote/capabilities.py",
+        "backend/rote/fallback.py", "backend/rote/lod.py", "backend/rote/objectives.py", "backend/rote/rote.py",
+        "tests/rote/test_rote_dashboard_text.py", "tests/rote/test_rote_identity_preservation.py",
+        "tests/rote/test_rote_lod_adapt.py", "tests/rote/test_voice_rote_capabilities_065.py",
+    }
 
     moved_workflows = {
         entry["path"]: [result["path"] for result in entry.get("resultPaths", [])]
