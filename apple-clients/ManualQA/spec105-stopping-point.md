@@ -34,3 +34,5 @@ Stopped at the owner’s explicit request. No new pairing attempt, approval, imp
 - Fresh existing physical backup: `/Users/sam/Desktop/Work/AstralProjection-wt/physical-backup-20261113T190737Z-pre-final-kernel`.
 - Triage receipt: `/tmp/spec105-apple-live-pairing-triage.json`; current phone screenshot retained privately at `/tmp/spec105-owner-pairing-live-phone.png`.
 - A private draft installer `/tmp/spec105-install-canonical-localtest.py` was prepared but NOT executed. Review it before use; it is not a qualified installation script.
+
+Parent checkpoint: the AX proposal is saved separately on `codex/105-stopped-ax-readiness`; its current async-settle/mount version is unqualified and excluded from this feature branch. Stop inventory found the previously observed canonical process no longer running; no agent quit, replacement installation or data reset is claimed. All task test/build/log processes were stopped. Kernel remains local by the owner's explicit confirmation; the other handoff branches are being saved to GitHub.
