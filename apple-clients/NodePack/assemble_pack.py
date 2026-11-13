@@ -119,6 +119,13 @@ def prune_python(python_root: Path) -> None:
         shutil.rmtree(cache)
 
 
+def copy_launcher(stage: Path) -> None:
+    target = stage / "launcher"
+    target.mkdir()
+    for source in sorted((HERE / "launcher").glob("*.py")):
+        shutil.copy2(source, target / source.name)
+
+
 def installed_distributions(python: Path) -> list[dict]:
     code = (
         "import importlib.metadata as m, json;"
@@ -205,8 +212,7 @@ def assemble(output: Path, kernel_dir: Path, work: Path) -> Path:
 
     (stage / "bin").mkdir()
     shutil.copy2(mailbox, stage / "bin" / "astral-mailbox")
-    (stage / "launcher").mkdir()
-    shutil.copy2(HERE / "launcher" / "astral_node_launch.py", stage / "launcher" / "astral_node_launch.py")
+    copy_launcher(stage)
 
     run([python, "-I", "-m", "compileall", "-q", "-j", "0", "--invalidation-mode", "unchecked-hash",
          python_root / "lib" / "python3.11", app / "backend", app / "scripts"])

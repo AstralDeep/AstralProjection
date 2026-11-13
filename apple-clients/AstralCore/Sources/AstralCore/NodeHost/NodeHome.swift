@@ -72,7 +72,8 @@
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/bash")
             process.arguments = [script.path] + arguments
-            process.environment = ["PATH": "/usr/bin:/bin"]
+            let home = arguments.firstIndex(of: "--home").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
+            process.environment = ["PATH": "/usr/bin:/bin", "HOME": home ?? NSTemporaryDirectory()]
             let output = Pipe()
             process.standardOutput = output
             process.standardError = output

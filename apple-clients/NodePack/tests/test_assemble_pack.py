@@ -62,3 +62,10 @@ def test_missing_kernel_artifacts_are_refused(tmp_path):
     (tmp_path / "kernel-commit.txt").write_text(pins.load()["kernel"]["commit"] + "\n")
     with pytest.raises(ap.PackError, match="build_kernel.sh"):
         ap.assemble(tmp_path / "out", tmp_path, tmp_path / "work")
+
+
+def test_every_launcher_module_is_copied_into_the_pack(tmp_path):
+    ap.copy_launcher(tmp_path)
+    copied = sorted(path.name for path in (tmp_path / "launcher").iterdir())
+    assert copied == sorted(path.name for path in (ap.HERE / "launcher").glob("*.py"))
+    assert "node_logging.py" in copied and "astral_node_launch.py" in copied
