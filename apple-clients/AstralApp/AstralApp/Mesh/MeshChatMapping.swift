@@ -272,6 +272,7 @@ enum MeshChatMapper {
     struct Row: Identifiable {
         let turn: AppModel.ChatTurn
         let message: MeshChatMessage?
+        var untrustedSurfaceIds: [String] = []
         var id: String { turn.id }
     }
 
@@ -290,7 +291,11 @@ enum MeshChatMapper {
                     id: message.eventId, role: role(for: message.author),
                     text: message.author == .owner ? message.text : MeshModelText.display(message.text),
                     components: components),
-                message: message)
+                message: message,
+                untrustedSurfaceIds: message.surfaceIds.filter { id in
+                    rendered[id]?.untrusted == true
+                        || surfaces[id]?.nodes.values.contains { $0.provenance == "agent" } == true
+                })
         }
         if let streaming, !streaming.isEmpty {
             rows.append(

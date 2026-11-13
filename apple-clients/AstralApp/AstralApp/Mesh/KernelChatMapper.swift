@@ -247,7 +247,7 @@ nonisolated enum KernelSurfaceFold {
             let type = object["type"]?.stringValue, let props = object["props"]?.objectValue,
             let rawChildren = object["children"]?.arrayValue, case let children = rawChildren.compactMap(\.stringValue),
             children.count == rawChildren.count, let prov = object["prov"]?.stringValue,
-            ["model", "tool", "host"].contains(prov)
+            ["model", "tool", "agent", "host"].contains(prov)
         else { return nil }
         return Component(id: key, type: type, props: props, children: children, prov: prov)
     }

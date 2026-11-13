@@ -260,6 +260,13 @@ struct MeshMessageRow: View {
 
     var body: some View {
         VStack(alignment: row.turn.role == "user" ? .trailing : .leading, spacing: 4) {
+            ForEach(row.untrustedSurfaceIds, id: \.self) { surface in
+                Label("Untrusted content", systemImage: "exclamationmark.triangle.fill")
+                    .font(ConsoleTypography.caption).foregroundStyle(p.warning)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Untrusted content")
+                    .accessibilityIdentifier("mesh.surface.untrusted." + surface)
+            }
             if row.message?.text.isEmpty != true || row.message?.surfaceIds.isEmpty != true {
                 ChatBubble(turn: row.turn)
                     .environment(\.astralMeshAction, surfaceAction)
