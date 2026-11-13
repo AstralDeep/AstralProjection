@@ -45,3 +45,18 @@ def test_build_is_reproducible(tmp_path):
 def test_missing_library_is_refused(tmp_path):
     with pytest.raises(SystemExit):
         build_wheel(stage(tmp_path, with_library=False), tmp_path / "out", "0.1.0", "macosx_14_0_arm64")
+
+
+
+def test_packaging_cli_writes_a_real_wheel_and_reports_its_path(tmp_path, monkeypatch, capsys):
+    import runpy
+    import sys
+    import package_kernel_wheel as packager
+
+    source = stage(tmp_path)
+    output = tmp_path / "cli-output"
+    monkeypatch.setattr(sys, "argv", ["package_kernel_wheel.py", "--stage", str(source), "--out", str(output),
+        "--version", "0.1.0", "--platform-tag", "macosx_14_0_arm64"])
+    runpy.run_path(packager.__file__, run_name="__main__")
+    result = output / "astral_kernel-0.1.0-py3-none-macosx_14_0_arm64.whl"
+    assert str(result) in capsys.readouterr().out and result.is_file()

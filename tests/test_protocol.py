@@ -602,7 +602,7 @@ def test_voice_075_scalar_limit_vectors_are_boundary_exact_and_digest_bound() ->
 def test_runtime_manifests_bind_exact_owning_dependency_inventory() -> None:
     immutable_manifests = {
         "tooling/python-ci/requirements.lock.txt": (
-            "536b4ffe4e0c2a1850b693c3a06cd9471278e4a19669df61d511962e026f54c7"
+            "47604f5bc49b2ca1f9f1c23af60406e59d1a3e9f31366d446d54b061468b246c"
         ),
         "tooling/web-ci/package.json": (
             "9528a7ec636f65b4071c38367f8ba487a1c7034657feb7612e4391524986b157"

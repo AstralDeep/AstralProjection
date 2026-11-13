@@ -51,3 +51,30 @@ def test_capture_output_redacts_what_the_process_writes_to_its_descriptors(tmp_p
     text = (tmp_path / "logs" / "node.log").read_text()
     assert "started with [redacted]" in text and "warning without secrets" in text
     assert "topsecretvalue" not in text
+
+
+
+def test_log_pump_redacts_buffered_input_without_replacing_test_descriptors(tmp_path, monkeypatch):
+    read_end, write_end = os.pipe()
+    os.write(write_end, b"token=synthetic-secret ordinary output\n")
+    duplicated = []
+    monkeypatch.setattr(nl.os, "pipe", lambda: (read_end, write_end))
+    monkeypatch.setattr(nl.os, "dup2", lambda source, target: duplicated.append((source, target)))
+
+    class ImmediateThread:
+        def __init__(self, *, target, name, daemon):
+            assert name == "node-log" and daemon is True
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(nl.threading, "Thread", ImmediateThread)
+    sink = nl.capture_output(tmp_path / "logs", ["synthetic-secret"])
+    try:
+        assert duplicated == [(write_end, 1), (write_end, 2)]
+        text = sink.path.read_text()
+        assert "synthetic-secret" not in text and "ordinary output" in text
+        assert "[redacted]" in text
+    finally:
+        sink.handle.close()
