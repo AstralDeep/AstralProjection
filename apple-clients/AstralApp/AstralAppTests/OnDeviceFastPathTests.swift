@@ -59,6 +59,8 @@ final class OnDeviceFastPathTests: XCTestCase {
         let model = FakeOnDeviceModel(mode: .respond(.text("Okay.")))
         let fast = VoiceFastPath(model: model)
         fast.speculate("what time")
+        let started = await waitUntil { model.requests.count == 1 }
+        XCTAssertTrue(started)
         let acknowledgement = await fast.acknowledgement(forFinal: "set a timer")
         XCTAssertEqual(acknowledgement, "Okay.")
         XCTAssertEqual(model.requests.last?.messages.last?.text, "set a timer")
