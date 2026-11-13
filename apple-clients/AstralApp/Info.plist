@@ -22,6 +22,10 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<!-- Required by the Mac App Store: without it, altool rejects the .pkg with
 	     "The product archive is invalid. The Info.plist must contain a
 	     LSApplicationCategoryType key." Harmless on iOS, which ignores it.

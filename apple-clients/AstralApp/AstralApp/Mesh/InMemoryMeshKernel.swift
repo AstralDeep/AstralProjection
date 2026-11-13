@@ -78,6 +78,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     var calls: [Call] { lock.withLock { log } }
 
     func startNetwork() async throws { try record("startNetwork") }
+    func syncNow() async throws { try record("syncNow") }
     func stopNetwork() async { lock.withLock { log.append(Call(name: "stopNetwork", detail: "")) } }
     func version() -> String { "in-memory" }
 

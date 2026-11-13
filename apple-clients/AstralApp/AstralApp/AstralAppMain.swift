@@ -29,6 +29,7 @@ struct AstralApp: App {
     @Environment(\.scenePhase) private var scenePhase
     #if os(iOS)
         @UIApplicationDelegateAdaptor(PushNotificationAppDelegate.self) private var pushAppDelegate
+        @State private var meshWake: MeshBackgroundWake?
     #endif
     private let unitTestHost =
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
@@ -52,6 +53,23 @@ struct AstralApp: App {
             }
         #else
             _mesh = State(initialValue: MeshRuntimeBuilder.live(consent: coordinator))
+        #endif
+        #if os(iOS)
+            let wakeRuntime = _mesh.wrappedValue
+            let wakeMode = _modeStore.wrappedValue
+            let wake = MeshBackgroundWake(
+                authorized: { [weak wakeRuntime, weak wakeMode] in
+                    wakeMode?.usesMesh == true && wakeRuntime?.isReady == true
+                        && wakeRuntime?.hasMesh == true && UIApplication.shared.isProtectedDataAvailable
+                },
+                synchronize: { [weak wakeRuntime] in
+                    guard let wakeRuntime else { return false }
+                    return try await wakeRuntime.synchronizeAfterWake()
+                })
+            _meshWake = State(initialValue: wake)
+            if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+                MeshBackgroundWake.active = wake
+            }
         #endif
         #if os(macOS)
             lifecycle = MacAppLifecycle(handlers: .live(launchModel))
@@ -127,6 +145,9 @@ struct AstralApp: App {
                     if !unitTestHost, !modeStore.usesMesh { await model.bootstrap() }
                 }
                 .onChange(of: modeStore.mode) { _, mode in
+                    #if os(iOS)
+                        if mode != .mesh { meshWake?.cancel() }
+                    #endif
                     #if os(macOS)
                         guard updateRequirement == nil else { return }
                     #endif

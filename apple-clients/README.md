@@ -60,6 +60,19 @@ code hash makes each rebuild a different Keychain client. Keep the same signing
 channel and identity for subsequent builds. An identity transition may require
 one approval for each saved Keychain item; ordinary login does not change it.
 
+Mesh background notifications accept only a content-free wake hint. An already
+open, enrolled mesh requests synchronization and reports new data only after a
+data change arrives. Locked, unopened or node-mode installs return no data;
+opening custody and signing in remain foreground actions. Work is cancelled
+after 20 seconds or when its lifecycle is retired. iOS scheduling is advisory,
+so opening the app remains the reliable way to resume synchronization.
+
+End-to-end APNs wake still requires a physical device, the matching topic and
+push entitlement, gateway credentials, and an owner-authenticated destination
+registered with the mesh device identifier. The older server notification flow
+registers its separate voice device identifier; it does not establish that mesh
+destination binding.
+
 ## The Xcode project is committed and canonical
 
 `apple-clients/AstralApp/AstralApp.xcodeproj` is the **single, canonical**

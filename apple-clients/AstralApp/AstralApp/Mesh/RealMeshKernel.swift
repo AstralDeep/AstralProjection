@@ -87,6 +87,10 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
         await kernel.stopNetwork()
     }
 
+    func syncNow() async throws {
+        do { try await kernel.syncNow() } catch { throw KernelMapping.error(error) }
+    }
+
     func meshStatus() async throws -> MeshStatus { KernelMapping.status(await kernel.meshStatus()) }
 
     func beginMeshCreation() throws -> MeshAttestationRequest {

@@ -514,6 +514,7 @@ nonisolated protocol MeshKernelListening: Sendable {
 nonisolated protocol MeshKernel: Sendable {
     func startNetwork() async throws
     func stopNetwork() async
+    func syncNow() async throws
     func version() -> String
 
     func meshStatus() async throws -> MeshStatus

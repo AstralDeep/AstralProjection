@@ -275,6 +275,8 @@ final class MeshRuntime {
 
     @ObservationIgnored private var kernel: (any MeshKernel)?
     @ObservationIgnored private var keys: DeviceKeys?
+    @ObservationIgnored private var wakeSession = UUID()
+    @ObservationIgnored private var wakeDataRevision = UUID()
     @ObservationIgnored private let relay = MeshChangeRelay()
     @ObservationIgnored nonisolated(unsafe) private var consumer: Task<Void, Never>?
     @ObservationIgnored private var turnTasks: [String: Task<Void, Never>] = [:]
@@ -438,6 +440,7 @@ final class MeshRuntime {
     }
 
     func close() async {
+        wakeSession = UUID()
         for task in turnTasks.values { task.cancel() }
         turnTasks = [:]
         if let kernel { await Task.detached { await kernel.stopNetwork() }.value }
@@ -469,6 +472,24 @@ final class MeshRuntime {
             for task in Array(turnTasks.values) { await task.value }
             await Task.yield()
         }
+    }
+
+    func synchronizeAfterWake(
+        waitForChange: () async throws -> Void = { try await Task.sleep(for: .milliseconds(100)) }
+    ) async throws -> Bool {
+        guard isReady, status.hasMesh, let kernel else { return false }
+        let session = wakeSession
+        let revision = wakeDataRevision
+        let meshId = status.meshId
+        let deviceId = status.deviceId
+        try await Task.detached { try await kernel.syncNow() }.value
+        while !Task.isCancelled, isReady, status.hasMesh, wakeSession == session,
+            status.meshId == meshId, status.deviceId == deviceId
+        {
+            if wakeDataRevision != revision { return true }
+            try await waitForChange()
+        }
+        return false
     }
 
     func refreshAll() async {
@@ -1186,6 +1207,10 @@ final class MeshRuntime {
             case .offered, .accepted: join = .failed(message)
             default: break
             }
+        }
+        switch change {
+        case .chatChanged, .rosterChanged, .allowanceChanged, .runProgress: wakeDataRevision = UUID()
+        default: break
         }
     }
 

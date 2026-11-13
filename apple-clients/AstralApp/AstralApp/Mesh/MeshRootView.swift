@@ -2,6 +2,9 @@
 // The shell has chats, devices and settings, each under the honest sync strip and any approvals waiting on this device.
 
 import SwiftUI
+#if os(iOS)
+    import UIKit
+#endif
 
 struct MeshRootView: View {
     var start: MeshDestination?
@@ -10,6 +13,9 @@ struct MeshRootView: View {
     @Environment(ConsentCoordinator.self) private var consent
     @Environment(AppModel.self) private var model
     @Environment(ThemeStore.self) private var theme
+    #if os(iOS)
+        @Environment(\.scenePhase) private var scenePhase
+    #endif
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
@@ -25,7 +31,14 @@ struct MeshRootView: View {
                     Task { await model.onDeviceVoice.activate() }
                 }
             }
-            .task { await mesh.open() }
+            #if os(iOS)
+                .task(id: scenePhase) {
+                    guard scenePhase == .active, UIApplication.shared.isProtectedDataAvailable else { return }
+                    await mesh.open()
+                }
+            #else
+                .task { await mesh.open() }
+            #endif
     }
 
     @ViewBuilder
