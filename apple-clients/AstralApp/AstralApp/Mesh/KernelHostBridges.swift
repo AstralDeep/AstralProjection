@@ -41,6 +41,10 @@ nonisolated final class KernelHostSigner: AstralKernel.HostSigner, @unchecked Se
         case .toolEffect:
             if prompt.title == "run.takeover" {
                 built = try ConsentPrompt.takeover(canonicalAction: prompt.canonicalAction, signingInput: message)
+            } else if ConsentPrompt.isGrant(canonicalAction: prompt.canonicalAction) {
+                built = try ConsentPrompt.grant(
+                    canonicalAction: prompt.canonicalAction, canonicalArguments: prompt.canonicalArguments,
+                    signingInput: message)
             } else {
                 built = try ConsentPrompt.action(
                     canonicalAction: prompt.canonicalAction, canonicalArguments: prompt.canonicalArguments,
@@ -102,13 +106,13 @@ nonisolated final class KernelLocalTools: AstralKernel.LocalTools, @unchecked Se
 
     init(_ tools: any MeshLocalTools) { self.tools = tools }
 
-    func list() throws -> [LocalToolSpec] {
-        tools.list().map { spec in
-            LocalToolSpec(
-                name: spec.name, description: spec.summary, inputSchemaJson: spec.schemaJSON,
-                annotationsJson: spec.annotationsJSON, effect: Self.effect(spec.effect),
-                confidentiality: Self.confidentiality(spec.confidentiality))
-        }
+    func list() throws -> [LocalToolSpec] { tools.list().map(Self.native) }
+
+    static func native(_ spec: MeshLocalToolSpec) -> LocalToolSpec {
+        LocalToolSpec(
+            name: spec.name, description: spec.summary, inputSchemaJson: spec.schemaJSON,
+            annotationsJson: spec.annotationsJSON, effect: effect(spec.effect),
+            confidentiality: confidentiality(spec.confidentiality))
     }
 
     func call(name: String, argumentsJson: String, ticket: String) throws -> String {

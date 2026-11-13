@@ -269,6 +269,8 @@ nonisolated enum KernelMapping {
         ("recovery.no_keys", "The words are valid, but no key of this mesh could be opened with them."),
         ("backup.decrypt_failed", "That backup could not be opened with these words."),
         ("backup.malformed", "That file is not a mesh backup."),
+        ("grant.malformed", "That tool name or permission could not be used."),
+        ("grant.", "That permission could not be changed."),
         ("request.empty", "Write the request first."),
         ("request.too_large", "That request is too long."),
         ("request.unknown_member", "That device is not in your mesh."),

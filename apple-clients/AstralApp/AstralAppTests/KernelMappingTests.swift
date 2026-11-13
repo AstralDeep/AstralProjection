@@ -315,6 +315,52 @@ final class KernelMappingTests: XCTestCase {
         XCTAssertTrue(shown.isBound(to: input))
     }
 
+    func testGrantPromptsParseTheirExactSigningInputAndRequireBiometry() throws {
+        func id(_ c: Character) -> String { "sha256:" + String(repeating: c, count: 64) }
+        let action = Data(#"{"agent":"kernel","grant":"\#(id("a"))","kind":"auth.grant","scope":"mesh_read","tool":"files.read"}"#.utf8)
+        func input(kind: String = "grant", digest: String? = nil, device: String? = nil, context: String = "astral.consent/v1") -> Data {
+            Data(
+                (context + "\n" + #"{"clock":{"ms":1,"n":0},"device":"\#(device ?? id("2"))","digest":"\#(digest ?? id("a"))","kind":"\#(kind)","v":1}"#)
+                    .utf8)
+        }
+        XCTAssertTrue(AstralDeep.ConsentPrompt.isGrant(canonicalAction: action))
+        XCTAssertFalse(AstralDeep.ConsentPrompt.isGrant(canonicalAction: Data(#"{"tool":"x"}"#.utf8)))
+        XCTAssertFalse(AstralDeep.ConsentPrompt.isGrant(canonicalAction: Data("not json".utf8)))
+        let good = input()
+        let prompt = try AstralDeep.ConsentPrompt.grant(canonicalAction: action, canonicalArguments: action, signingInput: good)
+        XCTAssertEqual(prompt.actionTitle, "Allow files.read")
+        XCTAssertEqual(prompt.effect, "files.read")
+        XCTAssertEqual(prompt.target, "Permission: read your mesh, for kernel")
+        XCTAssertTrue(prompt.requiresBiometry)
+        XCTAssertTrue(prompt.isBound(to: good))
+        XCTAssertFalse(prompt.isBound(to: good + Data([0])))
+        let bad: [(Data, Data, Data)] = [
+            (action, Data(#"{"agent":"kernel"}"#.utf8), good),
+            (action, action, input(kind: "action")),
+            (action, action, input(digest: id("b"))),
+            (action, action, input(device: "device")),
+            (action, action, input(context: "astral.roster/v1")),
+            (Data(#"{"agent":"kernel","grant":"\#(id("a"))","kind":"auth.grant","scope":"mesh_read"}"#.utf8), action, good),
+            (Data(#"{"agent":"","grant":"\#(id("a"))","kind":"auth.grant","scope":"mesh_read","tool":"x"}"#.utf8), action, good),
+            (Data(#"{"agent":"kernel","grant":"\#(id("a"))","kind":"auth.grant","scope":"","tool":"x"}"#.utf8), action, good),
+            (Data(#"{"agent":"kernel","grant":"g","kind":"auth.grant","scope":"mesh_read","tool":"x"}"#.utf8), action, good),
+            (Data(#"{"agent":"kernel","grant":"\#(id("a"))","kind":"auth.grant", "scope":"mesh_read","tool":"x"}"#.utf8), action, good),
+        ]
+        for (shown, arguments, signing) in bad {
+            XCTAssertThrowsError(try AstralDeep.ConsentPrompt.grant(canonicalAction: shown, canonicalArguments: arguments, signingInput: signing))
+        }
+        let routed = AstralKernel.ConsentPrompt(
+            kind: .toolEffect, title: "files.read", target: "grant mesh_read", canonicalAction: action,
+            canonicalArguments: action, signingInput: good, digest: id("a"), untrustedSources: [], labels: [],
+            requiresBiometry: false)
+        let shown = try KernelHostSigner.display(for: routed, message: good)
+        XCTAssertEqual(shown.actionTitle, "Allow files.read")
+        XCTAssertTrue(shown.requiresBiometry)
+        XCTAssertTrue(shown.isBound(to: good))
+        XCTAssertEqual(MeshToolScope.description("*"), "every kind of action")
+        XCTAssertEqual(MeshToolScope.description("custom"), "custom")
+    }
+
     func testPendingConsentCardsRequireMatchingArguments() throws {
         func id(_ c: Character) -> String { "sha256:" + String(repeating: c, count: 64) }
         func hash(_ data: Data) -> String { "sha256:" + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }

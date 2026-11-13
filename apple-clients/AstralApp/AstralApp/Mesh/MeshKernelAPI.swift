@@ -347,6 +347,45 @@ nonisolated struct MeshLocalToolSpec: Identifiable, Equatable, Sendable {
     var id: String { name }
 }
 
+nonisolated struct MeshPeerTool: Equatable, Sendable {
+    let deviceId: String
+    let spec: MeshLocalToolSpec
+}
+
+nonisolated struct MeshToolEntry: Identifiable, Equatable, Sendable {
+    let name: String
+    let summary: String
+    let effect: MeshToolEffect
+    let deviceId: String?
+    var scope: String { effect.scope }
+    var grantKey: String { name + "/" + scope }
+    var id: String { (deviceId ?? "this-device") + "/" + name }
+}
+
+extension MeshToolEffect {
+    var scope: String {
+        switch self {
+        case .meshRead: return "mesh_read"
+        case .meshWrite: return "mesh_write"
+        case .outwardRead: return "outward_read"
+        case .outsideEffect: return "outside_effect"
+        }
+    }
+}
+
+nonisolated enum MeshToolScope {
+    static func description(_ scope: String) -> String {
+        switch scope {
+        case "mesh_read": return "read your mesh"
+        case "mesh_write": return "change your mesh"
+        case "outward_read": return "read from outside your mesh"
+        case "outside_effect": return "act outside your mesh"
+        case "*": return "every kind of action"
+        default: return scope
+        }
+    }
+}
+
 nonisolated protocol MeshLocalTools: Sendable {
     func list() -> [MeshLocalToolSpec]
     func call(name: String, argumentsJSON: String, ticket: Data) throws -> String
@@ -386,6 +425,10 @@ nonisolated protocol MeshKernel: Sendable {
     func interrupt(chatId: String) throws
     func pendingConsents() throws -> [MeshPendingConsent]
     func resolveConsent(requestId: String, approve: Bool) throws
+
+    func tools() -> [MeshToolEntry]
+    func grantTool(name: String, scope: String) throws
+    func revokeTool(name: String, scope: String) throws
 
     func chatRequests(chatId: String) throws -> [MeshRequest]
     func pendingRequestsForMe() throws -> [MeshRequest]

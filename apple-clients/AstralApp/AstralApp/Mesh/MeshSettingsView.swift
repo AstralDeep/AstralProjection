@@ -18,6 +18,10 @@ struct MeshSettingsView: View {
                 NavigationLink("Allowance") { MeshAllowanceView() }
                     .accessibilityIdentifier("mesh.settings.allowance")
             }
+            Section("Assistant") {
+                NavigationLink("Tool permissions") { MeshPermissionsView() }
+                    .accessibilityIdentifier("mesh.settings.permissions")
+            }
             Section("This mesh") {
                 if let meshId = mesh.status.meshId {
                     LabeledContent("Mesh") { Text(meshId.suffix(12)).font(.system(.footnote, design: .monospaced)) }

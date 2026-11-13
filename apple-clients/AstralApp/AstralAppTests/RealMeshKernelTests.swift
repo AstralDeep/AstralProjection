@@ -62,9 +62,10 @@ final class RealMeshKernelTests: XCTestCase {
         let changes: ChangeLog
     }
 
-    private func open(_ label: String, kind: MeshDeviceKind = .desktop, issuers: [IssuerConfig]? = nil) async throws
-        -> Device
-    {
+    private func open(
+        _ label: String, kind: MeshDeviceKind = .desktop, issuers: [IssuerConfig]? = nil,
+        peerTools: [MeshPeerTool] = []
+    ) async throws -> Device {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("real-mesh-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
@@ -80,7 +81,7 @@ final class RealMeshKernelTests: XCTestCase {
         let kernel = try await RealMeshKernel.open(
             config: config, issuers: issuers ?? [TestTokenIssuer.config], network: KernelNetworking.loopback,
             signer: MeshHostSigner(keys: keys, presenter: presenter), model: FakeOnDeviceModel(),
-            tools: DeviceLocalTools(), listener: changes)
+            tools: DeviceLocalTools(), listener: changes, peerTools: peerTools)
         return Device(kernel: kernel, presenter: presenter, changes: changes)
     }
 
@@ -301,6 +302,69 @@ final class RealMeshKernelTests: XCTestCase {
         XCTAssertTrue(try phone.kernel.pendingRequestsForMe().isEmpty)
         await mac.kernel.stopNetwork()
         await phone.kernel.stopNetwork()
+    }
+
+    func testGrantingAToolDrawsTheBiometricConsentAndRevokingNeverDoes() async throws {
+        let mac = try await open("Mac")
+        _ = try await createMesh(mac)
+        let kernel = mac.kernel
+        func grant(_ name: String, _ scope: String) async -> Error? {
+            await Task.detached { () -> Error? in
+                do {
+                    try kernel.grantTool(name: name, scope: scope)
+                    return nil
+                } catch { return error }
+            }.value
+        }
+        let before = mac.presenter.prompts.count
+        let granted = await grant("files.read", "mesh_read")
+        XCTAssertNil(granted)
+        XCTAssertEqual(mac.presenter.prompts.count, before + 1)
+        let prompt = try XCTUnwrap(mac.presenter.prompts.last)
+        XCTAssertEqual(prompt.actionTitle, "Allow files.read")
+        XCTAssertEqual(prompt.effect, "files.read")
+        XCTAssertTrue(prompt.target.contains("read your mesh"))
+        XCTAssertTrue(prompt.arguments.contains("auth.grant"))
+        XCTAssertTrue(prompt.requiresBiometry)
+
+        try kernel.revokeTool(name: "files.read", scope: "mesh_read")
+        try kernel.revokeTool(name: "never.granted", scope: "outside_effect")
+        XCTAssertEqual(mac.presenter.prompts.count, before + 1)
+
+        mac.presenter.approve = false
+        let denied = await grant("mail.send", "outside_effect")
+        XCTAssertEqual(denied as? MeshKernelError, .consentDenied)
+        mac.presenter.approve = true
+        let malformed = await grant("", "mesh_read")
+        XCTAssertEqual(malformed as? MeshKernelError, .refused("That tool name or permission could not be used."))
+        XCTAssertThrowsError(try kernel.revokeTool(name: "files.read", scope: "")) {
+            XCTAssertEqual($0 as? MeshKernelError, .refused("That tool name or permission could not be used."))
+        }
+        await kernel.stopNetwork()
+    }
+
+    func testToolsListThisDevicesToolsThenPeerToolsWithoutDuplicates() async throws {
+        let peerId = "sha256:" + String(repeating: "7", count: 64)
+        let schema = #"{"type":"object","properties":{},"additionalProperties":false}"#
+        let peers = [
+            MeshPeerTool(
+                deviceId: peerId,
+                spec: MeshLocalToolSpec(
+                    name: "calendar.read", summary: "Reads the calendar.", schemaJSON: schema,
+                    effect: .outwardRead, confidentiality: .private)),
+            MeshPeerTool(
+                deviceId: peerId,
+                spec: MeshLocalToolSpec(
+                    name: "device_locale", summary: "Shadowed by the local tool.", schemaJSON: schema)),
+        ]
+        let mac = try await open("Mac", peerTools: peers)
+        let tools = mac.kernel.tools()
+        XCTAssertEqual(tools.map(\.name), ["current_datetime", "device_locale", "calendar.read"])
+        XCTAssertEqual(tools.map(\.deviceId), [nil, nil, peerId])
+        XCTAssertEqual(tools.last?.scope, "outward_read")
+        XCTAssertEqual(tools.first?.grantKey, "current_datetime/mesh_read")
+        XCTAssertEqual(Set(tools.map(\.id)).count, 3)
+        await mac.kernel.stopNetwork()
     }
 
     private func phoneViewWhenCaughtUp(_ device: Device, chat: String, count: Int) async throws -> MeshChatView {

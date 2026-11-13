@@ -19,17 +19,24 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
     private var previews: [String: (stamp: ClockStamp, summary: MeshChatSummary)] = [:]
     private var ticker: Task<Void, Never>?
     private let now: @Sendable () -> Date
+    private let localTools: any MeshLocalTools
+    private let peerTools: [MeshPeerTool]
 
-    private init(kernel: Kernel, bridge: KernelChangeBridge, now: @escaping @Sendable () -> Date) {
+    private init(
+        kernel: Kernel, bridge: KernelChangeBridge, localTools: any MeshLocalTools, peerTools: [MeshPeerTool],
+        now: @escaping @Sendable () -> Date
+    ) {
         self.kernel = kernel
         self.bridge = bridge
+        self.localTools = localTools
+        self.peerTools = peerTools
         self.now = now
     }
 
     static func open(
         config: MeshKernelConfig, issuers: [IssuerConfig], network: NetworkConfig, signer: any AstralHostSigning,
         model: any AstralOnDeviceModel, tools: any MeshLocalTools, listener: any MeshKernelListening,
-        now: @escaping @Sendable () -> Date = { Date() }
+        peerTools: [MeshPeerTool] = [], now: @escaping @Sendable () -> Date = { Date() }
     ) async throws -> RealMeshKernel {
         let late = Late()
         let bridge = KernelChangeBridge(listener: listener) { Task { await late.kernel?.enrolled() } }
@@ -40,8 +47,10 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
         do {
             let kernel = try Kernel.open(
                 config: native, signer: KernelHostSigner(signer), model: KernelOnDeviceModel(model),
-                tools: KernelLocalTools(tools), listener: bridge)
-            let opened = RealMeshKernel(kernel: kernel, bridge: bridge, now: now)
+                tools: KernelLocalTools(tools), listener: bridge,
+                peerTools: peerTools.map { PeerToolSpec(device: $0.deviceId, tool: KernelLocalTools.native($0.spec)) })
+            let opened = RealMeshKernel(
+                kernel: kernel, bridge: bridge, localTools: tools, peerTools: peerTools, now: now)
             late.kernel = opened
             await opened.resumeAndTick()
             return opened
@@ -209,6 +218,23 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
 
     func resolveConsent(requestId: String, approve: Bool) throws {
         try mapped { try kernel.resolveConsent(requestId: requestId, approve: approve) }
+    }
+
+    func tools() -> [MeshToolEntry] {
+        let mine = localTools.list().map {
+            MeshToolEntry(name: $0.name, summary: $0.summary, effect: $0.effect, deviceId: nil)
+        }
+        let known = Set(mine.map(\.name))
+        let theirs = peerTools.filter { !known.contains($0.spec.name) }.map {
+            MeshToolEntry(name: $0.spec.name, summary: $0.spec.summary, effect: $0.spec.effect, deviceId: $0.deviceId)
+        }
+        return mine + theirs
+    }
+
+    func grantTool(name: String, scope: String) throws { try mapped { _ = try kernel.grantTool(tool: name, scope: scope) } }
+
+    func revokeTool(name: String, scope: String) throws {
+        try mapped { _ = try kernel.revokeTool(tool: name, scope: scope) }
     }
 
     func chatRequests(chatId: String) throws -> [MeshRequest] {

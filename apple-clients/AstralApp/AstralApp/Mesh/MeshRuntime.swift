@@ -206,6 +206,8 @@ final class MeshRuntime {
     private(set) var providers: [MeshModelProvider] = []
     private(set) var runs: [MeshRun] = []
     private(set) var proposals: [MeshProposal] = []
+    private(set) var toolEntries: [MeshToolEntry] = []
+    private(set) var grantedTools: Set<String> = []
     private(set) var chatRequests: [MeshRequest] = []
     private(set) var requestsForMe: [MeshRequest] = []
     private(set) var creation = MeshCreationState.idle
@@ -239,6 +241,7 @@ final class MeshRuntime {
     @ObservationIgnored private let now: @Sendable () -> Date
 
     private static let acknowledgedKey = "astral.mesh.acknowledged-outcomes"
+    private static let grantsKey = "astral.mesh.granted-tools."
 
     init(
         makeKernel: @escaping MeshKernelFactory,
@@ -357,6 +360,8 @@ final class MeshRuntime {
         proposals = []
         chatRequests = []
         requestsForMe = []
+        toolEntries = []
+        grantedTools = []
         turns = [:]
     }
 
@@ -379,6 +384,7 @@ final class MeshRuntime {
         await refreshProviders()
         await refreshRuns()
         await refreshProposals()
+        await refreshTools()
         if let id = currentChatId { await reloadChat(id) }
     }
 
@@ -399,6 +405,34 @@ final class MeshRuntime {
 
     func refreshChats() async {
         if let value = await attempt({ try $0.listChats() }) { chats = value }
+    }
+
+    func refreshTools() async {
+        if let value = await attempt({ $0.tools() }) { toolEntries = value }
+        grantedTools = Set(defaults.stringArray(forKey: Self.grantsKey + (status.meshId ?? "")) ?? [])
+    }
+
+    func isGranted(_ tool: MeshToolEntry) -> Bool { grantedTools.contains(tool.grantKey) }
+
+    func grant(_ tool: MeshToolEntry) async {
+        let name = tool.name
+        let scope = tool.scope
+        let granted: Void? = await attempt { try $0.grantTool(name: name, scope: scope) }
+        guard granted != nil else { return }
+        recordGrant(tool.grantKey, granted: true)
+    }
+
+    func revoke(_ tool: MeshToolEntry) async {
+        let name = tool.name
+        let scope = tool.scope
+        let revoked: Void? = await attempt { try $0.revokeTool(name: name, scope: scope) }
+        guard revoked != nil else { return }
+        recordGrant(tool.grantKey, granted: false)
+    }
+
+    private func recordGrant(_ key: String, granted: Bool) {
+        if granted { grantedTools.insert(key) } else { grantedTools.remove(key) }
+        defaults.set(grantedTools.sorted(), forKey: Self.grantsKey + (status.meshId ?? ""))
     }
 
     func refreshRequests() async {

@@ -88,6 +88,31 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
         return prompt
     }
 
+    static func isGrant(canonicalAction: Data) -> Bool {
+        guard let value = try? JSONSerialization.jsonObject(with: canonicalAction) as? [String: Any] else { return false }
+        return value["kind"] as? String == "auth.grant"
+    }
+
+    static func grant(canonicalAction: Data, canonicalArguments: Data, signingInput: Data) throws -> ConsentPrompt {
+        _ = try object(canonicalAction, fields: ["agent", "grant", "kind", "scope", "tool"])
+        let action = try JSONDecoder().decode(Grant.self, from: canonicalAction)
+        let consentData = try payload(signingInput, context: "astral.consent/v1")
+        let consentObject = try object(consentData, fields: ["v", "kind", "digest", "device", "clock"])
+        let consent = try JSONDecoder().decode(ActionConsent.self, from: consentData)
+        try checkClock(consentObject["clock"], value: consent.clock)
+        guard canonicalArguments == canonicalAction, action.kind == "auth.grant", consent.v == 1,
+            consent.kind == "grant", isID(action.grant), consent.digest == action.grant, isID(consent.device),
+            !action.agent.isEmpty, !action.tool.isEmpty, !action.scope.isEmpty
+        else { throw ConsentPromptError.invalidInput }
+        var prompt = ConsentPrompt(
+            actionTitle: "Allow " + action.tool, effect: action.tool,
+            target: "Permission: " + MeshToolScope.description(action.scope) + ", for " + action.agent,
+            arguments: "Action: " + String(decoding: canonicalAction, as: UTF8.self), digest: consent.digest,
+            requiresBiometry: true)
+        prompt.signingInputHash = hash(signingInput)
+        return prompt
+    }
+
     static func pending(canonicalAction: Data, canonicalArguments: Data) throws -> ConsentPrompt {
         _ = try object(
             canonicalAction,
@@ -250,6 +275,10 @@ private nonisolated struct Action: Decodable {
         case toolDef = "tool_def"
         case argsDigest = "args_digest"
     }
+}
+
+private nonisolated struct Grant: Decodable {
+    let agent, grant, kind, scope, tool: String
 }
 
 private nonisolated struct GenesisHeader: Decodable {

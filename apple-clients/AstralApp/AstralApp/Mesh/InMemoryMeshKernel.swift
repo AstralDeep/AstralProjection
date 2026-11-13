@@ -27,6 +27,11 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     private var runsValue: [MeshRun] = []
     private var proposalsValue: [MeshProposal] = []
     private var requestsValue: [MeshRequest] = []
+    private var grantsValue: Set<String> = []
+    private var toolsValue: [MeshToolEntry] = [
+        MeshToolEntry(
+            name: "current_datetime", summary: "Returns the current date and time.", effect: .meshRead, deviceId: nil)
+    ]
 
     var recoveryWords: [String] = (1...24).map { "word\($0)" }
     var hasLocalMesh = false
@@ -301,6 +306,29 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         if approve { try consentGate() }
         lock.withLock { consents.removeAll { $0.requestId == requestId } }
     }
+
+    func tools() -> [MeshToolEntry] { lock.withLock { toolsValue } }
+
+    func grantTool(name: String, scope: String) throws {
+        try record("grantTool", name + "|" + scope)
+        guard !name.isEmpty, !scope.isEmpty else {
+            throw MeshKernelError.refused(KernelMapping.failureText(code: "grant.malformed"))
+        }
+        try consentGate()
+        lock.withLock { _ = grantsValue.insert(name + "/" + scope) }
+    }
+
+    func revokeTool(name: String, scope: String) throws {
+        try record("revokeTool", name + "|" + scope)
+        guard !name.isEmpty, !scope.isEmpty else {
+            throw MeshKernelError.refused(KernelMapping.failureText(code: "grant.malformed"))
+        }
+        lock.withLock { _ = grantsValue.remove(name + "/" + scope) }
+    }
+
+    var grants: Set<String> { lock.withLock { grantsValue } }
+
+    func setTools(_ value: [MeshToolEntry]) { lock.withLock { toolsValue = value } }
 
     func chatRequests(chatId: String) throws -> [MeshRequest] {
         try record("chatRequests", chatId)
