@@ -1058,6 +1058,30 @@ final class MeshRuntime {
         }
     }
 
+    func setRemoteMCPServer(_ config: MeshRemoteMCPConfig) async throws {
+        try await call { try $0.setRemoteMCPServer(config) }
+    }
+
+    func remoteMCPServers() async throws -> [MeshRemoteMCPServer] {
+        try await call { try $0.remoteMCPServers() }
+    }
+
+    func removeRemoteMCPServer(_ name: String) async throws {
+        try await call { try $0.removeRemoteMCPServer(name) }
+    }
+
+    func refreshRemoteMCPTools(_ server: String) async throws -> [MeshRemoteMCPTool] {
+        try await call { try await $0.refreshRemoteMCPTools(server) }
+    }
+
+    func approveRemoteMCPTool(_ tool: MeshRemoteMCPTool) async throws {
+        try await call { try await $0.approveRemoteMCPTool(tool) }
+    }
+
+    func revokeRemoteMCPTool(server: String, tool: String) async throws {
+        try await call { try $0.revokeRemoteMCPTool(server: server, tool: tool) }
+    }
+
     func exportBackup(to url: URL) async {
         await perform { try $0.exportBackup(path: url.path) }
     }

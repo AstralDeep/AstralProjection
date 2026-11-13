@@ -121,6 +121,20 @@ final class MeshModeUITests: XCTestCase {
         XCTAssertFalse(element("mesh.request.refuse.11111111").exists)
     }
 
+    func testRemoteMCPManagerIsReachableFromSettings() {
+        launch("shell")
+        XCTAssertTrue(app.tabBars.buttons["Settings"].waitForExistence(timeout: 15))
+        selectTab("Settings")
+        let manager = element("mesh.settings.mcp")
+        XCTAssertTrue(manager.waitForExistence(timeout: 5))
+        manager.tap()
+        XCTAssertTrue(element("mesh.mcp.name").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("mesh.mcp.endpoint").exists)
+        XCTAssertTrue(element("mesh.mcp.bearer").exists)
+        XCTAssertTrue(element("mesh.mcp.save").exists)
+        attach("mesh-mcp-manager")
+    }
+
     func testPermissionsAndMailboxLiveInSettings() {
         launch("shell")
         XCTAssertTrue(app.tabBars.buttons["Settings"].waitForExistence(timeout: 15))

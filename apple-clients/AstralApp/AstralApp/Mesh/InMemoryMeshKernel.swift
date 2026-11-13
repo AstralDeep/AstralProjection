@@ -19,6 +19,8 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     private var order: [String] = []
     private var consents: [MeshPendingConsent] = []
     private var providers: [MeshModelProvider] = []
+    private var remoteMCPServersValue: [String: MeshRemoteMCPServer] = [:]
+    private var remoteMCPToolsValue: [String: [MeshRemoteMCPTool]] = [:]
     private var syncValue = MeshSyncState.empty
     private var allowanceValue: MeshAllowance
     private var counter = 0
@@ -569,6 +571,66 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     func modelProviders() throws -> [MeshModelProvider] {
         try record("modelProviders")
         return lock.withLock { providers }
+    }
+
+    func setRemoteMCPServer(_ config: MeshRemoteMCPConfig) throws {
+        try record("setRemoteMCPServer", config.name)
+        lock.withLock {
+            remoteMCPServersValue[config.name] = MeshRemoteMCPServer(
+                name: config.name, endpoint: config.endpoint, credentialConfigured: config.bearer != nil)
+            remoteMCPToolsValue[config.name] = []
+        }
+    }
+
+    func remoteMCPServers() throws -> [MeshRemoteMCPServer] {
+        try record("remoteMCPServers")
+        return lock.withLock { remoteMCPServersValue.values.sorted { $0.name < $1.name } }
+    }
+
+    func removeRemoteMCPServer(_ name: String) throws {
+        try record("removeRemoteMCPServer", name)
+        lock.withLock {
+            remoteMCPServersValue.removeValue(forKey: name)
+            remoteMCPToolsValue.removeValue(forKey: name)
+        }
+    }
+
+    func refreshRemoteMCPTools(_ server: String) async throws -> [MeshRemoteMCPTool] {
+        try record("refreshRemoteMCPTools", server)
+        return try lock.withLock {
+            guard remoteMCPServersValue[server] != nil else {
+                throw MeshKernelError.refused("The MCP server is unavailable.")
+            }
+            return remoteMCPToolsValue[server] ?? []
+        }
+    }
+
+    func approveRemoteMCPTool(_ tool: MeshRemoteMCPTool) async throws {
+        try record("approveRemoteMCPTool", tool.id + " " + tool.definitionHash)
+        try lock.withLock {
+            guard
+                let index = remoteMCPToolsValue[tool.server]?.firstIndex(where: {
+                    $0.name == tool.name && $0.definitionHash == tool.definitionHash
+                        && $0.configurationRevision == tool.configurationRevision && $0.endpoint == tool.endpoint
+                })
+            else {
+                throw MeshKernelError.refused("The MCP definition changed. Refresh and review it again.")
+            }
+            remoteMCPToolsValue[tool.server]?[index].status = "approved"
+        }
+    }
+
+    func revokeRemoteMCPTool(server: String, tool: String) throws {
+        try record("revokeRemoteMCPTool", server + "__" + tool)
+        lock.withLock {
+            if let index = remoteMCPToolsValue[server]?.firstIndex(where: { $0.name == tool }) {
+                remoteMCPToolsValue[server]?[index].status = "new"
+            }
+        }
+    }
+
+    func setRemoteMCPTools(_ server: String, tools: [MeshRemoteMCPTool]) {
+        lock.withLock { remoteMCPToolsValue[server] = tools }
     }
 
     func mailboxState() -> MeshMailboxState { lock.withLock { mailboxValue } }

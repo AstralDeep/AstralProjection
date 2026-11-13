@@ -573,6 +573,12 @@ nonisolated protocol MeshKernel: Sendable {
 
     func setModelProvider(_ config: MeshModelProviderConfig) throws
     func modelProviders() throws -> [MeshModelProvider]
+    func setRemoteMCPServer(_ config: MeshRemoteMCPConfig) throws
+    func remoteMCPServers() throws -> [MeshRemoteMCPServer]
+    func removeRemoteMCPServer(_ name: String) throws
+    func refreshRemoteMCPTools(_ server: String) async throws -> [MeshRemoteMCPTool]
+    func approveRemoteMCPTool(_ tool: MeshRemoteMCPTool) async throws
+    func revokeRemoteMCPTool(server: String, tool: String) throws
 
     func mailboxState() -> MeshMailboxState
     func syncState() async throws -> MeshSyncState

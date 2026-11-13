@@ -49,6 +49,10 @@ struct MeshSettingsView: View {
                     Label("Model provider", systemImage: "sparkles")
                 }
                 .accessibilityIdentifier("mesh.settings.models")
+                NavigationLink { MeshRemoteMCPView() } label: {
+                    Label("Remote MCP tools", systemImage: "network")
+                }
+                .accessibilityIdentifier("mesh.settings.mcp")
                 NavigationLink { MeshPermissionsView() } label: {
                     Label("Tool permissions", systemImage: "checkmark.shield")
                 }

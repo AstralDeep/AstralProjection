@@ -373,6 +373,48 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
         }
     }
 
+    func setRemoteMCPServer(_ config: MeshRemoteMCPConfig) throws {
+        try mapped {
+            try kernel.setRemoteMcpServer(
+                config: RemoteMcpConfig(name: config.name, endpoint: config.endpoint, bearer: config.bearer))
+        }
+    }
+
+    func remoteMCPServers() throws -> [MeshRemoteMCPServer] {
+        try mapped {
+            try kernel.remoteMcpServers().map {
+                MeshRemoteMCPServer(name: $0.name, endpoint: $0.endpoint, credentialConfigured: $0.credentialConfigured)
+            }
+        }
+    }
+
+    func removeRemoteMCPServer(_ name: String) throws {
+        try mapped { try kernel.removeRemoteMcpServer(name: name) }
+    }
+
+    func refreshRemoteMCPTools(_ server: String) async throws -> [MeshRemoteMCPTool] {
+        do {
+            return try await kernel.refreshRemoteMcpTools(server: server).map {
+                MeshRemoteMCPTool(
+                    server: $0.server, endpoint: $0.endpoint, configurationRevision: $0.configurationRevision,
+                    name: $0.name, description: $0.description, inputSchemaJSON: $0.inputSchemaJson,
+                    annotationsJSON: $0.annotationsJson, definitionHash: $0.definitionHash, status: $0.status)
+            }
+        } catch { throw KernelMapping.error(error) }
+    }
+
+    func approveRemoteMCPTool(_ tool: MeshRemoteMCPTool) async throws {
+        do {
+            try await kernel.approveRemoteMcpTool(
+                server: tool.server, tool: tool.name, definitionHash: tool.definitionHash,
+                configurationRevision: tool.configurationRevision)
+        } catch { throw KernelMapping.error(error) }
+    }
+
+    func revokeRemoteMCPTool(server: String, tool: String) throws {
+        try mapped { try kernel.revokeRemoteMcpTool(server: server, tool: tool) }
+    }
+
     func mailboxState() -> MeshMailboxState { KernelMapping.mailbox(kernel.mailboxState()) }
 
     func syncState() async throws -> MeshSyncState {
