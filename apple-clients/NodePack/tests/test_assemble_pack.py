@@ -1,6 +1,7 @@
 """Checks the assembler's refusals: an unofficial or altered Python download, mismatched kernel artifacts, excluded packages that slipped in, and the backend prune."""
 
 import hashlib
+import os
 import subprocess
 import sys
 from contextlib import contextmanager
@@ -101,6 +102,20 @@ def test_local_source_validator_requires_the_repository_root_and_reports_cli_err
     monkeypatch.setattr(sys, "argv", ["local_sources.py", str(tmp_path / "missing"), commit])
     with pytest.raises(SystemExit, match="local source"):
         ap.local_sources.main()
+
+
+def test_kernel_builder_refuses_dirty_local_source_before_creating_outputs(tmp_path):
+    source = tmp_path / "source"
+    commit = local_repository(source)
+    (source / "unqualified.txt").write_text("uncommitted")
+    output = tmp_path / "output"
+    environment = {**os.environ, "KERNEL_COMMIT": commit, "NODEPACK_WORK": str(tmp_path / "work")}
+    result = subprocess.run(
+        ["bash", ap.HERE / "build_kernel.sh", "--source", source, "--out", output],
+        env=environment, capture_output=True, text=True,
+    )
+    assert result.returncode != 0 and "clean checkout" in result.stderr
+    assert not output.exists()
 
 
 def test_python_must_come_from_the_official_release_host(tmp_path):

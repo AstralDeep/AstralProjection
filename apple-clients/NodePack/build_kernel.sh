@@ -26,6 +26,7 @@ SRC="$WORK/kernel-src"
 if [ -z "$LOCAL_SOURCE" ] && [ -d "$KERNEL_REPO" ]; then LOCAL_SOURCE="$KERNEL_REPO"; fi
 if [ -n "$LOCAL_SOURCE" ]; then
   KERNEL_REPO="$(python3 -I "$HERE/local_sources.py" "$LOCAL_SOURCE" "$KERNEL_COMMIT")"
+  LOCAL_SOURCE="$KERNEL_REPO"
   SRC="$WORK/kernel-src-$KERNEL_COMMIT"
 elif ! [[ "$KERNEL_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
   echo "the kernel pin must be a full lowercase Git commit SHA" >&2
