@@ -39,6 +39,27 @@ in [Computer tasks on macOS](MAC-COMPUTER-HOST.md).
 The client ids are defined once in `AstralCore/Sources/AstralCore/Configuration.swift`;
 the redirect scheme is mirrored in the app's `Info.plist` `CFBundleURLSchemes`.
 
+For a separate localtest install, use `Scripts/build_localtest.sh` with the
+existing Apple team id, derived-data directory and a new staging directory:
+
+```sh
+bash Scripts/build_localtest.sh macos "$APPLE_TEAM_ID" /tmp/astral-localtest /tmp/astral-localtest-mac
+bash Scripts/build_localtest.sh ios "$APPLE_TEAM_ID" /tmp/astral-localtest /tmp/astral-localtest-ios "$SIMULATOR_UDID"
+```
+
+The script builds `com.personalailabs.astraldeep.localtest` directly, checks its
+identity and the simulator's generated Keychain entitlement, and stages outside
+`/Applications`. Changing a copied Info.plist cannot generate the simulator's
+embedded Keychain identity. The iOS test copy omits the companion Watch app.
+Stop the existing localtest app and back up its data before installing; retain
+its team and bundle identity to preserve access to its saved keys. Complete any
+Keychain, sign-in or biometric prompt yourself.
+macOS uses an existing Apple Development signing identity (override with
+`ASTRAL_LOCALTEST_SIGN_IDENTITY`); ad-hoc signing is refused because its changing
+code hash makes each rebuild a different Keychain client. Keep the same signing
+channel and identity for subsequent builds. An identity transition may require
+one approval for each saved Keychain item; ordinary login does not change it.
+
 ## The Xcode project is committed and canonical
 
 `apple-clients/AstralApp/AstralApp.xcodeproj` is the **single, canonical**

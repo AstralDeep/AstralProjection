@@ -4,6 +4,7 @@
 import AstralCore
 import Foundation
 import Observation
+import OSLog
 
 @MainActor
 protocol MeshSpeechSink: AnyObject {
@@ -394,6 +395,10 @@ final class MeshRuntime {
             }
             await refreshAll()
         } catch {
+            var diagnosticCode = (error as NSError).code
+            if case MeshSecretStoreError.keychain(let status) = error { diagnosticCode = Int(status) }
+            Logger(subsystem: "com.personalailabs.astraldeep.mesh", category: "runtime").error(
+                "mesh_open_failed type=\(String(reflecting: type(of: error)), privacy: .public) code=\(diagnosticCode, privacy: .public)")
             if mailboxAddress != nil, Self.isMailboxRefusal(error) {
                 storeMailbox(nil)
                 phase = .closed
