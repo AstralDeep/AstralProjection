@@ -14,7 +14,7 @@
         @ObservationIgnored private var quitObserver: NSObjectProtocol?
 
         init(
-            defaults: UserDefaults = .standard, available: Bool = NodeHostAvailability.current(),
+            defaults: UserDefaults = .standard, available: Bool = MacNodeHostStore.defaultAvailability(),
             root: URL = MacNodeHostStore.defaultRoot()
         ) {
             let config = EnrollmentSignIn.defaultConfig()
@@ -33,6 +33,13 @@
                 MainActor.assumeIsolated { target.applicationWillTerminate() }
             }
             if available { Task { await target.refresh() } }
+        }
+
+        nonisolated static func defaultAvailability() -> Bool {
+            #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--astral-ui-test-node-row") { return true }
+            #endif
+            return NodeHostAvailability.current()
         }
 
         nonisolated static func defaultRoot() -> URL {
