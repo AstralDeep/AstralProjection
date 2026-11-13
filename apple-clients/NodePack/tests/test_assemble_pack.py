@@ -1,10 +1,106 @@
 """Checks the assembler's refusals: an unofficial or altered Python download, mismatched kernel artifacts, excluded packages that slipped in, and the backend prune."""
 
 import hashlib
+import subprocess
+import sys
+from contextlib import contextmanager
 
 import pytest
 
 import assemble_pack as ap
+
+
+def local_repository(path):
+    path.mkdir()
+    subprocess.run(["git", "init", "--quiet", path], check=True)
+    subprocess.run(["git", "-C", path, "config", "user.name", "Pack Test"], check=True)
+    subprocess.run(["git", "-C", path, "config", "user.email", "pack@example.test"], check=True)
+    (path / "input.txt").write_text("pinned source\n")
+    subprocess.run(["git", "-C", path, "add", "input.txt"], check=True)
+    subprocess.run(["git", "-C", path, "commit", "--quiet", "-m", "Source"], check=True)
+    return subprocess.check_output(["git", "-C", path, "rev-parse", "HEAD"], text=True).strip()
+
+
+@pytest.mark.parametrize("dirty", ["tracked", "untracked"])
+def test_local_export_refuses_a_dirty_source_checkout(tmp_path, monkeypatch, dirty):
+    source = tmp_path / "source"
+    commit = local_repository(source)
+    monkeypatch.setenv("NODEPACK_REPO_ASTRALDEEP", str(source))
+    (source / ("input.txt" if dirty == "tracked" else "untracked.txt")).write_text("not qualified")
+    with pytest.raises(ap.PackError, match="clean"):
+        ap.export_commit("AstralDeep", "https://example.test/repo", commit, tmp_path / "out", tmp_path / "work")
+
+
+def test_local_export_refuses_a_checkout_at_another_revision_and_an_abbreviated_pin(tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    commit = local_repository(source)
+    monkeypatch.setenv("NODEPACK_REPO_ASTRALDEEP", str(source))
+    with pytest.raises(ap.PackError, match="full"):
+        ap.export_commit("AstralDeep", "https://example.test/repo", commit[:8], tmp_path / "short", tmp_path / "work")
+    (source / "input.txt").write_text("new source")
+    subprocess.run(["git", "-C", source, "commit", "--quiet", "-am", "New source"], check=True)
+    with pytest.raises(ap.PackError, match="expected"):
+        ap.export_commit("AstralDeep", "https://example.test/repo", commit, tmp_path / "old", tmp_path / "work")
+
+
+def test_local_export_uses_the_explicit_clean_source_and_preserves_the_exact_committed_bytes(tmp_path, monkeypatch):
+    work = tmp_path / "work"
+    for index in range(2):
+        source = tmp_path / f"source-{index}"
+        commit = local_repository(source)
+        (source / "input.txt").write_text(f"source {index}\n")
+        subprocess.run(["git", "-C", source, "commit", "--quiet", "-am", f"Source {index}"], check=True)
+        commit = subprocess.check_output(["git", "-C", source, "rev-parse", "HEAD"], text=True).strip()
+        monkeypatch.setenv("NODEPACK_SOURCE_ASTRALDEEP", str(source))
+        target = tmp_path / f"out-{index}"
+        actual = ap.export_commit("AstralDeep", str(tmp_path / "not-the-source"), commit, target, work)
+        assert actual == commit
+        assert (target / "input.txt").read_bytes() == f"source {index}\n".encode()
+        assert not (target / ".git").exists()
+
+
+def test_source_changes_during_export_are_refused_and_never_replace_the_pinned_bytes(tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    commit = local_repository(source)
+    monkeypatch.setenv("NODEPACK_SOURCE_ASTRALDEEP", str(source))
+    original = ap.tarfile.open
+
+    @contextmanager
+    def changed_source(*args, **kwargs):
+        with original(*args, **kwargs) as bundle:
+            yield bundle
+        (source / "input.txt").write_text("changed during export")
+
+    monkeypatch.setattr(ap.tarfile, "open", changed_source)
+    with pytest.raises(ap.PackError, match="clean"):
+        ap.export_commit("AstralDeep", str(tmp_path / "unused"), commit, tmp_path / "out", tmp_path / "work")
+    assert (tmp_path / "out" / "input.txt").read_text() == "pinned source\n"
+
+
+def test_default_source_exports_the_full_pin_from_its_private_mirror(tmp_path):
+    source = tmp_path / "source"
+    commit = local_repository(source)
+    actual = ap.export_commit("default", str(source), commit, tmp_path / "out", tmp_path / "work")
+    assert actual == commit
+    assert (tmp_path / "out" / "input.txt").read_text() == "pinned source\n"
+
+
+def test_local_source_validator_requires_the_repository_root_and_reports_cli_errors(tmp_path, monkeypatch, capsys):
+    source = tmp_path / "source"
+    commit = local_repository(source)
+    nested = source / "nested"
+    nested.mkdir()
+    with pytest.raises(ValueError, match="checkout root"):
+        ap.local_sources.validate(nested, commit)
+    monkeypatch.setattr(sys, "argv", ["local_sources.py", str(source), commit])
+    ap.local_sources.main()
+    assert capsys.readouterr().out.strip() == str(source.resolve())
+    monkeypatch.setattr(sys, "argv", ["local_sources.py"])
+    with pytest.raises(SystemExit, match="usage"):
+        ap.local_sources.main()
+    monkeypatch.setattr(sys, "argv", ["local_sources.py", str(tmp_path / "missing"), commit])
+    with pytest.raises(SystemExit, match="local source"):
+        ap.local_sources.main()
 
 
 def test_python_must_come_from_the_official_release_host(tmp_path):

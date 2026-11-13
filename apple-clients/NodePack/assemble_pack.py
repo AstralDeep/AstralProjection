@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pack_manifest
 import pins
+import local_sources
 
 HERE = Path(__file__).resolve().parent
 PYTHON_HOST_PREFIX = "https://github.com/astral-sh/python-build-standalone/releases/download/"
@@ -58,7 +59,13 @@ def mirror(name: str, repository: str, work: Path) -> Path:
 
 
 def export_commit(name: str, repository: str, commit: str, destination: Path, work: Path) -> str:
-    bare = mirror(name, repository, work)
+    key = name.upper().replace("-", "_")
+    override = os.environ.get(f"NODEPACK_SOURCE_{key}") or os.environ.get(f"NODEPACK_REPO_{key}")
+    try:
+        local_sources.require_full_pin(commit)
+        bare = local_sources.validate(Path(override), commit) if override else mirror(name, repository, work)
+    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+        raise PackError(str(error)) from error
     resolved = subprocess.run(
         ["git", "-C", bare, "rev-parse", "--verify", f"{commit}^{{commit}}"],
         capture_output=True, text=True,
@@ -70,7 +77,7 @@ def export_commit(name: str, repository: str, commit: str, destination: Path, wo
             capture_output=True, text=True, check=True,
         )
     full = resolved.stdout.strip()
-    if not full.startswith(commit):
+    if full != commit:
         raise PackError(f"{name} resolved {full}, expected {commit}")
     destination.mkdir(parents=True, exist_ok=True)
     archive = subprocess.Popen(["git", "-C", str(bare), "archive", full], stdout=subprocess.PIPE)
@@ -78,6 +85,11 @@ def export_commit(name: str, repository: str, commit: str, destination: Path, wo
         bundle.extractall(destination, filter="data")
     if archive.wait() != 0:
         raise PackError(f"git archive failed for {name}")
+    if override:
+        try:
+            local_sources.validate(Path(override), commit)
+        except (ValueError, OSError, subprocess.CalledProcessError) as error:
+            raise PackError(str(error)) from error
     return full
 
 

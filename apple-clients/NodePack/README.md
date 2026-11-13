@@ -21,6 +21,14 @@ python3 assemble_pack.py
 
 Set `NODEPACK_REPO_<NAME>` to a local path for any source repository that is not reachable on GitHub, for example `NODEPACK_REPO_ASTRALDEEP`. `NODEPACK_WORK` moves the cache.
 
+For local integration, use `./build_kernel.sh --source /path/to/AstralKernel` and
+`NODEPACK_SOURCE_ASTRALDEEP=/path/to/AstralDeep python3 assemble_pack.py`. Component checkouts use the
+same `NODEPACK_SOURCE_<NAME>` convention. The older `NODEPACK_REPO_<NAME>` local-path spelling remains
+accepted. Every local source must be a clean checkout at the exact full SHA in `pins.json` or Deep's
+composition, including its untracked files and submodules. The builder exports committed trees and
+checks the source again afterward; it does not publish a local kernel or copy working files into the
+pack. `NODEPACK_KERNEL_SOURCE` is the environment equivalent of the kernel's `--source` option.
+
 ## What is pinned
 
 - CPython 3.11 from python-build-standalone, by release, URL and SHA-256. The script fetches it only from that project's GitHub releases.
