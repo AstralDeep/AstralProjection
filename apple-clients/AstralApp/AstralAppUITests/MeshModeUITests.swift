@@ -124,6 +124,19 @@ final class MeshModeUITests: XCTestCase {
         XCTAssertTrue(element("mesh.mailbox.status").label.contains("No mailbox is set"))
     }
 
+    func testRunsAndSettingsScreensRender() {
+        launch("shell")
+        selectTab("Runs")
+        XCTAssertTrue(element("mesh.runs.none").waitForExistence(timeout: 10))
+        attach("mesh-runs")
+        selectTab("Settings")
+        XCTAssertTrue(element("mesh.settings.models").waitForExistence(timeout: 5))
+        attach("mesh-settings")
+        element("mesh.settings.models").tap()
+        XCTAssertTrue(element("mesh.models.save").waitForExistence(timeout: 5))
+        attach("mesh-model-provider")
+    }
+
     func testJoinOffersScanOrPasteAndShowsTheComparisonCode() {
         launch("onboarding")
         XCTAssertTrue(element("mesh.join").waitForExistence(timeout: 10))

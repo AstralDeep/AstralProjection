@@ -101,6 +101,14 @@
                 "mac-restore",
                 rig.host(MeshRestoreView(onCancel: {}).padding(24), width: 760, height: 640), width: 760, height: 640)
             await rig.runtime.close()
+            await capture(
+                "mac-outcome-unknown",
+                rig.host(
+                    MeshUnknownOutcomeCard(
+                        outcome: MeshUnknownOutcome(stepId: "s1", tool: "mail.send", summary: "Send the weekly plan to the lab"))
+                        .padding(20).frame(maxWidth: 520),
+                    width: 560, height: 260),
+                width: 560, height: 260)
             let shell = Rig(.shell)
             await shell.runtime.open()
             await shell.runtime.refreshTools()
