@@ -1,4 +1,4 @@
-// Settings for mesh mode: the model provider form, the allowance for this device, the mesh identity and the switch back to a node.
+// Settings for mesh mode: the model provider form, the allowance for this device, the mailbox address, tool permissions, the mesh identity and the switch back to a node.
 // The provider key is passed once to the kernel's sealed store and is never kept in this view's state after saving.
 
 import SwiftUI
@@ -17,6 +17,10 @@ struct MeshSettingsView: View {
                     .accessibilityIdentifier("mesh.settings.models")
                 NavigationLink("Allowance") { MeshAllowanceView() }
                     .accessibilityIdentifier("mesh.settings.allowance")
+            }
+            Section("Network") {
+                NavigationLink("Mailbox") { MeshMailboxView() }
+                    .accessibilityIdentifier("mesh.settings.mailbox")
             }
             Section("Assistant") {
                 NavigationLink("Tool permissions") { MeshPermissionsView() }
@@ -157,5 +161,63 @@ struct MeshAllowanceView: View {
             }
         }
         .navigationTitle("Allowance")
+    }
+}
+
+struct MeshMailboxView: View {
+    @Environment(MeshRuntime.self) private var mesh
+    @Environment(ThemeStore.self) private var theme
+    @State private var address = ""
+    @State private var problem: MeshMailboxInputError?
+    @State private var saving = false
+    private var p: AstralPalette { theme.palette }
+
+    var body: some View {
+        Form {
+            Section {
+                TextField("Mailbox address", text: $address, axis: .vertical)
+                    .lineLimit(1...4)
+                    .font(.system(.footnote, design: .monospaced))
+                    .autocorrectionDisabled()
+                    #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                    #endif
+                    .accessibilityIdentifier("mesh.mailbox.address")
+                if let problem {
+                    Text(problem.message).foregroundStyle(p.error).accessibilityIdentifier("mesh.mailbox.error")
+                }
+                Button("Save") {
+                    Task {
+                        saving = true
+                        problem = await mesh.saveMailbox(address)
+                        address = mesh.mailboxAddress ?? ""
+                        saving = false
+                    }
+                }
+                .disabled(saving || address.trimmingCharacters(in: .whitespacesAndNewlines) == (mesh.mailboxAddress ?? ""))
+                .accessibilityIdentifier("mesh.mailbox.save")
+            } footer: {
+                Text("A mailbox holds encrypted updates for your devices while they are offline. Leave this empty to use none. Saving restarts the mesh connection.")
+            }
+            Section("Status") {
+                Text(MeshPresentation.mailbox(mesh.mailbox))
+                    .accessibilityIdentifier("mesh.mailbox.status")
+                if mesh.mailbox.pendingNotices > 0 {
+                    LabeledContent("Notices waiting", value: "\(mesh.mailbox.pendingNotices)")
+                }
+                if mesh.mailbox.truncated {
+                    Text("More is waiting in the mailbox and arrives on the next exchange.")
+                        .font(ConsoleTypography.footnote).foregroundStyle(p.muted)
+                }
+            }
+        }
+        .navigationTitle("Mailbox")
+        .onAppear { address = mesh.mailboxAddress ?? "" }
+        .task {
+            while !Task.isCancelled {
+                await mesh.refreshMailbox()
+                try? await Task.sleep(for: .seconds(5))
+            }
+        }
     }
 }

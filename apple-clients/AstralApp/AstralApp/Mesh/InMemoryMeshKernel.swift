@@ -28,6 +28,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     private var proposalsValue: [MeshProposal] = []
     private var requestsValue: [MeshRequest] = []
     private var grantsValue: Set<String> = []
+    private var mailboxValue = MeshMailboxState.off
     private var toolsValue: [MeshToolEntry] = [
         MeshToolEntry(
             name: "current_datetime", summary: "Returns the current date and time.", effect: .meshRead, deviceId: nil)
@@ -402,6 +403,10 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         try record("modelProviders")
         return lock.withLock { providers }
     }
+
+    func mailboxState() -> MeshMailboxState { lock.withLock { mailboxValue } }
+
+    func setMailboxState(_ value: MeshMailboxState) { lock.withLock { mailboxValue = value } }
 
     func syncState() async throws -> MeshSyncState {
         try record("syncState")

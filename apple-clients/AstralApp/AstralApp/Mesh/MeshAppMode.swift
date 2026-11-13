@@ -89,6 +89,8 @@ nonisolated enum MeshKernelFactories {
     ) -> MeshKernelFactory {
         { config, signer, model, tools, listener in
             let issuers = await issuerSource.issuers(cacheIn: config.dataDirectory)
+            var network = network
+            network.mailbox = config.mailbox
             return try await RealMeshKernel.open(
                 config: config, issuers: issuers, network: network, signer: signer, model: model, tools: tools,
                 listener: listener)

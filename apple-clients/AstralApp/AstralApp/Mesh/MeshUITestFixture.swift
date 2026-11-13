@@ -31,6 +31,8 @@
             let hasMesh = scenario == .shell
             let factory: MeshKernelFactory = { _, _, _, _, listener in
                 let kernel = InMemoryMeshKernel(listener: listener, hasMesh: hasMesh)
+                kernel.recoveryWords = (0..<24).map { "word" + String(UnicodeScalar(UInt8(97 + $0))) }
+                kernel.hasLocalMesh = true
                 if hasMesh { seed(kernel) }
                 return kernel
             }

@@ -60,29 +60,41 @@ final class RealMeshKernelTests: XCTestCase {
         let kernel: RealMeshKernel
         let presenter: RecordingPresenter
         let changes: ChangeLog
+        let directory: URL
+        let keys: DeviceKeys
     }
 
     private func open(
         _ label: String, kind: MeshDeviceKind = .desktop, issuers: [IssuerConfig]? = nil,
-        peerTools: [MeshPeerTool] = []
+        peerTools: [MeshPeerTool] = [], mailbox: String? = nil, reusing: Device? = nil
     ) async throws -> Device {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("real-mesh-" + UUID().uuidString)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        let suite = "real.mesh." + UUID().uuidString
-        addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
-        let keys = try DeviceKeys(
-            store: MeshMemorySecretStore(), defaults: UserDefaults(suiteName: suite)!, preferHardware: false)
+        let directory: URL
+        let keys: DeviceKeys
+        if let reusing {
+            directory = reusing.directory
+            keys = reusing.keys
+        } else {
+            directory = FileManager.default.temporaryDirectory.appendingPathComponent("real-mesh-" + UUID().uuidString)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+            let suite = "real.mesh." + UUID().uuidString
+            addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            keys = try DeviceKeys(
+                store: MeshMemorySecretStore(), defaults: UserDefaults(suiteName: suite)!, preferHardware: false)
+        }
         let presenter = RecordingPresenter()
         let changes = ChangeLog()
         let config = MeshKernelConfig(
             dataDirectory: directory, deviceLabel: label, deviceKind: kind, operationsSecret: try keys.operationsSecret(),
-            wrapSecret: try keys.wrapSecret(), installMarker: try keys.installMarker(), restoredInstall: false)
+            wrapSecret: try keys.wrapSecret(), installMarker: try keys.installMarker(), restoredInstall: false,
+            mailbox: mailbox)
+        var network = KernelNetworking.loopback
+        network.mailbox = mailbox
         let kernel = try await RealMeshKernel.open(
-            config: config, issuers: issuers ?? [TestTokenIssuer.config], network: KernelNetworking.loopback,
+            config: config, issuers: issuers ?? [TestTokenIssuer.config], network: network,
             signer: MeshHostSigner(keys: keys, presenter: presenter), model: FakeOnDeviceModel(),
             tools: DeviceLocalTools(), listener: changes, peerTools: peerTools)
-        return Device(kernel: kernel, presenter: presenter, changes: changes)
+        return Device(kernel: kernel, presenter: presenter, changes: changes, directory: directory, keys: keys)
     }
 
     private func createMesh(_ device: Device) async throws -> MeshRecoveryKit {
@@ -365,6 +377,39 @@ final class RealMeshKernelTests: XCTestCase {
         XCTAssertEqual(tools.first?.grantKey, "current_datetime/mesh_read")
         XCTAssertEqual(Set(tools.map(\.id)).count, 3)
         await mac.kernel.stopNetwork()
+    }
+
+    func testAMailboxAddressIsCheckedAtOpenAndSurvivesAReopenOfTheSameMesh() async throws {
+        let first = try await open("Mac")
+        let none = first.kernel.mailboxState()
+        XCTAssertFalse(none.configured)
+        XCTAssertEqual(none.status, .disabled)
+        _ = try await createMesh(first)
+        let original = try await first.kernel.meshStatus()
+        await first.kernel.stopNetwork()
+
+        do {
+            _ = try await open("Mac", mailbox: "not an address", reusing: first)
+            XCTFail("a malformed mailbox must be refused")
+        } catch {
+            XCTAssertEqual(error as? MeshKernelError, .refused("That mailbox address was not accepted."))
+        }
+
+        let peerKey = try first.keys.operationsPublicKey().base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        let second = try await open("Mac", mailbox: peerKey, reusing: first)
+        let state = second.kernel.mailboxState()
+        XCTAssertTrue(state.configured)
+        XCTAssertNotEqual(state.status, .disabled)
+        let status = try await second.kernel.meshStatus()
+        XCTAssertTrue(status.hasMesh)
+        XCTAssertEqual(status.meshId, original.meshId)
+        await second.kernel.stopNetwork()
+
+        let third = try await open("Mac", reusing: first)
+        XCTAssertFalse(third.kernel.mailboxState().configured)
+        await third.kernel.stopNetwork()
     }
 
     private func phoneViewWhenCaughtUp(_ device: Device, chat: String, count: Int) async throws -> MeshChatView {

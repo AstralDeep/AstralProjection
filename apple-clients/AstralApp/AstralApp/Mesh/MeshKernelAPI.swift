@@ -59,6 +59,21 @@ nonisolated struct MeshRecovery: Equatable, Sendable {
     let eventsImported: Int
 }
 
+nonisolated struct MeshMailboxState: Equatable, Sendable {
+    enum Status: String, Equatable, Sendable {
+        case disabled, idle, ok, waiting, removed, unreachable, error, unknown
+    }
+    let configured: Bool
+    let status: Status
+    let lastError: String?
+    let lastOk: Date?
+    let pendingNotices: Int
+    let truncated: Bool
+
+    static let off = MeshMailboxState(
+        configured: false, status: .disabled, lastError: nil, lastOk: nil, pendingNotices: 0, truncated: false)
+}
+
 nonisolated struct MeshPairingOffer: Equatable, Sendable {
     let shortCode: String
     let payload: String
@@ -327,6 +342,7 @@ nonisolated struct MeshKernelConfig: Sendable {
     let wrapSecret: Data
     let installMarker: Data
     let restoredInstall: Bool
+    var mailbox: String?
 }
 
 nonisolated enum MeshToolEffect: Equatable, Sendable {
@@ -441,6 +457,7 @@ nonisolated protocol MeshKernel: Sendable {
     func setModelProvider(_ config: MeshModelProviderConfig) throws
     func modelProviders() throws -> [MeshModelProvider]
 
+    func mailboxState() -> MeshMailboxState
     func syncState() async throws -> MeshSyncState
     func allowance() throws -> MeshAllowance
 

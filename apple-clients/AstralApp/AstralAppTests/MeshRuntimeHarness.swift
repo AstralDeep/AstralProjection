@@ -8,6 +8,16 @@ import XCTest
 nonisolated final class KernelBox: @unchecked Sendable {
     private let lock = NSLock()
     private var stored: InMemoryMeshKernel?
+    private var configs: [MeshKernelConfig] = []
+    private var rejecting = false
+    var openedConfigs: [MeshKernelConfig] {
+        get { lock.withLock { configs } }
+        set { lock.withLock { configs = newValue } }
+    }
+    var rejectMailbox: Bool {
+        get { lock.withLock { rejecting } }
+        set { lock.withLock { rejecting = newValue } }
+    }
     var kernel: InMemoryMeshKernel? {
         get { lock.withLock { stored } }
         set { lock.withLock { stored = newValue } }
@@ -47,15 +57,21 @@ struct MeshRuntimeHarness {
     var kernel: InMemoryMeshKernel { box.kernel! }
 
     init(
-        hasMesh: Bool = true, factoryError: MeshKernelError? = nil,
+        hasMesh: Bool = true, factoryError: MeshKernelError? = nil, mailbox: String? = nil, rejectMailbox: Bool = false,
         enrollment: (@Sendable (String) async throws -> String)? = nil
     ) {
         let box = KernelBox()
         let tokens = TokenBox()
         let suite = "mesh.runtime.tests." + UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!
-        let factory: MeshKernelFactory = { _, _, _, _, listener in
+        if let mailbox { defaults.set(mailbox, forKey: "astral.mesh.mailbox") }
+        box.rejectMailbox = rejectMailbox
+        let factory: MeshKernelFactory = { config, _, _, _, listener in
             if let factoryError { throw factoryError }
+            box.openedConfigs.append(config)
+            if box.rejectMailbox, config.mailbox != nil {
+                throw MeshKernelError.refused(KernelMapping.failureText(code: "config.mailbox"))
+            }
             let kernel = InMemoryMeshKernel(listener: listener, hasMesh: hasMesh)
             box.kernel = kernel
             return kernel

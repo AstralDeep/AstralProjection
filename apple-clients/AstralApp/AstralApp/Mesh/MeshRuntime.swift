@@ -170,6 +170,30 @@ nonisolated enum MeshProviderInput {
     }
 }
 
+nonisolated enum MeshMailboxInputError: Error, Equatable, Sendable {
+    case containsSpaces
+    case tooLong
+
+    var message: String {
+        switch self {
+        case .containsSpaces: return "A mailbox address has no spaces. Paste it exactly as it was given to you."
+        case .tooLong: return "That mailbox address is too long."
+        }
+    }
+}
+
+nonisolated enum MeshMailboxInput {
+    static let maximumLength = 4096
+
+    static func validate(_ text: String) -> Result<String?, MeshMailboxInputError> {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return .success(nil) }
+        guard !trimmed.contains(where: \.isWhitespace) else { return .failure(.containsSpaces) }
+        guard trimmed.utf8.count <= maximumLength else { return .failure(.tooLong) }
+        return .success(trimmed)
+    }
+}
+
 nonisolated enum MeshRecoveryConfirmation {
     static let positions = [7, 18]
 
@@ -208,6 +232,8 @@ final class MeshRuntime {
     private(set) var proposals: [MeshProposal] = []
     private(set) var toolEntries: [MeshToolEntry] = []
     private(set) var grantedTools: Set<String> = []
+    private(set) var mailbox = MeshMailboxState.off
+    private(set) var mailboxAddress: String?
     private(set) var chatRequests: [MeshRequest] = []
     private(set) var requestsForMe: [MeshRequest] = []
     private(set) var creation = MeshCreationState.idle
@@ -242,6 +268,7 @@ final class MeshRuntime {
 
     private static let acknowledgedKey = "astral.mesh.acknowledged-outcomes"
     private static let grantsKey = "astral.mesh.granted-tools."
+    private static let mailboxKey = "astral.mesh.mailbox"
 
     init(
         makeKernel: @escaping MeshKernelFactory,
@@ -268,6 +295,7 @@ final class MeshRuntime {
         self.defaults = defaults
         self.now = now
         acknowledgedOutcomes = Set(defaults.stringArray(forKey: Self.acknowledgedKey) ?? [])
+        mailboxAddress = defaults.string(forKey: Self.mailboxKey)
         let relay = relay
         consumer = Task { [weak self] in
             for await change in relay.stream {
@@ -323,7 +351,7 @@ final class MeshRuntime {
             let config = MeshKernelConfig(
                 dataDirectory: dataDirectory, deviceLabel: deviceLabel, deviceKind: deviceKind,
                 operationsSecret: try keys.operationsSecret(), wrapSecret: try keys.wrapSecret(),
-                installMarker: try keys.installMarker(), restoredInstall: keys.wasRestored)
+                installMarker: try keys.installMarker(), restoredInstall: keys.wasRestored, mailbox: mailboxAddress)
             let signer = MeshHostSigner(keys: keys, presenter: consent)
             let factory = makeKernel
             let model = onDeviceModel
@@ -340,8 +368,42 @@ final class MeshRuntime {
             }
             await refreshAll()
         } catch {
+            if mailboxAddress != nil, Self.isMailboxRefusal(error) {
+                storeMailbox(nil)
+                phase = .closed
+                notice = KernelMapping.failureText(code: "config.mailbox") + " It was removed."
+                await open()
+                return
+            }
             phase = .failed(Self.describe(error))
         }
+    }
+
+    func saveMailbox(_ text: String) async -> MeshMailboxInputError? {
+        let address: String?
+        switch MeshMailboxInput.validate(text) {
+        case .failure(let error): return error
+        case .success(let value): address = value
+        }
+        guard address != mailboxAddress else { return nil }
+        storeMailbox(address)
+        await close()
+        await open()
+        return nil
+    }
+
+    func refreshMailbox() async {
+        if let value = await attempt({ $0.mailboxState() }) { mailbox = value }
+    }
+
+    private func storeMailbox(_ address: String?) {
+        mailboxAddress = address
+        if let address { defaults.set(address, forKey: Self.mailboxKey) } else { defaults.removeObject(forKey: Self.mailboxKey) }
+    }
+
+    private static func isMailboxRefusal(_ error: Error) -> Bool {
+        guard case MeshKernelError.refused(let text) = error else { return false }
+        return text == KernelMapping.failureText(code: "config.mailbox")
     }
 
     func close() async {
@@ -362,6 +424,7 @@ final class MeshRuntime {
         requestsForMe = []
         toolEntries = []
         grantedTools = []
+        mailbox = .off
         turns = [:]
     }
 
@@ -385,6 +448,7 @@ final class MeshRuntime {
         await refreshRuns()
         await refreshProposals()
         await refreshTools()
+        await refreshMailbox()
         if let id = currentChatId { await reloadChat(id) }
     }
 
@@ -891,6 +955,7 @@ final class MeshRuntime {
             if let current = currentChatId, chatId == nil || chatId == current { await reloadChat(current) }
         case .syncStateChanged:
             await refreshSync()
+            await refreshMailbox()
         case .consentRequested:
             await refreshConsents()
         case .rosterChanged:

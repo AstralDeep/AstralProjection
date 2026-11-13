@@ -44,12 +44,78 @@ final class MeshModeUITests: XCTestCase {
         XCTAssertTrue(element("mesh.recovery.mismatch").waitForExistence(timeout: 2))
         XCTAssertTrue(element("mesh.recovery.word.1").exists)
 
-        replace(seventh, with: "word7")
-        replace(eighteenth, with: "word18")
+        replace(seventh, with: "wordg")
+        replace(eighteenth, with: "wordr")
         proceed.tap()
         XCTAssertTrue(element("mesh.tab.chats").waitForExistence(timeout: 10))
         XCTAssertFalse(element("mesh.recovery.word.1").exists)
         attach("mesh-created")
+    }
+
+    func testRecoveringWithTheWordsShowsTheRestoredMeshAndDevice() {
+        launch("onboarding")
+        XCTAssertTrue(element("mesh.recover").waitForExistence(timeout: 10))
+        element("mesh.recover").tap()
+        let words = element("mesh.restore.words")
+        XCTAssertTrue(words.waitForExistence(timeout: 5))
+        let submit = element("mesh.restore.submit")
+        XCTAssertFalse(submit.isEnabled)
+        XCTAssertTrue(element("mesh.restore.file.choose").exists)
+        words.tap()
+        words.typeText((0..<23).map { "word" + String(UnicodeScalar(UInt8(97 + $0))) }.joined(separator: " "))
+        XCTAssertTrue(element("mesh.restore.count").label.contains("23 of 24"))
+        XCTAssertFalse(submit.isEnabled)
+        words.typeText(" wrongword")
+        XCTAssertTrue(submit.isEnabled)
+        attach("mesh-recover")
+        submit.tap()
+        XCTAssertTrue(element("mesh.restore.error").waitForExistence(timeout: 5))
+        XCTAssertFalse(element("mesh.restored.title").exists)
+
+        replace(words, with: (0..<24).map { "word" + String(UnicodeScalar(UInt8(97 + $0))) }.joined(separator: " "))
+        submit.tap()
+        XCTAssertTrue(element("mesh.restored.title").waitForExistence(timeout: 10))
+        XCTAssertTrue(element("mesh.restored.device").exists)
+        XCTAssertTrue(element("mesh.restored.members").exists)
+        attach("mesh-restored")
+        element("mesh.restored.continue").tap()
+        XCTAssertTrue(element("mesh.tab.chats").waitForExistence(timeout: 10))
+    }
+
+    func testRequestsShowInTheChatAndCanBeRefusedWithAReason() {
+        launch("shell")
+        let chat = element("mesh.chat.chat-1")
+        XCTAssertTrue(chat.waitForExistence(timeout: 10))
+        chat.tap()
+        XCTAssertTrue(element("mesh.chat.requests").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("mesh.request.refuse.11111111").exists)
+        XCTAssertTrue(element("mesh.request.answer.11111111").exists)
+        XCTAssertTrue(element("mesh.request.reason.22222222").exists)
+        attach("mesh-requests")
+        element("mesh.request.refuse.11111111").tap()
+        let reason = app.buttons["Not now"]
+        XCTAssertTrue(reason.waitForExistence(timeout: 5))
+        reason.tap()
+        XCTAssertTrue(element("mesh.request.reason.11111111").waitForExistence(timeout: 5))
+        XCTAssertFalse(element("mesh.request.refuse.11111111").exists)
+    }
+
+    func testPermissionsAndMailboxLiveInSettings() {
+        launch("shell")
+        XCTAssertTrue(element("mesh.strip.sync").waitForExistence(timeout: 10))
+        selectTab("Settings")
+        XCTAssertTrue(element("mesh.settings.permissions").waitForExistence(timeout: 5))
+        element("mesh.settings.permissions").tap()
+        XCTAssertTrue(element("mesh.tool.grant.this-device/current_datetime").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("mesh.tool.revoke.this-device/current_datetime").exists)
+        XCTAssertTrue(element("mesh.permissions.remote.none").exists)
+        element("mesh.tool.grant.this-device/current_datetime").tap()
+        XCTAssertTrue(element("mesh.tool.granted.this-device/current_datetime").waitForExistence(timeout: 5))
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(element("mesh.settings.mailbox").waitForExistence(timeout: 5))
+        element("mesh.settings.mailbox").tap()
+        XCTAssertTrue(element("mesh.mailbox.status").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("mesh.mailbox.status").label.contains("No mailbox is set"))
     }
 
     func testJoinShowsTheCodeQrAndCopy() {

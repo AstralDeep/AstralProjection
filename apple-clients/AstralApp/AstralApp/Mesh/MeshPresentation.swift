@@ -135,4 +135,26 @@ nonisolated enum MeshPresentation {
         if let known = MeshRequestRefusal(rawValue: code) { return "Refused: " + known.reason }
         return "Refused (" + code + ")"
     }
+
+    static func mailbox(_ state: MeshMailboxState, now: Date = Date()) -> String {
+        guard state.configured else { return "No mailbox is set." }
+        switch state.status {
+        case .disabled: return "No mailbox is set."
+        case .idle: return "Set. Waiting for the first exchange."
+        case .ok: return "Working. " + lastExchange(state.lastOk, now: now)
+        case .waiting: return "Waiting for the mailbox to answer."
+        case .removed: return "The mailbox no longer accepts this device."
+        case .unreachable: return "The mailbox cannot be reached right now."
+        case .error: return "The mailbox refused the exchange" + (state.lastError.map { " (" + $0 + ")." } ?? ".")
+        case .unknown: return "The mailbox state is not known."
+        }
+    }
+
+    private static func lastExchange(_ date: Date?, now: Date) -> String {
+        guard let date else { return "No exchange yet." }
+        if now.timeIntervalSince(date) < 45 { return "Last exchange just now." }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return "Last exchange " + formatter.localizedString(for: date, relativeTo: now) + "."
+    }
 }

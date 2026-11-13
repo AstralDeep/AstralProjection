@@ -45,6 +45,13 @@ nonisolated enum KernelMapping {
             }, updatedAt: now)
     }
 
+    static func mailbox(_ state: MailboxState) -> MeshMailboxState {
+        MeshMailboxState(
+            configured: state.configured, status: MeshMailboxState.Status(rawValue: state.status) ?? .unknown,
+            lastError: state.lastError, lastOk: state.lastOkMs.map { date(ms: $0) },
+            pendingNotices: Int(clamping: state.pendingNotices), truncated: state.truncated)
+    }
+
     static func pairingOffer(_ offer: PairingOffer) -> MeshPairingOffer {
         MeshPairingOffer(shortCode: offer.code, payload: offer.payload)
     }
@@ -269,6 +276,7 @@ nonisolated enum KernelMapping {
         ("recovery.no_keys", "The words are valid, but no key of this mesh could be opened with them."),
         ("backup.decrypt_failed", "That backup could not be opened with these words."),
         ("backup.malformed", "That file is not a mesh backup."),
+        ("config.mailbox", "That mailbox address was not accepted."),
         ("grant.malformed", "That tool name or permission could not be used."),
         ("grant.", "That permission could not be changed."),
         ("request.empty", "Write the request first."),

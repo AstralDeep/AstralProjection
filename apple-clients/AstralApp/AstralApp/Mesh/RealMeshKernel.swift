@@ -273,6 +273,8 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
         }
     }
 
+    func mailboxState() -> MeshMailboxState { KernelMapping.mailbox(kernel.mailboxState()) }
+
     func syncState() async throws -> MeshSyncState {
         do { return KernelMapping.sync(try await kernel.syncState(), now: now()) } catch {
             throw KernelMapping.error(error)
