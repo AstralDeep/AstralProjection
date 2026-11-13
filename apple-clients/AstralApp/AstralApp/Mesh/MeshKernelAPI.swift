@@ -53,6 +53,12 @@ nonisolated struct MeshRecoveryKit: Equatable, Sendable {
     let words: [String]
 }
 
+nonisolated struct MeshRecovery: Equatable, Sendable {
+    let meshId: String
+    let deviceId: String
+    let eventsImported: Int
+}
+
 nonisolated struct MeshPairingOffer: Equatable, Sendable {
     let shortCode: String
     let payload: String
@@ -341,6 +347,7 @@ nonisolated protocol MeshKernel: Sendable {
     func meshStatus() async throws -> MeshStatus
     func beginMeshCreation() throws -> MeshAttestationRequest
     func completeMeshCreation(idToken: String) throws -> MeshRecoveryKit
+    func recoverWithWords(words: String, backupPath: String?) throws -> MeshRecovery
     func createPairingOffer() async throws -> MeshPairingOffer
     func previewPairing(payload: String) throws -> MeshPairingPreview
     func approvePairing(payload: String) async throws

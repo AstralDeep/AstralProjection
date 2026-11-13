@@ -43,6 +43,8 @@ struct MeshRootView: View {
         case .ready:
             if case .recovery(let words) = mesh.creation {
                 MeshRecoveryView(words: words)
+            } else if case .restored(let restored) = mesh.restore {
+                MeshRestoredView(restored: restored)
             } else if !mesh.hasMesh {
                 MeshOnboardingView()
             } else {

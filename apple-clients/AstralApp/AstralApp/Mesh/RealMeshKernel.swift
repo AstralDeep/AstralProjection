@@ -89,6 +89,14 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
         }
     }
 
+    func recoverWithWords(words: String, backupPath: String?) throws -> MeshRecovery {
+        try mapped {
+            let result = try kernel.recoverWithWords(words: words, backupPath: backupPath)
+            return MeshRecovery(
+                meshId: result.meshId, deviceId: result.deviceId, eventsImported: Int(clamping: result.eventsImported))
+        }
+    }
+
     func createPairingOffer() async throws -> MeshPairingOffer {
         do { return KernelMapping.pairingOffer(try await kernel.createPairingOffer()) } catch {
             throw KernelMapping.error(error)

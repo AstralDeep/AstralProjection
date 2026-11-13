@@ -67,6 +67,32 @@ nonisolated enum MeshCreationState: Equatable, Sendable {
     case failed(String)
 }
 
+nonisolated struct MeshRestoredMesh: Equatable, Sendable {
+    let meshId: String
+    let deviceId: String
+    let deviceLabel: String
+    let memberCount: Int
+    let eventsImported: Int
+}
+
+nonisolated enum MeshRestoreState: Equatable, Sendable {
+    case idle
+    case recovering
+    case restored(MeshRestoredMesh)
+    case failed(String)
+}
+
+nonisolated enum MeshRecoveryWords {
+    static let count = 24
+
+    static func normalize(_ text: String) -> [String] {
+        text.lowercased().split(whereSeparator: { $0.isWhitespace || $0 == "," }).compactMap { token in
+            let word = token.filter { $0.isASCII && $0.isLetter }
+            return word.isEmpty ? nil : String(word)
+        }
+    }
+}
+
 nonisolated enum MeshJoinState: Equatable, Sendable {
     case idle
     case starting
@@ -160,6 +186,7 @@ final class MeshRuntime {
     private(set) var proposals: [MeshProposal] = []
     private(set) var creation = MeshCreationState.idle
     private(set) var join = MeshJoinState.idle
+    private(set) var restore = MeshRestoreState.idle
     private(set) var addDevice = MeshAddDeviceState.idle
     private(set) var acknowledgedOutcomes: Set<String> = []
     private(set) var spoken: [VoiceSpokenRecord] = []
@@ -436,6 +463,40 @@ final class MeshRuntime {
         if isFailedCreation { creation = .idle }
     }
 
+    func recoverMesh(words: String, backup: URL?) async {
+        guard kernel != nil, restore == .idle || isFailedRestore else { return }
+        let list = MeshRecoveryWords.normalize(words)
+        guard list.count == MeshRecoveryWords.count else {
+            restore = .failed(KernelMapping.failureText(code: "recovery.bad_length"))
+            return
+        }
+        restore = .recovering
+        let phrase = list.joined(separator: " ")
+        let scoped = backup?.startAccessingSecurityScopedResource() ?? false
+        defer { if scoped { backup?.stopAccessingSecurityScopedResource() } }
+        do {
+            let result = try await call { try $0.recoverWithWords(words: phrase, backupPath: backup?.path) }
+            keys?.acknowledgeRestore()
+            restoredInstall = false
+            await refreshAll()
+            let label = members.first(where: \.isThisDevice)?.label ?? deviceLabel
+            restore = .restored(
+                MeshRestoredMesh(
+                    meshId: result.meshId, deviceId: result.deviceId, deviceLabel: label, memberCount: members.count,
+                    eventsImported: result.eventsImported))
+        } catch {
+            restore = .failed(Self.describe(error))
+        }
+    }
+
+    func dismissRestoreFailure() {
+        if isFailedRestore { restore = .idle }
+    }
+
+    func finishRestore() {
+        if case .restored = restore { restore = .idle }
+    }
+
     func beginJoin() async {
         guard kernel != nil, join == .idle || isFailedJoin else { return }
         join = .starting
@@ -659,6 +720,11 @@ final class MeshRuntime {
 
     private var isFailedCreation: Bool {
         if case .failed = creation { return true }
+        return false
+    }
+
+    private var isFailedRestore: Bool {
+        if case .failed = restore { return true }
         return false
     }
 

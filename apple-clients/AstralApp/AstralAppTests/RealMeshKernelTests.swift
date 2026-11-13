@@ -181,6 +181,63 @@ final class RealMeshKernelTests: XCTestCase {
         await phone.kernel.stopNetwork()
     }
 
+    func testRecoveryWithTheWordsAndABackupRestoresTheMeshOnANewDevice() async throws {
+        let mac = try await open("Mac")
+        let kit = try await createMesh(mac)
+        let chat = try mac.kernel.createChat(title: "kept")
+        _ = try mac.kernel.sendMessage(chatId: chat, text: "remember this", continues: nil)
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("backup-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: file) }
+        try mac.kernel.exportBackup(path: file.path)
+        let original = try await mac.kernel.meshStatus()
+        await mac.kernel.stopNetwork()
+
+        let fresh = try await open("New Mac")
+        let wrong = Array(kit.words.reversed()).joined(separator: " ")
+        XCTAssertThrowsError(try fresh.kernel.recoverWithWords(words: wrong, backupPath: file.path)) { error in
+            guard case MeshKernelError.refused(let text) = error else { return XCTFail("\(error)") }
+            XCTAssertFalse(text.isEmpty)
+            XCTAssertFalse(text.contains(kit.words[0] + " " + kit.words[1]))
+        }
+        XCTAssertThrowsError(try fresh.kernel.recoverWithWords(words: "abandon ability", backupPath: file.path)) {
+            XCTAssertEqual($0 as? MeshKernelError, .refused("Enter all 24 recovery words."))
+        }
+        let unknown = (Array(kit.words.dropLast()) + ["zzzzzz"]).joined(separator: " ")
+        XCTAssertThrowsError(try fresh.kernel.recoverWithWords(words: unknown, backupPath: file.path)) {
+            XCTAssertEqual(
+                $0 as? MeshKernelError,
+                .refused("One of the words is not on the recovery word list. Check the spelling."))
+        }
+        XCTAssertThrowsError(try fresh.kernel.recoverWithWords(words: kit.words.joined(separator: " "), backupPath: nil)) {
+            XCTAssertEqual(
+                $0 as? MeshKernelError,
+                .refused("Choose a backup file. This device holds no copy of your mesh."))
+        }
+        let notABackup = FileManager.default.temporaryDirectory.appendingPathComponent("junk-" + UUID().uuidString)
+        try Data("not a backup".utf8).write(to: notABackup)
+        addTeardownBlock { try? FileManager.default.removeItem(at: notABackup) }
+        XCTAssertThrowsError(
+            try fresh.kernel.recoverWithWords(words: kit.words.joined(separator: " "), backupPath: notABackup.path))
+        let before = try await fresh.kernel.meshStatus()
+        XCTAssertFalse(before.hasMesh)
+
+        let result = try fresh.kernel.recoverWithWords(words: kit.words.joined(separator: " "), backupPath: file.path)
+        XCTAssertEqual(result.meshId, original.meshId)
+        XCTAssertNotEqual(result.deviceId, original.deviceId)
+        XCTAssertGreaterThan(result.eventsImported, 0)
+        let status = try await fresh.kernel.meshStatus()
+        XCTAssertTrue(status.hasMesh)
+        XCTAssertEqual(status.meshId, original.meshId)
+        let roster = try await fresh.kernel.roster()
+        XCTAssertEqual(Set(roster.map(\.label)), ["Mac", "New Mac"])
+        XCTAssertEqual(roster.first(where: \.isThisDevice)?.label, "New Mac")
+        XCTAssertEqual(try fresh.kernel.chat(chatId: chat).messages.map(\.text), ["remember this"])
+        XCTAssertThrowsError(
+            try fresh.kernel.recoverWithWords(words: kit.words.joined(separator: " "), backupPath: file.path)
+        ) { XCTAssertEqual($0 as? MeshKernelError, .refused("This device already belongs to a mesh.")) }
+        await fresh.kernel.stopNetwork()
+    }
+
     private func phoneViewWhenCaughtUp(_ device: Device, chat: String, count: Int) async throws -> MeshChatView {
         try await until("the phone view") { (try? device.kernel.chat(chatId: chat))?.messages.count == count }
         return try device.kernel.chat(chatId: chat)

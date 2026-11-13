@@ -1,4 +1,4 @@
-// The screens shown while this device has no mesh: the three ways in, the one-time recovery words, and the join code with its QR.
+// The screens shown while this device has no mesh: the four ways in, the one-time recovery words, and the join code with its QR.
 // They drive MeshRuntime's creation and join state and leave the server sign-in path available as its own option.
 
 import SwiftUI
@@ -7,6 +7,7 @@ struct MeshOnboardingView: View {
     @Environment(MeshRuntime.self) private var mesh
     @Environment(AppModeStore.self) private var modeStore
     @Environment(ThemeStore.self) private var theme
+    @State private var recovering = false
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
@@ -17,7 +18,9 @@ struct MeshOnboardingView: View {
                     .frame(maxWidth: 240)
                     .padding(.top, 32)
                     .accessibilityLabel("AstralDeep")
-                if mesh.join == .idle || mesh.join == .starting {
+                if recovering {
+                    MeshRestoreView { recovering = false }
+                } else if mesh.join == .idle || mesh.join == .starting {
                     choices
                 } else {
                     MeshJoinView()
@@ -33,7 +36,9 @@ struct MeshOnboardingView: View {
     @ViewBuilder
     private var choices: some View {
         if mesh.restoredInstall {
-            Label("This device was restored from a backup. Join your mesh again or create a new one.", systemImage: "exclamationmark.triangle")
+            Label(
+                "This device was restored from a backup. Recover your mesh with your words, join it again or create a new one.",
+                systemImage: "exclamationmark.triangle")
                 .font(ConsoleTypography.footnote)
                 .foregroundStyle(p.warning)
                 .accessibilityIdentifier("mesh.restored")
@@ -54,6 +59,14 @@ struct MeshOnboardingView: View {
         .buttonStyle(.bordered)
         .disabled(busy)
         .accessibilityIdentifier("mesh.join")
+        Button {
+            recovering = true
+        } label: {
+            Text("Recover my mesh").frame(maxWidth: .infinity).padding(.vertical, 6)
+        }
+        .buttonStyle(.bordered)
+        .disabled(busy)
+        .accessibilityIdentifier("mesh.recover")
         Button("Connect to a node") { modeStore.choose(.node) }
             .buttonStyle(.plain)
             .foregroundStyle(p.accent)

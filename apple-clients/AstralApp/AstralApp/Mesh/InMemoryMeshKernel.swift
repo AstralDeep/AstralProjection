@@ -28,6 +28,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     private var proposalsValue: [MeshProposal] = []
 
     var recoveryWords: [String] = (1...24).map { "word\($0)" }
+    var hasLocalMesh = false
     var turnScript: [MeshTurnEvent] = [
         .started, .assistantDelta("Hello"), .assistantDelta(" there"), .assistantFinished, .finished,
     ]
@@ -89,6 +90,37 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         }
         listener.onChange(.rosterChanged)
         return MeshRecoveryKit(words: recoveryWords)
+    }
+
+    func recoverWithWords(words: String, backupPath: String?) throws -> MeshRecovery {
+        try record("recoverWithWords", "\(words.split(separator: " ").count)|" + (backupPath ?? ""))
+        guard !lock.withLock({ status.hasMesh }) else {
+            throw MeshKernelError.refused(KernelMapping.failureText(code: "mesh.already_enrolled"))
+        }
+        guard words.split(separator: " ").count == 24 else {
+            throw MeshKernelError.refused(KernelMapping.failureText(code: "recovery.bad_length"))
+        }
+        guard words == recoveryWords.joined(separator: " ") else {
+            throw MeshKernelError.refused(KernelMapping.failureText(code: "recovery.bad_checksum"))
+        }
+        guard backupPath != nil || hasLocalMesh else {
+            throw MeshKernelError.refused(KernelMapping.failureText(code: "recovery.no_roster"))
+        }
+        let meshId = "sha256:" + String(repeating: "a", count: 64)
+        let deviceId = "sha256:" + String(repeating: "e", count: 64)
+        lock.withLock {
+            status = MeshStatus(
+                hasMesh: true, meshId: meshId, deviceId: deviceId, attested: true, stopped: false,
+                hardwareBacked: status.hardwareBacked)
+            members = [
+                Self.thisDevice(status: status),
+                MeshMember(
+                    memberId: "sha256:" + String(repeating: "c", count: 64), label: "Old phone", kind: .pocket,
+                    isThisDevice: false, attested: true, lastSeen: nil, path: .none),
+            ]
+        }
+        listener.onChange(.rosterChanged)
+        return MeshRecovery(meshId: meshId, deviceId: deviceId, eventsImported: backupPath == nil ? 0 : 12)
     }
 
     func createPairingOffer() async throws -> MeshPairingOffer {
