@@ -323,7 +323,7 @@ final class WorkModelTransport088Tests: XCTestCase {
     }
 }
 
-private final class WorkModelPeer: @unchecked Sendable {
+final class WorkModelPeer: @unchecked Sendable {
     let ready = XCTestExpectation(description: "loopback listener")
     let listener: NWListener
     private let queue = DispatchQueue(label: "astral.work-model.test")
