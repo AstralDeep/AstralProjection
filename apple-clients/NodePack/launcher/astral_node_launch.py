@@ -60,9 +60,16 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--allow-remote", action="store_true")
+    parser.add_argument("--log-dir", type=Path)
     arguments = parser.parse_args(argv)
 
-    os.environ.update(configure(arguments))
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    values = configure(arguments)
+    os.environ.update(values)
+    if arguments.log_dir is not None:
+        from node_logging import capture_output, secret_values
+
+        capture_output(arguments.log_dir, secret_values(values))
     backend = PACK_ROOT / "app" / "backend"
     os.chdir(backend)
     sys.path.insert(0, str(backend))
