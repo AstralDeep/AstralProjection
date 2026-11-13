@@ -88,6 +88,7 @@ struct MeshChatRequestList: View {
 
 struct MeshSendRequestView: View {
     let member: MeshMember
+    var initialText = ""
     @Environment(MeshRuntime.self) private var mesh
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
@@ -126,6 +127,9 @@ struct MeshSendRequestView: View {
             }
         }
         .navigationTitle("Send a request")
-        .onAppear { chatId = mesh.currentChatId }
+        .onAppear {
+            chatId = mesh.currentChatId
+            if text.isEmpty { text = initialText }
+        }
     }
 }

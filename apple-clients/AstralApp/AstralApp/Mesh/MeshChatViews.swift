@@ -58,6 +58,7 @@ struct MeshChatDetailView: View {
     @Environment(AppModel.self) private var model
     @Environment(ThemeStore.self) private var theme
     @State private var draft = ""
+    @State private var requesting: MeshMember?
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
@@ -72,6 +73,22 @@ struct MeshChatDetailView: View {
         #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
         #endif
+        .toolbar {
+            if !otherMembers.isEmpty {
+                ToolbarItem(placement: .primaryAction) { chatMenu }
+            }
+        }
+        .sheet(item: $requesting) { member in
+            NavigationStack {
+                MeshSendRequestView(member: member, initialText: draft)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { requesting = nil } }
+                    }
+            }
+                #if os(macOS)
+                    .frame(minWidth: 420, minHeight: 360)
+                #endif
+        }
     }
 
     private var transcript: some View {
@@ -106,7 +123,6 @@ struct MeshChatDetailView: View {
                 .textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("mesh.composer")
                 .onSubmit(send)
-            requestMenu
             Button {
                 Task { await model.onDeviceVoice.activate() }
             } label: {
@@ -138,20 +154,15 @@ struct MeshChatDetailView: View {
 
     private var otherMembers: [MeshMember] { mesh.members.filter { !$0.isThisDevice } }
 
-    private var requestMenu: some View {
+    private var chatMenu: some View {
         Menu {
             ForEach(otherMembers) { member in
-                Button("Send to " + member.label) {
-                    let text = draft
-                    Task { if await mesh.sendRequest(text, to: member) { draft = "" } }
-                }
+                Button("Send a Request to " + member.label, systemImage: "paperplane") { requesting = member }
             }
         } label: {
-            Image(systemName: "paperplane")
+            Label("Chat options", systemImage: "ellipsis.circle")
         }
-        .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || otherMembers.isEmpty)
-        .accessibilityLabel("Send as a request to another device")
-        .accessibilityIdentifier("mesh.composer.request")
+        .accessibilityIdentifier("mesh.chat.menu")
     }
 
     private func send() {
@@ -268,6 +279,11 @@ struct MeshTurnActivityView: View {
                 }
                 if turn.interrupted {
                     Text("Stopped").font(ConsoleTypography.footnote).foregroundStyle(p.muted)
+                }
+                if turn.answeredOnDevice {
+                    Label("Answered on this device. Add a model in Settings for full answers.", systemImage: "iphone")
+                        .font(ConsoleTypography.footnote).foregroundStyle(p.muted)
+                        .accessibilityIdentifier("mesh.turn.on-device")
                 }
                 if let failure = turn.failure {
                     Text(failure).font(ConsoleTypography.footnote).foregroundStyle(p.error)

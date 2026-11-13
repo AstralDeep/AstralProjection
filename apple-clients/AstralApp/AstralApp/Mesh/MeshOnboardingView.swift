@@ -120,18 +120,39 @@ struct MeshJoinView: View {
         VStack(spacing: 18) {
             Text("Join my mesh").font(ConsoleTypography.title2).accessibilityAddTraits(.isHeader)
             if case .offered(let offer) = mesh.join {
+                Text("On a device that is already on your mesh, open Devices and choose Add Device. Then scan this code or send it there.")
+                    .font(ConsoleTypography.subheadline)
+                    .foregroundStyle(p.muted)
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("mesh.join.instructions")
                 Text(MeshPresentation.groupedCode(offer.shortCode))
                     .font(.system(size: 40, weight: .semibold, design: .monospaced))
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
                     .accessibilityLabel("Comparison code " + offer.shortCode.map(String.init).joined(separator: " "))
                     .accessibilityIdentifier("mesh.join.code")
                 MeshQRCodeView(text: offer.payload).frame(maxWidth: 260)
-                Button {
-                    copied = ComponentPasteboard.copy(offer.payload)
-                } label: {
-                    Label(copied ? "Copied" : "Copy pairing code", systemImage: copied ? "checkmark" : "doc.on.doc")
+                HStack(spacing: 12) {
+                    ShareLink(item: offer.payload) {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityHint("Send the pairing code with AirDrop or Messages")
+                    .accessibilityIdentifier("mesh.join.share")
+                    Button {
+                        copied = ComponentPasteboard.copy(offer.payload)
+                    } label: {
+                        Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityLabel(copied ? "Copied pairing code" : "Copy pairing code")
+                    .accessibilityIdentifier("mesh.join.copy")
                 }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("mesh.join.copy")
+                .controlSize(.large)
+                Text("Check that the other device shows the same code, then approve it there.")
+                    .font(ConsoleTypography.footnote)
+                    .foregroundStyle(p.muted)
+                    .multilineTextAlignment(.center)
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("Waiting for your other device to approve").font(ConsoleTypography.footnote)
