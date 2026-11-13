@@ -207,7 +207,7 @@ final class MeshChatMappingTests: XCTestCase {
 
     func testLocalToolsRefuseUnknownCalls() {
         let tools = DeviceLocalTools()
-        XCTAssertTrue(tools.list().isEmpty)
+        XCTAssertEqual(tools.list().map(\.name), ["current_datetime", "device_locale"])
         XCTAssertThrowsError(try tools.call(name: "rm", argumentsJSON: "{}", ticket: Data()))
     }
 

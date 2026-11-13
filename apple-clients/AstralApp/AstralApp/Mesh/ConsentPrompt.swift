@@ -68,9 +68,47 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
         return prompt
     }
 
+    static func takeover(canonicalAction: Data, signingInput: Data) throws -> ConsentPrompt {
+        _ = try object(canonicalAction, fields: ["executor", "kind", "run", "supersedes", "v"])
+        let action = try JSONDecoder().decode(Takeover.self, from: canonicalAction)
+        let consentData = try payload(signingInput, context: "astral.consent/v1")
+        let consentObject = try object(consentData, fields: ["v", "kind", "digest", "device", "clock"])
+        let consent = try JSONDecoder().decode(ActionConsent.self, from: consentData)
+        try checkClock(consentObject["clock"], value: consent.clock)
+        guard action.v == 1, action.kind == "run.takeover", consent.v == 1, consent.kind == "action",
+            isID(action.executor), isID(consent.device), consent.device == action.executor,
+            !action.run.isEmpty, action.supersedes == Array(Set(action.supersedes)).sorted(),
+            consent.digest == hashID(canonicalAction)
+        else { throw ConsentPromptError.invalidInput }
+        var prompt = ConsentPrompt(
+            actionTitle: "Take over this run", effect: action.kind, target: action.run,
+            arguments: "Action: " + String(decoding: canonicalAction, as: UTF8.self), digest: consent.digest,
+            requiresBiometry: true)
+        prompt.signingInputHash = hash(signingInput)
+        return prompt
+    }
+
+    static func pending(canonicalAction: Data, canonicalArguments: Data) throws -> ConsentPrompt {
+        _ = try object(
+            canonicalAction,
+            fields: ["v", "mesh", "device", "turn", "agent", "tool", "tool_def", "args_digest", "influence"])
+        let action = try JSONDecoder().decode(Action.self, from: canonicalAction)
+        guard try KernelCanonicalJSON.canonicalize(canonicalArguments) == canonicalArguments,
+            action.v == 1, !action.agent.isEmpty, !action.tool.isEmpty,
+            action.argsDigest == hashID(canonicalArguments)
+        else { throw ConsentPromptError.invalidInput }
+        return ConsentPrompt(
+            actionTitle: "Approve " + action.tool, effect: action.tool, target: action.mesh + " / " + action.agent,
+            arguments: "Action: " + String(decoding: canonicalAction, as: UTF8.self)
+                + "\nArguments: " + String(decoding: canonicalArguments, as: UTF8.self),
+            untrustedSource: action.influence.isEmpty ? nil : action.influence.joined(separator: ", "),
+            digest: hashID(canonicalAction))
+    }
+
     static func roster(signingInput: Data) throws -> ConsentPrompt {
         let data = try payload(signingInput, context: "astral.roster/v1")
         let entry = try object(data, fields: ["v", "type", "mesh", "author", "follows", "clock", "body"])
+        if entry["type"] as? String == "genesis" { return try genesis(data, entry: entry, signingInput: signingInput) }
         let header = try JSONDecoder().decode(RosterHeader.self, from: data)
         try checkClock(entry["clock"], value: header.clock)
         guard header.v == 1, isID(header.mesh), isID(header.author), !header.follows.isEmpty,
@@ -102,12 +140,46 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
             }
             for feed in removal.body.cutoff.keys { _ = try keyBytes(feed, count: 32) }
             target = removal.body.device
+        case "stop":
+            guard Set(body.keys) == ["counter"], let counter = body["counter"] as? Int, counter >= 1 else {
+                throw ConsentPromptError.invalidInput
+            }
+            target = "Stop counter " + String(counter)
         default:
             throw ConsentPromptError.invalidInput
         }
+        let titles = ["add": "Add device", "remove": "Remove device", "stop": "Stop the mesh"]
         var prompt = ConsentPrompt(
-            actionTitle: header.type == "add" ? "Add device" : "Remove device",
+            actionTitle: titles[header.type] ?? "Roster change",
             effect: "roster." + header.type, target: target,
+            arguments: String(decoding: data, as: UTF8.self), digest: hashID(data), requiresBiometry: true)
+        prompt.signingInputHash = hash(signingInput)
+        return prompt
+    }
+
+    func requiringBiometry(_ required: Bool) -> ConsentPrompt {
+        guard required, !requiresBiometry else { return self }
+        var copy = ConsentPrompt(
+            actionTitle: actionTitle, effect: effect, target: target, arguments: arguments,
+            untrustedSource: untrustedSource, labels: labels, digest: digest, requiresBiometry: true)
+        copy.signingInputHash = signingInputHash
+        return copy
+    }
+
+    private static func genesis(_ data: Data, entry: [String: Any], signingInput: Data) throws -> ConsentPrompt {
+        let header = try JSONDecoder().decode(GenesisHeader.self, from: data)
+        try checkClock(entry["clock"], value: header.clock)
+        guard header.v == 1, entry["mesh"] is NSNull, header.follows.isEmpty, isID(header.author),
+            let body = entry["body"] as? [String: Any], Set(body.keys) == ["device", "epoch", "issuers", "recovery"],
+            let record = body["device"] as? [String: Any],
+            Set(record.keys) == ["identity", "presence", "ops", "wrap", "kind", "label", "cert"],
+            let label = record["label"] as? String, (1...64).contains(label.unicodeScalars.count),
+            let issuers = body["issuers"] as? [Any], !issuers.isEmpty
+        else { throw ConsentPromptError.invalidInput }
+        let identity = try keyBytes(record["identity"], count: 65)
+        guard identity.first == 4, hashID(identity) == header.author else { throw ConsentPromptError.invalidInput }
+        var prompt = ConsentPrompt(
+            actionTitle: "Create your mesh", effect: "roster.genesis", target: label + " (" + header.author + ")",
             arguments: String(decoding: data, as: UTF8.self), digest: hashID(data), requiresBiometry: true)
         prompt.signingInputHash = hash(signingInput)
         return prompt
@@ -178,6 +250,19 @@ private nonisolated struct Action: Decodable {
         case toolDef = "tool_def"
         case argsDigest = "args_digest"
     }
+}
+
+private nonisolated struct GenesisHeader: Decodable {
+    let v: Int64
+    let author: String
+    let follows: [String]
+    let clock: Clock
+}
+
+private nonisolated struct Takeover: Decodable {
+    let v: Int64
+    let executor, kind, run: String
+    let supersedes: [String]
 }
 
 private nonisolated struct Clock: Decodable {

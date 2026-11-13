@@ -39,6 +39,7 @@ nonisolated struct MeshStatus: Equatable, Sendable {
     var attested: Bool
     var stopped: Bool
     var hardwareBacked: Bool
+    var stopLevel: UInt64 = 0
 
     static let empty = MeshStatus(
         hasMesh: false, meshId: nil, deviceId: nil, attested: false, stopped: false, hardwareBacked: false)
@@ -213,6 +214,53 @@ nonisolated struct MeshModelProvider: Identifiable, Equatable, Sendable {
     var id: String { providerId }
 }
 
+nonisolated struct MeshRun: Identifiable, Equatable, Sendable {
+    enum Kind: String, Equatable, Sendable { case goal, schedule, watch }
+    enum Status: String, Equatable, Sendable { case active, paused, done, stopped }
+    enum Role: String, Equatable, Sendable { case executor, watcher, contested, unassigned }
+    let runId: String
+    let chatId: String
+    let kind: Kind
+    let goal: String
+    let status: Status
+    let reason: String?
+    let rounds: Int
+    let tokensSpent: Int64
+    let role: Role
+    let executor: String?
+    let unknownSteps: Int
+    var id: String { runId }
+}
+
+nonisolated struct MeshTakeOver: Equatable, Sendable {
+    let unknownSteps: Int
+}
+
+nonisolated struct MeshProposal: Identifiable, Equatable, Sendable {
+    enum Status: String, Equatable, Sendable {
+        case staged, gated, replayed, waitingOwner, rejected, declined, adopted, reversed
+    }
+    let proposalId: String
+    let kind: String
+    let name: String
+    let content: String
+    let status: Status
+    let detail: [String]
+    let tools: [String]
+    let untrusted: Bool
+    let gatePassed: Bool?
+    let replayPassed: Bool?
+    let ownerReasons: [String]
+    let hygiene: [String]
+    var id: String { proposalId }
+}
+
+nonisolated enum MeshEvaluation: Equatable, Sendable {
+    case adopted
+    case waitingOwner
+    case declined(String)
+}
+
 nonisolated struct MeshModelProviderConfig: Equatable, Sendable {
     let baseURL: String
     let model: String
@@ -239,12 +287,13 @@ nonisolated struct MeshTurnProgress: Equatable, Sendable {
 }
 
 nonisolated enum MeshKernelChange: Equatable, Sendable {
-    case chatChanged(chatId: String)
+    case chatChanged(chatId: String?)
     case syncStateChanged
     case consentRequested(requestId: String)
     case rosterChanged
     case turnProgress(MeshTurnProgress)
     case allowanceChanged
+    case runProgress(runId: String)
 }
 
 nonisolated struct MeshKernelConfig: Sendable {
@@ -257,10 +306,21 @@ nonisolated struct MeshKernelConfig: Sendable {
     let restoredInstall: Bool
 }
 
+nonisolated enum MeshToolEffect: Equatable, Sendable {
+    case meshRead, meshWrite, outwardRead, outsideEffect
+}
+
+nonisolated enum MeshToolConfidentiality: Equatable, Sendable {
+    case `public`, `private`, phi, secret
+}
+
 nonisolated struct MeshLocalToolSpec: Identifiable, Equatable, Sendable {
     let name: String
     let summary: String
     let schemaJSON: String
+    var annotationsJSON = "{}"
+    var effect = MeshToolEffect.meshRead
+    var confidentiality = MeshToolConfidentiality.private
     var id: String { name }
 }
 
@@ -274,17 +334,17 @@ nonisolated protocol MeshKernelListening: Sendable {
 }
 
 nonisolated protocol MeshKernel: Sendable {
-    func startNetwork() throws
-    func stopNetwork()
+    func startNetwork() async throws
+    func stopNetwork() async
     func version() -> String
 
-    func meshStatus() throws -> MeshStatus
+    func meshStatus() async throws -> MeshStatus
     func beginMeshCreation() throws -> MeshAttestationRequest
     func completeMeshCreation(idToken: String) throws -> MeshRecoveryKit
-    func createPairingOffer() throws -> MeshPairingOffer
+    func createPairingOffer() async throws -> MeshPairingOffer
     func previewPairing(payload: String) throws -> MeshPairingPreview
-    func approvePairing(payload: String) throws
-    func roster() throws -> [MeshMember]
+    func approvePairing(payload: String) async throws
+    func roster() async throws -> [MeshMember]
     func removeDevice(memberId: String) throws
     func raiseStop() throws
     func reattest(idToken: String) throws
@@ -297,7 +357,7 @@ nonisolated protocol MeshKernel: Sendable {
     func fork(chatId: String, eventId: String) throws -> String
     func act(surfaceId: String, componentId: String, action: String) throws
 
-    func runTurn(chatId: String) throws
+    func runTurn(chatId: String) async throws
     func steer(chatId: String, text: String) throws
     func interrupt(chatId: String) throws
     func pendingConsents() throws -> [MeshPendingConsent]
@@ -308,12 +368,19 @@ nonisolated protocol MeshKernel: Sendable {
     func setModelProvider(_ config: MeshModelProviderConfig) throws
     func modelProviders() throws -> [MeshModelProvider]
 
-    func syncState() throws -> MeshSyncState
+    func syncState() async throws -> MeshSyncState
     func allowance() throws -> MeshAllowance
+
+    func runs() async throws -> [MeshRun]
+    func handOffRun(runId: String, memberId: String) async throws
+    func takeOverRun(runId: String) async throws -> MeshTakeOver
+    func learningProposals() async throws -> [MeshProposal]
+    func reviewProposal(id: String, adopt: Bool) async throws -> MeshEvaluation
+    func undoAdoption(id: String) async throws
 }
 
 typealias MeshKernelFactory =
     @Sendable (
         _ config: MeshKernelConfig, _ signer: any AstralHostSigning, _ model: any AstralOnDeviceModel,
         _ tools: any MeshLocalTools, _ listener: any MeshKernelListening
-    ) throws -> any MeshKernel
+    ) async throws -> any MeshKernel

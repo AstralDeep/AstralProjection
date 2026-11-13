@@ -239,13 +239,9 @@ final class MeshDeviceCustodyTests: XCTestCase {
 
     func testGeneratedOperationsPublicKeyMatchesRustKernel() throws {
         let keys = try DeviceKeys(store: MeshMemorySecretStore(), defaults: defaults(), preferHardware: false)
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let kernel = try KernelService(dataDirectory: directory, localOnly: true)
         XCTAssertEqual(
             base64URL(try keys.operationsPublicKey()),
-            try kernel.operationsPublicKey(secret: keys.operationsSecret()))
+            try AstralKernel.operationsPublicKey(secret: keys.operationsSecret()))
     }
 
     func testAllLocalKeysAndMarkerSurviveOrdinaryReopenAndClearedDefaults() throws {

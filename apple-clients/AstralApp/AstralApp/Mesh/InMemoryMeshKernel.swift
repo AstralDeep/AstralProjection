@@ -24,6 +24,8 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     private var counter = 0
     private var log: [Call] = []
     private var offer: MeshPairingOffer?
+    private var runsValue: [MeshRun] = []
+    private var proposalsValue: [MeshProposal] = []
 
     var recoveryWords: [String] = (1...24).map { "word\($0)" }
     var turnScript: [MeshTurnEvent] = [
@@ -61,11 +63,11 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
 
     var calls: [Call] { lock.withLock { log } }
 
-    func startNetwork() throws { try record("startNetwork") }
-    func stopNetwork() { lock.withLock { log.append(Call(name: "stopNetwork", detail: "")) } }
+    func startNetwork() async throws { try record("startNetwork") }
+    func stopNetwork() async { lock.withLock { log.append(Call(name: "stopNetwork", detail: "")) } }
     func version() -> String { "in-memory" }
 
-    func meshStatus() throws -> MeshStatus {
+    func meshStatus() async throws -> MeshStatus {
         try record("meshStatus")
         return lock.withLock { status }
     }
@@ -89,7 +91,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         return MeshRecoveryKit(words: recoveryWords)
     }
 
-    func createPairingOffer() throws -> MeshPairingOffer {
+    func createPairingOffer() async throws -> MeshPairingOffer {
         try record("createPairingOffer")
         let made = MeshPairingOffer(shortCode: "12345678", payload: "astral-pair:v1:offer")
         lock.withLock { offer = made }
@@ -102,7 +104,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         return previewResult
     }
 
-    func approvePairing(payload: String) throws {
+    func approvePairing(payload: String) async throws {
         try record("approvePairing", payload)
         guard payload.hasPrefix("astral-pair:") else { throw MeshKernelError.refused("pairing.malformed") }
         try consentGate()
@@ -127,7 +129,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         listener.onChange(.rosterChanged)
     }
 
-    func roster() throws -> [MeshMember] {
+    func roster() async throws -> [MeshMember] {
         try record("roster")
         return lock.withLock { members }
     }
@@ -217,7 +219,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         try record("act", surfaceId + "/" + componentId + "/" + action)
     }
 
-    func runTurn(chatId: String) throws {
+    func runTurn(chatId: String) async throws {
         try record("runTurn", chatId)
         if let turnError { throw turnError }
         let now = clock()
@@ -288,7 +290,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         return lock.withLock { providers }
     }
 
-    func syncState() throws -> MeshSyncState {
+    func syncState() async throws -> MeshSyncState {
         try record("syncState")
         return lock.withLock { syncValue }
     }
@@ -296,6 +298,86 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     func allowance() throws -> MeshAllowance {
         try record("allowance")
         return lock.withLock { allowanceValue }
+    }
+
+    func runs() async throws -> [MeshRun] {
+        try record("runs")
+        return lock.withLock { runsValue }
+    }
+
+    func handOffRun(runId: String, memberId: String) async throws {
+        try record("handOffRun", runId + ":" + memberId)
+        try consentGate()
+        lock.withLock {
+            guard let index = runsValue.firstIndex(where: { $0.runId == runId }) else { return }
+            let run = runsValue[index]
+            runsValue[index] = MeshRun(
+                runId: run.runId, chatId: run.chatId, kind: run.kind, goal: run.goal, status: run.status,
+                reason: run.reason, rounds: run.rounds, tokensSpent: run.tokensSpent, role: .watcher,
+                executor: memberId, unknownSteps: run.unknownSteps)
+        }
+        listener.onChange(.runProgress(runId: runId))
+    }
+
+    func takeOverRun(runId: String) async throws -> MeshTakeOver {
+        try record("takeOverRun", runId)
+        try consentGate()
+        let unknown = lock.withLock { () -> Int in
+            guard let index = runsValue.firstIndex(where: { $0.runId == runId }) else { return 0 }
+            let run = runsValue[index]
+            runsValue[index] = MeshRun(
+                runId: run.runId, chatId: run.chatId, kind: run.kind, goal: run.goal, status: run.status,
+                reason: run.reason, rounds: run.rounds, tokensSpent: run.tokensSpent, role: .executor,
+                executor: status.deviceId, unknownSteps: run.unknownSteps)
+            return run.unknownSteps
+        }
+        listener.onChange(.runProgress(runId: runId))
+        return MeshTakeOver(unknownSteps: unknown)
+    }
+
+    func learningProposals() async throws -> [MeshProposal] {
+        try record("learningProposals")
+        return lock.withLock { proposalsValue }
+    }
+
+    func reviewProposal(id: String, adopt: Bool) async throws -> MeshEvaluation {
+        try record("reviewProposal", id + (adopt ? ":adopt" : ":decline"))
+        return try lock.withLock {
+            guard let index = proposalsValue.firstIndex(where: { $0.proposalId == id }) else {
+                throw MeshKernelError.notFound
+            }
+            let proposal = proposalsValue[index]
+            let next: MeshProposal.Status = adopt ? .adopted : .declined
+            proposalsValue[index] = MeshProposal(
+                proposalId: proposal.proposalId, kind: proposal.kind, name: proposal.name, content: proposal.content,
+                status: next, detail: proposal.detail, tools: proposal.tools, untrusted: proposal.untrusted,
+                gatePassed: proposal.gatePassed, replayPassed: proposal.replayPassed,
+                ownerReasons: proposal.ownerReasons, hygiene: proposal.hygiene)
+            return adopt ? .adopted : .declined("owner")
+        }
+    }
+
+    func undoAdoption(id: String) async throws {
+        try record("undoAdoption", id)
+        try lock.withLock {
+            guard let index = proposalsValue.firstIndex(where: { $0.proposalId == id && $0.status == .adopted })
+            else { throw MeshKernelError.notFound }
+            let proposal = proposalsValue[index]
+            proposalsValue[index] = MeshProposal(
+                proposalId: proposal.proposalId, kind: proposal.kind, name: proposal.name, content: proposal.content,
+                status: .reversed, detail: proposal.detail, tools: proposal.tools, untrusted: proposal.untrusted,
+                gatePassed: proposal.gatePassed, replayPassed: proposal.replayPassed,
+                ownerReasons: proposal.ownerReasons, hygiene: proposal.hygiene)
+        }
+    }
+
+    func setRuns(_ value: [MeshRun]) {
+        lock.withLock { runsValue = value }
+        listener.onChange(.runProgress(runId: value.first?.runId ?? ""))
+    }
+
+    func setProposals(_ value: [MeshProposal]) {
+        lock.withLock { proposalsValue = value }
     }
 
     func setPending(_ requests: [MeshPendingConsent]) {

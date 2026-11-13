@@ -43,12 +43,14 @@ struct MeshDevicesView: View {
                 Button(role: .destructive) {
                     confirmingStop = true
                 } label: {
-                    Label(mesh.status.stopped ? "Mesh is stopped" : "Emergency stop", systemImage: "hand.raised.fill")
+                    Label("Emergency stop", systemImage: "hand.raised.fill")
                 }
-                .disabled(mesh.status.stopped)
                 .accessibilityIdentifier("mesh.devices.stop")
             } footer: {
-                Text("Stops every device in the mesh from acting until you recover it.")
+                Text(
+                    mesh.status.stopLevel == 0
+                        ? "Every device refuses actions that were already in progress."
+                        : "Stopped \(mesh.status.stopLevel) times. Every device refuses actions that were already in progress.")
             }
         }
         .navigationTitle("Devices")
@@ -68,7 +70,7 @@ struct MeshDevicesView: View {
             Button("Emergency stop", role: .destructive) { Task { await mesh.raiseStop() } }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Every device stops acting until you recover the mesh.")
+            Text("Every device refuses actions that were already in progress. New requests start fresh.")
         }
     }
 }

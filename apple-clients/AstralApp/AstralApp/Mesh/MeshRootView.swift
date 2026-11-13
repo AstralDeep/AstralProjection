@@ -84,12 +84,27 @@ struct MeshShell: View {
                 NavigationStack {
                     VStack(spacing: 0) {
                         MeshSyncStrip()
+                        MeshRunsView()
+                    }
+                }
+                .tabItem { Label("Runs", systemImage: "arrow.triangle.2.circlepath") }
+                .accessibilityIdentifier("mesh.tab.runs")
+                NavigationStack {
+                    VStack(spacing: 0) {
+                        MeshSyncStrip()
                         MeshSettingsView()
                     }
                 }
                 .tabItem { Label("Settings", systemImage: "gearshape") }
                 .accessibilityIdentifier("mesh.tab.settings")
             }
+        }
+        .alert(
+            "Mesh", isPresented: Binding(get: { mesh.notice != nil }, set: { if !$0 { mesh.notice = nil } })
+        ) {
+            Button("OK") { mesh.notice = nil }
+        } message: {
+            Text(mesh.notice ?? "")
         }
         .onChange(of: selectedChat) { _, id in
             Task {

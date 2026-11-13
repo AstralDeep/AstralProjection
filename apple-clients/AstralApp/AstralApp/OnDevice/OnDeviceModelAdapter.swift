@@ -8,7 +8,7 @@ import Foundation
 #endif
 
 nonisolated struct OnDeviceMessage: Equatable, Sendable {
-    enum Role: String, Sendable { case system, user, assistant }
+    enum Role: String, Sendable { case system, user, assistant, tool }
     let role: Role
     let text: String
 }

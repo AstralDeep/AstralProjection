@@ -156,6 +156,8 @@ final class MeshRuntime {
     private(set) var pendingConsents: [MeshPendingConsent] = []
     private(set) var allowance: MeshAllowance?
     private(set) var providers: [MeshModelProvider] = []
+    private(set) var runs: [MeshRun] = []
+    private(set) var proposals: [MeshProposal] = []
     private(set) var creation = MeshCreationState.idle
     private(set) var join = MeshJoinState.idle
     private(set) var addDevice = MeshAddDeviceState.idle
@@ -273,11 +275,11 @@ final class MeshRuntime {
             let model = onDeviceModel
             let tools = tools
             let listener = relay
-            let opened = try await Task.detached { try factory(config, signer, model, tools, listener) }.value
+            let opened = try await Task.detached { try await factory(config, signer, model, tools, listener) }.value
             kernel = opened
             phase = .ready
             do {
-                try await Task.detached { try opened.startNetwork() }.value
+                try await Task.detached { try await opened.startNetwork() }.value
                 networkNotice = nil
             } catch {
                 networkNotice = Self.describe(error)
@@ -291,7 +293,7 @@ final class MeshRuntime {
     func close() async {
         for task in turnTasks.values { task.cancel() }
         turnTasks = [:]
-        if let kernel { await Task.detached { kernel.stopNetwork() }.value }
+        if let kernel { await Task.detached { await kernel.stopNetwork() }.value }
         kernel = nil
         phase = .closed
         status = .empty
@@ -300,6 +302,8 @@ final class MeshRuntime {
         currentChatId = nil
         members = []
         pendingConsents = []
+        runs = []
+        proposals = []
         turns = [:]
     }
 
@@ -319,11 +323,13 @@ final class MeshRuntime {
         await refreshConsents()
         await refreshAllowance()
         await refreshProviders()
+        await refreshRuns()
+        await refreshProposals()
         if let id = currentChatId { await reloadChat(id) }
     }
 
     func refreshStatus() async {
-        if let value = await attempt({ try $0.meshStatus() }) {
+        if let value = await attempt({ try await $0.meshStatus() }) {
             status = value
             if value.hasMesh, join != .idle, join != .joined {
                 join = .joined
@@ -334,7 +340,7 @@ final class MeshRuntime {
     }
 
     func refreshRoster() async {
-        if let value = await attempt({ try $0.roster() }) { members = value }
+        if let value = await attempt({ try await $0.roster() }) { members = value }
     }
 
     func refreshChats() async {
@@ -342,7 +348,7 @@ final class MeshRuntime {
     }
 
     func refreshSync() async {
-        if let value = await attempt({ try $0.syncState() }) { sync = value }
+        if let value = await attempt({ try await $0.syncState() }) { sync = value }
     }
 
     func refreshConsents() async {
@@ -358,6 +364,46 @@ final class MeshRuntime {
 
     func refreshProviders() async {
         if let value = await attempt({ try $0.modelProviders() }) { providers = value }
+    }
+
+    func refreshRuns() async {
+        if let value = await attempt({ try await $0.runs() }) { runs = value }
+    }
+
+    func refreshProposals() async {
+        if let value = await attempt({ try await $0.learningProposals() }) { proposals = value }
+    }
+
+    func handOff(_ run: MeshRun, to member: MeshMember) async {
+        await perform { try await $0.handOffRun(runId: run.runId, memberId: member.memberId) }
+        await refreshRuns()
+    }
+
+    func takeOver(_ run: MeshRun) async -> MeshTakeOver? {
+        do {
+            let result = try await call { try await $0.takeOverRun(runId: run.runId) }
+            await refreshRuns()
+            return result
+        } catch {
+            if let hosting = error as? HostSigningError, case .consentDenied = hosting {
+                notice = MeshKernelError.consentDenied.message
+            } else {
+                notice = Self.describe(error)
+            }
+            await refreshRuns()
+            return nil
+        }
+    }
+
+    func review(_ proposal: MeshProposal, adopt: Bool) async -> MeshEvaluation? {
+        let result = await attempt({ try await $0.reviewProposal(id: proposal.proposalId, adopt: adopt) })
+        await refreshProposals()
+        return result
+    }
+
+    func undo(_ proposal: MeshProposal) async {
+        await perform { try await $0.undoAdoption(id: proposal.proposalId) }
+        await refreshProposals()
     }
 
     func createMesh() async {
@@ -394,7 +440,7 @@ final class MeshRuntime {
         guard kernel != nil, join == .idle || isFailedJoin else { return }
         join = .starting
         do {
-            join = .offered(try await call { try $0.createPairingOffer() })
+            join = .offered(try await call { try await $0.createPairingOffer() })
         } catch {
             join = .failed(Self.describe(error))
         }
@@ -419,7 +465,7 @@ final class MeshRuntime {
         guard case .previewing(let preview, let payload) = addDevice else { return }
         addDevice = .approving
         do {
-            try await call { try $0.approvePairing(payload: payload) }
+            try await call { try await $0.approvePairing(payload: payload) }
             addDevice = .added(preview.deviceLabel)
             await refreshRoster()
             await refreshSync()
@@ -599,6 +645,10 @@ final class MeshRuntime {
     func prompt(for request: MeshPendingConsent) -> ConsentPrompt? {
         switch request.kind {
         case .action:
+            if request.signingInput.isEmpty {
+                return try? ConsentPrompt.pending(
+                    canonicalAction: request.canonicalAction, canonicalArguments: request.canonicalArguments)
+            }
             return try? ConsentPrompt.action(
                 canonicalAction: request.canonicalAction, canonicalArguments: request.canonicalArguments,
                 signingInput: request.signingInput)
@@ -623,7 +673,7 @@ final class MeshRuntime {
         turnTasks[chatId] = Task { [weak self] in
             guard let self else { return }
             do {
-                try await self.call { try $0.runTurn(chatId: chatId) }
+                try await self.call { try await $0.runTurn(chatId: chatId) }
             } catch {
                 if self.turns[chatId]?.interrupted != true {
                     self.turns[chatId]?.failure = Self.describe(error)
@@ -653,7 +703,7 @@ final class MeshRuntime {
         switch change {
         case .chatChanged(let chatId):
             await refreshChats()
-            if chatId == currentChatId { await reloadChat(chatId) }
+            if let current = currentChatId, chatId == nil || chatId == current { await reloadChat(current) }
         case .syncStateChanged:
             await refreshSync()
         case .consentRequested:
@@ -666,6 +716,8 @@ final class MeshRuntime {
             await apply(progress)
         case .allowanceChanged:
             await refreshAllowance()
+        case .runProgress:
+            await refreshRuns()
         }
     }
 
@@ -714,12 +766,12 @@ final class MeshRuntime {
         turns[progress.chatId] = state
     }
 
-    private func call<T: Sendable>(_ work: @escaping @Sendable (any MeshKernel) throws -> T) async throws -> T {
+    private func call<T: Sendable>(_ work: @escaping @Sendable (any MeshKernel) async throws -> T) async throws -> T {
         guard let kernel else { throw MeshKernelError.unavailable("The mesh is not open.") }
-        return try await Task.detached(priority: .userInitiated) { try work(kernel) }.value
+        return try await Task.detached(priority: .userInitiated) { try await work(kernel) }.value
     }
 
-    private func attempt<T: Sendable>(_ work: @escaping @Sendable (any MeshKernel) throws -> T) async -> T? {
+    private func attempt<T: Sendable>(_ work: @escaping @Sendable (any MeshKernel) async throws -> T) async -> T? {
         do {
             return try await call(work)
         } catch {
@@ -728,7 +780,7 @@ final class MeshRuntime {
         }
     }
 
-    private func perform(_ work: @escaping @Sendable (any MeshKernel) throws -> Void) async {
+    private func perform(_ work: @escaping @Sendable (any MeshKernel) async throws -> Void) async {
         _ = await attempt(work)
     }
 

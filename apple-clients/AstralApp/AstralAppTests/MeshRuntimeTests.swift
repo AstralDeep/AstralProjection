@@ -29,7 +29,7 @@ final class MeshRuntimeTests: XCTestCase {
     func testBuildWithoutRuntimeFailsHonestly() async {
         let defaults = UserDefaults(suiteName: "mesh.unavailable." + UUID().uuidString)!
         let runtime = MeshRuntime(
-            makeKernel: MeshKernelFactories.unavailable,
+            makeKernel: { _, _, _, _, _ in throw MeshKernelError.unavailable("This build does not include the mesh runtime yet.") },
             makeKeys: {
                 try DeviceKeys(
                     store: MeshMemorySecretStore(), defaults: UserDefaults(suiteName: "mesh.k." + UUID().uuidString)!,

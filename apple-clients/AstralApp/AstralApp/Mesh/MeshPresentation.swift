@@ -72,4 +72,51 @@ nonisolated enum MeshPresentation {
         guard digits.count == 8 else { return code }
         return String(digits[0..<4]) + " " + String(digits[4..<8])
     }
+
+    static func runStatus(_ run: MeshRun) -> String {
+        switch run.status {
+        case .active: return "Running"
+        case .paused: return "Paused"
+        case .done: return "Done"
+        case .stopped: return "Stopped"
+        }
+    }
+
+    static func runKind(_ kind: MeshRun.Kind) -> String {
+        switch kind {
+        case .goal: return "Goal"
+        case .schedule: return "Schedule"
+        case .watch: return "Watch"
+        }
+    }
+
+    static func runRole(_ run: MeshRun, executorLabel: String?) -> String {
+        switch run.role {
+        case .executor: return "Running on this device"
+        case .watcher: return "Running on " + (executorLabel ?? "another device")
+        case .contested: return "Two devices claim this run"
+        case .unassigned: return "No device is running it"
+        }
+    }
+
+    static func proposalStatus(_ status: MeshProposal.Status) -> String {
+        switch status {
+        case .staged: return "New"
+        case .gated: return "Checked"
+        case .replayed: return "Tested"
+        case .waitingOwner: return "Needs your review"
+        case .rejected: return "Rejected"
+        case .declined: return "Declined"
+        case .adopted: return "In use"
+        case .reversed: return "Undone"
+        }
+    }
+
+    static func evaluation(_ value: MeshEvaluation) -> String {
+        switch value {
+        case .adopted: return "Adopted."
+        case .waitingOwner: return "Still waiting for your review."
+        case .declined(let reason): return "Declined: " + reason + "."
+        }
+    }
 }
