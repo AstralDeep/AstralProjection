@@ -69,25 +69,25 @@ nonisolated enum KernelMapping {
             pendingNotices: Int(clamping: state.pendingNotices), truncated: state.truncated)
     }
 
-    static func pairingOffer(_ offer: PairingOffer, now: Date = Date()) -> MeshPairingOffer {
+    static func pairingOffer(_ offer: PairingOffer, now _: Date = Date()) -> MeshPairingOffer {
         MeshPairingOffer(
-            shortCode: offer.code, payload: offer.payload, expiresAt: now.addingTimeInterval(Double(offer.expiresS)))
+            shortCode: offer.code, payload: offer.payload, expiresAt: Date(timeIntervalSince1970: Double(offer.expiresS)))
     }
 
-    static func pairingPreview(_ preview: PairingPreview, now: Date = Date()) -> MeshPairingPreview {
+    static func pairingPreview(_ preview: PairingPreview, now _: Date = Date()) -> MeshPairingPreview {
         MeshPairingPreview(
             comparisonCode: preview.code, deviceLabel: preview.label, deviceKind: deviceKind(preview.kind),
-            fingerprint: preview.deviceId, expiresAt: now.addingTimeInterval(Double(preview.expiresS)))
+            fingerprint: preview.deviceId, expiresAt: Date(timeIntervalSince1970: Double(preview.expiresS)))
     }
 
-    static func invitation(_ value: Invitation, now: Date = Date()) -> MeshInvitation {
-        MeshInvitation(code: value.code, payload: value.payload, expiresAt: now.addingTimeInterval(Double(value.expiresS)))
+    static func invitation(_ value: Invitation, now _: Date = Date()) -> MeshInvitation {
+        MeshInvitation(code: value.code, payload: value.payload, expiresAt: Date(timeIntervalSince1970: Double(value.expiresS)))
     }
 
-    static func accepted(_ value: InvitationAccepted, now: Date = Date()) -> MeshInvitationAccepted {
+    static func accepted(_ value: InvitationAccepted, now _: Date = Date()) -> MeshInvitationAccepted {
         MeshInvitationAccepted(
             comparisonCode: value.code, invitationCode: value.invitationCode, inviterDeviceId: value.inviterDeviceId,
-            expiresAt: now.addingTimeInterval(Double(value.expiresS)))
+            expiresAt: Date(timeIntervalSince1970: Double(value.expiresS)))
     }
 
     static func allowance(_ view: AllowanceView) -> MeshAllowance {
@@ -235,7 +235,7 @@ nonisolated enum KernelMapping {
                     .joinRequested(
                         MeshJoinRequest(
                             comparisonCode: code, deviceLabel: label, deviceKind: deviceKind(kind), deviceId: deviceId,
-                            expiresAt: Date().addingTimeInterval(Double(expiresS))))
+                            expiresAt: Date(timeIntervalSince1970: Double(expiresS))))
                 ]
             case .failed(let code): return [.pairingFailed(code: code)]
             case .offerSeen: return []
