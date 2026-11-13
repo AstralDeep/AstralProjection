@@ -1,5 +1,5 @@
-// Mounts workbench surfaces offscreen in a chosen theme, drives them with real key and mouse events, and reads the
-// accessibility tree of the test process's named windows; PNGs also go to ASTRAL_SETTINGS_SNAPSHOT_DIR when set.
+// Mounts workbench surfaces in a chosen theme, prepares native window publication, and drives real key and mouse events.
+// Named-window checks read the test process's public accessibility tree; PNGs also go to ASTRAL_SETTINGS_SNAPSHOT_DIR when set.
 
 #if os(macOS)
     import AppKit
@@ -66,6 +66,11 @@
             return window
         }
 
+        static func prepare(_ window: NSWindow) {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
+
         private static func attribute(_ name: String, of element: AXUIElement) -> CFTypeRef? {
             var value: CFTypeRef?
             return AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success ? value : nil
@@ -100,6 +105,7 @@
         }
 
         func settle() async throws {
+            SurfaceAccessibility.prepare(window)
             for _ in 0..<5 {
                 view.layoutSubtreeIfNeeded()
                 try await Task.sleep(for: .milliseconds(50))
