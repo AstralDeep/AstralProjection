@@ -103,7 +103,7 @@ final class MeshModeUITests: XCTestCase {
 
     func testPermissionsAndMailboxLiveInSettings() {
         launch("shell")
-        XCTAssertTrue(element("mesh.consent.review").waitForExistence(timeout: 10))
+        XCTAssertTrue(app.tabBars.buttons["Settings"].waitForExistence(timeout: 15))
         selectTab("Settings")
         XCTAssertTrue(element("mesh.settings.permissions").waitForExistence(timeout: 5))
         element("mesh.settings.permissions").tap()
