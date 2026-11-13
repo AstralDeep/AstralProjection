@@ -240,6 +240,9 @@ final class MeshRuntime {
     private(set) var chats: [MeshChatSummary] = []
     private(set) var currentChatId: String?
     private(set) var currentChat: MeshChatView?
+    private(set) var attachmentDrafts: [String: [MeshAttachment]] = [:]
+    private(set) var importingAttachment = false
+    private var attachmentSession = UUID()
     private(set) var selectedHead: String?
     private(set) var headPinned = false
     private(set) var turns: [String: MeshTurnState] = [:]
@@ -439,6 +442,9 @@ final class MeshRuntime {
         chats = []
         currentChat = nil
         currentChatId = nil
+        attachmentDrafts = [:]
+        attachmentSession = UUID()
+        importingAttachment = false
         members = []
         pendingConsents = []
         runs = []
@@ -880,9 +886,57 @@ final class MeshRuntime {
         }
     }
 
+    var draftAttachments: [MeshAttachment] {
+        currentChatId.flatMap { attachmentDrafts[$0] } ?? []
+    }
+
+    func attachFile(_ url: URL) async -> Bool {
+        guard !importingAttachment else { return false }
+        guard !status.stopped else {
+            notice = MeshKernelError.stopped.message
+            return false
+        }
+        guard currentTurn?.running != true else {
+            notice = "Wait for the current answer before attaching a file."
+            return false
+        }
+        let chatId: String
+        if let current = currentChatId { chatId = current }
+        else if let created = await newChat() { chatId = created }
+        else { return false }
+        guard attachmentDrafts[chatId, default: []].count < MeshAttachmentFile.maximumCount else {
+            notice = "A message can hold up to eight files."
+            return false
+        }
+        importingAttachment = true
+        let session = attachmentSession
+        defer { if attachmentSession == session { importingAttachment = false } }
+        guard let attachment = await attempt({ kernel in
+            let input = try MeshAttachmentFile.read(url)
+            return try kernel.addAttachment(chatId: chatId, bytes: input.bytes, mime: input.mime, name: input.name)
+        }) else { return false }
+        guard attachmentSession == session else { return false }
+        attachmentDrafts[chatId, default: []].append(attachment)
+        await refreshChats()
+        return true
+    }
+
+    func removeDraftAttachment(_ id: String) {
+        guard let chatId = currentChatId else { return }
+        attachmentDrafts[chatId]?.removeAll { $0.id == id }
+    }
+
+    func attachmentBytes(_ attachment: MeshAttachment) async -> Data? {
+        guard attachment.availability == .present else {
+            notice = "This file is not available on this device."
+            return nil
+        }
+        return await attempt { try await $0.fetchAttachment(handle: attachment.handle) }
+    }
+
     func send(_ text: String, speaking: Bool = false) async -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
+        guard !trimmed.isEmpty || !draftAttachments.isEmpty, !importingAttachment else { return false }
         if status.stopped {
             notice = MeshKernelError.stopped.message
             return false
@@ -895,9 +949,14 @@ final class MeshRuntime {
         } else {
             return false
         }
+        let attachments = attachmentDrafts[chatId, default: []].map(\.id)
         let continues = displayHead
-        guard let eventId = await attempt({ try $0.sendMessage(chatId: chatId, text: trimmed, continues: continues) })
+        guard let eventId = await attempt({ kernel in
+            if attachments.isEmpty { return try kernel.sendMessage(chatId: chatId, text: trimmed, continues: continues) }
+            return try kernel.sendMessage(chatId: chatId, text: trimmed, continues: continues, attachments: attachments)
+        })
         else { return false }
+        attachmentDrafts[chatId] = nil
         selectedHead = eventId
         headPinned = false
         await reloadChat(chatId)

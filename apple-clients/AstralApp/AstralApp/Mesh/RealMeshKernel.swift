@@ -195,6 +195,18 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
     func createChat(title: String) throws -> String { try mapped { try kernel.createChat(title: title) } }
 
     func sendMessage(chatId: String, text: String, continues: String?) throws -> String {
+        try sendMessage(chatId: chatId, text: text, continues: continues, attachments: [])
+    }
+
+    func addAttachment(chatId: String, bytes: Data, mime: String, name: String) throws -> MeshAttachment {
+        try mapped { KernelMapping.attachment(try kernel.addAttachment(chatId: chatId, bytes: bytes, mime: mime, name: name)) }
+    }
+
+    func fetchAttachment(handle: String) async throws -> Data {
+        do { return try await kernel.fetchAttachment(handle: handle) } catch { throw KernelMapping.error(error) }
+    }
+
+    func sendMessage(chatId: String, text: String, continues: String?, attachments: [String]) throws -> String {
         try mapped {
             var anchor: String?
             if let head = continues {
@@ -206,7 +218,8 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
                 case nil: throw MeshKernelError.refused("That message is not part of this chat yet.")
                 }
             }
-            let id = try kernel.sendMessage(chatId: chatId, text: text, continues: anchor)
+            let id = try kernel.sendMessageWithAttachments(
+                chatId: chatId, text: text, continues: anchor, attachments: attachments)
             if let anchor { lock.withLock { queuedBases[id] = anchor } }
             return id
         }

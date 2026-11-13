@@ -30,6 +30,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     private var grantsValue: Set<String> = []
     private var handlesValue: [String: MeshResolvedHandle] = [:]
     private var renderedValue: [String: [MeshRenderedSurface]] = [:]
+    private var attachmentsValue: [String: (MeshAttachment, Data)] = [:]
     private var mailboxValue = MeshMailboxState.off
     private var toolsValue: [MeshToolEntry] = [
         MeshToolEntry(
@@ -314,16 +315,54 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
 
     func sendMessage(chatId: String, text: String, continues: String?) throws -> String {
         try record("sendMessage", text + "|" + (continues ?? ""))
-        guard !text.isEmpty else { throw MeshKernelError.refused("message.empty") }
+        return try appendMessage(chatId: chatId, text: text, continues: continues, attachments: [])
+    }
+
+    func addAttachment(chatId: String, bytes: Data, mime: String, name: String) throws -> MeshAttachment {
+        try record("addAttachment", chatId + "|" + name)
+        let id = nextId("attachment")
+        let chunks = UInt64((bytes.count + 262_143) / 262_144)
+        let attachment = MeshAttachment(
+            id: id, handle: "res:" + id, chatId: chatId, name: name, mime: mime, size: UInt64(bytes.count),
+            chunks: chunks, chunksHeld: chunks, complete: true, availability: .present)
+        try lock.withLock {
+            guard chats[chatId] != nil else { throw MeshKernelError.notFound }
+            attachmentsValue[attachment.handle] = (attachment, bytes)
+        }
+        listener.onChange(.chatChanged(chatId: chatId))
+        return attachment
+    }
+
+    func fetchAttachment(handle: String) async throws -> Data {
+        try record("fetchAttachment", handle)
+        return try lock.withLock {
+            guard let (_, bytes) = attachmentsValue[handle] else { throw MeshKernelError.notFound }
+            return bytes
+        }
+    }
+
+    func sendMessage(chatId: String, text: String, continues: String?, attachments: [String]) throws -> String {
+        try record("sendMessageWithAttachments", text + "|" + attachments.joined(separator: ","))
+        return try appendMessage(chatId: chatId, text: text, continues: continues, attachments: attachments)
+    }
+
+    private func appendMessage(chatId: String, text: String, continues: String?, attachments: [String]) throws -> String {
+        guard !text.isEmpty || !attachments.isEmpty else { throw MeshKernelError.refused("message.empty") }
         let id = nextId("event")
         let now = clock()
         try lock.withLock {
             guard var chat = chats[chatId] else { throw MeshKernelError.notFound }
+            let selected = try attachments.map { id in
+                guard let (attachment, _) = attachmentsValue["res:" + id], attachment.chatId == chatId else {
+                    throw MeshKernelError.refused("attachment.not_in_chat")
+                }
+                return attachment
+            }
             let parent = continues ?? Self.head(of: chat.messages)
             chat.messages.append(
                 MeshChatMessage(
                     eventId: id, parentId: parent, author: .owner, authorDevice: status.deviceId, text: text,
-                    createdAt: now, delivery: .queued, surfaceIds: []))
+                    createdAt: now, delivery: .queued, surfaceIds: [], attachments: selected))
             chat.updatedAt = now
             chats[chatId] = chat
         }
@@ -362,7 +401,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
                     ? MeshChatMessage(
                         eventId: message.eventId, parentId: message.parentId, author: message.author,
                         authorDevice: message.authorDevice, text: message.text, createdAt: message.createdAt,
-                        delivery: .recorded, surfaceIds: message.surfaceIds) : message
+                        delivery: .recorded, surfaceIds: message.surfaceIds, attachments: message.attachments) : message
             }
             chat.status = .running(turnId: turnId)
             chats[chatId] = chat

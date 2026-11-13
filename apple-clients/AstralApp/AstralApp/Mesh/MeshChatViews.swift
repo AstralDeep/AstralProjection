@@ -80,6 +80,8 @@ struct MeshChatDetailView: View {
     @Environment(ThemeStore.self) private var theme
     @State private var draft = ""
     @State private var requesting: MeshMember?
+    @State private var choosingAttachment = false
+    @State private var fileProblem: String?
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
@@ -112,6 +114,13 @@ struct MeshChatDetailView: View {
                     .frame(minWidth: 420, minHeight: 360)
                 #endif
         }
+        .fileImporter(isPresented: $choosingAttachment, allowedContentTypes: MeshAttachmentFile.contentTypes) { result in
+            switch result {
+            case .success(let url): Task { _ = await mesh.attachFile(url) }
+            case .failure(let error):
+                if (error as NSError).code != NSUserCancelledError { fileProblem = "The file could not be opened. Try again." }
+            }
+        }
     }
 
     private var transcript: some View {
@@ -142,54 +151,78 @@ struct MeshChatDetailView: View {
     private var running: Bool { mesh.currentTurn?.running == true }
 
     private var composer: some View {
-        HStack(alignment: .bottom, spacing: 10) {
-            TextField(running ? "Steer the answer" : "Message", text: $draft, axis: .vertical)
-                .lineLimit(1...6)
-                .textFieldStyle(.plain)
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(p.surface2, in: RoundedRectangle(cornerRadius: 20))
-                .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(p.border, lineWidth: 1))
-                .accessibilityIdentifier("mesh.composer")
-                .onSubmit(send)
-            Button {
-                Task { await model.onDeviceVoice.activate() }
-            } label: {
-                Image(systemName: model.onDeviceVoice.isRunning ? "mic.fill" : "mic").font(.system(size: 22))
-                    .frame(width: 36, height: 36)
+        VStack(alignment: .leading, spacing: 6) {
+            if !mesh.draftAttachments.isEmpty { MeshAttachmentDrafts() }
+            if let fileProblem {
+                Text(fileProblem).font(ConsoleTypography.caption).foregroundStyle(p.warning)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(p.accent)
-            .help("Talk")
-            .accessibilityLabel("Talk")
-            .accessibilityIdentifier("mesh.composer.mic")
-            if running {
+            HStack(alignment: .bottom, spacing: 10) {
                 Button {
-                    Task { await mesh.interrupt() }
+                    fileProblem = nil
+                    choosingAttachment = true
                 } label: {
-                    Image(systemName: "stop.circle.fill").font(.system(size: 28)).frame(width: 36, height: 36)
+                    Image(systemName: "paperclip").font(.system(size: 20)).frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(p.accent)
-                .help("Stop")
-                .accessibilityLabel("Stop")
-                .accessibilityIdentifier("mesh.composer.stop")
+                .disabled(
+                    running || mesh.importingAttachment || mesh.status.stopped
+                        || mesh.draftAttachments.count >= MeshAttachmentFile.maximumCount
+                )
+                .help("Attach file")
+                .accessibilityLabel("Attach file")
+                .accessibilityIdentifier("mesh.composer.attach")
+                TextField(running ? "Steer the answer" : "Message", text: $draft, axis: .vertical)
+                    .lineLimit(1...6)
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(p.surface2, in: RoundedRectangle(cornerRadius: 20))
+                    .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(p.border, lineWidth: 1))
+                    .accessibilityIdentifier("mesh.composer")
+                    .onSubmit(send)
+                Button {
+                    Task { await model.onDeviceVoice.activate() }
+                } label: {
+                    Image(systemName: model.onDeviceVoice.isRunning ? "mic.fill" : "mic").font(.system(size: 22))
+                        .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(p.accent)
+                .help("Talk")
+                .accessibilityLabel("Talk")
+                .accessibilityIdentifier("mesh.composer.mic")
+                if running {
+                    Button {
+                        Task { await mesh.interrupt() }
+                    } label: {
+                        Image(systemName: "stop.circle.fill").font(.system(size: 28)).frame(width: 36, height: 36)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(p.accent)
+                    .help("Stop")
+                    .accessibilityLabel("Stop")
+                    .accessibilityIdentifier("mesh.composer.stop")
+                }
+                Button(action: send) {
+                    Image(systemName: "arrow.up.circle.fill").font(.system(size: 28)).frame(width: 36, height: 36)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(canSend ? p.accent : p.muted)
+                .disabled(!canSend)
+                .help(running ? "Steer" : "Send")
+                .accessibilityLabel(running ? "Steer" : "Send")
+                .accessibilityIdentifier("mesh.composer.send")
             }
-            Button(action: send) {
-                Image(systemName: "arrow.up.circle.fill").font(.system(size: 28)).frame(width: 36, height: 36)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(canSend ? p.accent : p.muted)
-            .disabled(!canSend)
-            .help(running ? "Steer" : "Send")
-            .accessibilityLabel(running ? "Steer" : "Send")
-            .accessibilityIdentifier("mesh.composer.send")
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
         .frame(maxWidth: 780)
         .frame(maxWidth: .infinity)
     }
 
-    private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var canSend: Bool {
+        !mesh.importingAttachment && (!running || mesh.draftAttachments.isEmpty)
+            && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !mesh.draftAttachments.isEmpty)
+    }
 
     private var otherMembers: [MeshMember] { mesh.members.filter { !$0.isThisDevice } }
 
@@ -206,7 +239,7 @@ struct MeshChatDetailView: View {
 
     private func send() {
         let text = draft
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard canSend else { return }
         Task {
             let accepted = running ? await steer(text) : await mesh.send(text)
             if accepted, draft == text { draft = "" }
@@ -227,9 +260,12 @@ struct MeshMessageRow: View {
 
     var body: some View {
         VStack(alignment: row.turn.role == "user" ? .trailing : .leading, spacing: 4) {
-            ChatBubble(turn: row.turn)
-                .environment(\.astralMeshAction, surfaceAction)
+            if row.message?.text.isEmpty != true || row.message?.surfaceIds.isEmpty != true {
+                ChatBubble(turn: row.turn)
+                    .environment(\.astralMeshAction, surfaceAction)
+            }
             if let message = row.message {
+                ForEach(message.attachments) { attachment in MeshAttachmentView(attachment: attachment) }
                 if message.delivery == .queued {
                     Label("Waiting to send", systemImage: "clock")
                         .font(ConsoleTypography.caption).foregroundStyle(p.muted)

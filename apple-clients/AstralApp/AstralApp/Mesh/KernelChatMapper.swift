@@ -52,7 +52,9 @@ nonisolated enum KernelChatMapper {
     }
 
     static func fold(_ view: AstralKernel.ChatView, queuedBases: [String: String]) -> Folded {
-        let visible = view.messages.filter { $0.kind != "chat.spoken" && !($0.text ?? "").isEmpty }
+        let visible = view.messages.filter {
+            $0.kind != "chat.spoken" && (!($0.text ?? "").isEmpty || !$0.attachments.isEmpty)
+        }
         let turnsById = Dictionary(view.turns.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var byTurn: [String: [AstralKernel.ChatMessage]] = [:]
         var queued: [AstralKernel.ChatMessage] = []
@@ -99,7 +101,8 @@ nonisolated enum KernelChatMapper {
             MeshChatMessage(
                 eventId: message.id, parentId: parent, author: author(message.role), authorDevice: message.author,
                 text: message.text ?? "", createdAt: KernelMapping.date(message.clock),
-                delivery: message.status == .queued ? .queued : .recorded, surfaceIds: placed[message.id] ?? [])
+                delivery: message.status == .queued ? .queued : .recorded, surfaceIds: placed[message.id] ?? [],
+                attachments: message.attachments.map(KernelMapping.attachment))
         }
         return Folded(messages: messages, surfaces: surfaces.map(\.surface))
     }

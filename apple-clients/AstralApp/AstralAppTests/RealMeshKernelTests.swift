@@ -251,6 +251,36 @@ final class RealMeshKernelTests: XCTestCase {
         await fresh.kernel.stopNetwork()
     }
 
+    func testAnAttachmentOnlyMessageSyncsItsFileAndThePeerFetchesTheOriginalBytes() async throws {
+        let mac = try await open("Attachment Mac")
+        let phone = try await open("Attachment Phone", kind: .pocket)
+        _ = try await createMesh(mac)
+        try await mac.kernel.startNetwork()
+        let chat = try mac.kernel.createChat(title: "Files")
+        let offer = try await phone.kernel.createPairingOffer()
+        try await mac.kernel.approvePairing(payload: offer.payload)
+        try await until("the phone to join") { try await phone.kernel.meshStatus().hasMesh }
+        try await until("the phone to read the chat") { (try? phone.kernel.chat(chatId: chat)) != nil }
+        let bytes = Data("notes shared with the phone".utf8)
+        let attachment = try mac.kernel.addAttachment(chatId: chat, bytes: bytes, mime: "text/plain", name: "notes.txt")
+        let sent = try mac.kernel.sendMessage(chatId: chat, text: "", continues: nil, attachments: [attachment.id])
+        try await until("the phone to read the attachment-only message") {
+            (try? phone.kernel.chat(chatId: chat))?.messages.first?.attachments.count == 1
+        }
+        let received = try XCTUnwrap(phone.kernel.chat(chatId: chat).messages.first)
+        XCTAssertEqual(received.eventId, sent)
+        XCTAssertEqual(received.text, "")
+        XCTAssertEqual(received.attachments.first?.name, "notes.txt")
+        XCTAssertEqual(received.attachments.first?.size, UInt64(bytes.count))
+        let fetched = try await phone.kernel.fetchAttachment(handle: attachment.handle)
+        XCTAssertEqual(fetched, bytes)
+        let elsewhere = try mac.kernel.createChat(title: "Other chat")
+        XCTAssertThrowsError(try mac.kernel.sendMessage(chatId: elsewhere, text: "wrong chat", continues: nil, attachments: [attachment.id]))
+        XCTAssertThrowsError(try mac.kernel.addAttachment(chatId: chat, bytes: Data(), mime: "text/plain", name: "empty.txt"))
+        await mac.kernel.stopNetwork()
+        await phone.kernel.stopNetwork()
+    }
+
     func testRequestsAreSentClaimedAndRefusedBetweenTwoPairedKernels() async throws {
         let mac = try await open("Mac")
         let phone = try await open("Phone", kind: .pocket)

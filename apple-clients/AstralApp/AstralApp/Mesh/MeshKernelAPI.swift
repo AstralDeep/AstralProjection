@@ -180,7 +180,22 @@ nonisolated struct MeshChatMessage: Identifiable, Equatable, Sendable {
     let createdAt: Date
     let delivery: MeshDelivery
     let surfaceIds: [String]
+    var attachments: [MeshAttachment] = []
     var id: String { eventId }
+}
+
+nonisolated struct MeshAttachment: Identifiable, Equatable, Sendable {
+    enum Availability: Equatable, Sendable { case present, absent, withheldPhi, keyUnknown, corrupt }
+    let id: String
+    let handle: String
+    let chatId: String
+    let name: String
+    let mime: String
+    let size: UInt64
+    let chunks: UInt64
+    let chunksHeld: UInt64
+    let complete: Bool
+    let availability: Availability
 }
 
 nonisolated struct MeshBranch: Identifiable, Equatable, Sendable {
@@ -526,6 +541,9 @@ nonisolated protocol MeshKernel: Sendable {
     func chat(chatId: String) throws -> MeshChatView
     func createChat(title: String) throws -> String
     func sendMessage(chatId: String, text: String, continues: String?) throws -> String
+    func addAttachment(chatId: String, bytes: Data, mime: String, name: String) throws -> MeshAttachment
+    func fetchAttachment(handle: String) async throws -> Data
+    func sendMessage(chatId: String, text: String, continues: String?, attachments: [String]) throws -> String
     func fork(chatId: String, eventId: String) throws -> String
     func act(surfaceId: String, componentId: String, capability: String, args: [String: JSONValue]) async throws
         -> MeshActResult

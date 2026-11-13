@@ -20,6 +20,21 @@ nonisolated enum KernelMapping {
 
     static func path(_ text: String) -> MeshPath { MeshPath(rawValue: text) ?? .none }
 
+    static func attachment(_ value: AttachmentInfo) -> MeshAttachment {
+        let availability: MeshAttachment.Availability
+        switch value.bodyState {
+        case .present: availability = .present
+        case .absent: availability = .absent
+        case .withheldPhi: availability = .withheldPhi
+        case .keyUnknown: availability = .keyUnknown
+        case .corrupt: availability = .corrupt
+        }
+        return MeshAttachment(
+            id: value.id, handle: value.handle, chatId: value.chatId, name: value.name, mime: value.mime,
+            size: value.size, chunks: value.chunks, chunksHeld: value.chunksHeld, complete: value.complete,
+            availability: availability)
+    }
+
     static func members(_ roster: RosterInfo, peers: [SyncPeer]) -> [MeshMember] {
         roster.members.map { member in
             let peer = peers.first { $0.deviceId == member.deviceId }
@@ -275,6 +290,15 @@ nonisolated enum KernelMapping {
     }
 
     private static let codeTexts: [(String, String)] = [
+        ("attachment.too_large", "Choose a file no larger than 16 MB."),
+        ("attachment.too_many", "A message can hold up to eight files."),
+        ("attachment.empty", "That file is empty."),
+        ("attachment.chunks_unavailable", "The file is waiting for a connected device that holds it. Try again when it reconnects."),
+        ("attachment.label", "Files cannot be attached to a chat that holds secrets."),
+        ("attachment.content_mismatch", "The file contents do not match its type."),
+        ("attachment.bad_name", "Rename the file before attaching it."),
+        ("attachment.mime", "Choose a PDF, image, text, Markdown, CSV or JSON file."),
+        ("attachment.", "The file could not be opened or attached."),
         ("turn.no_provider", "Add a model provider in Settings before asking for an answer."),
         ("provider.", "The model provider could not be reached or refused the request."),
         ("allowance.", "This device has used its allowance for now."),

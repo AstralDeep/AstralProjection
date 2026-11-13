@@ -17,7 +17,7 @@ final class KernelMappingTests: XCTestCase {
             id: id, role: role, kind: kind ?? (role == .user ? "chat.user_message" : "chat.assistant_message"),
             text: text, componentJson: nil, turn: turn, branch: branch,
             labels: LabelView(confidentiality: "private", integrity: "owner"), status: status, feed: feed, seq: ms,
-            clock: ClockStamp(ms: ms, n: 0), author: "device")
+            clock: ClockStamp(ms: ms, n: 0), author: "device", attachments: [])
     }
 
     private func turn(_ id: String, continues: String?, message: String?, branch: String, ms: UInt64) -> TurnInfo {
