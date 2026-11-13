@@ -364,6 +364,7 @@ struct AstralTopBar: View {
             if !model.accountName.isEmpty {
                 Text(model.accountName)
             }
+            PersonalMeshModeButton()
             Text("Kernel \(AstralKernelInfo.version)").accessibilityIdentifier("settings-kernel-version")
             Button(role: .destructive) {
                 Task { await model.signOut() }

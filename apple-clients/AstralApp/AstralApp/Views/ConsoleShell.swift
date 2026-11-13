@@ -545,6 +545,7 @@ struct ConsoleSurfaceOverlay: View {
                             .environment(\.astralCompactSettings, compactSettings)
                     }
                 }
+                PersonalMeshModeButton(padded: true)
             }
             .frame(width: geometry.width, height: geometry.height)
             .background(p.surface)
