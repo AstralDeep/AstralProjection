@@ -1,11 +1,10 @@
 // Verifies canonical consent binding, roster signing, authentication policy, queue lifecycle and the signer's guards.
 // Authentication is stubbed, so no biometric prompt appears and nothing here depends on the device.
 
+@testable import AstralDeep
 import CryptoKit
 import LocalAuthentication
 import XCTest
-
-@testable import AstralDeep
 
 private nonisolated struct StubAuthenticator: ConsentAuthenticating {
     let succeeds: Bool
@@ -254,8 +253,25 @@ final class ConsentPromptBindingTests: XCTestCase {
 
 @MainActor
 final class MeshConsentCoordinatorTests: XCTestCase {
+    private let presenter = UUID()
+
     private func waitForCurrent(_ coordinator: ConsentCoordinator) async {
+        coordinator.registerPresenter(presenter, depth: 0)
         while coordinator.current == nil { await Task.yield() }
+    }
+
+    private func approveCurrent(_ coordinator: ConsentCoordinator) async {
+        guard let presentation = coordinator.presentation(for: presenter) else {
+            return XCTFail("No displayed request")
+        }
+        await coordinator.approve(presentation)
+    }
+
+    private func denyCurrent(_ coordinator: ConsentCoordinator) {
+        guard let presentation = coordinator.presentation(for: presenter) else {
+            return XCTFail("No displayed request")
+        }
+        coordinator.deny(presentation)
     }
 
     func testApproveAfterAuthenticationResolvesApproved() async {
@@ -263,7 +279,7 @@ final class MeshConsentCoordinatorTests: XCTestCase {
         let pending = Task { await coordinator.requestConsent(makePrompt()) }
         await waitForCurrent(coordinator)
         XCTAssertEqual(coordinator.current, makePrompt())
-        await coordinator.approve()
+        await approveCurrent(coordinator)
         guard case .approved = await pending.value else { return XCTFail("expected approval") }
         XCTAssertNil(coordinator.current)
     }
@@ -272,11 +288,11 @@ final class MeshConsentCoordinatorTests: XCTestCase {
         let coordinator = ConsentCoordinator(authenticator: StubAuthenticator(succeeds: false))
         let pending = Task { await coordinator.requestConsent(makePrompt()) }
         await waitForCurrent(coordinator)
-        await coordinator.approve()
+        await approveCurrent(coordinator)
         XCTAssertNotNil(coordinator.current)
         XCTAssertNotNil(coordinator.authenticationMessage)
         XCTAssertFalse(coordinator.isAuthenticating)
-        coordinator.deny()
+        denyCurrent(coordinator)
         guard case .denied(.denied) = await pending.value else { return XCTFail("expected denial") }
     }
 
@@ -284,7 +300,7 @@ final class MeshConsentCoordinatorTests: XCTestCase {
         let coordinator = ConsentCoordinator(authenticator: StubAuthenticator(succeeds: true))
         let pending = Task { await coordinator.requestConsent(makePrompt()) }
         await waitForCurrent(coordinator)
-        coordinator.deny()
+        denyCurrent(coordinator)
         guard case .denied(.denied) = await pending.value else { return XCTFail("expected denial") }
         XCTAssertNil(coordinator.current)
     }
@@ -326,17 +342,22 @@ final class MeshConsentCoordinatorTests: XCTestCase {
         let b = Task { await coordinator.requestConsent(second) }
         await Task.yield()
         XCTAssertEqual(coordinator.current, first)
-        coordinator.deny()
+        denyCurrent(coordinator)
         _ = await a.value
         while coordinator.current != second { await Task.yield() }
-        await coordinator.approve()
+        await approveCurrent(coordinator)
         guard case .approved = await b.value else { return XCTFail("expected approval") }
     }
 
-    func testApproveWithNothingPendingDoesNothing() async {
+    func testRetiredPresentationCannotApproveOrDenyAnotherRequest() async throws {
         let coordinator = ConsentCoordinator(authenticator: StubAuthenticator(succeeds: true))
-        await coordinator.approve()
-        coordinator.deny()
+        let pending = Task { await coordinator.requestConsent(makePrompt()) }
+        await waitForCurrent(coordinator)
+        let presentation = try XCTUnwrap(coordinator.presentation(for: presenter))
+        coordinator.deny(presentation)
+        guard case .denied = await pending.value else { return XCTFail("expected denial") }
+        await coordinator.approve(presentation)
+        coordinator.deny(presentation)
         XCTAssertNil(coordinator.current)
     }
 }

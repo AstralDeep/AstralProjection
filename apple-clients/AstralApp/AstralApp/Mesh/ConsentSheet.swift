@@ -52,8 +52,11 @@ struct ConsentSheet: View {
                         .accessibilityLabel("Deny this action")
                         .accessibilityIdentifier("consent.deny")
                     Button(action: onApprove) {
-                        if isAuthenticating { ProgressView().controlSize(.small).frame(maxWidth: .infinity) }
-                        else { Text("Approve").frame(maxWidth: .infinity) }
+                        if isAuthenticating {
+                            ProgressView().controlSize(.small).frame(maxWidth: .infinity)
+                        } else {
+                            Text("Approve").frame(maxWidth: .infinity)
+                        }
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(isAuthenticating)
@@ -100,23 +103,41 @@ struct ConsentSheet: View {
     }
 }
 
+private struct ConsentPresentationDepthKey: EnvironmentKey {
+    static let defaultValue = 0
+}
+
+extension EnvironmentValues {
+    fileprivate var consentPresentationDepth: Int {
+        get { self[ConsentPresentationDepthKey.self] }
+        set { self[ConsentPresentationDepthKey.self] = newValue }
+    }
+}
+
 private struct ConsentSheetPresenter: ViewModifier {
     let coordinator: ConsentCoordinator
+    @Environment(\.consentPresentationDepth) private var depth
+    @State private var presenter = UUID()
 
     func body(content: Content) -> some View {
-        content.sheet(
+        let presentation = coordinator.presentation(for: presenter)
+        content.environment(\.consentPresentationDepth, depth + 1).sheet(
             isPresented: Binding(
-                get: { coordinator.current != nil },
-                set: { presented in if !presented { coordinator.deny() } })
+                get: { presentation != nil },
+                set: { presented in
+                    if !presented, let presentation { coordinator.deny(presentation) }
+                })
         ) {
-            if let prompt = coordinator.current {
+            if let presentation {
                 ConsentSheet(
-                    prompt: prompt, isAuthenticating: coordinator.isAuthenticating,
+                    prompt: presentation.prompt, isAuthenticating: coordinator.isAuthenticating,
                     message: coordinator.authenticationMessage,
-                    onApprove: { Task { await coordinator.approve() } },
-                    onDeny: { coordinator.deny() })
+                    onApprove: { Task { await coordinator.approve(presentation) } },
+                    onDeny: { coordinator.deny(presentation) })
             }
         }
+        .onAppear { coordinator.registerPresenter(presenter, depth: depth) }
+        .onDisappear { coordinator.releasePresenter(presenter) }
     }
 }
 

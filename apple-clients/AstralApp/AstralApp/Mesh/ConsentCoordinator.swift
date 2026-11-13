@@ -20,6 +20,13 @@ nonisolated enum ConsentDecision: Sendable {
     case denied(ConsentDenial)
 }
 
+nonisolated struct ConsentPresentation: Sendable {
+    fileprivate let presenter: UUID
+    fileprivate let entry: UUID
+    fileprivate let generation: UUID
+    let prompt: ConsentPrompt
+}
+
 nonisolated protocol ConsentPresenting: Sendable {
     func requestConsent(_ prompt: ConsentPrompt) async -> ConsentDecision
 }
@@ -58,21 +65,60 @@ final class ConsentCoordinator: ConsentPresenting {
         let id: UUID
         let prompt: ConsentPrompt
         let continuation: CheckedContinuation<ConsentDecision, Never>
+        let presenter: UUID?
     }
 
     private(set) var current: ConsentPrompt?
     private(set) var isAuthenticating = false
     private(set) var authenticationMessage: String?
+    private(set) var presentationOwner: UUID?
 
     @ObservationIgnored private var queue: [Entry] = []
     @ObservationIgnored private var active: Entry?
     @ObservationIgnored private var timeoutTask: Task<Void, Never>?
     @ObservationIgnored private let authenticator: ConsentAuthenticating
     @ObservationIgnored private let timeout: Duration
+    @ObservationIgnored private var presenters: [(id: UUID, depth: Int)] = []
+    @ObservationIgnored private var presentationGeneration = UUID()
 
     init(authenticator: ConsentAuthenticating = LocalAuthenticator(), timeout: Duration = .seconds(120)) {
         self.authenticator = authenticator
         self.timeout = timeout
+    }
+
+    func registerPresenter(_ id: UUID, depth: Int) {
+        guard !presenters.contains(where: { $0.id == id && $0.depth == depth }) else { return }
+        presenters.removeAll { $0.id == id }
+        presenters.append((id, depth))
+        updatePresentationOwner()
+    }
+
+    func releasePresenter(_ id: UUID) {
+        var cancelled = queue.filter { $0.presenter == id }.map(\.id)
+        if let active, active.presenter == id || presentationOwner == id { cancelled.append(active.id) }
+        presenters.removeAll { $0.id == id }
+        updatePresentationOwner()
+        for entry in cancelled { finish(entry, .denied(.cancelled)) }
+    }
+
+    func presentation(for presenter: UUID) -> ConsentPresentation? {
+        guard presenter == presentationOwner, let active, let current else { return nil }
+        return ConsentPresentation(
+            presenter: presenter, entry: active.id, generation: presentationGeneration, prompt: current)
+    }
+
+    private func updatePresentationOwner() {
+        let depth = presenters.map(\.depth).max()
+        let next = presenters.last { $0.depth == depth }?.id
+        guard next != presentationOwner else { return }
+        if isAuthenticating, let active { finish(active.id, .denied(.cancelled)) }
+        presentationGeneration = UUID()
+        presentationOwner = next
+    }
+
+    private func isCurrent(_ presentation: ConsentPresentation) -> Bool {
+        presentation.presenter == presentationOwner && presentation.entry == active?.id
+            && presentation.generation == presentationGeneration
     }
 
     func requestConsent(_ prompt: ConsentPrompt) async -> ConsentDecision {
@@ -84,7 +130,8 @@ final class ConsentCoordinator: ConsentPresenting {
                         continuation.resume(returning: .denied(.cancelled))
                         return
                     }
-                    queue.append(Entry(id: id, prompt: prompt, continuation: continuation))
+                    queue.append(
+                        Entry(id: id, prompt: prompt, continuation: continuation, presenter: presentationOwner))
                     advance()
                 }
             }
@@ -93,23 +140,24 @@ final class ConsentCoordinator: ConsentPresenting {
         }
     }
 
-    func approve() async {
-        guard let entry = active, !isAuthenticating else { return }
+    func approve(_ presentation: ConsentPresentation) async {
+        guard isCurrent(presentation), let entry = active, !isAuthenticating else { return }
         isAuthenticating = true
         authenticationMessage = nil
         do {
             let context = try await authenticator.authenticate(
                 reason: entry.prompt.actionTitle, requiresBiometry: entry.prompt.requiresBiometry)
+            guard isCurrent(presentation) else { return }
             finish(entry.id, .approved(ConsentApproval(context: context)))
         } catch {
-            guard active?.id == entry.id else { return }
+            guard isCurrent(presentation) else { return }
             isAuthenticating = false
             authenticationMessage = "Authentication did not complete. Try again or deny."
         }
     }
 
-    func deny() {
-        guard let entry = active else { return }
+    func deny(_ presentation: ConsentPresentation) {
+        guard isCurrent(presentation), let entry = active else { return }
         finish(entry.id, .denied(.denied))
     }
 

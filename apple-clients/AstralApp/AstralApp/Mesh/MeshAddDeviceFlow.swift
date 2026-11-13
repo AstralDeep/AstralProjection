@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 struct MeshAddDeviceSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(MeshRuntime.self) private var mesh
+    @Environment(ConsentCoordinator.self) private var consent
 
     @State private var usingCode = false
 
@@ -19,17 +20,18 @@ struct MeshAddDeviceSheet: View {
                     MeshInviteView { usingCode = true }
                 }
             }
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button(closeTitle) { dismiss() }
-                            .accessibilityIdentifier("mesh.add.close")
-                    }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(closeTitle) { dismiss() }
+                        .accessibilityIdentifier("mesh.add.close")
                 }
+            }
         }
         #if os(macOS)
             .frame(minWidth: 520, minHeight: 560)
         #endif
         .interactiveDismissDisabled(mesh.addDevice == .approving || mesh.invite == .approving)
+        .consentSheet(consent)
     }
 
     private var closeTitle: String {
@@ -95,7 +97,9 @@ struct MeshAddDeviceView: View {
         VStack(spacing: 24) {
             header(
                 1, icon: "iphone.and.arrow.forward", title: "Open AstralDeep on the new device",
-                text: "Choose Join my mesh, then Show a code on this device instead. The new device shows a pairing code for you to bring here.")
+                text:
+                    "Choose Join my mesh, then Show a code on this device instead. The new device shows a pairing code for you to bring here."
+            )
             Button {
                 step = .code
             } label: {
@@ -140,14 +144,17 @@ struct MeshAddDeviceView: View {
             #else
                 header(
                     2, icon: "doc.on.clipboard", title: "Get the pairing code",
-                    text: "A Mac cannot scan a QR code. On the new device tap Share or Copy under its code, then send it here with AirDrop or Universal Clipboard.")
+                    text:
+                        "A Mac cannot scan a QR code. On the new device tap Share or Copy under its code, then send it here with AirDrop or Universal Clipboard."
+                )
                 pasteTarget
                 if clipboardHasText {
                     Button {
                         payload = MeshPasteboardReader.string()
                         Task { await mesh.previewAddDevice(payload: payload) }
                     } label: {
-                        Label("Use the Code on the Clipboard", systemImage: "doc.on.clipboard").frame(maxWidth: .infinity)
+                        Label("Use the Code on the Clipboard", systemImage: "doc.on.clipboard").frame(
+                            maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
@@ -197,7 +204,8 @@ struct MeshAddDeviceView: View {
             RoundedRectangle(cornerRadius: AstralRadius.lg)
                 .fill(dropTargeted ? p.accent.opacity(0.12) : p.surface)
             RoundedRectangle(cornerRadius: AstralRadius.lg)
-                .strokeBorder(dropTargeted ? p.accent : p.fieldBorder, style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                .strokeBorder(
+                    dropTargeted ? p.accent : p.fieldBorder, style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
             if payload.isEmpty {
                 VStack(spacing: 6) {
                     Image(systemName: "arrow.down.doc").font(.title2).accessibilityHidden(true)
