@@ -12,9 +12,12 @@ final class MeshModeUITests: XCTestCase {
         super.tearDown()
     }
 
-    private func launch(_ scenario: String) {
+    private func launch(_ scenario: String, largestText: Bool = false) {
         app = XCUIApplication()
         app.launchArguments = ["--astral-ui-test-mesh", scenario]
+        if largestText {
+            app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        }
         app.launchEnvironment["ASTRAL_UI_TESTING"] = "1"
         app.launch()
     }
@@ -124,6 +127,38 @@ final class MeshModeUITests: XCTestCase {
         XCTAssertTrue(element("mesh.mailbox.status").label.contains("No mailbox is set"))
     }
 
+    func testOutcomeUnknownCardOffersCheckOrLeave() {
+        launch("shell")
+        let chat = element("mesh.chat.chat-1")
+        XCTAssertTrue(chat.waitForExistence(timeout: 10))
+        chat.tap()
+        let card = element("mesh.unknown.check")
+        for _ in 0..<4 where !card.exists { app.swipeUp() }
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        XCTAssertTrue(element("mesh.unknown.leave").exists)
+        attach("mesh-outcome-unknown")
+    }
+
+    func testTheLargestTextSizeKeepsEveryMeshScreenUsable() {
+        launch("shell", largestText: true)
+        selectTab("Devices")
+        XCTAssertTrue(element("mesh.devices.toolbar.add").waitForExistence(timeout: 10))
+        attach("mesh-xxxl-devices")
+        element("mesh.devices.toolbar.add").tap()
+        XCTAssertTrue(element("mesh.invite.code").waitForExistence(timeout: 5))
+        attach("mesh-xxxl-add-device")
+        element("mesh.add.close").tap()
+        selectTab("Settings")
+        XCTAssertTrue(element("mesh.settings.rename").waitForExistence(timeout: 5))
+        attach("mesh-xxxl-settings")
+        selectTab("Chats")
+        let chat = element("mesh.chat.chat-1")
+        XCTAssertTrue(chat.waitForExistence(timeout: 5))
+        chat.tap()
+        XCTAssertTrue(element("mesh.composer").waitForExistence(timeout: 5))
+        attach("mesh-xxxl-chat")
+    }
+
     func testRunsAndSettingsScreensRender() {
         launch("shell")
         selectTab("Runs")
@@ -132,6 +167,10 @@ final class MeshModeUITests: XCTestCase {
         selectTab("Settings")
         XCTAssertTrue(element("mesh.settings.models").waitForExistence(timeout: 5))
         attach("mesh-settings")
+        app.swipeUp()
+        XCTAssertTrue(element("mesh.settings.recovery").waitForExistence(timeout: 5))
+        attach("mesh-settings-more")
+        app.swipeDown()
         element("mesh.settings.models").tap()
         XCTAssertTrue(element("mesh.models.save").waitForExistence(timeout: 5))
         attach("mesh-model-provider")

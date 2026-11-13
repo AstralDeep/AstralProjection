@@ -426,10 +426,30 @@ nonisolated struct MeshToolEntry: Identifiable, Equatable, Sendable {
     let effect: MeshToolEffect
     let deviceId: String?
     var grantName: String?
+    var annotations = MeshToolAnnotations()
     var scope: String { effect.scope }
     var grantTarget: String { grantName ?? name }
     var grantKey: String { grantTarget + "/" + scope }
     var id: String { (deviceId ?? "this-device") + "/" + name }
+}
+
+nonisolated struct MeshToolAnnotations: Equatable, Sendable {
+    var title: String?
+    var note: String?
+    var readOnly: Bool?
+
+    init(title: String? = nil, note: String? = nil, readOnly: Bool? = nil) {
+        self.title = title
+        self.note = note
+        self.readOnly = readOnly
+    }
+
+    init(json: String) {
+        guard let object = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any] else { return }
+        title = (object["title"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        note = (object["effectNote"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        readOnly = object["readOnlyHint"] as? Bool
+    }
 }
 
 nonisolated struct MeshGrant: Identifiable, Equatable, Sendable {

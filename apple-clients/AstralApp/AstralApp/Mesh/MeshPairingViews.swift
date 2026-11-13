@@ -118,14 +118,14 @@ struct MeshInviteView: View {
             MeshCountdownLabel(expiresAt: invitation.expiresAt)
             HStack(spacing: 12) {
                 ShareLink(item: invitation.payload) { Label("Share", systemImage: "square.and.arrow.up") }
-                    .buttonStyle(.bordered)
+                    .meshBordered()
                     .accessibilityIdentifier("mesh.invite.share")
                 Button {
                     copied = ComponentPasteboard.copy(invitation.payload)
                 } label: {
                     Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
                 }
-                .buttonStyle(.bordered)
+                .meshBordered()
                 .accessibilityIdentifier("mesh.invite.copy")
             }
             .controlSize(.large)
@@ -170,7 +170,7 @@ struct MeshInviteView: View {
             } label: {
                 Text("Cancel").frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered).controlSize(.large)
+            .meshBordered().controlSize(.large)
             .keyboardShortcut(.cancelAction)
             .accessibilityIdentifier("mesh.invite.cancel")
         }
@@ -252,6 +252,7 @@ struct MeshJoinStartView: View {
                     .accessibilityIdentifier("mesh.join.scan")
                 }
             #endif
+            pasteButton
             pasteArea
             if case .failed(let message) = mesh.join {
                 Label(message, systemImage: "exclamationmark.triangle.fill")
@@ -263,7 +264,7 @@ struct MeshJoinStartView: View {
             } label: {
                 Text("Continue").frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered).controlSize(.large)
+            .meshBordered().controlSize(.large)
             .keyboardShortcut(.defaultAction)
             .disabled(payload.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || mesh.join == .starting)
             .accessibilityIdentifier("mesh.join.continue")
@@ -287,6 +288,23 @@ struct MeshJoinStartView: View {
                     }
                 }
             }
+        #endif
+    }
+
+    @ViewBuilder
+    private var pasteButton: some View {
+        let button = Button {
+            payload = MeshPasteboardReader.string()
+            Task { await mesh.acceptInvitation(payload: payload) }
+        } label: {
+            Label("Paste Invitation", systemImage: "doc.on.clipboard").frame(maxWidth: .infinity)
+        }
+        .controlSize(.large)
+        .accessibilityIdentifier("mesh.join.paste")
+        #if os(iOS)
+            if MeshScanner.isAvailable { button.meshBordered() } else { button.buttonStyle(.borderedProminent) }
+        #else
+            button.buttonStyle(.borderedProminent)
         #endif
     }
 
@@ -322,7 +340,7 @@ struct MeshJoinStartView: View {
                     .accessibilityIdentifier("mesh.join.payload")
             #endif
         }
-        .frame(minHeight: 110)
+        .frame(minHeight: 110, maxHeight: 140)
         .dropDestination(for: String.self) { items, _ in
             guard let text = items.first, !text.isEmpty else { return false }
             payload = text

@@ -6,12 +6,44 @@ import SwiftUI
 struct MeshSettingsView: View {
     @Environment(MeshRuntime.self) private var mesh
     @Environment(AppModeStore.self) private var modeStore
+    @Environment(AppModel.self) private var model
     @Environment(ThemeStore.self) private var theme
     @State private var confirmingNode = false
+    @State private var renaming = false
+    @State private var draft = ""
+    @State private var copied = false
     private var p: AstralPalette { theme.palette }
+
+    private var thisDevice: MeshMember? { mesh.members.first(where: \.isThisDevice) }
 
     var body: some View {
         Form {
+            Section("This device") {
+                if let device = thisDevice {
+                    LabeledContent("Name") {
+                        HStack {
+                            Text(device.label)
+                            Button("Rename") {
+                                draft = device.label
+                                renaming = true
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityIdentifier("mesh.settings.rename")
+                        }
+                    }
+                }
+                Button {
+                    model.onDeviceVoice.showingSetup = true
+                } label: {
+                    LabeledContent {
+                        Text(voiceStatus).foregroundStyle(p.muted)
+                    } label: {
+                        Label("Voice", systemImage: "waveform")
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("mesh.settings.voice")
+            }
             Section("Assistant") {
                 NavigationLink { MeshModelProviderView() } label: {
                     Label("Model provider", systemImage: "sparkles")
@@ -32,21 +64,41 @@ struct MeshSettingsView: View {
                 }
                 .accessibilityIdentifier("mesh.settings.mailbox")
             }
-            Section("This mesh") {
+            Section("Your mesh") {
                 if let meshId = mesh.status.meshId {
-                    LabeledContent("Mesh") { Text(meshId.suffix(12)).font(.system(.footnote, design: .monospaced)) }
+                    LabeledContent("Mesh ID") {
+                        HStack {
+                            Text(meshId.suffix(12)).font(.system(.footnote, design: .monospaced))
+                            Button(copied ? "Copied" : "Copy") {
+                                copied = ComponentPasteboard.copy(meshId)
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityIdentifier("mesh.settings.copy-id")
+                        }
+                    }
                 }
                 LabeledContent("Keys", value: mesh.status.hardwareBacked ? "In secure hardware" : "In the Keychain")
                 LabeledContent("Identity", value: mesh.status.attested ? "Verified" : "Not verified")
-                if let version = mesh.kernelVersion { LabeledContent("Runtime", value: version) }
+                NavigationLink { MeshRecoveryInfoView() } label: {
+                    Label("Recovery words", systemImage: "key")
+                }
+                .accessibilityIdentifier("mesh.settings.recovery")
             }
+            MeshSafetySection()
             Section {
-                Button("Use a Node Instead") { confirmingNode = true }
+                Button("Sign in to a Server Instead") { confirmingNode = true }
                     .accessibilityIdentifier("mesh.settings.node")
             } header: {
-                Text("Server")
+                Text("Account")
             } footer: {
-                Text("Switches this app to a server account. Your mesh stays on this device.")
+                Text("Use an AstralDeep server account in this app. Your mesh stays on this device.")
+            }
+            if let version = mesh.kernelVersion {
+                Section {
+                    DisclosureGroup("Diagnostics") {
+                        LabeledContent("Runtime", value: version)
+                    }
+                }
             }
         }
         .formStyle(.grouped)
@@ -54,10 +106,71 @@ struct MeshSettingsView: View {
         .meshReadableWidth()
         .background(p.bg)
         .navigationTitle("Settings")
-        .confirmationDialog("Switch to a node?", isPresented: $confirmingNode, titleVisibility: .visible) {
-            Button("Use a Node") { modeStore.choose(.node) }
+        .confirmationDialog("Sign in to a server instead?", isPresented: $confirmingNode, titleVisibility: .visible) {
+            Button("Use a Server") { modeStore.choose(.node) }
             Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This app will use a server account. Your mesh stays on this device.")
         }
+        .alert("Rename Device", isPresented: $renaming) {
+            TextField("Name", text: $draft)
+            Button("Save") {
+                if let device = thisDevice { Task { _ = await mesh.renameDevice(device, to: draft) } }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This name shows on every device.")
+        }
+    }
+
+    private var voiceStatus: String {
+        guard let store = model.onDeviceVoice.store else { return "Not available" }
+        switch store.state {
+        case .installed: return "Installed"
+        case .notInstalled: return "Download " + store.manifest.sizeDescription
+        case .downloading(let progress): return "Downloading " + Int(progress.fraction * 100).formatted() + "%"
+        case .failed: return "Needs attention"
+        case .unsupported: return "Not available"
+        }
+    }
+}
+
+struct MeshRecoveryInfoView: View {
+    @Environment(MeshRuntime.self) private var mesh
+    @Environment(ThemeStore.self) private var theme
+    @State private var backup: URL?
+    private var p: AstralPalette { theme.palette }
+
+    var body: some View {
+        Form {
+            Section {
+                Text("Your 24 recovery words are not saved on this device. Keep the list you wrote down.")
+                Text("If you lose every device, the words and a backup file bring your mesh back.")
+                    .foregroundStyle(p.muted)
+            }
+            Section {
+                Button("Make a Backup File") {
+                    let url = FileManager.default.temporaryDirectory.appendingPathComponent("astraldeep-mesh-backup.bin")
+                    try? FileManager.default.removeItem(at: url)
+                    Task {
+                        await mesh.exportBackup(to: url)
+                        backup = FileManager.default.fileExists(atPath: url.path) ? url : nil
+                    }
+                }
+                .accessibilityIdentifier("mesh.recovery.backup")
+                if let backup {
+                    ShareLink(item: backup) { Label("Save or Share the Backup", systemImage: "square.and.arrow.up") }
+                        .accessibilityIdentifier("mesh.recovery.share")
+                }
+            } footer: {
+                Text("The backup is encrypted. It is useless without your words.")
+            }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .meshReadableWidth()
+        .background(p.bg)
+        .navigationTitle("Recovery words")
     }
 }
 

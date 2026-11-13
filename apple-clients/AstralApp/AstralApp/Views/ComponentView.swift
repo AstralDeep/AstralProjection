@@ -730,7 +730,8 @@ struct ComponentView: View {
             } else {
                 Text(label).fixedSize(horizontal: false, vertical: true)
                     .frame(
-                        maxWidth: variant == "primary" && !WorkspaceWelcome.isExample(component) ? .infinity : nil)
+                        maxWidth: variant == "primary" && !WorkspaceWelcome.isExample(component) && meshAction == nil
+                            ? .infinity : nil)
             }
         }
         .disabled(
@@ -749,6 +750,12 @@ struct ComponentView: View {
         #endif
         if WorkspaceWelcome.isExample(component) {
             accessibleButton.buttonStyle(WelcomeExampleButtonStyle(palette: p))
+        } else if meshAction != nil {
+            switch variant {
+            case "secondary", "ghost": accessibleButton.buttonStyle(.bordered)
+            case "danger": accessibleButton.buttonStyle(.borderedProminent).tint(p.error)
+            default: accessibleButton.buttonStyle(.borderedProminent)
+            }
         } else {
             accessibleButton.buttonStyle(
                 AstralButtonStyle(palette: p, variant: variant, chip: compactSettings ? compactChip : nil))
@@ -1000,7 +1007,6 @@ struct ComponentView: View {
         VStack(alignment: .leading, spacing: 2) {
             markdown(component.fallbackText).foregroundStyle(p.text)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(component.type).font(ConsoleTypography.caption2).foregroundStyle(p.muted.opacity(0.7))
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)

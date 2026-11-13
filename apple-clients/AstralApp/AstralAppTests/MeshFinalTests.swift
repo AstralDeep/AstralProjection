@@ -150,3 +150,53 @@ final class MeshFinalTests: XCTestCase {
         XCTAssertEqual(h.runtime.members.first?.label, "Desk Mac")
     }
 }
+
+final class MeshModelTextDisplayTests: XCTestCase {
+    func testLinksBecomePlainTextWithTheirHost() {
+        let text = MeshModelText.display("See [the doc](https://evil.example/leak?x=1) and ![chart](https://a.test/c.png) or <https://b.test/p> and https://c.test/q now.")
+        XCTAssertTrue(text.contains("the doc (evil.example)"))
+        XCTAssertFalse(text.contains("]("))
+        XCTAssertFalse(text.contains("leak"))
+        XCTAssertTrue(text.contains("chart"))
+        XCTAssertTrue(text.contains("b.test"))
+        XCTAssertTrue(text.contains("c.test"))
+        XCTAssertFalse(text.contains("c.png"))
+        XCTAssertFalse(text.contains("://"))
+    }
+
+    func testOtherMarkdownSurvives() {
+        let text = MeshModelText.display("**bold** and *italic* and `code`\n- one\n- two")
+        XCTAssertEqual(text, "**bold** and *italic* and `code`\n- one\n- two")
+    }
+
+    func testReferenceLinksAndDefinitionsAreRemoved() {
+        let text = MeshModelText.display("Read [this][1].\n\n[1]: https://x.test/secret")
+        XCTAssertFalse(text.contains("secret"))
+        XCTAssertTrue(text.contains("this"))
+    }
+}
+
+final class MeshToolPresentationTests: XCTestCase {
+    func testTitleAndEffectComeFromAnnotationsThenFromTheEffectKind() {
+        let clock = MeshToolEntry(
+            name: "current_datetime", summary: "Time.", effect: .meshRead, deviceId: nil,
+            annotations: MeshToolAnnotations(json: #"{"title":"Current date and time","effectNote":"Reads the clock only","readOnlyHint":true}"#))
+        XCTAssertEqual(MeshPresentation.toolTitle(clock), "Current date and time")
+        XCTAssertEqual(MeshPresentation.toolEffect(clock), "Reads the clock only")
+        let mail = MeshToolEntry(name: "mail.send", summary: "Sends mail.", effect: .outsideEffect, deviceId: nil)
+        XCTAssertEqual(MeshPresentation.toolTitle(mail), "Mail send")
+        XCTAssertEqual(MeshPresentation.toolEffect(mail), "Can make changes outside your mesh.")
+        let read = MeshToolEntry(name: "calendar.read", summary: "", effect: .meshRead, deviceId: nil)
+        XCTAssertEqual(MeshPresentation.toolEffect(read), "Reads only. Stays on your mesh.")
+        let write = MeshToolEntry(name: "notes.add", summary: "", effect: .meshWrite, deviceId: nil)
+        XCTAssertEqual(MeshPresentation.toolEffect(write), "Can change things on your mesh.")
+        XCTAssertEqual(MeshToolAnnotations(json: "not json"), MeshToolAnnotations())
+    }
+
+    func testCountdownRoundsUpAndEndsAtZero() {
+        let now = Date()
+        XCTAssertEqual(MeshPresentation.countdown(until: now.addingTimeInterval(61), now: now), "1:01")
+        XCTAssertEqual(MeshPresentation.countdown(until: now.addingTimeInterval(9.2), now: now), "0:10")
+        XCTAssertNil(MeshPresentation.countdown(until: now, now: now))
+    }
+}

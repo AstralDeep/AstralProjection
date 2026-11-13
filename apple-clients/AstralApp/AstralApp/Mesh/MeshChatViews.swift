@@ -154,8 +154,8 @@ struct MeshChatDetailView: View {
             Button {
                 Task { await model.onDeviceVoice.activate() }
             } label: {
-                Image(systemName: model.onDeviceVoice.isRunning ? "mic.fill" : "mic").font(.title3)
-                    .frame(width: 32, height: 32)
+                Image(systemName: model.onDeviceVoice.isRunning ? "mic.fill" : "mic").font(.system(size: 22))
+                    .frame(width: 36, height: 36)
             }
             .buttonStyle(.plain)
             .foregroundStyle(p.accent)
@@ -166,7 +166,7 @@ struct MeshChatDetailView: View {
                 Button {
                     Task { await mesh.interrupt() }
                 } label: {
-                    Image(systemName: "stop.circle.fill").font(.title).frame(width: 32, height: 32)
+                    Image(systemName: "stop.circle.fill").font(.system(size: 28)).frame(width: 36, height: 36)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(p.accent)
@@ -175,7 +175,7 @@ struct MeshChatDetailView: View {
                 .accessibilityIdentifier("mesh.composer.stop")
             }
             Button(action: send) {
-                Image(systemName: "arrow.up.circle.fill").font(.title).frame(width: 32, height: 32)
+                Image(systemName: "arrow.up.circle.fill").font(.system(size: 28)).frame(width: 36, height: 36)
             }
             .buttonStyle(.plain)
             .foregroundStyle(canSend ? p.accent : p.muted)
@@ -346,6 +346,18 @@ struct MeshUnknownOutcomeCard: View {
     @Environment(ThemeStore.self) private var theme
     private var p: AstralPalette { theme.palette }
 
+    @ViewBuilder
+    private var unknownButtons: some View {
+        Button("Check it") { Task { await mesh.resolveUnknown(outcome, choice: .checkFirst) } }
+            .buttonStyle(.borderedProminent)
+            .lineLimit(1)
+            .accessibilityIdentifier("mesh.unknown.check")
+        Button("Leave it") { Task { await mesh.resolveUnknown(outcome, choice: .leaveAsUnknown) } }
+            .meshBordered()
+            .lineLimit(1)
+            .accessibilityIdentifier("mesh.unknown.leave")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Not sure this ran: \(outcome.tool)", systemImage: "questionmark.circle")
@@ -353,13 +365,9 @@ struct MeshUnknownOutcomeCard: View {
             Text(MeshModelText.plainPreview(outcome.summary)).font(ConsoleTypography.footnote)
             Text("The step was sent but no answer came back. It will not run again by itself.")
                 .font(ConsoleTypography.footnote).foregroundStyle(p.muted)
-            HStack {
-                Button("Check it") { Task { await mesh.resolveUnknown(outcome, choice: .checkFirst) } }
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityIdentifier("mesh.unknown.check")
-                Button("Leave it") { Task { await mesh.resolveUnknown(outcome, choice: .leaveAsUnknown) } }
-                    .buttonStyle(.bordered)
-                    .accessibilityIdentifier("mesh.unknown.leave")
+            ViewThatFits(in: .horizontal) {
+                HStack { unknownButtons }
+                VStack(alignment: .leading) { unknownButtons }
             }
             .controlSize(.regular)
         }
@@ -394,6 +402,7 @@ struct MeshSyncStrip: View {
         Text(text)
             .font(ConsoleTypography.caption)
             .foregroundStyle(color)
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12).padding(.vertical, 6)
             .background(p.surface)
@@ -406,32 +415,52 @@ struct MeshConsentCards: View {
     @Environment(ThemeStore.self) private var theme
     private var p: AstralPalette { theme.palette }
 
+    private func consentTitle(_ prompt: ConsentPrompt?) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "hand.raised.fill").foregroundStyle(p.warning).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(prompt?.actionTitle ?? "Unreadable approval request")
+                    .font(ConsoleTypography.subheadline.weight(.semibold)).lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let source = prompt?.untrustedSource {
+                    Label("Influenced by untrusted content", systemImage: "exclamationmark.triangle.fill")
+                        .font(ConsoleTypography.caption).foregroundStyle(p.warning)
+                        .accessibilityLabel("Influenced by untrusted content: \(source)")
+                } else {
+                    Text("Needs your approval").font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func consentButtons(_ request: MeshPendingConsent, prompt: ConsentPrompt?) -> some View {
+        if prompt != nil {
+            Button("Review") { Task { await mesh.review(request) } }
+                .buttonStyle(.borderedProminent)
+                .lineLimit(1)
+                .accessibilityIdentifier("mesh.consent.review")
+        }
+        Button("Deny", role: .destructive) { Task { await mesh.deny(request) } }
+            .meshBordered()
+            .lineLimit(1)
+            .accessibilityIdentifier("mesh.consent.deny")
+    }
+
     var body: some View {
         VStack(spacing: 6) {
             ForEach(mesh.pendingConsents) { request in
                 let prompt = mesh.prompt(for: request)
-                HStack(spacing: 10) {
-                    Image(systemName: "hand.raised.fill").foregroundStyle(p.warning).accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(prompt?.actionTitle ?? "Unreadable approval request")
-                            .font(ConsoleTypography.subheadline.weight(.semibold)).lineLimit(1)
-                        if let source = prompt?.untrustedSource {
-                            Label("Influenced by untrusted content", systemImage: "exclamationmark.triangle.fill")
-                                .font(ConsoleTypography.caption).foregroundStyle(p.warning)
-                                .accessibilityLabel("Influenced by untrusted content: \(source)")
-                        } else {
-                            Text("Needs your approval").font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                        }
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) {
+                        consentTitle(prompt)
+                        Spacer(minLength: 8)
+                        consentButtons(request, prompt: prompt)
                     }
-                    Spacer(minLength: 8)
-                    if prompt != nil {
-                        Button("Review") { Task { await mesh.review(request) } }
-                            .buttonStyle(.borderedProminent)
-                            .accessibilityIdentifier("mesh.consent.review")
+                    VStack(alignment: .leading, spacing: 10) {
+                        consentTitle(prompt)
+                        HStack { consentButtons(request, prompt: prompt) }
                     }
-                    Button("Deny", role: .destructive) { Task { await mesh.deny(request) } }
-                        .buttonStyle(.bordered)
-                        .accessibilityIdentifier("mesh.consent.deny")
                 }
                 .controlSize(.small)
                 .padding(.horizontal, 12).padding(.vertical, 8)

@@ -40,7 +40,7 @@ struct MeshRequestRow: View {
                         .buttonStyle(.borderedProminent)
                         .accessibilityIdentifier("mesh.request.answer.\(request.requestId.suffix(8))")
                     Button("Refuse") { refusing = true }
-                        .buttonStyle(.bordered)
+                        .meshBordered()
                         .accessibilityIdentifier("mesh.request.refuse.\(request.requestId.suffix(8))")
                 }
                 .controlSize(.small)

@@ -135,7 +135,7 @@ final class MeshChatMappingTests: XCTestCase {
     }
 
     @MainActor
-    func testChatRowsNeutralizeModelTextButNotOwnerText() {
+    func testChatRowsTurnModelLinksIntoPlainTextButLeaveOwnerText() {
         let view = MeshChatView(
             chatId: "c", title: "t",
             messages: [
@@ -147,9 +147,9 @@ final class MeshChatMappingTests: XCTestCase {
         let rows = MeshChatMapper.rows(for: view, head: nil, streaming: "[s](u)")
         XCTAssertEqual(rows.map(\.turn.role), ["user", "assistant", "reasoning", "assistant"])
         XCTAssertEqual(rows[0].turn.text, "[mine](x)")
-        XCTAssertEqual(rows[1].turn.text, MeshModelText.neutralize("[theirs](https://x.example)"))
-        XCTAssertEqual(rows[2].turn.text, MeshModelText.neutralize("![i](u)"))
-        XCTAssertEqual(rows[3].turn.text, MeshModelText.neutralize("[s](u)"))
+        XCTAssertEqual(rows[1].turn.text, "theirs (x.example)")
+        XCTAssertEqual(rows[2].turn.text, "i")
+        XCTAssertEqual(rows[3].turn.text, "s (u)")
         XCTAssertNotEqual(rows[1].turn.text, "[theirs](https://x.example)")
         XCTAssertNil(rows[3].message)
     }

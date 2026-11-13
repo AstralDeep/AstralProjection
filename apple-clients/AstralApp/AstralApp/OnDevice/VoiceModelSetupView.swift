@@ -14,31 +14,47 @@ struct VoiceModelSetupView: View {
             Form {
                 if let store = controller.store {
                     if case .unsupported(let reason) = store.state {
-                        Text(reason.message).accessibilityIdentifier("voice-model-unsupported")
+                        Section {
+                            Label(reason.message, systemImage: "exclamationmark.circle")
+                                .accessibilityIdentifier("voice-model-unsupported")
+                        }
                     } else {
                         Section {
-                            Text(store.manifest.displayName)
-                            Text(
-                                "Download \(store.manifest.sizeDescription) to recognize speech and speak on this device."
-                            )
-                            .foregroundStyle(.secondary)
+                            VStack(spacing: 10) {
+                                Image(systemName: "waveform.circle.fill").font(.system(size: 48))
+                                    .foregroundStyle(.tint).accessibilityHidden(true)
+                                Text("Talk to your assistant").font(.title3.weight(.semibold))
+                                Text(
+                                    "The voice model runs on this device, so speech stays here. Download it once, \(store.manifest.sizeDescription), to speak and listen."
+                                )
+                                .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                            .accessibilityElement(children: .combine)
+                        }
+                        Section {
+                            LabeledContent("Model", value: store.manifest.displayName)
+                            LabeledContent("Size", value: store.manifest.sizeDescription)
                             modelState(store)
                         }
                         if let message = controller.message,
                             !(store.state == .installed && !controller.conversationReady)
                         {
-                            Text(message).accessibilityIdentifier("voice-model-message")
+                            Section { Text(message).accessibilityIdentifier("voice-model-message") }
                         }
                         if store.state == .installed {
-                            Button("Delete voice model", role: .destructive) { confirmingDelete = true }
-                                .accessibilityIdentifier("voice-model-delete")
+                            Section {
+                                Button("Remove Voice Model", role: .destructive) { confirmingDelete = true }
+                                    .accessibilityIdentifier("voice-model-delete")
+                            }
                         }
                         Section {
-                            Text(store.manifest.license).font(.footnote)
+                            Text(store.manifest.license).font(.footnote).foregroundStyle(.secondary)
                         }
                     }
                 } else {
-                    Text(VoiceModelFailure.manifestUnavailable.message)
+                    Section { Text(VoiceModelFailure.manifestUnavailable.message) }
                 }
             }
             .formStyle(.grouped)
@@ -47,7 +63,7 @@ struct VoiceModelSetupView: View {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
             }
         }
-        .frame(minWidth: 320, minHeight: 300)
+        .frame(minWidth: 380, minHeight: 440)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("voice-model-setup")
         .alert("Download on this connection?", isPresented: $controller.showingMeteredConfirmation) {
@@ -57,7 +73,7 @@ struct VoiceModelSetupView: View {
             Text("This downloads \(controller.downloadSize ?? "the voice model") using your current connection.")
         }
         .confirmationDialog("Delete the voice model?", isPresented: $confirmingDelete) {
-            Button("Delete voice model", role: .destructive) { Task { await controller.deleteModel() } }
+            Button("Remove Voice Model", role: .destructive) { Task { await controller.deleteModel() } }
         } message: {
             Text("You can download it again when you need voice.")
         }
@@ -70,7 +86,7 @@ struct VoiceModelSetupView: View {
         case .unsupported(let reason):
             Text(reason.message).accessibilityIdentifier("voice-model-unsupported")
         case .notInstalled:
-            downloadButton("Download \(store.manifest.sizeDescription)")
+            downloadButton("Download \(store.manifest.sizeDescription)", prominent: true)
         case .downloading(let progress):
             ProgressView(value: progress.fraction) {
                 Text(progress.verifying ? "Verifying download…" : "Downloading voice model…")
@@ -80,11 +96,12 @@ struct VoiceModelSetupView: View {
                 .accessibilityIdentifier("voice-model-cancel")
         case .failed(let failure):
             Text(failure.message).accessibilityIdentifier("voice-model-failure")
-            downloadButton("Retry download")
+            downloadButton("Retry Download", prominent: true)
         case .installed:
             Text("Installed").accessibilityIdentifier("voice-model-installed")
             if controller.conversationReady {
-                Button("Start voice", action: onStart)
+                Button("Start Voice", action: onStart)
+                    .buttonStyle(.borderedProminent)
                     .disabled(controller.isPreparing || controller.isRunning)
                     .accessibilityIdentifier("voice-model-start")
             } else {
@@ -93,8 +110,13 @@ struct VoiceModelSetupView: View {
         }
     }
 
-    private func downloadButton(_ title: String) -> some View {
-        Button(title) { Task { await controller.confirmDownload() } }
-            .accessibilityIdentifier("voice-model-download")
+    @ViewBuilder
+    private func downloadButton(_ title: String, prominent: Bool) -> some View {
+        let button = Button(title) { Task { await controller.confirmDownload() } }
+        if prominent {
+            button.buttonStyle(.borderedProminent).accessibilityIdentifier("voice-model-download")
+        } else {
+            button.accessibilityIdentifier("voice-model-download")
+        }
     }
 }

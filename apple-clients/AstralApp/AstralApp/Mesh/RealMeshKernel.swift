@@ -265,17 +265,22 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
 
     func tools() -> [MeshToolEntry] {
         let mine = localTools.list().map {
-            MeshToolEntry(name: $0.name, summary: $0.summary, effect: $0.effect, deviceId: nil)
+            MeshToolEntry(
+                name: $0.name, summary: $0.summary, effect: $0.effect, deviceId: nil,
+                annotations: MeshToolAnnotations(json: $0.annotationsJSON))
         }
         let known = Set(mine.map(\.name))
         let fixed = peerTools.filter { !known.contains($0.spec.name) }.map {
-            MeshToolEntry(name: $0.spec.name, summary: $0.spec.summary, effect: $0.spec.effect, deviceId: $0.deviceId)
+            MeshToolEntry(
+                name: $0.spec.name, summary: $0.spec.summary, effect: $0.spec.effect, deviceId: $0.deviceId,
+                annotations: MeshToolAnnotations(json: $0.spec.annotationsJSON))
         }
         let seen = Set(fixed.map(\.id))
         let published = ((try? kernel.peerToolCatalog()) ?? []).map {
             MeshToolEntry(
                 name: $0.tool.name, summary: $0.tool.description, effect: KernelLocalTools.meshEffect($0.tool.effect),
-                deviceId: $0.device, grantName: $0.grantName)
+                deviceId: $0.device, grantName: $0.grantName,
+                annotations: MeshToolAnnotations(json: $0.tool.annotationsJson))
         }.filter { !seen.contains($0.id) }
         return mine + fixed + published
     }

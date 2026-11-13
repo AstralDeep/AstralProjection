@@ -63,7 +63,9 @@ struct MeshDevicesView: View {
             } header: {
                 Text("Other devices")
             } footer: {
-                Text(MeshPresentation.syncLine(mesh.syncSummary))
+                #if os(iOS)
+                    Text(MeshPresentation.syncLine(mesh.syncSummary))
+                #endif
             }
             MeshSafetySection()
         }
@@ -233,7 +235,7 @@ struct MeshSafetySection: View {
             Button("Stop All Devices", role: .destructive) { Task { await mesh.raiseStop() } }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("No device will take any action until you resume. You can resume from the Devices tab.")
+            Text("No device will take any action until you resume. You can resume from Devices or Settings.")
         }
     }
 }
@@ -254,4 +256,16 @@ enum MeshPasteboardReader {
             return UIPasteboard.general.string ?? ""
         #endif
     }
+}
+
+private struct MeshBorderedButton: ViewModifier {
+    @Environment(ThemeStore.self) private var theme
+
+    func body(content: Content) -> some View {
+        content.buttonStyle(.bordered).tint(theme.palette.accent)
+    }
+}
+
+extension View {
+    func meshBordered() -> some View { modifier(MeshBorderedButton()) }
 }

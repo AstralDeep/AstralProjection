@@ -104,7 +104,7 @@ struct MeshRunRow: View {
                     .disabled(targets.isEmpty || run.role != .executor)
                     .accessibilityIdentifier("mesh.run.handoff.\(run.runId)")
                 }
-                .buttonStyle(.bordered)
+                .meshBordered()
             }
         }
         .accessibilityElement(children: .contain)
@@ -185,12 +185,12 @@ struct MeshProposalRow: View {
                     .buttonStyle(.borderedProminent)
                     .accessibilityIdentifier("mesh.proposal.adopt.\(proposal.proposalId)")
                 Button("Decline", role: .destructive) { Task { result = await mesh.review(proposal, adopt: false) } }
-                    .buttonStyle(.bordered)
+                    .meshBordered()
                     .accessibilityIdentifier("mesh.proposal.decline.\(proposal.proposalId)")
             }
             if proposal.status == .adopted {
                 Button("Undo") { Task { await mesh.undo(proposal) } }
-                    .buttonStyle(.bordered)
+                    .meshBordered()
                     .accessibilityIdentifier("mesh.proposal.undo.\(proposal.proposalId)")
             }
         }

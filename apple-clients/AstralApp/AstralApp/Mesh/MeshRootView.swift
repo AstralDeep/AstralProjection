@@ -69,7 +69,11 @@ struct MeshShell: View {
     @State private var selectedChat: String?
 
     init(start: MeshDestination? = nil) {
-        _destination = State(initialValue: start)
+        #if DEBUG
+            _destination = State(initialValue: start ?? MeshUITestFixture.requestedDestination())
+        #else
+            _destination = State(initialValue: start)
+        #endif
     }
 
     var body: some View {

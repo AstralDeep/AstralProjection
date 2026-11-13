@@ -20,6 +20,17 @@
             return Scenario(rawValue: arguments[index + 1])
         }
 
+        static func requestedDestination(arguments: [String] = ProcessInfo.processInfo.arguments) -> MeshDestination? {
+            guard let index = arguments.firstIndex(of: "--astral-ui-test-destination"), arguments.indices.contains(index + 1)
+            else { return nil }
+            switch arguments[index + 1] {
+            case "devices": return .devices
+            case "runs": return .runs
+            case "settings": return .settings
+            default: return nil
+            }
+        }
+
         @MainActor
         static func install(
             _ scenario: Scenario, consent: ConsentCoordinator
@@ -58,10 +69,12 @@
             kernel.setMembers([
                 MeshMember(
                     memberId: "sha256:" + String(repeating: "b", count: 64), label: "Preview Mac", kind: .desktop,
-                    isThisDevice: true, attested: true, lastSeen: nil, path: .none),
+                    isThisDevice: true, attested: true, lastSeen: nil, path: .none,
+                    addedAt: now.addingTimeInterval(-86_400 * 30), attestedAt: now.addingTimeInterval(-86_400 * 3)),
                 MeshMember(
                     memberId: "sha256:" + String(repeating: "c", count: 64), label: "Sam's iPhone", kind: .pocket,
-                    isThisDevice: false, attested: false, lastSeen: now.addingTimeInterval(-1_800), path: .relay),
+                    isThisDevice: false, attested: false, lastSeen: now.addingTimeInterval(-1_800), path: .relay,
+                    addedAt: now.addingTimeInterval(-86_400 * 12)),
             ])
             kernel.setSync(
                 MeshSyncState(
@@ -105,6 +118,10 @@
                     toMember: phone, state: .claimed, text: "Check the calendar for Friday", refusalCode: nil,
                     tool: "calendar.read", createdAt: now.addingTimeInterval(-120)),
             ], notify: false)
+            kernel.setChatStatus(
+                chatId: chat,
+                .outcomeUnknown(
+                    MeshUnknownOutcome(stepId: "step-1", tool: "mail.send", summary: "Send the weekly plan to the lab")))
             kernel.setPending([pendingConsent()])
         }
 
@@ -124,8 +141,11 @@
                     "root": MeshSurfaceNode(
                         id: "root", type: "container", props: [:], children: ["card", "go"], provenance: "model"),
                     "card": MeshSurfaceNode(
-                        id: "card", type: "metric_card",
-                        props: ["title": .string("Focus hours"), "value": .string("18"), "subtitle": .string("this week")],
+                        id: "card", type: "metric",
+                        props: [
+                            "title": .string("Focus hours"), "value": .string("18"), "subtitle": .string("this week"),
+                            "delta": .string("+2"), "trend": .string("up"),
+                        ],
                         children: [], provenance: "tool"),
                     "go": MeshSurfaceNode(
                         id: "go", type: "button",

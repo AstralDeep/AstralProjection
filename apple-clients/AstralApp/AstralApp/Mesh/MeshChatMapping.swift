@@ -34,6 +34,54 @@ nonisolated enum MeshModelText {
 }
 
 extension MeshModelText {
+    private static func expression(_ pattern: String) -> NSRegularExpression {
+        try! NSRegularExpression(pattern: pattern)
+    }
+
+    private static let images = expression(#"!\[([^\]]*)\]\(\s*[^)\s]*(?:\s+"[^"]*")?\s*\)"#)
+    private static let links = expression(#"\[([^\]]*)\]\(\s*<?([^)\s>]*)>?(?:\s+"[^"]*")?\s*\)"#)
+    private static let references = expression(#"\[([^\]]+)\]\[[^\]]*\]"#)
+    private static let definitions = expression(#"(?m)^\s*\[[^\]]+\]:\s*\S+.*$\n?"#)
+    private static let autolinks = expression(#"<((?:https?|ftp)://[^>\s]+)>"#)
+    private static let bare = expression(#"(?:https?|ftp)://[^\s)<>\]]+"#)
+
+    static func hostOnly(_ raw: String) -> String? {
+        let candidate = raw.contains("://") ? raw : "https://" + raw
+        guard let host = URL(string: candidate)?.host, !host.isEmpty else { return nil }
+        return host
+    }
+
+    private static func replace(
+        _ expression: NSRegularExpression, in text: String, _ build: (_ groups: [String]) -> String
+    ) -> String {
+        let source = text as NSString
+        var out = ""
+        var cursor = 0
+        for match in expression.matches(in: text, range: NSRange(location: 0, length: source.length)) {
+            out += source.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+            let groups = (0..<match.numberOfRanges).map { index -> String in
+                let range = match.range(at: index)
+                return range.location == NSNotFound ? "" : source.substring(with: range)
+            }
+            out += build(groups)
+            cursor = match.range.location + match.range.length
+        }
+        return out + source.substring(from: cursor)
+    }
+
+    static func display(_ text: String) -> String {
+        var current = replace(images, in: text) { $0[1] }
+        current = replace(links, in: current) { groups in
+            guard let host = hostOnly(groups[2]) else { return groups[1] }
+            return groups[1].isEmpty ? host : groups[1] + " (" + host + ")"
+        }
+        current = replace(references, in: current) { $0[1] }
+        current = replace(definitions, in: current) { _ in "" }
+        current = replace(autolinks, in: current) { hostOnly($0[1]) ?? "" }
+        current = replace(bare, in: current) { hostOnly($0[0]) ?? "" }
+        return neutralize(current)
+    }
+
     static func plainPreview(_ text: String) -> String {
         String(text.prefix(280))
     }
@@ -73,6 +121,12 @@ nonisolated enum MeshChatTree {
     }
 }
 
+nonisolated enum MeshComponentTypes {
+    private static let aliases = ["metric_card": "metric", "stat_card": "metric", "metric_tile": "metric", "kpi": "metric"]
+
+    static func canonical(_ type: String) -> String { aliases[type] ?? type }
+}
+
 nonisolated enum MeshSurfaceMapper {
     private static let maximumDepth = 32
     private static let structural: Set<String> = ["type", "component_id", "children", "id", "capability"]
@@ -91,7 +145,7 @@ nonisolated enum MeshSurfaceMapper {
         for (key, raw) in node.props where !structural.contains(key) && !handleKeys.contains(key) {
             if let clean = sanitize(raw) { object[key] = clean }
         }
-        object["type"] = .string(node.type)
+        object["type"] = .string(MeshComponentTypes.canonical(node.type))
         object["component_id"] = .string(id)
         if let capability = capability(in: node.props) {
             object["capability"] = .string(capability)
@@ -181,7 +235,7 @@ nonisolated enum MeshRenderedMapper {
         for (key, nested) in fields where !structural.contains(key) && key != "action" {
             if let value = clean(nested, depth: depth + 1, resolved: resolved) { out[key] = value }
         }
-        if let type = fields["type"]?.stringValue { out["type"] = .string(type) }
+        if let type = fields["type"]?.stringValue { out["type"] = .string(MeshComponentTypes.canonical(type)) }
         if let id = fields["id"]?.stringValue { out["component_id"] = .string(id) }
         if let capability = fields["action"]?.objectValue?["handle"]?.stringValue {
             out["capability"] = .string(capability)
@@ -234,7 +288,7 @@ enum MeshChatMapper {
             return Row(
                 turn: AppModel.ChatTurn(
                     id: message.eventId, role: role(for: message.author),
-                    text: message.author == .owner ? message.text : MeshModelText.neutralize(message.text),
+                    text: message.author == .owner ? message.text : MeshModelText.display(message.text),
                     components: components),
                 message: message)
         }
@@ -242,7 +296,7 @@ enum MeshChatMapper {
             rows.append(
                 Row(
                     turn: AppModel.ChatTurn(
-                        id: "mesh-streaming", role: "assistant", text: MeshModelText.neutralize(streaming)),
+                        id: "mesh-streaming", role: "assistant", text: MeshModelText.display(streaming)),
                     message: nil))
         }
         return rows

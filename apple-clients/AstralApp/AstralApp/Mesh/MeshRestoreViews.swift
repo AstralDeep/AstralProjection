@@ -61,6 +61,8 @@ struct MeshRestoreView: View {
                 Text("Recover").frame(maxWidth: .infinity).padding(.vertical, 6)
             }
             .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .keyboardShortcut(.defaultAction)
             .disabled(wordCount != MeshRecoveryWords.count || recovering)
             .accessibilityIdentifier("mesh.restore.submit")
             Button("Cancel") {

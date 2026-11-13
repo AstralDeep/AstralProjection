@@ -165,7 +165,7 @@ struct MeshAddDeviceView: View {
             } label: {
                 Text("Continue").frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
+            .meshBordered()
             .controlSize(.large)
             .keyboardShortcut(clipboardHasText ? nil : .defaultAction)
             .disabled(payload.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -269,7 +269,7 @@ struct MeshAddDeviceView: View {
             } label: {
                 Text("Cancel").frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
+            .meshBordered()
             .controlSize(.large)
             .keyboardShortcut(.cancelAction)
             .accessibilityIdentifier("mesh.add.cancel")
@@ -304,14 +304,14 @@ private struct MeshScanAvailableStyle: PrimitiveButtonStyle {
         #if os(iOS)
             if MeshScanner.isAvailable {
                 Button(role: configuration.role, action: configuration.trigger) { configuration.label }
-                    .buttonStyle(.bordered)
+                    .meshBordered()
             } else {
                 Button(role: configuration.role, action: configuration.trigger) { configuration.label }
                     .buttonStyle(.borderedProminent)
             }
         #else
             Button(role: configuration.role, action: configuration.trigger) { configuration.label }
-                .buttonStyle(.bordered)
+                .meshBordered()
         #endif
     }
 }

@@ -60,7 +60,8 @@ struct MeshToolRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(tool.name).font(.system(.body, design: .monospaced)).lineLimit(1)
+                Text(MeshPresentation.toolTitle(tool)).font(ConsoleTypography.headline)
+                Text(tool.name).font(.system(.caption, design: .monospaced)).foregroundStyle(p.muted).lineLimit(1)
                 Text(tool.summary).font(ConsoleTypography.subheadline).foregroundStyle(p.muted)
                 Text(detail).font(ConsoleTypography.footnote).foregroundStyle(p.muted)
                 if granted {
@@ -78,8 +79,8 @@ struct MeshToolRow: View {
     }
 
     private var detail: String {
-        var text = "Can " + MeshToolScope.description(tool.scope)
-        if let by = mesh.grant(for: tool)?.grantedBy { text += ". Granted by " + mesh.memberLabel(by) }
+        var text = MeshPresentation.toolEffect(tool)
+        if let by = mesh.grant(for: tool)?.grantedBy { text += " Granted by " + mesh.memberLabel(by) }
         return text
     }
 
@@ -87,7 +88,7 @@ struct MeshToolRow: View {
     private var action: some View {
         if granted {
             Button("Revoke", role: .destructive) { run { await mesh.revoke(tool) } }
-                .buttonStyle(.bordered)
+                .meshBordered()
                 .accessibilityIdentifier("mesh.tool.revoke.\(tool.id)")
         } else {
             Button("Grant") { run { await mesh.grant(tool) } }

@@ -12,39 +12,50 @@ struct MeshOnboardingView: View {
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                Image("AstralDeepLogo")
-                    .resizable().scaledToFit()
-                    .frame(maxWidth: 240)
-                    .padding(.top, 32)
-                    .accessibilityLabel("AstralDeep")
-                if recovering {
-                    MeshRestoreView { recovering = false }
-                } else if case .offered = mesh.join {
-                    MeshJoinView()
-                } else if case .accepted(let accepted) = mesh.join {
-                    MeshJoinAcceptedView(accepted: accepted)
-                } else if joining || isFailedJoin {
-                    MeshJoinStartView(
-                        onShowCode: { Task { await mesh.beginJoin() } },
-                        onBack: {
-                            joining = false
-                            mesh.cancelJoin()
-                        })
-                } else {
-                    choices
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(spacing: 20) {
+                    Spacer(minLength: 0)
+                    Image("AstralDeepLogo")
+                        .resizable().scaledToFit()
+                        .frame(maxWidth: 220)
+                        .accessibilityLabel("AstralDeep")
+                    if recovering {
+                        MeshRestoreView { recovering = false }
+                    } else if case .offered = mesh.join {
+                        MeshJoinView()
+                    } else if case .accepted(let accepted) = mesh.join {
+                        MeshJoinAcceptedView(accepted: accepted)
+                    } else if joining || isFailedJoin {
+                        MeshJoinStartView(
+                            onShowCode: { Task { await mesh.beginJoin() } },
+                            onBack: {
+                                joining = false
+                                mesh.cancelJoin()
+                            })
+                    } else {
+                        choices
+                    }
+                    Spacer(minLength: 0)
                 }
+                .frame(maxWidth: 420)
+                .padding(24)
+                .frame(maxWidth: .infinity, minHeight: proxy.size.height)
             }
-            .frame(maxWidth: 420)
-            .padding(24)
-            .frame(maxWidth: .infinity)
         }
         .background(p.bg)
     }
 
     @ViewBuilder
     private var choices: some View {
+        VStack(spacing: 8) {
+            Text("Your personal mesh").font(ConsoleTypography.title2).accessibilityAddTraits(.isHeader)
+            Text("A mesh links your devices. Your chats and assistant follow you, and no server holds them.")
+                .font(ConsoleTypography.body)
+                .foregroundStyle(p.muted)
+                .multilineTextAlignment(.center)
+                .accessibilityIdentifier("mesh.explainer")
+        }
         if mesh.restoredInstall {
             Label(
                 "This device was restored from a backup. Recover your mesh with your words, join it again or create a new one.",
@@ -56,32 +67,32 @@ struct MeshOnboardingView: View {
         Button {
             Task { await mesh.createMesh() }
         } label: {
-            Text("Create a mesh on this device").frame(maxWidth: .infinity).padding(.vertical, 6)
+            Text("Create a Mesh").frame(maxWidth: .infinity)
         }
         .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+        .keyboardShortcut(.defaultAction)
         .disabled(busy)
         .accessibilityIdentifier("mesh.create")
         Button {
             joining = true
         } label: {
-            Text("Join my mesh").frame(maxWidth: .infinity).padding(.vertical, 6)
+            Text("Join My Mesh").frame(maxWidth: .infinity)
         }
-        .buttonStyle(.bordered)
+        .meshBordered()
+        .controlSize(.large)
         .disabled(busy)
         .accessibilityIdentifier("mesh.join")
-        Button {
-            recovering = true
-        } label: {
-            Text("Recover my mesh").frame(maxWidth: .infinity).padding(.vertical, 6)
+        HStack(spacing: 20) {
+            Button("Recover my mesh") { recovering = true }
+                .disabled(busy)
+                .accessibilityIdentifier("mesh.recover")
+            Button("Sign in to a server") { modeStore.choose(.node) }
+                .disabled(busy)
+                .accessibilityIdentifier("mesh.node")
         }
-        .buttonStyle(.bordered)
-        .disabled(busy)
-        .accessibilityIdentifier("mesh.recover")
-        Button("Connect to a node") { modeStore.choose(.node) }
-            .buttonStyle(.plain)
-            .foregroundStyle(p.accent)
-            .disabled(busy)
-            .accessibilityIdentifier("mesh.node")
+        .buttonStyle(.borderless)
+        .font(ConsoleTypography.subheadline)
         progress
         if case .failed(let message) = mesh.join {
             error(message)
@@ -191,7 +202,7 @@ struct MeshJoinView: View {
                 } label: {
                     Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
                 }
-                .buttonStyle(.bordered)
+                .meshBordered()
                 .accessibilityLabel(copied ? "Copied pairing code" : "Copy pairing code")
                 .accessibilityIdentifier("mesh.join.copy")
             }
@@ -222,7 +233,7 @@ struct MeshRecoveryView: View {
                 Text("Write these 24 words down")
                     .font(ConsoleTypography.title2)
                     .accessibilityAddTraits(.isHeader)
-                Text("They are the only way to recover your mesh if you lose every device. They are shown once and are not saved on this device.")
+                Text("They are the only way to get your mesh back if you lose every device. Write them on paper. They are shown once and are not saved on this device.")
                     .font(ConsoleTypography.footnote)
                     .foregroundStyle(p.muted)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 8)], alignment: .leading, spacing: 8) {
@@ -259,6 +270,8 @@ struct MeshRecoveryView: View {
                     Text("Continue").frame(maxWidth: .infinity).padding(.vertical, 6)
                 }
                 .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .keyboardShortcut(.defaultAction)
                 .disabled(!written || answers.contains { $0.trimmingCharacters(in: .whitespaces).isEmpty })
                 .accessibilityIdentifier("mesh.recovery.continue")
             }
