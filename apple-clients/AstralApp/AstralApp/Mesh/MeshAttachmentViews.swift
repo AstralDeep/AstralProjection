@@ -31,9 +31,11 @@ struct MeshAttachmentDrafts: View {
                     }
                 }
             }
-            Text("The assistant can read UTF-8 text, Markdown, CSV and JSON files up to 64 KiB each (256 KiB total). Other files sync between your devices.")
-                .font(ConsoleTypography.caption).foregroundStyle(theme.palette.muted)
-                .accessibilityIdentifier("mesh.attachments.notice")
+            Text(
+                "The assistant can read UTF-8 text, Markdown, CSV and JSON files up to 64 KiB each (256 KiB total). Other files sync between your devices."
+            )
+            .font(ConsoleTypography.caption).foregroundStyle(theme.palette.muted)
+            .accessibilityIdentifier("mesh.attachments.notice")
         }
     }
 }
@@ -75,13 +77,23 @@ struct MeshAttachmentView: View {
                 }
                 Spacer(minLength: 6)
                 if attachment.availability == .present {
-                    Button("Save…") {
-                        Task { await save() }
+                    if attachment.complete {
+                        Button("Save…") {
+                            Task { await save() }
+                        }
+                        .meshBordered()
+                        .disabled(fetching)
+                        .accessibilityLabel("Save " + name)
+                        .accessibilityIdentifier("mesh.attachment.save." + attachment.id)
+                    } else {
+                        Button("Get file") {
+                            Task { await retrieve() }
+                        }
+                        .meshBordered()
+                        .disabled(fetching)
+                        .accessibilityLabel("Get " + name)
+                        .accessibilityIdentifier("mesh.attachment.fetch." + attachment.id)
                     }
-                    .meshBordered()
-                    .disabled(fetching)
-                    .accessibilityLabel("Save " + name)
-                    .accessibilityIdentifier("mesh.attachment.save." + attachment.id)
                 }
             }
             if let problem {
@@ -104,12 +116,25 @@ struct MeshAttachmentView: View {
         }
     }
 
+    private func retrieve() async {
+        guard !fetching else { return }
+        fetching = true
+        problem = nil
+        defer { fetching = false }
+        if await mesh.attachmentBytes(attachment) == nil {
+            problem = mesh.notice ?? "The file could not be fetched. Try when its device reconnects."
+        }
+    }
+
     private func save() async {
         guard !fetching else { return }
         fetching = true
         problem = nil
         defer { fetching = false }
-        guard let bytes = await mesh.attachmentBytes(attachment) else { return }
+        guard let bytes = await mesh.attachmentBytes(attachment) else {
+            problem = mesh.notice ?? "The file could not be fetched. Try when its device reconnects."
+            return
+        }
         document = MeshAttachmentDocument(bytes: bytes)
         exporting = true
     }

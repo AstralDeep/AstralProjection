@@ -9,6 +9,69 @@ final class MeshVoiceLinkTests: XCTestCase {
         OwnerVoiceTurn.make(text: text, source: .deviceMicrophone, trigger: .ownerGesture, riskyActionPending: false)!
     }
 
+    func testPreparationFromSettingsKeepsTheExplicitlySelectedConversation() async throws {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        _ = await h.runtime.newChat(title: "Earlier chat")
+        let opened = await h.runtime.newChat(title: "Voice fixture")
+        let chosen = try XCTUnwrap(opened)
+        h.runtime.closeChat()
+        let scope = try await h.runtime.prepareVoiceSession()
+        XCTAssertEqual(scope.chatId, chosen)
+        XCTAssertEqual(h.runtime.currentChatId, chosen)
+        XCTAssertEqual(h.runtime.voiceChatId, chosen)
+        XCTAssertEqual(h.kernel.calls.filter { $0.name == "createChat" }.count, 2)
+    }
+
+    func testPreparationWithNoSelectionCreatesAnExplicitVoiceChat() async throws {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        let existing = h.runtime.chats.map(\.chatId)
+        let scope = try await h.runtime.prepareVoiceSession()
+        XCTAssertFalse(existing.contains(scope.chatId))
+        XCTAssertEqual(try h.kernel.chat(chatId: scope.chatId).title, "Voice chat")
+    }
+
+    func testPinnedVoiceCannotSendIntoADifferentSelectedChat() async throws {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        _ = await h.runtime.newChat()
+        let scope = try await h.runtime.prepareVoiceSession()
+        _ = await h.runtime.newChat()
+        await h.runtime.submitVoice(owner("What is two plus two?"), scope: scope)
+        XCTAssertFalse(h.kernel.calls.contains { $0.name == "sendMessage" })
+        XCTAssertTrue(h.runtime.notice?.contains("conversation changed") == true)
+    }
+
+    func testRetiredVoiceSessionCannotDispatchOrRecordIntoAReopenedMesh() async throws {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        _ = await h.runtime.newChat()
+        let scope = try await h.runtime.prepareVoiceSession()
+        await h.runtime.close()
+        await h.runtime.open()
+        _ = await h.runtime.newChat()
+        await h.runtime.submitVoice(owner("What is two plus two?"), scope: scope)
+        await h.runtime.recordSpoken(.init(kind: .answer, text: "Four."), scope: scope)
+        XCTAssertFalse(h.kernel.calls.contains { $0.name == "sendMessage" || $0.name == "recordSpoken" })
+        XCTAssertTrue(h.runtime.spoken.isEmpty)
+    }
+
+    func testPlayedSpeechKeepsItsOriginalChatWhenSelectionChanges() async throws {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        _ = await h.runtime.newChat()
+        let scope = try await h.runtime.prepareVoiceSession()
+        _ = await h.runtime.newChat()
+        await h.runtime.recordSpoken(.init(kind: .answer, text: "Four."), scope: scope)
+        XCTAssertEqual(h.kernel.calls.last(where: { $0.name == "recordSpoken" })?.detail, scope.chatId + ":Four.")
+    }
+
     func testFinalTranscriptBecomesAnOwnerMessageAndATurn() async {
         let h = MeshRuntimeHarness()
         defer { h.cleanUp() }
@@ -21,7 +84,8 @@ final class MeshVoiceLinkTests: XCTestCase {
         let ran = await eventually { h.kernel.calls.contains { $0.name == "runTurn" } }
         XCTAssertTrue(ran)
         await h.runtime.settle()
-        XCTAssertTrue(h.kernel.calls.contains { $0.name == "sendMessage" && $0.detail.hasPrefix("what is on my calendar|") })
+        XCTAssertTrue(
+            h.kernel.calls.contains { $0.name == "sendMessage" && $0.detail.hasPrefix("what is on my calendar|") })
         XCTAssertEqual(h.kernel.calls.filter { $0.name == "runTurn" }.count, 1)
         XCTAssertEqual(sink.deltas, ["Hello", " there"])
         XCTAssertEqual(sink.finished, 1)
@@ -63,7 +127,8 @@ final class MeshVoiceLinkTests: XCTestCase {
         await h.runtime.open()
         _ = await h.runtime.newChat()
         h.kernel.turnScript = [
-            .started, .toolStarted(id: "t1", name: "search", cancelSafe: true), .toolFinished(id: "t1", succeeded: true),
+            .started, .toolStarted(id: "t1", name: "search", cancelSafe: true),
+            .toolFinished(id: "t1", succeeded: true),
             .finished,
         ]
         await h.runtime.submitVoice(owner("search"))

@@ -99,7 +99,11 @@ struct VoiceModelSetupView: View {
             downloadButton("Retry Download", prominent: true)
         case .installed:
             Text("Installed").accessibilityIdentifier("voice-model-installed")
-            if controller.conversationReady {
+            if controller.isRunning || controller.isPreparing {
+                Button("Stop Voice") { controller.stop() }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("voice-model-stop")
+            } else if controller.conversationReady {
                 Button("Start Voice", action: onStart)
                     .buttonStyle(.borderedProminent)
                     .disabled(controller.isPreparing || controller.isRunning)

@@ -181,15 +181,27 @@ struct MeshChatDetailView: View {
                     .accessibilityIdentifier("mesh.composer")
                     .onSubmit(send)
                 Button {
-                    Task { await model.onDeviceVoice.activate() }
+                    Task { await model.onDeviceVoice.toggle() }
                 } label: {
-                    Image(systemName: model.onDeviceVoice.isRunning ? "mic.fill" : "mic").font(.system(size: 22))
-                        .frame(width: 36, height: 36)
+                    HStack(spacing: 6) {
+                        if model.onDeviceVoice.isPreparing {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: model.onDeviceVoice.isRunning ? "mic.fill" : "mic")
+                                .font(.system(size: 22))
+                            if model.onDeviceVoice.isRunning { Text("Stop Voice").font(ConsoleTypography.subheadline) }
+                        }
+                    }
+                    .padding(.horizontal, model.onDeviceVoice.isRunning ? 10 : 0)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .background(p.accent.opacity(model.onDeviceVoice.isRunning ? 0.18 : 0), in: Capsule())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(p.accent)
-                .help("Talk")
-                .accessibilityLabel("Talk")
+                .disabled(model.onDeviceVoice.isPreparing)
+                .help(model.onDeviceVoice.isPreparing ? "Preparing voice" : model.onDeviceVoice.isRunning ? "Stop Voice" : "Talk")
+                .accessibilityLabel(model.onDeviceVoice.isPreparing ? "Preparing voice" : model.onDeviceVoice.isRunning ? "Stop Voice" : "Talk")
+                .accessibilityValue(model.onDeviceVoice.isPreparing ? "Microphone starting" : model.onDeviceVoice.isRunning ? "Microphone on" : "Microphone off")
                 .accessibilityIdentifier("mesh.composer.mic")
                 if running {
                     Button {
@@ -212,6 +224,13 @@ struct MeshChatDetailView: View {
                 .help(running ? "Steer" : "Send")
                 .accessibilityLabel(running ? "Steer" : "Send")
                 .accessibilityIdentifier("mesh.composer.send")
+            }
+            if model.onDeviceVoice.isPreparing {
+                Text("Preparing voice…").font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                    .accessibilityIdentifier("mesh.voice.state")
+            } else if model.onDeviceVoice.isRunning {
+                Label("Listening", systemImage: "waveform").font(ConsoleTypography.caption).foregroundStyle(p.accent)
+                    .accessibilityIdentifier("mesh.voice.state")
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 12)

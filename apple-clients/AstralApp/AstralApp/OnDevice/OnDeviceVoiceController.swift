@@ -3,11 +3,13 @@
 
 import AVFoundation
 import Foundation
+import OSLog
 import Observation
 
 @MainActor
 @Observable
 final class OnDeviceVoiceController {
+    private static let log = Logger(subsystem: "com.personalailabs.astraldeep.voice", category: "controller")
     let store: VoiceModelStore?
     var showingSetup = false
     var showingMeteredConfirmation = false
@@ -56,7 +58,20 @@ final class OnDeviceVoiceController {
     }
 
     func activate() async {
-        guard eligible, !isPreparing, !isRunning else { return }
+        Self.log.info(
+            "voice_start requested foreground=\(self.foreground, privacy: .public) interrupted=\(self.interrupted, privacy: .public) locked=\(self.locked, privacy: .public) preparing=\(self.isPreparing, privacy: .public) running=\(self.isRunning, privacy: .public)"
+        )
+        guard !isPreparing, !isRunning else { return }
+        guard eligible else {
+            message =
+                locked
+                ? "Unlock this device, then start voice again."
+                : interrupted
+                    ? "An audio interruption paused voice. Try again when it ends."
+                    : "Return to this app, then start voice again."
+            showingSetup = true
+            return
+        }
         guard let store else {
             showingSetup = true
             return
@@ -82,39 +97,83 @@ final class OnDeviceVoiceController {
         message = "Preparing voice…"
         defer { if generation == attempt { isPreparing = false } }
         await store.refresh()
+        Self.log.info(
+            "voice_start verified_model installed=\(store.installedDirectory != nil, privacy: .public) current=\(self.generation == attempt, privacy: .public) eligible=\(self.eligible, privacy: .public)"
+        )
         guard generation == attempt, eligible, !Task.isCancelled else { return }
         guard let directory = store.installedDirectory else {
             message = "The voice model needs to be downloaded again."
             showingSetup = true
             return
         }
-        guard await requestPermission() else {
-            if generation == attempt { message = "Microphone access is off. Allow it in Settings to use voice." }
+        let permitted = await requestPermission()
+        Self.log.info(
+            "voice_start permission granted=\(permitted, privacy: .public) current=\(self.generation == attempt, privacy: .public) eligible=\(self.eligible, privacy: .public)"
+        )
+        guard permitted else {
+            if generation == attempt {
+                message = "Microphone access is off. Allow it in Settings to use voice."
+                showingSetup = true
+            }
             return
         }
         guard generation == attempt, eligible, !Task.isCancelled else { return }
         do {
+            try await link.prepareForOwnerSession()
+            guard generation == attempt, eligible, !Task.isCancelled else { return }
             let prepared = try await makePipeline(directory, link)
+            Self.log.info(
+                "voice_start pipeline_prepared current=\(self.generation == attempt, privacy: .public) eligible=\(self.eligible, privacy: .public)"
+            )
             guard generation == attempt, eligible, !Task.isCancelled else {
                 prepared.stop()
                 return
             }
-            prepared.onFailure = { [weak self] _ in
-                self?.stop()
-                self?.message = "Voice stopped. Try starting it again."
+            prepared.onFailure = { [weak self] reason in
+                guard let self, self.generation == attempt else { return }
+                self.stop()
+                switch reason {
+                case "voice_recognition_timed_out":
+                    self.message = "Voice could not finish recognizing that sentence. Try again."
+                case "audio_capture_format_unavailable", "audio_engine_restart_failed":
+                    self.message =
+                        "Microphone audio is not available. Check the selected input device in Sound settings, then start voice again."
+                default:
+                    self.message = "Voice stopped. Try starting it again."
+                }
+                self.showingSetup = true
             }
             try prepared.start(trigger: .ownerGesture)
             pipeline = prepared
             isRunning = true
             showingSetup = false
             message = "Listening"
+            Self.log.info("voice_start listening")
         } catch {
+            Self.log.error("voice_start failed type=\(String(reflecting: type(of: error)), privacy: .public)")
             guard generation == attempt else { return }
-            message = "The voice model could not start. Try downloading it again."
+            if error is VoiceDuplexError {
+                message =
+                    "The microphone and speaker could not start. Check the selected audio devices, then try again."
+            } else if let failure = error as? MeshKernelError {
+                message = failure.message
+            } else {
+                message = "The voice model could not start. Try downloading it again."
+            }
+            showingSetup = true
         }
     }
 
+    func toggle() async {
+        if isRunning || isPreparing { stop() } else { await activate() }
+    }
+
     func stop() {
+        if isRunning || isPreparing {
+            Self.log.info(
+                "voice_stop preparing=\(self.isPreparing, privacy: .public) running=\(self.isRunning, privacy: .public)"
+            )
+        }
         generation &+= 1
         pipeline?.stop()
         pipeline = nil
@@ -155,7 +214,9 @@ final class OnDeviceVoiceController {
 
     func deleteModel() async {
         stop()
+        await VoiceInferenceCache.shared.beginDeletion()
         await store?.delete()
+        await VoiceInferenceCache.shared.endDeletion()
     }
 
     func answerDelta(_ text: String) { pipeline?.answerDelta(text) }

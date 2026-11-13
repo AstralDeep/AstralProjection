@@ -281,6 +281,8 @@ final class MeshRuntime {
     @ObservationIgnored nonisolated(unsafe) private var consumer: Task<Void, Never>?
     @ObservationIgnored private var turnTasks: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private(set) var speakingChatId: String?
+    @ObservationIgnored private var voiceSessionChatId: String?
+    @ObservationIgnored private var lastOpenedChatId: String?
     @ObservationIgnored private var openTask: Task<Void, Never>?
     @ObservationIgnored private let makeKernel: MeshKernelFactory
     @ObservationIgnored private let makeKeys: @Sendable () throws -> DeviceKeys
@@ -337,7 +339,7 @@ final class MeshRuntime {
         relay.finish()
     }
 
-    var voiceChatId: String? { speakingChatId }
+    var voiceChatId: String? { voiceSessionChatId ?? speakingChatId }
     var isReady: Bool { phase == .ready }
     var hasMesh: Bool { status.hasMesh }
     var currentTurn: MeshTurnState? { currentChatId.flatMap { turns[$0] } }
@@ -450,6 +452,8 @@ final class MeshRuntime {
         chats = []
         currentChat = nil
         currentChatId = nil
+        lastOpenedChatId = nil
+        voiceSessionChatId = nil
         attachmentDrafts = [:]
         attachmentSession = UUID()
         importingAttachment = false
@@ -876,6 +880,7 @@ final class MeshRuntime {
 
     func openChat(_ chatId: String) async {
         currentChatId = chatId
+        lastOpenedChatId = chatId
         selectedHead = nil
         headPinned = false
         currentChat = nil
@@ -957,7 +962,13 @@ final class MeshRuntime {
             notice = "This file is not available on this device."
             return nil
         }
-        return await attempt { try await $0.fetchAttachment(handle: attachment.handle) }
+        let session = wakeSession
+        guard let bytes = await attempt({ try await $0.fetchAttachment(handle: attachment.handle) }),
+            isReady, wakeSession == session
+        else { return nil }
+        if let chatId = currentChatId { await reloadChat(chatId) }
+        guard isReady, wakeSession == session else { return nil }
+        return bytes
     }
 
     func send(_ text: String, speaking: Bool = false) async -> Bool {
@@ -1086,7 +1097,32 @@ final class MeshRuntime {
         await perform { try $0.exportBackup(path: url.path) }
     }
 
-    func submitVoice(_ turn: OwnerVoiceTurn) async {
+    func prepareVoiceSession() async throws -> MeshVoiceScope {
+        guard isReady, status.hasMesh else { throw MeshKernelError.unavailable("Open your mesh before starting voice.") }
+        guard !status.stopped else { throw MeshKernelError.stopped }
+        let session = wakeSession
+        if currentChatId == nil {
+            if let lastOpenedChatId, chats.contains(where: { $0.chatId == lastOpenedChatId }) {
+                await openChat(lastOpenedChatId)
+            } else {
+                _ = await newChat(title: "Voice chat")
+            }
+        }
+        guard isReady, wakeSession == session, let chatId = currentChatId, currentChat?.chatId == chatId else {
+            throw MeshKernelError.unavailable("Choose a chat before starting voice.")
+        }
+        voiceSessionChatId = chatId
+        return MeshVoiceScope(chatId: chatId, session: session)
+    }
+
+    func submitVoice(_ turn: OwnerVoiceTurn, scope: MeshVoiceScope? = nil) async {
+        if let scope {
+            guard wakeSession == scope.session, isReady else { return }
+            guard currentChatId == scope.chatId else {
+                notice = "Voice paused because the conversation changed. Start voice in this chat."
+                return
+            }
+        }
         guard turn.integrity == .owner, turn.source == .deviceMicrophone else {
             notice = "A spoken transcript from a file or call is not treated as your message."
             return
@@ -1094,14 +1130,22 @@ final class MeshRuntime {
         _ = await send(turn.text, speaking: true)
     }
 
-    func recordSpoken(_ record: VoiceSpokenRecord) async {
+    func recordSpoken(_ record: VoiceSpokenRecord, scope: MeshVoiceScope? = nil) async {
+        if let scope, wakeSession != scope.session { return }
         spoken.append(record)
-        guard let chatId = speakingChatId ?? currentChatId else { return }
+        guard let chatId = scope?.chatId ?? speakingChatId ?? currentChatId else { return }
         await perform { try $0.recordSpoken(chatId: chatId, kind: record.kind, text: record.text) }
     }
 
-    func cancelVoiceTool(id: String) async {
-        guard let chatId = speakingChatId ?? currentChatId,
+    func interruptVoice(scope: MeshVoiceScope? = nil) async {
+        if let scope, wakeSession != scope.session { return }
+        guard let chatId = scope?.chatId ?? voiceChatId ?? currentChatId else { return }
+        await interrupt(chatId: chatId)
+    }
+
+    func cancelVoiceTool(id: String, scope: MeshVoiceScope? = nil) async {
+        if let scope, wakeSession != scope.session { return }
+        guard let chatId = scope?.chatId ?? speakingChatId ?? currentChatId,
             turns[chatId]?.tools.first(where: { $0.id == id })?.cancelSafe == true
         else { return }
         await interrupt(chatId: chatId)

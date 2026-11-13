@@ -123,7 +123,7 @@ enum MeshRuntimeBuilder {
         #endif
         return MeshRuntime(
             makeKernel: makeKernel, makeKeys: { try DeviceKeys() }, consent: consent,
-            onDeviceModel: FoundationModelsOnDeviceModel(), tools: DeviceLocalTools(),
+            onDeviceModel: PreferredOnDeviceModel(), tools: DeviceLocalTools(),
             dataDirectory: dataDirectory(), deviceLabel: label, deviceKind: kind,
             enrollment: { nonce in
                 let web = await MainActor.run { SystemEnrollmentWebAuthenticator() }

@@ -2,6 +2,7 @@
 // The shell has chats, devices and settings, each under the honest sync strip and any approvals waiting on this device.
 
 import SwiftUI
+
 #if os(iOS)
     import UIKit
 #endif
@@ -27,8 +28,7 @@ struct MeshRootView: View {
                     get: { model.onDeviceVoice.showingSetup }, set: { model.onDeviceVoice.showingSetup = $0 })
             ) {
                 VoiceModelSetupView(controller: model.onDeviceVoice) {
-                    model.onDeviceVoice.showingSetup = false
-                    Task { await model.onDeviceVoice.activate() }
+                    Task { await model.onDeviceVoice.toggle() }
                 }
             }
             #if os(iOS)
@@ -80,6 +80,7 @@ struct MeshShell: View {
     @Environment(AppModel.self) private var model
     @State private var destination: MeshDestination?
     @State private var selectedChat: String?
+    @State private var selectedTab = 0
 
     init(start: MeshDestination? = nil) {
         #if DEBUG
@@ -118,9 +119,15 @@ struct MeshShell: View {
             }
             .font(ConsoleTypography.body)
             .onChange(of: destination) { _, value in
+                if model.onDeviceVoice.isRunning || model.onDeviceVoice.isPreparing {
+                    if value != mesh.voiceChatId.map({ MeshDestination.chat($0) }) { model.onDeviceVoice.stop() }
+                }
                 Task {
                     if case .chat(let id) = value { await mesh.openChat(id) } else { mesh.closeChat() }
                 }
+            }
+            .onChange(of: model.onDeviceVoice.isRunning) { _, active in
+                if active, let chatId = mesh.voiceChatId { destination = .chat(chatId) }
             }
             .onAppear {
                 if destination == nil { destination = .devices }
@@ -147,7 +154,7 @@ struct MeshShell: View {
         private var shell: some View {
             VStack(spacing: 0) {
                 MeshConsentCards()
-                TabView {
+                TabView(selection: $selectedTab) {
                     NavigationSplitView {
                         MeshChatListView(selection: $selectedChat)
                     } detail: {
@@ -158,6 +165,7 @@ struct MeshShell: View {
                         }
                     }
                     .tabItem { Label("Chats", systemImage: "bubble.left.and.bubble.right") }
+                    .tag(0)
                     .accessibilityIdentifier("mesh.tab.chats")
                     NavigationStack {
                         VStack(spacing: 0) {
@@ -166,6 +174,7 @@ struct MeshShell: View {
                         }
                     }
                     .tabItem { Label("Devices", systemImage: "laptopcomputer.and.iphone") }
+                    .tag(1)
                     .accessibilityIdentifier("mesh.tab.devices")
                     NavigationStack {
                         VStack(spacing: 0) {
@@ -174,6 +183,7 @@ struct MeshShell: View {
                         }
                     }
                     .tabItem { Label("Runs", systemImage: "arrow.triangle.2.circlepath") }
+                    .tag(2)
                     .accessibilityIdentifier("mesh.tab.runs")
                     NavigationStack {
                         VStack(spacing: 0) {
@@ -182,12 +192,25 @@ struct MeshShell: View {
                         }
                     }
                     .tabItem { Label("Settings", systemImage: "gearshape") }
+                    .tag(3)
                     .accessibilityIdentifier("mesh.tab.settings")
                 }
             }
             .onChange(of: selectedChat) { _, id in
+                if model.onDeviceVoice.isRunning || model.onDeviceVoice.isPreparing {
+                    if id != mesh.voiceChatId { model.onDeviceVoice.stop() }
+                }
                 Task {
                     if let id { await mesh.openChat(id) } else { mesh.closeChat() }
+                }
+            }
+            .onChange(of: selectedTab) { _, tab in
+                if tab != 0 { model.onDeviceVoice.stop() }
+            }
+            .onChange(of: model.onDeviceVoice.isRunning) { _, active in
+                if active, let chatId = mesh.voiceChatId {
+                    selectedChat = chatId
+                    selectedTab = 0
                 }
             }
         }

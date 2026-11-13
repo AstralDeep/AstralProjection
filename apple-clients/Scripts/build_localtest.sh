@@ -13,6 +13,14 @@ derived=$3
 stage=$4
 simulator=${5:-}
 bundle=com.personalailabs.astraldeep.localtest
+configuration=${ASTRAL_LOCALTEST_CONFIGURATION:-Release}
+case $configuration in
+    Debug|Release) ;;
+    *) echo "Localtest configuration must be Debug or Release" >&2; exit 2 ;;
+esac
+if [[ -n ${ASTRAL_LOCALTEST_PACKAGES_DIRECTORY:-} ]]; then
+    [[ -d $ASTRAL_LOCALTEST_PACKAGES_DIRECTORY ]] || { echo "The package checkout directory must exist" >&2; exit 2; }
+fi
 root=$(cd "$(dirname "$0")/../AstralApp" && pwd)
 [[ $team =~ ^[A-Z0-9]{10}$ ]] || { echo "A ten-character existing team id is required" >&2; exit 2; }
 stage_parent=$(cd "$(dirname "$stage")" && pwd -P)
@@ -27,21 +35,24 @@ case $platform in
         identity=${ASTRAL_LOCALTEST_SIGN_IDENTITY:-Apple Development}
         [[ $identity != - ]] || { echo "macOS needs an existing stable signing identity" >&2; exit 2; }
         destination=platform=macOS
-        product=Debug/AstralDeep.app
+        product="$configuration/AstralDeep.app"
         extra=(ENABLE_APP_SANDBOX=NO "CODE_SIGN_ENTITLEMENTS=$root/AstralApp-DirectDownload.entitlements" ASTRAL_DISTRIBUTION=direct-download)
         ;;
     ios)
         identity=-
         [[ $simulator =~ ^[A-Fa-f0-9-]{36}$ ]] || { echo "An existing simulator UUID is required" >&2; exit 2; }
         destination="platform=iOS Simulator,id=$simulator"
-        product=Debug-iphonesimulator/AstralDeep.app
+        product="$configuration-iphonesimulator/AstralDeep.app"
         extra=(CODE_SIGN_ENTITLEMENTS=)
         ;;
     *) echo "Platform must be macos or ios" >&2; exit 2 ;;
 esac
+if [[ -n ${ASTRAL_LOCALTEST_PACKAGES_DIRECTORY:-} ]]; then
+    extra+=(-clonedSourcePackagesDirPath "$ASTRAL_LOCALTEST_PACKAGES_DIRECTORY")
+fi
 mkdir -p "$derived"
 derived=$(cd "$derived" && pwd -P)
-xcodebuild -project "$root/AstralApp.xcodeproj" -scheme AstralApp -configuration Debug \
+xcodebuild -project "$root/AstralApp.xcodeproj" -scheme AstralApp -configuration "$configuration" \
     -destination "$destination" -derivedDataPath "$derived" -jobs "${ASTRAL_BUILD_JOBS:-4}" \
     CODE_SIGNING_ALLOWED=YES "CODE_SIGN_IDENTITY=$identity" "DEVELOPMENT_TEAM=$team" \
     "PRODUCT_BUNDLE_IDENTIFIER=$bundle" "${extra[@]}" build
@@ -50,7 +61,7 @@ if [[ $platform == macos ]]; then
     info="$source_app/Contents/Info.plist"
 else
     info="$source_app/Info.plist"
-    xcent="$derived/Build/Intermediates.noindex/AstralApp.build/Debug-iphonesimulator/AstralApp.build/AstralDeep.app-Simulated.xcent"
+    xcent="$derived/Build/Intermediates.noindex/AstralApp.build/$configuration-iphonesimulator/AstralApp.build/AstralDeep.app-Simulated.xcent"
     identity=$(/usr/libexec/PlistBuddy -c 'Print :application-identifier' "$xcent")
     [[ $identity == "$team.$bundle" ]] || { echo "Simulator Keychain identity does not match" >&2; exit 1; }
 fi

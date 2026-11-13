@@ -5,7 +5,7 @@ import AVFoundation
 import Foundation
 
 nonisolated struct VoicePipelineConfiguration: Equatable, Sendable {
-    var finalTimeout: TimeInterval = 0.8
+    var finalTimeout: TimeInterval = 8
     var tickInterval: Duration = .milliseconds(20)
     var bargeIn = BargeInConfiguration()
     var turn = VoiceTurnConfiguration()
@@ -18,7 +18,6 @@ nonisolated enum VoicePipelineError: Error, Equatable {
 @MainActor
 final class VoicePipeline {
     private struct AwaitingFinal {
-        let fallback: String
         let deadline: TimeInterval
         let segmentID: UUID?
     }
@@ -38,6 +37,7 @@ final class VoicePipeline {
     private var trigger: VoiceSessionTrigger = .programmatic
     private var running = false
     private var segmentOpen = false
+    private var segmentHadVoice = false
     private var holdingKey = false
     private var awaitingFinal: AwaitingFinal?
     private var turnID = 0
@@ -111,6 +111,7 @@ final class VoicePipeline {
         detector.reset()
         splitter.reset()
         segmentOpen = false
+        segmentHadVoice = false
         awaitingFinal = nil
         acknowledgementPlaying = nil
         deferredSpeak = nil
@@ -124,6 +125,7 @@ final class VoicePipeline {
         detector.reset()
         stopAcknowledgement()
         openSegment()
+        segmentHadVoice = true
     }
 
     func endPushToTalk() {
@@ -160,6 +162,7 @@ final class VoicePipeline {
     func handleVoiceActivity(_ active: Bool) {
         guard running else { return }
         userTalking = active
+        if active, segmentOpen { segmentHadVoice = true }
         if !active { transcriber.flushPartial() }
         if active { stopAcknowledgement() }
         syncPlayedProgress()
@@ -171,6 +174,7 @@ final class VoicePipeline {
         guard running else { return }
         switch event {
         case .partial(let text, let segmentID):
+            guard segmentHadVoice else { return }
             guard segmentID == nil || segmentID == transcriber.segmentID else { return }
             syncPlayedProgress()
             perform(barge.partialTranscript(text))
@@ -179,8 +183,9 @@ final class VoicePipeline {
             if let waiting = awaitingFinal {
                 guard segmentID == nil || segmentID == waiting.segmentID else { return }
                 awaitingFinal = nil
-                submitTurn(text.isEmpty ? waiting.fallback : text)
+                submitTurn(text)
             } else {
+                guard segmentHadVoice else { return }
                 guard segmentID == nil || segmentID == transcriber.segmentID else { return }
                 if !segmentOpen { openSegment() }
                 submitTurn(text)
@@ -221,7 +226,9 @@ final class VoicePipeline {
         handle(detector.tick())
         if let waiting = awaitingFinal, clock.now >= waiting.deadline {
             awaitingFinal = nil
-            submitTurn(waiting.fallback)
+            fastPath?.discard()
+            detector.reset()
+            onFailure?("voice_recognition_timed_out")
         }
     }
 
@@ -246,6 +253,7 @@ final class VoicePipeline {
         do {
             try transcriber.beginSegment()
             segmentOpen = true
+            segmentHadVoice = false
         } catch {
             onFailure?("transcriber_segment_failed")
         }
@@ -258,9 +266,9 @@ final class VoicePipeline {
                 fastPath?.speculate(text)
             case .discardDraft:
                 fastPath?.discard()
-            case .endOfTurn(let text):
+            case .endOfTurn:
                 awaitingFinal = AwaitingFinal(
-                    fallback: text, deadline: clock.now + configuration.finalTimeout, segmentID: transcriber.segmentID)
+                    deadline: clock.now + configuration.finalTimeout, segmentID: transcriber.segmentID)
                 transcriber.endSegment()
                 segmentOpen = false
                 if detector.mode == .handsFree { openSegment() }
@@ -275,7 +283,10 @@ final class VoicePipeline {
             let transcript = OwnerVoiceTurn.make(
                 text: text, source: .deviceMicrophone, trigger: trigger,
                 riskyActionPending: riskyActionPending)
-        else { return }
+        else {
+            fastPath?.discard()
+            return
+        }
         turnID += 1
         answerStarted = false
         answerFinishedStreaming = false

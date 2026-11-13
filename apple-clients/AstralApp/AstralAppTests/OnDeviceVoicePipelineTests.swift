@@ -2,9 +2,8 @@
 // Covers turn flow, integrity labels, the absence of any approval path, interruption records and acknowledgement rules.
 
 import AVFoundation
-import XCTest
-
 @testable import AstralDeep
+import XCTest
 
 @MainActor
 final class OnDeviceVoicePipelineTests: XCTestCase {
@@ -65,6 +64,16 @@ final class OnDeviceVoicePipelineTests: XCTestCase {
         pipeline.stop()
     }
 
+    func testUnsolicitedRecognitionWithoutVoiceActivityCannotCreateAPhantomTurn() throws {
+        let pipeline = try makePipeline()
+        pipeline.handleRecognizer(.partial("a synthetic hallucination"))
+        clock.advance(2)
+        pipeline.tick()
+        pipeline.handleRecognizer(.final("a synthetic hallucination"))
+        XCTAssertTrue(link.turns.isEmpty)
+        pipeline.stop()
+    }
+
     func testAudioStartFailureCleansUpTheGraph() throws {
         audio.startError = .voiceProcessingUnavailable
         XCTAssertThrowsError(try makePipeline())
@@ -83,13 +92,35 @@ final class OnDeviceVoicePipelineTests: XCTestCase {
         pipeline.stop()
     }
 
-    func testMissingFinalFallsBackToTheLastPartialAfterTheTimeout() throws {
+    func testMissingFinalReportsTimeoutWithoutSubmittingAStalePartial() throws {
         let pipeline = try makePipeline()
+        var failures: [String] = []
+        pipeline.onFailure = { failures.append($0) }
         speak(pipeline, "turn on the lights")
         XCTAssertTrue(link.turns.isEmpty)
-        clock.advance(1)
+        clock.advance(9)
         pipeline.tick()
-        XCTAssertEqual(link.turns.map(\.text), ["turn on the lights"])
+        XCTAssertTrue(link.turns.isEmpty)
+        XCTAssertEqual(failures, ["voice_recognition_timed_out"])
+        pipeline.stop()
+    }
+
+    func testSlowFinalReplacesTheEarlyPartialBeforeItCanBecomeAnOwnerTurn() throws {
+        let pipeline = try makePipeline()
+        speak(pipeline, "What")
+        clock.advance(2)
+        pipeline.tick()
+        XCTAssertTrue(link.turns.isEmpty)
+        pipeline.handleRecognizer(.final("What is two plus two?"))
+        XCTAssertEqual(link.turns.map(\.text), ["What is two plus two?"])
+        pipeline.stop()
+    }
+
+    func testEmptyFinalNeverPromotesAnEarlierPartial() throws {
+        let pipeline = try makePipeline()
+        speak(pipeline, "an unfinished phrase")
+        pipeline.handleRecognizer(.final(""))
+        XCTAssertTrue(link.turns.isEmpty)
         pipeline.stop()
     }
 
@@ -97,10 +128,10 @@ final class OnDeviceVoicePipelineTests: XCTestCase {
         let pipeline = try makePipeline()
         let identifier = UUID()
         speak(pipeline, "turn on the lights")
-        clock.advance(1)
+        clock.advance(9)
         pipeline.tick()
         pipeline.handleRecognizer(.final("Turn on the lights.", segmentID: identifier))
-        XCTAssertEqual(link.turns.map(\.text), ["turn on the lights"])
+        XCTAssertTrue(link.turns.isEmpty)
         pipeline.stop()
     }
 
@@ -190,6 +221,24 @@ final class OnDeviceVoicePipelineTests: XCTestCase {
             link.spoken, [VoiceSpokenRecord(kind: .answer, text: "Once upon a time there was a fox. It ran")])
         pipeline.answerDelta("More text that must stay silent.")
         XCTAssertEqual(audio.spoken.count, 2)
+        pipeline.stop()
+    }
+
+    func testUnalignedInterruptionRecordsCompletedSentencesWithoutGuessingAPrefix() throws {
+        let pipeline = try makePipeline()
+        speak(pipeline, "read it")
+        pipeline.handleRecognizer(.final("Read it."))
+        pipeline.answerDelta("The first sentence finished. The second sentence was interrupted. Never spoken.")
+        pipeline.handleSpeech(.finished(index: 0))
+        audio.progress = VoiceSpeechProgress(index: 1, characters: 0)
+        pipeline.handleVoiceActivity(true)
+        clock.advance(0.1)
+        pipeline.handleRecognizer(.partial("wait"))
+        clock.advance(0.2)
+        pipeline.tick()
+        XCTAssertEqual(audio.stopSpeakingCount, 1)
+        XCTAssertEqual(link.cancelledTurns, 1)
+        XCTAssertEqual(link.spoken, [VoiceSpokenRecord(kind: .answer, text: "The first sentence finished.")])
         pipeline.stop()
     }
 
@@ -300,6 +349,7 @@ final class OnDeviceVoicePipelineTests: XCTestCase {
         let pipeline = try makePipeline()
         var reasons: [String] = []
         pipeline.onFailure = { reasons.append($0) }
+        pipeline.handleVoiceActivity(true)
         pipeline.handleRecognizer(.final("What time is it?"))
         pipeline.answerDelta("The clock is unavailable.")
         pipeline.handleSpeech(.failed(index: 0))

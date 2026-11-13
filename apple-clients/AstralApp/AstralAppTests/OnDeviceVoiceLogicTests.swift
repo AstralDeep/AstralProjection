@@ -1,11 +1,29 @@
 // Verifies sentence splitting, speech text cleaning, voice activity detection, end-of-turn timing, speech timelines and push-to-talk key state.
 // All inputs are synthetic and the clock is controlled.
 
+import AVFoundation
+@testable import AstralDeep
 import XCTest
 
-@testable import AstralDeep
-
 final class OnDeviceVoiceLogicTests: XCTestCase {
+    func testVoiceLevelHandlesInterleavedIntegerAndPlanarFloatingPointPCM() throws {
+        let interleaved = try XCTUnwrap(
+            AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 48_000, channels: 2, interleaved: true))
+        let integer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: interleaved, frameCapacity: 100))
+        integer.frameLength = 100
+        for index in 0..<200 { integer.int16ChannelData![0][index] = 16_384 }
+        XCTAssertEqual(EnergyVoiceActivityDetector.level(of: integer), 0.5, accuracy: 0.0001)
+        let planar = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2))
+        let floating = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: planar, frameCapacity: 100))
+        floating.frameLength = 100
+        for channel in 0..<2 {
+            for index in 0..<100 { floating.floatChannelData![channel][index] = 0.5 }
+        }
+        XCTAssertEqual(EnergyVoiceActivityDetector.level(of: floating), 0.5, accuracy: 0.0001)
+        floating.floatChannelData![0][0] = .nan
+        XCTAssertEqual(EnergyVoiceActivityDetector.level(of: floating), 0)
+    }
+
     func testSplitterEmitsCompleteSentencesAcrossDeltas() {
         var splitter = VoiceSentenceSplitter()
         XCTAssertEqual(splitter.append("Hello there. How a"), ["Hello there."])
@@ -17,7 +35,8 @@ final class OnDeviceVoiceLogicTests: XCTestCase {
 
     func testSplitterKeepsAbbreviationsAndDecimalsTogether() {
         var splitter = VoiceSentenceSplitter()
-        XCTAssertEqual(splitter.append("Dr. Smith paid 3.5 dollars. Then left. "), ["Dr. Smith paid 3.5 dollars.", "Then left."])
+        XCTAssertEqual(
+            splitter.append("Dr. Smith paid 3.5 dollars. Then left. "), ["Dr. Smith paid 3.5 dollars.", "Then left."])
         XCTAssertEqual(splitter.append("J. Doe came. "), ["J. Doe came."])
     }
 
@@ -171,7 +190,8 @@ final class OnDeviceVoiceLogicTests: XCTestCase {
         XCTAssertEqual(evaluator.evaluate(keyCode: 10, isPressed: true), .none)
         XCTAssertEqual(evaluator.evaluate(keyCode: PushToTalkKeyEvaluator.rightOptionKeyCode, isPressed: true), .press)
         XCTAssertEqual(evaluator.evaluate(keyCode: PushToTalkKeyEvaluator.rightOptionKeyCode, isPressed: true), .none)
-        XCTAssertEqual(evaluator.evaluate(keyCode: PushToTalkKeyEvaluator.rightOptionKeyCode, isPressed: false), .release)
+        XCTAssertEqual(
+            evaluator.evaluate(keyCode: PushToTalkKeyEvaluator.rightOptionKeyCode, isPressed: false), .release)
         XCTAssertEqual(evaluator.evaluate(keyCode: PushToTalkKeyEvaluator.rightOptionKeyCode, isPressed: false), .none)
     }
 

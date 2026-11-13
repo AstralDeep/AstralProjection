@@ -53,6 +53,7 @@ nonisolated struct VoiceSpokenRecord: Equatable, Sendable {
 
 @MainActor
 protocol VoiceKernelLink: AnyObject {
+    func prepareForOwnerSession() async throws
     func submit(turn: OwnerVoiceTurn)
     func cancelTurn()
     func cancelTool(id: String)

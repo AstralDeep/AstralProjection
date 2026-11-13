@@ -2,9 +2,8 @@
 // The fake inference boundary avoids model downloads while checking cancellation and transcript ownership.
 
 import AVFoundation
-import XCTest
-
 @testable import AstralDeep
+import XCTest
 
 final class MLXVoiceRuntimeTests: XCTestCase {
     func testFinalTranscriptionReceivesMonoSixteenKilohertzSamples() async throws {
@@ -25,6 +24,73 @@ final class MLXVoiceRuntimeTests: XCTestCase {
         let sampleCount = await inference.lastSampleCount()
         XCTAssertEqual(sampleCount, 800)
         transcriber.shutdown()
+    }
+
+    func testCaptureResamplingPreservesPitchDurationAndScalingAcrossPCMFormats() async throws {
+        for kind in [AVAudioCommonFormat.pcmFormatFloat32, .pcmFormatInt16] {
+            let inference = VoiceInferenceFixture()
+            let transcriber = MLXVoiceTranscriber(inference: inference)
+            let final = expectation(description: "converted final \(kind)")
+            transcriber.setEventHandler { if case .final = $0 { final.fulfill() } }
+            try transcriber.beginSegment()
+            let format = try XCTUnwrap(
+                AVAudioFormat(commonFormat: kind, sampleRate: 48_000, channels: 2, interleaved: true))
+            for start in stride(from: 0, to: 48_000, by: 1_024) {
+                let frames = min(1_024, 48_000 - start)
+                let buffer = try XCTUnwrap(
+                    AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)))
+                buffer.frameLength = AVAudioFrameCount(frames)
+                for frame in 0..<frames {
+                    let sample = sin(Float(start + frame) * 2 * .pi * 440 / 48_000) * 0.25
+                    for channel in 0..<2 {
+                        if kind == .pcmFormatFloat32 {
+                            buffer.floatChannelData![0][frame * 2 + channel] = sample
+                        } else {
+                            buffer.int16ChannelData![0][frame * 2 + channel] = Int16(sample * Float(Int16.max))
+                        }
+                    }
+                }
+                transcriber.append(try XCTUnwrap(VoiceDuplexEngine.copyMicrophoneBuffer(buffer)))
+            }
+            transcriber.endSegment()
+            await fulfillment(of: [final], timeout: 5)
+            let samples = await inference.lastSamples()
+            XCTAssertTrue(
+                (15_936...16_064).contains(samples.count),
+                "The capture duration must remain one second after conversion.")
+            XCTAssertEqual(samples.map(abs).max() ?? 0, 0.25, accuracy: 0.02)
+            let crossings = zip(samples, samples.dropFirst()).filter { $0 <= 0 && $1 > 0 }.count
+            XCTAssertTrue((435...445).contains(crossings), "Capture conversion must retain the 440 Hz tone.")
+            transcriber.shutdown()
+        }
+    }
+
+    func testNewRecognitionSegmentDoesNotInheritThePreviousAudioFilterTail() async throws {
+        let inference = VoiceInferenceFixture()
+        let transcriber = MLXVoiceTranscriber(inference: inference)
+        defer { transcriber.shutdown() }
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1))
+        func buffer(_ value: Float) throws -> AVAudioPCMBuffer {
+            let result = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1_024))
+            result.frameLength = 1_024
+            for index in 0..<1_024 { result.floatChannelData![0][index] = value }
+            return result
+        }
+        let first = expectation(description: "first segment")
+        transcriber.setEventHandler { if case .final = $0 { first.fulfill() } }
+        try transcriber.beginSegment()
+        for _ in 0..<10 { transcriber.append(try buffer(0.25)) }
+        transcriber.endSegment()
+        await fulfillment(of: [first], timeout: 5)
+        let next = expectation(description: "silent next segment")
+        transcriber.setEventHandler { if case .final = $0 { next.fulfill() } }
+        try transcriber.beginSegment()
+        transcriber.append(try buffer(0))
+        transcriber.endSegment()
+        await fulfillment(of: [next], timeout: 5)
+        let samples = await inference.lastSamples()
+        XCTAssertFalse(samples.isEmpty)
+        XCTAssertEqual(samples.map(abs).max() ?? 0, 0)
     }
 
     func testShutdownFencesALateRecognitionResult() async throws {
@@ -67,6 +133,7 @@ private nonisolated final class VoiceEventRecorder: @unchecked Sendable {
 
 private actor VoiceInferenceFixture: VoiceModelInference {
     private var count = 0
+    private var samples: [Float] = []
     private var paused = false
     private var hold: CheckedContinuation<Void, Never>?
     private var called: CheckedContinuation<Void, Never>?
@@ -74,6 +141,7 @@ private actor VoiceInferenceFixture: VoiceModelInference {
     private var hasReturned = false
 
     func lastSampleCount() -> Int { count }
+    func lastSamples() -> [Float] { samples }
     func suspend() { paused = true }
     func waitForCall() async {
         if count > 0 { return }
@@ -89,6 +157,7 @@ private actor VoiceInferenceFixture: VoiceModelInference {
     }
     func transcribe(_ audio: [Float], onText: @escaping @Sendable (String) -> Void) async throws -> String {
         count = audio.count
+        samples = audio
         called?.resume()
         called = nil
         if paused { await withCheckedContinuation { hold = $0 } }

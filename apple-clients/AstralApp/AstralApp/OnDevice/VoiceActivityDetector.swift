@@ -60,9 +60,37 @@ nonisolated struct EnergyVoiceActivityDetector {
     }
 
     static func level(of buffer: AVAudioPCMBuffer) -> Float {
-        guard let channel = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return 0 }
+        let channels = Int(buffer.format.channelCount)
+        let frames = Int(buffer.frameLength)
+        guard frames > 0, channels > 0 else { return 0 }
         var sum: Float = 0
-        for frame in 0..<Int(buffer.frameLength) { sum += channel[frame] * channel[frame] }
-        return (sum / Float(buffer.frameLength)).squareRoot()
+        for frame in 0..<frames {
+            for channel in 0..<channels {
+                let plane = buffer.format.isInterleaved ? 0 : channel
+                let index = buffer.format.isInterleaved ? frame * channels + channel : frame
+                let sample: Float
+                switch buffer.format.commonFormat {
+                case .pcmFormatFloat32:
+                    guard let data = buffer.floatChannelData else { return 0 }
+                    sample = data[plane][index]
+                case .pcmFormatFloat64:
+                    guard
+                        let data = UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList)[plane].mData?
+                            .assumingMemoryBound(to: Double.self)
+                    else { return 0 }
+                    sample = Float(data[index])
+                case .pcmFormatInt16:
+                    guard let data = buffer.int16ChannelData else { return 0 }
+                    sample = Float(data[plane][index]) / 32_768
+                case .pcmFormatInt32:
+                    guard let data = buffer.int32ChannelData else { return 0 }
+                    sample = Float(data[plane][index]) / 2_147_483_648
+                default: return 0
+                }
+                guard sample.isFinite else { return 0 }
+                sum += sample * sample
+            }
+        }
+        return (sum / Float(frames * channels)).squareRoot()
     }
 }

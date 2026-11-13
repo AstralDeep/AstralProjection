@@ -60,6 +60,12 @@ code hash makes each rebuild a different Keychain client. Keep the same signing
 channel and identity for subsequent builds. An identity transition may require
 one approval for each saved Keychain item; ordinary login does not change it.
 
+Localtest builds use Release optimization so on-device inference runs at its
+intended speed. Set `ASTRAL_LOCALTEST_CONFIGURATION=Debug` when debugging source;
+its voice latency does not qualify runtime performance. Set
+`ASTRAL_LOCALTEST_PACKAGES_DIRECTORY` to an existing Xcode package checkout cache
+to reuse the pinned dependencies during a build.
+
 Mesh background notifications accept only a content-free wake hint. An already
 open, enrolled mesh requests synchronization and reports new data only after a
 data change arrives. Locked, unopened or node-mode installs return no data;

@@ -51,9 +51,36 @@ cancellation and voice activity and copies microphone buffers before leaving the
 audio callback. Silence does not continuously feed the model. Segment IDs fence
 late recognition finals after a timeout or cancellation.
 
-LFM3 provides no word-to-audio alignment. The graph reports no guessed partial
-sentence as heard, and completed sentences are recorded normally. Accurate
-interrupted sentence prefixes remain an alignment qualification gap. The watch's
+The graph negotiates a mono floating-point capture client before tapping voice
+processing, including when macOS exposes a multichannel aggregate input. It
+converts 24 kHz model speech to that same client format before output.
+Audio-device startup errors remain distinct from a missing or corrupt download.
+
+Recognition waits for the final transcript for up to eight seconds after the
+end-of-turn signal. An expired or empty final never promotes an earlier partial
+to an owner message. Speech buffers each sentence before playback so variable
+model throughput does not insert gaps between codec chunks; cancellation drops
+buffered, unplayed audio. The composer shows a disabled spinner while preparing,
+then a filled microphone, Stop Voice and Listening while capture is active.
+
+Voice resolves and pins its conversation before capture begins. Starting from
+Settings reopens the explicitly selected chat or creates a new voice chat when
+none was selected. Navigation returns to that conversation; leaving it stops
+capture. Retired sessions cannot dispatch into a reopened mesh, and played
+speech retains its original chat even if selection subsequently changes.
+
+Kernel local answers prefer Foundation Models where available. Eligible devices
+without it can use the installed LFM3 weights for plain text after all manifest
+files pass digest verification. Voice and local answers share one lazy model
+instance. This fallback rejects structured schemas, bounds input and output,
+and never installs weights or changes the owner's configured provider. Removing
+the model retires pending local answers; simulators remain unsupported.
+
+LFM3 provides no word-to-audio alignment. The graph records completed sentences
+only after their scheduled audio reports that it played. It omits an interrupted
+sentence, even when its beginning was audible, and never guesses a prefix from
+elapsed time or audio chunk lengths. This conservatively excludes unplayed words
+from history; it does not preserve every audible word. The watch's
 existing server bridge and server speech code remain for their current clients;
 phone-satellite binding is separate integration work.
 

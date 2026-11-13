@@ -2,10 +2,9 @@
 // They let pipeline, barge-in and fast-path logic run deterministically with no microphone, speaker or system model.
 
 import AVFoundation
+@testable import AstralDeep
 import Foundation
 import XCTest
-
-@testable import AstralDeep
 
 final class ManualVoiceClock: VoiceClock, @unchecked Sendable {
     private let lock = NSLock()
@@ -61,6 +60,12 @@ final class FakeTranscriber: VoiceStreamingTranscriber, @unchecked Sendable {
 }
 
 final class FakeKernelLink: VoiceKernelLink {
+    var preparationError: Error?
+    private(set) var preparations = 0
+    func prepareForOwnerSession() async throws {
+        preparations += 1
+        if let preparationError { throw preparationError }
+    }
     var turns: [OwnerVoiceTurn] = []
     var cancelledTurns = 0
     var cancelledTools: [String] = []

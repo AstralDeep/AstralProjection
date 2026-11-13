@@ -48,6 +48,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     ]
     var turnReply = "Hello there"
     var consentGate: @Sendable () throws -> Void = {}
+    var attachmentFetchGate: @Sendable () async -> Void = {}
     var actionSigner: (@Sendable (MeshPendingConsent) throws -> Void)?
     var failure: MeshKernelError?
     var turnError: MeshKernelError?
@@ -338,6 +339,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
 
     func fetchAttachment(handle: String) async throws -> Data {
         try record("fetchAttachment", handle)
+        await attachmentFetchGate()
         return try lock.withLock {
             guard let (_, bytes) = attachmentsValue[handle] else { throw MeshKernelError.notFound }
             return bytes

@@ -1,9 +1,8 @@
 // Exercises bounded local file imports and attachment drafts through the runtime that owns the chat composer.
 // It verifies attachment-only sends, per-chat drafts, refusals and the file bytes offered for an explicit save.
 
-import XCTest
-
 @testable import AstralDeep
+import XCTest
 
 final class MeshAttachmentTests: XCTestCase {
     private func file(_ bytes: Data = Data("hello".utf8), name: String = "note.txt") throws -> URL {
@@ -102,5 +101,48 @@ final class MeshAttachmentTests: XCTestCase {
         await h.runtime.close()
         XCTAssertTrue(h.runtime.attachmentDrafts.isEmpty)
         XCTAssertFalse(h.runtime.importingAttachment)
+    }
+
+    func testUnavailableClassificationNeverStartsAFileFetch() async throws {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        _ = await h.runtime.newChat()
+        let imported = await h.runtime.attachFile(try file())
+        XCTAssertTrue(imported)
+        let original = try XCTUnwrap(h.runtime.draftAttachments.first)
+        let withheld = MeshAttachment(
+            id: original.id, handle: original.handle, chatId: original.chatId, name: original.name,
+            mime: original.mime, size: original.size, chunks: original.chunks, chunksHeld: 0,
+            complete: false, availability: .withheldPhi)
+        let bytes = await h.runtime.attachmentBytes(withheld)
+        XCTAssertNil(bytes)
+        XCTAssertFalse(h.kernel.calls.contains { $0.name == "fetchAttachment" })
+        XCTAssertEqual(h.runtime.notice, "This file is not available on this device.")
+    }
+
+    func testClosingTheMeshDuringFetchDiscardsLatePlaintextBytes() async throws {
+        let h = MeshRuntimeHarness()
+        defer {
+            h.kernel.attachmentFetchGate = {}
+            h.cleanUp()
+        }
+        await h.runtime.open()
+        _ = await h.runtime.newChat()
+        let imported = await h.runtime.attachFile(try file())
+        XCTAssertTrue(imported)
+        let attachment = try XCTUnwrap(h.runtime.draftAttachments.first)
+        h.kernel.attachmentFetchGate = { await h.runtime.close() }
+        let bytes = await h.runtime.attachmentBytes(attachment)
+        XCTAssertNil(bytes)
+        XCTAssertFalse(h.runtime.isReady)
+        XCTAssertEqual(h.kernel.calls.filter { $0.name == "fetchAttachment" }.count, 1)
+    }
+
+    func testMissingHistoricalFileHasAnExplicitRecoveryAction() {
+        let message = KernelMapping.failureText(code: "attachment.chunks_unavailable")
+        XCTAssertTrue(message.contains("Get the file"))
+        XCTAssertTrue(message.contains("connected"))
+        XCTAssertTrue(KernelMapping.failureText(code: "attachment.context_too_large").contains("256 KiB"))
     }
 }

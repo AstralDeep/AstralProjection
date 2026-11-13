@@ -90,6 +90,7 @@ nonisolated final class MLXVoiceTranscriber: VoiceStreamingTranscriber, @uncheck
         lock.withLock {
             current?.partial?.cancel()
             current = Segment()
+            converter?.reset()
         }
     }
 
@@ -224,9 +225,8 @@ nonisolated final class MLXVoiceTranscriber: VoiceStreamingTranscriber, @uncheck
 @MainActor
 enum MLXVoiceRuntime {
     static func pipeline(directory: URL, link: VoiceKernelLink) async throws -> VoicePipeline {
-        let engine = try await Task.detached { try LFM3AudioEngine(directory: directory) }.value
+        let inference = try await VoiceInferenceCache.shared.inference(directory: directory)
         try Task.checkCancellation()
-        let inference = MLXVoiceInference(engine: engine)
         return VoicePipeline(
             audio: VoiceDuplexEngine(inference: inference), transcriber: MLXVoiceTranscriber(inference: inference),
             fastPath: VoiceFastPath(model: MLXVoiceAcknowledgementModel(inference: inference)), link: link)

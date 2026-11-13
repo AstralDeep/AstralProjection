@@ -3,32 +3,47 @@
 
 import Foundation
 
+nonisolated struct MeshVoiceScope: Equatable, Sendable {
+    let chatId: String
+    let session: UUID
+}
+
 @MainActor
 final class MeshVoiceLink: VoiceKernelLink {
     private weak var runtime: MeshRuntime?
+    private var scope: MeshVoiceScope?
 
     init(runtime: MeshRuntime) {
         self.runtime = runtime
     }
 
+    func prepareForOwnerSession() async throws {
+        guard let runtime else { throw MeshKernelError.unavailable("Open your mesh before starting voice.") }
+        scope = try await runtime.prepareVoiceSession()
+    }
+
     func submit(turn: OwnerVoiceTurn) {
         guard let runtime else { return }
-        Task { await runtime.submitVoice(turn) }
+        let scope = scope
+        Task { await runtime.submitVoice(turn, scope: scope) }
     }
 
     func cancelTurn() {
         guard let runtime else { return }
-        Task { await runtime.interruptVoice() }
+        let scope = scope
+        Task { await runtime.interruptVoice(scope: scope) }
     }
 
     func cancelTool(id: String) {
         guard let runtime else { return }
-        Task { await runtime.cancelVoiceTool(id: id) }
+        let scope = scope
+        Task { await runtime.cancelVoiceTool(id: id, scope: scope) }
     }
 
     func record(spoken: VoiceSpokenRecord) {
         guard let runtime else { return }
-        Task { await runtime.recordSpoken(spoken) }
+        let scope = scope
+        Task { await runtime.recordSpoken(spoken, scope: scope) }
     }
 }
 
@@ -43,8 +58,4 @@ extension MeshRuntime {
         speechSink = nil
     }
 
-    func interruptVoice() async {
-        guard let chatId = voiceChatId ?? currentChatId else { return }
-        await interrupt(chatId: chatId)
-    }
 }
