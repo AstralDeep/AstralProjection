@@ -123,3 +123,16 @@ def test_composite_action_preserves_nested_roots_interpreter_and_checkout_custod
     assert '"$PRESENTATION_PYTHON"' in action and "setup-python" not in action
     assert '--output "$PRESENTATION_OUTPUT"' in action
     assert "$GITHUB_WORKSPACE/.presentation-sources/" in action
+
+
+
+def test_installer_coverage_is_opt_in_and_preserved_by_the_python_owner_job():
+    action = (tool.ROOT / ".github/actions/presentation/action.yml").read_text()
+    workflow = (tool.ROOT / ".github/workflows/ci.yml").read_text()
+    lock = (tool.ROOT / "tooling/python-ci/requirements.lock.txt").read_text()
+    assert "${" not in lock
+    assert 'default: "false"' in action
+    assert '[[ "$PRESENTATION_EXTERNAL_LOCK" == "tooling/python-ci/requirements.lock.txt" ]]' in action
+    assert "coverage run --branch --append" in action
+    assert workflow.count('measure-coverage: "true"') == 1
+    assert "--cov-branch --cov-append" in workflow
