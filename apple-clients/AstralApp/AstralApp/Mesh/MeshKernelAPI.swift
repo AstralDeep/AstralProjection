@@ -85,6 +85,7 @@ nonisolated struct MeshActResult: Equatable, Sendable {
 nonisolated struct MeshPairingOffer: Equatable, Sendable {
     let shortCode: String
     let payload: String
+    var expiresAt: Date?
 }
 
 nonisolated struct MeshPairingPreview: Equatable, Sendable {
@@ -92,6 +93,28 @@ nonisolated struct MeshPairingPreview: Equatable, Sendable {
     let deviceLabel: String
     let deviceKind: MeshDeviceKind
     let fingerprint: String
+    var expiresAt: Date?
+}
+
+nonisolated struct MeshInvitation: Equatable, Sendable {
+    let code: String
+    let payload: String
+    let expiresAt: Date
+}
+
+nonisolated struct MeshInvitationAccepted: Equatable, Sendable {
+    let comparisonCode: String
+    let invitationCode: String
+    let inviterDeviceId: String
+    let expiresAt: Date
+}
+
+nonisolated struct MeshJoinRequest: Equatable, Sendable {
+    let comparisonCode: String
+    let deviceLabel: String
+    let deviceKind: MeshDeviceKind
+    let deviceId: String
+    let expiresAt: Date
 }
 
 nonisolated struct MeshMember: Identifiable, Equatable, Sendable {
@@ -102,6 +125,8 @@ nonisolated struct MeshMember: Identifiable, Equatable, Sendable {
     let attested: Bool
     let lastSeen: Date?
     let path: MeshPath
+    var addedAt: Date?
+    var attestedAt: Date?
     var id: String { memberId }
 }
 
@@ -134,7 +159,7 @@ nonisolated struct MeshChatSummary: Identifiable, Equatable, Sendable {
     let updatedAt: Date
     let preview: String
     let branchCount: Int
-    let queuedCount: Int
+    var queuedCount: Int
     var id: String { chatId }
 }
 
@@ -194,12 +219,28 @@ nonisolated struct MeshUnknownOutcome: Identifiable, Equatable, Sendable {
     var id: String { stepId }
 }
 
+nonisolated struct MeshRenderedSurface: Identifiable, Equatable, Sendable {
+    let surfaceId: String
+    let tree: [JSONValue]
+    let untrusted: Bool
+    let rejected: [String]
+    var id: String { surfaceId }
+}
+
+nonisolated struct MeshResolvedHandle: Equatable, Sendable {
+    enum Kind: String, Equatable, Sendable { case url, image }
+    let kind: Kind
+    let value: String
+    let mime: String?
+}
+
 nonisolated struct MeshChatView: Equatable, Sendable {
     let chatId: String
     let title: String
     let messages: [MeshChatMessage]
     let branches: [MeshBranch]
     let surfaces: [MeshSurface]
+    var rendered: [MeshRenderedSurface] = []
     let labels: [String]
     let status: MeshChatStatus
 }
@@ -340,6 +381,8 @@ nonisolated enum MeshKernelChange: Equatable, Sendable {
     case turnProgress(MeshTurnProgress)
     case allowanceChanged
     case runProgress(runId: String)
+    case joinRequested(MeshJoinRequest)
+    case pairingFailed(code: String)
 }
 
 nonisolated struct MeshKernelConfig: Sendable {
@@ -351,6 +394,7 @@ nonisolated struct MeshKernelConfig: Sendable {
     let installMarker: Data
     let restoredInstall: Bool
     var mailbox: String?
+    var deviceProfileJSON: String?
 }
 
 nonisolated enum MeshToolEffect: Equatable, Sendable {
@@ -381,9 +425,22 @@ nonisolated struct MeshToolEntry: Identifiable, Equatable, Sendable {
     let summary: String
     let effect: MeshToolEffect
     let deviceId: String?
+    var grantName: String?
     var scope: String { effect.scope }
-    var grantKey: String { name + "/" + scope }
+    var grantTarget: String { grantName ?? name }
+    var grantKey: String { grantTarget + "/" + scope }
     var id: String { (deviceId ?? "this-device") + "/" + name }
+}
+
+nonisolated struct MeshGrant: Identifiable, Equatable, Sendable {
+    let grantId: String
+    let tool: String
+    let scope: String
+    let grantedBy: String?
+    let consented: Bool
+    let refusal: String?
+    var key: String { tool + "/" + scope }
+    var id: String { grantId }
 }
 
 extension MeshToolEffect {
@@ -428,6 +485,12 @@ nonisolated protocol MeshKernel: Sendable {
     func beginMeshCreation() throws -> MeshAttestationRequest
     func completeMeshCreation(idToken: String) throws -> MeshRecoveryKit
     func recoverWithWords(words: String, backupPath: String?) throws -> MeshRecovery
+    func createInvitation() async throws -> MeshInvitation
+    func acceptInvitation(payload: String) async throws -> MeshInvitationAccepted
+    func approveInvitation() async throws
+    func cancelInvitation() async
+    func cancelPairingOffer()
+    func renameDevice(memberId: String, label: String) throws
     func createPairingOffer() async throws -> MeshPairingOffer
     func previewPairing(payload: String) throws -> MeshPairingPreview
     func approvePairing(payload: String) async throws
@@ -454,6 +517,10 @@ nonisolated protocol MeshKernel: Sendable {
     func resolveConsent(requestId: String, approve: Bool) throws
 
     func tools() -> [MeshToolEntry]
+    func publishToolCatalog() throws
+    func grants() throws -> [MeshGrant]
+    func resolveHandle(chatId: String, handle: String) throws -> MeshResolvedHandle
+    func answerRequest(requestId: String) async throws
     func grantTool(name: String, scope: String) throws
     func revokeTool(name: String, scope: String) throws
 

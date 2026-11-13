@@ -122,9 +122,9 @@ final class MeshRequestTests: XCTestCase {
         await h.runtime.answer(open)
         await h.runtime.settle()
         let names = h.kernel.calls.map(\.name)
-        let claim = try XCTUnwrap(names.lastIndex(of: "claimRequest"))
+        let answer = try XCTUnwrap(names.lastIndex(of: "answerRequest"))
         let run = try XCTUnwrap(names.lastIndex(of: "runTurn"))
-        XCTAssertLessThan(claim, run)
+        XCTAssertLessThan(answer, run)
         XCTAssertTrue(h.kernel.calls.contains(.init(name: "runTurn", detail: chat)))
         XCTAssertEqual(h.runtime.chatRequests.first?.state, .claimed)
     }

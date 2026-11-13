@@ -28,6 +28,8 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     private var proposalsValue: [MeshProposal] = []
     private var requestsValue: [MeshRequest] = []
     private var grantsValue: Set<String> = []
+    private var handlesValue: [String: MeshResolvedHandle] = [:]
+    private var renderedValue: [String: [MeshRenderedSurface]] = [:]
     private var mailboxValue = MeshMailboxState.off
     private var toolsValue: [MeshToolEntry] = [
         MeshToolEntry(
@@ -131,9 +133,63 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         return MeshRecovery(meshId: meshId, deviceId: deviceId, eventsImported: backupPath == nil ? 0 : 12)
     }
 
+    func createInvitation() async throws -> MeshInvitation {
+        try record("createInvitation")
+        return MeshInvitation(
+            code: "K7QM-39XD", payload: "astral-invite:v1:invitation", expiresAt: clock().addingTimeInterval(600))
+    }
+
+    func acceptInvitation(payload: String) async throws -> MeshInvitationAccepted {
+        try record("acceptInvitation", payload)
+        guard payload.hasPrefix("astral-invite:") else { throw MeshKernelError.refused("pairing.malformed") }
+        return MeshInvitationAccepted(
+            comparisonCode: previewResult.comparisonCode, invitationCode: "K7QM-39XD",
+            inviterDeviceId: "sha256:" + String(repeating: "b", count: 64), expiresAt: clock().addingTimeInterval(600))
+    }
+
+    func approveInvitation() async throws {
+        try record("approveInvitation")
+        try consentGate()
+        lock.withLock {
+            members.append(
+                MeshMember(
+                    memberId: "sha256:" + String(repeating: "c", count: 64), label: previewResult.deviceLabel,
+                    kind: previewResult.deviceKind, isThisDevice: false, attested: false, lastSeen: clock(),
+                    path: .direct, addedAt: clock()))
+        }
+        listener.onChange(.rosterChanged)
+    }
+
+    func cancelInvitation() async { lock.withLock { log.append(Call(name: "cancelInvitation", detail: "")) } }
+
+    func cancelPairingOffer() { lock.withLock { log.append(Call(name: "cancelPairingOffer", detail: "")) } }
+
+    func renameDevice(memberId: String, label: String) throws {
+        try record("renameDevice", memberId + "|" + label)
+        let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw MeshKernelError.refused("device.empty_label") }
+        lock.withLock {
+            members = members.map { member in
+                guard member.memberId == memberId else { return member }
+                return MeshMember(
+                    memberId: member.memberId, label: trimmed, kind: member.kind, isThisDevice: member.isThisDevice,
+                    attested: member.attested, lastSeen: member.lastSeen, path: member.path, addedAt: member.addedAt,
+                    attestedAt: member.attestedAt)
+            }
+        }
+        listener.onChange(.rosterChanged)
+    }
+
+    func setRendered(chatId: String, _ value: [MeshRenderedSurface]) { lock.withLock { renderedValue[chatId] = value } }
+
+    func simulateFailure(code: String) { listener.onChange(.pairingFailed(code: code)) }
+
+    func simulateJoinRequest(_ request: MeshJoinRequest) { listener.onChange(.joinRequested(request)) }
+
     func createPairingOffer() async throws -> MeshPairingOffer {
         try record("createPairingOffer")
-        let made = MeshPairingOffer(shortCode: "12345678", payload: "astral-pair:v1:offer")
+        let made = MeshPairingOffer(
+            shortCode: "12345678", payload: "astral-pair:v1:offer", expiresAt: clock().addingTimeInterval(600))
         lock.withLock { offer = made }
         return made
     }
@@ -232,7 +288,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
             guard let chat = chats[chatId] else { throw MeshKernelError.notFound }
             return MeshChatView(
                 chatId: chatId, title: chat.title, messages: chat.messages, branches: branches(of: chat),
-                surfaces: chat.surfaces, labels: [], status: chat.status)
+                surfaces: chat.surfaces, rendered: renderedValue[chatId] ?? [], labels: [], status: chat.status)
         }
     }
 
@@ -354,7 +410,38 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         lock.withLock { _ = grantsValue.remove(name + "/" + scope) }
     }
 
-    var grants: Set<String> { lock.withLock { grantsValue } }
+    var grantKeys: Set<String> { lock.withLock { grantsValue } }
+
+    func publishToolCatalog() throws { try record("publishToolCatalog") }
+
+    func grants() throws -> [MeshGrant] {
+        try record("grants")
+        return lock.withLock {
+            grantsValue.sorted().compactMap { key in
+                guard let slash = key.lastIndex(of: "/") else { return nil }
+                return MeshGrant(
+                    grantId: key, tool: String(key[..<slash]), scope: String(key[key.index(after: slash)...]),
+                    grantedBy: status.deviceId, consented: true, refusal: nil)
+            }
+        }
+    }
+
+    func resolveHandle(chatId: String, handle: String) throws -> MeshResolvedHandle {
+        try record("resolveHandle", chatId + "|" + handle)
+        guard let value = lock.withLock({ handlesValue[handle] }) else {
+            throw MeshKernelError.refused(KernelMapping.failureText(code: "handle.no_value"))
+        }
+        return value
+    }
+
+    func setHandles(_ value: [String: MeshResolvedHandle]) { lock.withLock { handlesValue = value } }
+
+    func answerRequest(requestId: String) async throws {
+        try record("answerRequest", requestId)
+        let chat = try changeRequest(requestId, allowed: [.pending, .claimed]) { $0.state = .claimed }
+        listener.onChange(.chatChanged(chatId: chat))
+        try await runTurn(chatId: chat)
+    }
 
     func setTools(_ value: [MeshToolEntry]) { lock.withLock { toolsValue = value } }
 

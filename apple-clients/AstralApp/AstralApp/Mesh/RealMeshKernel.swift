@@ -50,6 +50,7 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
                 config: native, signer: KernelHostSigner(signer), model: KernelOnDeviceModel(model),
                 tools: KernelLocalTools(tools), listener: bridge,
                 peerTools: peerTools.map { PeerToolSpec(device: $0.deviceId, tool: KernelLocalTools.native($0.spec)) })
+            if let profile = config.deviceProfileJSON { try? kernel.setDeviceProfile(deviceProfileJson: profile) }
             let opened = RealMeshKernel(
                 kernel: kernel, bridge: bridge, localTools: tools, peerTools: peerTools, now: now)
             late.kernel = opened
@@ -107,14 +108,38 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
         }
     }
 
+    func createInvitation() async throws -> MeshInvitation {
+        do { return KernelMapping.invitation(try await kernel.createInvitation(), now: now()) } catch {
+            throw KernelMapping.error(error)
+        }
+    }
+
+    func acceptInvitation(payload: String) async throws -> MeshInvitationAccepted {
+        do { return KernelMapping.accepted(try await kernel.acceptInvitation(payload: payload), now: now()) } catch {
+            throw KernelMapping.error(error)
+        }
+    }
+
+    func approveInvitation() async throws {
+        do { _ = try await kernel.approveInvitation(historyGrant: .all) } catch { throw KernelMapping.error(error) }
+    }
+
+    func cancelInvitation() async { await kernel.cancelInvitation() }
+
+    func cancelPairingOffer() { kernel.cancelPairingOffer() }
+
+    func renameDevice(memberId: String, label: String) throws {
+        try mapped { try kernel.renameDevice(deviceId: memberId, label: label) }
+    }
+
     func createPairingOffer() async throws -> MeshPairingOffer {
-        do { return KernelMapping.pairingOffer(try await kernel.createPairingOffer()) } catch {
+        do { return KernelMapping.pairingOffer(try await kernel.createPairingOffer(), now: now()) } catch {
             throw KernelMapping.error(error)
         }
     }
 
     func previewPairing(payload: String) throws -> MeshPairingPreview {
-        try mapped { KernelMapping.pairingPreview(try kernel.previewPairing(payload: payload)) }
+        try mapped { KernelMapping.pairingPreview(try kernel.previewPairing(payload: payload), now: now()) }
     }
 
     func approvePairing(payload: String) async throws {
@@ -147,7 +172,9 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
     func listChats() throws -> [MeshChatSummary] {
         try mapped {
             try kernel.listChats().map { summary in
-                if let cached = lock.withLock({ previews[summary.chatId] }), cached.stamp == summary.lastActivity {
+                if let cached = lock.withLock({ previews[summary.chatId] }), cached.stamp == summary.lastActivity,
+                    cached.summary.queuedCount == 0
+                {
                     return cached.summary
                 }
                 let built = KernelChatMapper.summary(summary, detail: try? kernel.chat(chatId: summary.chatId))
@@ -241,10 +268,45 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
             MeshToolEntry(name: $0.name, summary: $0.summary, effect: $0.effect, deviceId: nil)
         }
         let known = Set(mine.map(\.name))
-        let theirs = peerTools.filter { !known.contains($0.spec.name) }.map {
+        let fixed = peerTools.filter { !known.contains($0.spec.name) }.map {
             MeshToolEntry(name: $0.spec.name, summary: $0.spec.summary, effect: $0.spec.effect, deviceId: $0.deviceId)
         }
-        return mine + theirs
+        let seen = Set(fixed.map(\.id))
+        let published = ((try? kernel.peerToolCatalog()) ?? []).map {
+            MeshToolEntry(
+                name: $0.tool.name, summary: $0.tool.description, effect: KernelLocalTools.meshEffect($0.tool.effect),
+                deviceId: $0.device, grantName: $0.grantName)
+        }.filter { !seen.contains($0.id) }
+        return mine + fixed + published
+    }
+
+    func publishToolCatalog() throws {
+        let specs = localTools.list().map(KernelLocalTools.native)
+        try mapped { _ = try kernel.publishToolCatalog(tools: specs) }
+    }
+
+    func grants() throws -> [MeshGrant] {
+        try mapped {
+            try kernel.grants().map {
+                MeshGrant(
+                    grantId: $0.grant, tool: $0.tool, scope: $0.scope, grantedBy: $0.grantedBy,
+                    consented: $0.consented, refusal: $0.refusal)
+            }
+        }
+    }
+
+    func resolveHandle(chatId: String, handle: String) throws -> MeshResolvedHandle {
+        try mapped {
+            let resolved = try kernel.resolveHandle(chatId: chatId, handle: handle)
+            guard let kind = MeshResolvedHandle.Kind(rawValue: resolved.kind) else {
+                throw MeshKernelError.refused("That link or image cannot be shown.")
+            }
+            return MeshResolvedHandle(kind: kind, value: resolved.value, mime: resolved.mime)
+        }
+    }
+
+    func answerRequest(requestId: String) async throws {
+        do { _ = try await kernel.answerRequest(requestId: requestId) } catch { throw KernelMapping.error(error) }
     }
 
     func grantTool(name: String, scope: String) throws { try mapped { _ = try kernel.grantTool(tool: name, scope: scope) } }

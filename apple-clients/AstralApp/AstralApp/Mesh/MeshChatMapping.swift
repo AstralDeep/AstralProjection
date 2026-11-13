@@ -127,6 +127,92 @@ nonisolated enum MeshSurfaceMapper {
     }
 }
 
+nonisolated enum MeshRenderedMapper {
+    private static let maximumDepth = 32
+    private static let structural: Set<String> = ["type", "component_id", "id", "capability", "provenance"]
+
+    static func handles(in surface: MeshRenderedSurface) -> [String] {
+        var found: [String] = []
+        for node in surface.tree { collect(node, depth: 0, into: &found) }
+        return found
+    }
+
+    static func components(for surface: MeshRenderedSurface, resolved: [String: MeshResolvedHandle]) -> [AstralComponent] {
+        surface.tree.compactMap { node in
+            clean(node, depth: 0, resolved: resolved).flatMap { AstralComponent(json: $0) }
+        }
+    }
+
+    private static func collect(_ value: JSONValue, depth: Int, into found: inout [String]) {
+        guard depth < maximumDepth else { return }
+        switch value {
+        case .object(let fields):
+            if fields.count == 1, let handle = fields["$handle"]?.stringValue {
+                found.append(handle)
+                return
+            }
+            for (key, nested) in fields where key != "action" { collect(nested, depth: depth + 1, into: &found) }
+        case .array(let items):
+            for item in items { collect(item, depth: depth + 1, into: &found) }
+        default:
+            break
+        }
+    }
+
+    private static func clean(_ value: JSONValue, depth: Int, resolved: [String: MeshResolvedHandle]) -> JSONValue? {
+        guard depth < maximumDepth else { return nil }
+        switch value {
+        case .string(let text):
+            return .string(MeshModelText.neutralize(text))
+        case .array(let items):
+            return .array(items.compactMap { clean($0, depth: depth + 1, resolved: resolved) })
+        case .object(let fields):
+            if fields.count == 1, let handle = fields["$handle"]?.stringValue { return resolution(handle, resolved) }
+            return .object(object(fields, depth: depth, resolved: resolved))
+        case .null, .bool, .number:
+            return value
+        }
+    }
+
+    private static func object(_ fields: [String: JSONValue], depth: Int, resolved: [String: MeshResolvedHandle])
+        -> [String: JSONValue]
+    {
+        var out: [String: JSONValue] = [:]
+        for (key, nested) in fields where !structural.contains(key) && key != "action" {
+            if let value = clean(nested, depth: depth + 1, resolved: resolved) { out[key] = value }
+        }
+        if let type = fields["type"]?.stringValue { out["type"] = .string(type) }
+        if let id = fields["id"]?.stringValue { out["component_id"] = .string(id) }
+        if let capability = fields["action"]?.objectValue?["handle"]?.stringValue {
+            out["capability"] = .string(capability)
+            out["action"] = .string("mesh_act")
+        }
+        if out["type"]?.stringValue == "image", let source = imageSource(out) {
+            out["src"] = nil
+            out["url"] = .string(source)
+        }
+        return out
+    }
+
+    private static func imageSource(_ fields: [String: JSONValue]) -> String? {
+        for key in ["src", "url"] {
+            if let text = fields[key]?.stringValue, text.hasPrefix("data:image/") { return text }
+        }
+        return nil
+    }
+
+    private static func resolution(_ handle: String, _ resolved: [String: MeshResolvedHandle]) -> JSONValue? {
+        guard let value = resolved[handle] else { return nil }
+        switch value.kind {
+        case .image:
+            guard let mime = value.mime else { return nil }
+            return .string("data:" + mime + ";base64," + value.value)
+        case .url:
+            return .string(URL(string: value.value)?.host ?? value.value)
+        }
+    }
+}
+
 @MainActor
 enum MeshChatMapper {
     struct Row: Identifiable {
@@ -135,14 +221,21 @@ enum MeshChatMapper {
         var id: String { turn.id }
     }
 
-    static func rows(for view: MeshChatView, head: String?, streaming: String? = nil) -> [Row] {
+    static func rows(
+        for view: MeshChatView, head: String?, streaming: String? = nil, resolved: [String: MeshResolvedHandle] = [:]
+    ) -> [Row] {
         let surfaces = Dictionary(view.surfaces.map { ($0.surfaceId, $0) }, uniquingKeysWith: { first, _ in first })
+        let rendered = Dictionary(view.rendered.map { ($0.surfaceId, $0) }, uniquingKeysWith: { first, _ in first })
         var rows = MeshChatTree.path(to: head, in: view.messages).map { message in
-            Row(
+            let components = message.surfaceIds.flatMap { id -> [AstralComponent] in
+                if let tree = rendered[id] { return MeshRenderedMapper.components(for: tree, resolved: resolved) }
+                return surfaces[id].map(MeshSurfaceMapper.components) ?? []
+            }
+            return Row(
                 turn: AppModel.ChatTurn(
                     id: message.eventId, role: role(for: message.author),
                     text: message.author == .owner ? message.text : MeshModelText.neutralize(message.text),
-                    components: message.surfaceIds.compactMap { surfaces[$0] }.flatMap(MeshSurfaceMapper.components)),
+                    components: components),
                 message: message)
         }
         if let streaming, !streaming.isEmpty {

@@ -217,7 +217,7 @@ final class KernelMappingTests: XCTestCase {
         XCTAssertTrue(requested.contains(.consentRequested(requestId: "r")))
         XCTAssertEqual(KernelMapping.changes(.syncStateChanged), [.syncStateChanged])
         XCTAssertEqual(KernelMapping.changes(.chatChanged(chatId: nil)), [.chatChanged(chatId: nil)])
-        XCTAssertTrue(KernelMapping.changes(.pairing(progress: .failed(code: "x"))).isEmpty)
+        XCTAssertEqual(KernelMapping.changes(.pairing(progress: .failed(code: "pairing.expired"))), [.pairingFailed(code: "pairing.expired")])
         XCTAssertTrue(KernelMapping.isEnrollmentComplete(.enrollment(state: .enrolled)))
         XCTAssertFalse(KernelMapping.isEnrollmentComplete(.enrollment(state: .creating)))
     }

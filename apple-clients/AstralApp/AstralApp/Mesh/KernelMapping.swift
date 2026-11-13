@@ -26,7 +26,9 @@ nonisolated enum KernelMapping {
             return MeshMember(
                 memberId: member.deviceId, label: member.label, kind: deviceKind(member.kind),
                 isThisDevice: member.isLocal, attested: !member.unattested,
-                lastSeen: peer?.lastSeenMs.map { date(ms: $0) }, path: peer.map { path($0.path) } ?? .none)
+                lastSeen: peer?.lastSeenMs.map { date(ms: $0) }, path: peer.map { path($0.path) } ?? .none,
+                addedAt: member.addedAtS > 0 ? Date(timeIntervalSince1970: Double(member.addedAtS)) : nil,
+                attestedAt: member.attestedAtS.map { Date(timeIntervalSince1970: Double($0)) })
         }
     }
 
@@ -52,14 +54,25 @@ nonisolated enum KernelMapping {
             pendingNotices: Int(clamping: state.pendingNotices), truncated: state.truncated)
     }
 
-    static func pairingOffer(_ offer: PairingOffer) -> MeshPairingOffer {
-        MeshPairingOffer(shortCode: offer.code, payload: offer.payload)
+    static func pairingOffer(_ offer: PairingOffer, now: Date = Date()) -> MeshPairingOffer {
+        MeshPairingOffer(
+            shortCode: offer.code, payload: offer.payload, expiresAt: now.addingTimeInterval(Double(offer.expiresS)))
     }
 
-    static func pairingPreview(_ preview: PairingPreview) -> MeshPairingPreview {
+    static func pairingPreview(_ preview: PairingPreview, now: Date = Date()) -> MeshPairingPreview {
         MeshPairingPreview(
             comparisonCode: preview.code, deviceLabel: preview.label, deviceKind: deviceKind(preview.kind),
-            fingerprint: preview.deviceId)
+            fingerprint: preview.deviceId, expiresAt: now.addingTimeInterval(Double(preview.expiresS)))
+    }
+
+    static func invitation(_ value: Invitation, now: Date = Date()) -> MeshInvitation {
+        MeshInvitation(code: value.code, payload: value.payload, expiresAt: now.addingTimeInterval(Double(value.expiresS)))
+    }
+
+    static func accepted(_ value: InvitationAccepted, now: Date = Date()) -> MeshInvitationAccepted {
+        MeshInvitationAccepted(
+            comparisonCode: value.code, invitationCode: value.invitationCode, inviterDeviceId: value.inviterDeviceId,
+            expiresAt: now.addingTimeInterval(Double(value.expiresS)))
     }
 
     static func allowance(_ view: AllowanceView) -> MeshAllowance {
@@ -202,7 +215,15 @@ nonisolated enum KernelMapping {
         case .pairing(let progress):
             switch progress {
             case .approved, .joined: return [.rosterChanged]
-            case .offerSeen, .failed: return []
+            case .joinRequested(let code, let label, let kind, let deviceId, let expiresS):
+                return [
+                    .joinRequested(
+                        MeshJoinRequest(
+                            comparisonCode: code, deviceLabel: label, deviceKind: deviceKind(kind), deviceId: deviceId,
+                            expiresAt: Date().addingTimeInterval(Double(expiresS))))
+                ]
+            case .failed(let code): return [.pairingFailed(code: code)]
+            case .offerSeen: return []
             }
         case .allowanceChanged: return [.allowanceChanged]
         case .turn(let progress): return turn(progress)
@@ -265,8 +286,11 @@ nonisolated enum KernelMapping {
         ("mesh.already_enrolled", "This device already belongs to a mesh."),
         ("mesh.not_enrolled", "This device has no mesh yet."),
         ("attestation.", "The sign-in could not be verified for this mesh."),
-        ("pairing.expired", "The pairing code expired. Start again on the new device."),
-        ("pairing.", "The pairing code was refused. Start again on the new device."),
+        ("pairing.expired", "The code ran out of time."),
+        ("pairing.cancelled", "The invitation was cancelled."),
+        ("pairing.used", "That code was already used."),
+        ("pairing.wrong_offer", "That code is for a different invitation."),
+        ("pairing.", "The code was refused."),
         ("recovery.bad_length", "Enter all 24 recovery words."),
         ("recovery.unknown_word", "One of the words is not on the recovery word list. Check the spelling."),
         ("recovery.bad_checksum", "These words are not a valid recovery key. Check the order and the spelling."),

@@ -128,7 +128,16 @@ nonisolated final class KernelLocalTools: AstralKernel.LocalTools, @unchecked Se
         }
     }
 
-    private static func effect(_ effect: MeshToolEffect) -> LocalToolEffect {
+    static func effect(_ effect: MeshToolEffect) -> LocalToolEffect {
+        switch effect {
+        case .meshRead: return .meshRead
+        case .meshWrite: return .meshWrite
+        case .outwardRead: return .outwardRead
+        case .outsideEffect: return .outsideEffect
+        }
+    }
+
+    static func meshEffect(_ effect: LocalToolEffect) -> MeshToolEffect {
         switch effect {
         case .meshRead: return .meshRead
         case .meshWrite: return .meshWrite

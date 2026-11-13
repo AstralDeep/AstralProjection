@@ -103,7 +103,10 @@ final class MeshRuntimeTests: XCTestCase {
         defer { h.cleanUp() }
         await h.runtime.open()
         await h.runtime.beginJoin()
-        XCTAssertEqual(h.runtime.join, .offered(MeshPairingOffer(shortCode: "12345678", payload: "astral-pair:v1:offer")))
+        guard case .offered(let offer) = h.runtime.join else { return XCTFail("expected an offer") }
+        XCTAssertEqual(offer.shortCode, "12345678")
+        XCTAssertEqual(offer.payload, "astral-pair:v1:offer")
+        XCTAssertNotNil(offer.expiresAt)
         h.kernel.completeJoin()
         await h.runtime.settle()
         XCTAssertEqual(h.runtime.join, .joined)

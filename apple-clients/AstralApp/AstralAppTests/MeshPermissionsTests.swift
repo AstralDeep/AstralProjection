@@ -37,7 +37,7 @@ final class MeshPermissionsTests: XCTestCase {
         await h.runtime.grant(mail)
         XCTAssertTrue(h.kernel.calls.contains(.init(name: "grantTool", detail: "mail.send|outside_effect")))
         XCTAssertTrue(h.runtime.isGranted(mail))
-        XCTAssertEqual(h.kernel.grants, ["mail.send/outside_effect"])
+        XCTAssertEqual(h.kernel.grantKeys, ["mail.send/outside_effect"])
         XCTAssertNil(h.runtime.notice)
         h.runtime.closeChat()
         await h.runtime.refreshTools()
@@ -53,7 +53,7 @@ final class MeshPermissionsTests: XCTestCase {
         let mail = try XCTUnwrap(h.runtime.toolEntries.first { $0.name == "mail.send" })
         await h.runtime.grant(mail)
         XCTAssertFalse(h.runtime.isGranted(mail))
-        XCTAssertTrue(h.kernel.grants.isEmpty)
+        XCTAssertTrue(h.kernel.grantKeys.isEmpty)
         XCTAssertEqual(h.runtime.notice, "The approval was denied.")
     }
 
@@ -65,7 +65,7 @@ final class MeshPermissionsTests: XCTestCase {
         h.kernel.consentGate = { throw MeshKernelError.consentDenied }
         await h.runtime.revoke(mail)
         XCTAssertFalse(h.runtime.isGranted(mail))
-        XCTAssertTrue(h.kernel.grants.isEmpty)
+        XCTAssertTrue(h.kernel.grantKeys.isEmpty)
         XCTAssertNil(h.runtime.notice)
         XCTAssertTrue(h.kernel.calls.contains(.init(name: "revokeTool", detail: "mail.send|outside_effect")))
     }

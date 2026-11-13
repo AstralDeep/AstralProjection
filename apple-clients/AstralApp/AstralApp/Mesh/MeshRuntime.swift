@@ -98,6 +98,7 @@ nonisolated enum MeshJoinState: Equatable, Sendable {
     case idle
     case starting
     case offered(MeshPairingOffer)
+    case accepted(MeshInvitationAccepted)
     case joined
     case failed(String)
 }
@@ -111,6 +112,16 @@ nonisolated enum MeshVerificationState: Equatable, Sendable {
 nonisolated enum MeshAddDeviceState: Equatable, Sendable {
     case idle
     case previewing(MeshPairingPreview, payload: String)
+    case approving
+    case added(String)
+    case failed(String)
+}
+
+nonisolated enum MeshInviteState: Equatable, Sendable {
+    case idle
+    case creating
+    case waiting(MeshInvitation)
+    case requested(MeshJoinRequest)
     case approving
     case added(String)
     case failed(String)
@@ -239,6 +250,8 @@ final class MeshRuntime {
     private(set) var proposals: [MeshProposal] = []
     private(set) var toolEntries: [MeshToolEntry] = []
     private(set) var grantedTools: Set<String> = []
+    private(set) var meshGrants: [MeshGrant] = []
+    private(set) var resolvedHandles: [String: MeshResolvedHandle] = [:]
     private(set) var mailbox = MeshMailboxState.off
     private(set) var mailboxAddress: String?
     private(set) var chatRequests: [MeshRequest] = []
@@ -247,6 +260,7 @@ final class MeshRuntime {
     private(set) var join = MeshJoinState.idle
     private(set) var restore = MeshRestoreState.idle
     private(set) var addDevice = MeshAddDeviceState.idle
+    private(set) var invite = MeshInviteState.idle
     private(set) var verification = MeshVerificationState.idle
     private(set) var acknowledgedOutcomes: Set<String> = []
     private(set) var spoken: [VoiceSpokenRecord] = []
@@ -275,7 +289,6 @@ final class MeshRuntime {
     @ObservationIgnored private let now: @Sendable () -> Date
 
     private static let acknowledgedKey = "astral.mesh.acknowledged-outcomes"
-    private static let grantsKey = "astral.mesh.granted-tools."
     private static let mailboxKey = "astral.mesh.mailbox"
 
     init(
@@ -344,7 +357,8 @@ final class MeshRuntime {
 
     var displayRows: [MeshChatMapper.Row] {
         guard let view = currentChat else { return [] }
-        return MeshChatMapper.rows(for: view, head: displayHead, streaming: currentTurn?.streamingText)
+        return MeshChatMapper.rows(
+            for: view, head: displayHead, streaming: currentTurn?.streamingText, resolved: resolvedHandles)
     }
 
     func open() async {
@@ -359,7 +373,8 @@ final class MeshRuntime {
             let config = MeshKernelConfig(
                 dataDirectory: dataDirectory, deviceLabel: deviceLabel, deviceKind: deviceKind,
                 operationsSecret: try keys.operationsSecret(), wrapSecret: try keys.wrapSecret(),
-                installMarker: try keys.installMarker(), restoredInstall: keys.wasRestored, mailbox: mailboxAddress)
+                installMarker: try keys.installMarker(), restoredInstall: keys.wasRestored, mailbox: mailboxAddress,
+                deviceProfileJSON: MeshDeviceProfile.json(kind: deviceKind))
             let signer = MeshHostSigner(keys: keys, presenter: consent)
             let factory = makeKernel
             let model = onDeviceModel
@@ -432,6 +447,8 @@ final class MeshRuntime {
         requestsForMe = []
         toolEntries = []
         grantedTools = []
+        meshGrants = []
+        resolvedHandles = [:]
         mailbox = .off
         turns = [:]
     }
@@ -455,6 +472,7 @@ final class MeshRuntime {
         await refreshProviders()
         await refreshRuns()
         await refreshProposals()
+        _ = try? await call { try $0.publishToolCatalog() }
         await refreshTools()
         await refreshMailbox()
         if let id = currentChatId { await reloadChat(id) }
@@ -481,30 +499,30 @@ final class MeshRuntime {
 
     func refreshTools() async {
         if let value = await attempt({ $0.tools() }) { toolEntries = value }
-        grantedTools = Set(defaults.stringArray(forKey: Self.grantsKey + (status.meshId ?? "")) ?? [])
+        if let value = await attempt({ try $0.grants() }) {
+            meshGrants = value.filter { $0.refusal == nil }
+            grantedTools = Set(meshGrants.map(\.key))
+        }
     }
 
     func isGranted(_ tool: MeshToolEntry) -> Bool { grantedTools.contains(tool.grantKey) }
 
+    func grant(for tool: MeshToolEntry) -> MeshGrant? { meshGrants.first { $0.key == tool.grantKey } }
+
     func grant(_ tool: MeshToolEntry) async {
-        let name = tool.name
+        let name = tool.grantTarget
         let scope = tool.scope
         let granted: Void? = await attempt { try $0.grantTool(name: name, scope: scope) }
         guard granted != nil else { return }
-        recordGrant(tool.grantKey, granted: true)
+        await refreshTools()
     }
 
     func revoke(_ tool: MeshToolEntry) async {
-        let name = tool.name
+        let name = tool.grantTarget
         let scope = tool.scope
         let revoked: Void? = await attempt { try $0.revokeTool(name: name, scope: scope) }
         guard revoked != nil else { return }
-        recordGrant(tool.grantKey, granted: false)
-    }
-
-    private func recordGrant(_ key: String, granted: Bool) {
-        if granted { grantedTools.insert(key) } else { grantedTools.remove(key) }
-        defaults.set(grantedTools.sorted(), forKey: Self.grantsKey + (status.meshId ?? ""))
+        await refreshTools()
     }
 
     func refreshRequests() async {
@@ -542,14 +560,14 @@ final class MeshRuntime {
 
     func answer(_ request: MeshRequest) async {
         let id = request.requestId
-        let claimed: Void? = await attempt { try $0.claimRequest(requestId: id) }
-        guard claimed != nil else {
-            await refreshRequests()
+        guard turns[request.chatId]?.running != true else {
+            notice = "This chat is already answering. Try again when it finishes."
             return
         }
+        startTurn(chatId: request.chatId, announcesFailure: true) { try await $0.answerRequest(requestId: id) }
+        await Task.yield()
         await refreshRequests()
         if request.chatId == currentChatId { await reloadChat(request.chatId) }
-        if turns[request.chatId]?.running != true { startTurn(chatId: request.chatId) }
     }
 
     func refuse(_ request: MeshRequest, because reason: MeshRequestRefusal) async {
@@ -692,7 +710,71 @@ final class MeshRuntime {
         }
     }
 
-    func cancelJoin() { join = .idle }
+    func cancelJoin() {
+        join = .idle
+        Task { await perform { $0.cancelPairingOffer() } }
+    }
+
+    func acceptInvitation(payload: String) async {
+        let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard kernel != nil, join == .idle || isFailedJoin else { return }
+        guard !trimmed.isEmpty, trimmed.utf8.count <= 8192 else {
+            join = .failed("That is not an invitation from one of your devices.")
+            return
+        }
+        join = .starting
+        do {
+            join = .accepted(try await call { try await $0.acceptInvitation(payload: trimmed) })
+        } catch {
+            join = .failed(Self.describe(error))
+        }
+    }
+
+    func startInvitation() async {
+        guard kernel != nil, invite != .creating, invite != .approving else { return }
+        invite = .creating
+        do {
+            invite = .waiting(try await call { try await $0.createInvitation() })
+        } catch {
+            invite = .failed(Self.describe(error))
+        }
+    }
+
+    func approveInvitation() async {
+        guard case .requested(let request) = invite else { return }
+        invite = .approving
+        do {
+            try await call { try await $0.approveInvitation() }
+            invite = .added(request.deviceLabel)
+            await refreshRoster()
+            await refreshSync()
+        } catch MeshKernelError.consentDenied {
+            invite = .failed("Adding the device was not approved.")
+        } catch {
+            invite = .failed(Self.describe(error))
+        }
+    }
+
+    func cancelInvitation() async {
+        let active: Bool
+        switch invite {
+        case .waiting, .requested: active = true
+        default: active = false
+        }
+        invite = .idle
+        if active { _ = try? await call { await $0.cancelInvitation() } }
+    }
+
+    func resetInvite() { invite = .idle }
+
+    func renameDevice(_ member: MeshMember, to label: String) async -> Bool {
+        let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != member.label else { return false }
+        let id = member.memberId
+        guard await attempt({ try $0.renameDevice(memberId: id, label: trimmed) }) != nil else { return false }
+        await refreshRoster()
+        return true
+    }
 
     func previewAddDevice(payload: String) async {
         let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -950,14 +1032,19 @@ final class MeshRuntime {
         return false
     }
 
-    private func startTurn(chatId: String) {
+    private func startTurn(
+        chatId: String, announcesFailure: Bool = false, run: (@Sendable (any MeshKernel) async throws -> Void)? = nil
+    ) {
         turns[chatId] = MeshTurnState(turnId: "", running: true)
         turnTasks[chatId]?.cancel()
         turnTasks[chatId] = Task { [weak self] in
             guard let self else { return }
             do {
-                try await self.call { try await $0.runTurn(chatId: chatId) }
+                try await self.call { kernel in
+                    if let run { try await run(kernel) } else { try await kernel.runTurn(chatId: chatId) }
+                }
             } catch {
+                if announcesFailure { self.notice = Self.describe(error) }
                 if self.turns[chatId]?.interrupted != true, var state = self.turns[chatId] {
                     self.record(failure: Self.describe(error), in: &state)
                     self.turns[chatId] = state
@@ -971,7 +1058,12 @@ final class MeshRuntime {
     private func reloadChat(_ chatId: String) async {
         guard let view = await attempt({ try $0.chat(chatId: chatId) }) else { return }
         guard currentChatId == chatId else { return }
+        await resolveHandles(in: view)
+        guard currentChatId == chatId else { return }
         currentChat = view
+        if let index = chats.firstIndex(where: { $0.chatId == chatId }) {
+            chats[index].queuedCount = view.messages.filter { $0.delivery == .queued }.count
+        }
         if let value = await attempt({ try $0.chatRequests(chatId: chatId) }), currentChatId == chatId {
             chatRequests = value
         }
@@ -983,6 +1075,16 @@ final class MeshRuntime {
             var state = turns[chatId] ?? MeshTurnState(turnId: "", running: false)
             state.unknown.append(outcome)
             turns[chatId] = state
+        }
+    }
+
+    private func resolveHandles(in view: MeshChatView) async {
+        let wanted = Set(view.rendered.flatMap(MeshRenderedMapper.handles(in:))).subtracting(resolvedHandles.keys)
+        let chatId = view.chatId
+        for handle in wanted.sorted() {
+            if let value = try? await call({ try $0.resolveHandle(chatId: chatId, handle: handle) }) {
+                resolvedHandles[handle] = value
+            }
         }
     }
 
@@ -1008,6 +1110,18 @@ final class MeshRuntime {
             await refreshAllowance()
         case .runProgress:
             await refreshRuns()
+        case .joinRequested(let request):
+            if case .waiting = invite { invite = .requested(request) }
+        case .pairingFailed(let code):
+            let message = KernelMapping.failureText(code: code)
+            switch invite {
+            case .waiting, .requested: invite = .failed(message)
+            default: break
+            }
+            switch join {
+            case .offered, .accepted: join = .failed(message)
+            default: break
+            }
         }
     }
 
