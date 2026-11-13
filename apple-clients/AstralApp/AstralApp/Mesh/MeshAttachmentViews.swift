@@ -31,7 +31,7 @@ struct MeshAttachmentDrafts: View {
                     }
                 }
             }
-            Text("Files sync with your devices. The assistant cannot read them yet.")
+            Text("The assistant can read UTF-8 text, Markdown, CSV and JSON files up to 64 KiB each (256 KiB total). Other files sync between your devices.")
                 .font(ConsoleTypography.caption).foregroundStyle(theme.palette.muted)
                 .accessibilityIdentifier("mesh.attachments.notice")
         }

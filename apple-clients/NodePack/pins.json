@@ -3,11 +3,11 @@
   "pack_format": 1,
   "kernel": {
     "repository": "https://github.com/AstralDeep/AstralKernel.git",
-    "commit": "2d91b9bdf5d03644e5204cb658772fd7059baa7c"
+    "commit": "d02e4ea15098016855dc99a579590a21c6e65b12"
   },
   "deep": {
     "repository": "https://github.com/AstralDeep/AstralDeep.git",
-    "commit": "72f27cee0522ed9c48d8794fcae9870d177a378c"
+    "commit": "4844c5454c7568d9f41eb41b9bcabad1adeb4627"
   },
   "python": {
     "version": "3.11.18",
