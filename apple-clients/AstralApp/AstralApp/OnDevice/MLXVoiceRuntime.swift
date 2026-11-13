@@ -28,10 +28,19 @@ nonisolated struct MLXVoiceInference: VoiceModelInference {
     func acknowledgement(_ request: OnDeviceRequest) async throws -> String {
         var options = LFM3Sampling()
         options.maxNewTokens = request.maxTokens
-        let messages = request.messages.map { message in
-            LFM3Message(role: LFM3Message.Role(rawValue: message.role.rawValue)!, text: message.text)
-        }
+        let messages = Self.messages(for: request)
         return try await engine.chat(messages: messages, options: options).text
+    }
+
+    static func messages(for request: OnDeviceRequest) -> [LFM3Message] {
+        request.messages.map { message in
+            switch message.role {
+            case .system: LFM3Message(role: .system, text: message.text)
+            case .user: LFM3Message(role: .user, text: message.text)
+            case .assistant: LFM3Message(role: .assistant, text: message.text)
+            case .tool: LFM3Message(role: .user, text: "[Untrusted tool output]\n" + message.text)
+            }
+        }
     }
 }
 
