@@ -134,8 +134,10 @@ final class MeshModeUITests: XCTestCase {
 
     func testShellShowsWaitingDeviceQueuedMessageBranchesAndApproval() {
         launch("shell")
+        selectTab("Devices")
         XCTAssertTrue(element("mesh.strip.sync").waitForExistence(timeout: 10))
         XCTAssertTrue((element("mesh.strip.sync").label).contains("Waiting for Sam's iPhone"))
+        selectTab("Chats")
         XCTAssertTrue(element("mesh.consent.review").waitForExistence(timeout: 5))
         XCTAssertTrue(element("mesh.consent.deny").exists)
 
@@ -149,16 +151,74 @@ final class MeshModeUITests: XCTestCase {
 
     func testDevicesAndSettingsExposeMembersStopAndAllowance() {
         launch("shell")
-        XCTAssertTrue(element("mesh.tab.devices").waitForExistence(timeout: 10))
         selectTab("Devices")
-        XCTAssertTrue(element("mesh.devices.add").waitForExistence(timeout: 5))
-        XCTAssertTrue(element("mesh.devices.stop").exists)
+        XCTAssertTrue(element("mesh.devices.add").waitForExistence(timeout: 10))
         attach("mesh-devices")
+        app.swipeUp()
+        XCTAssertTrue(element("mesh.devices.stop").waitForExistence(timeout: 5))
+        attach("mesh-devices-safety")
         selectTab("Settings")
         element("mesh.settings.allowance").tap()
         XCTAssertTrue(element("mesh.allowance.blocked").waitForExistence(timeout: 5))
         XCTAssertTrue(element("mesh.allowance.share").exists)
         attach("mesh-allowance")
+    }
+
+    func testAddingADeviceWalksThroughCodeComparisonAndApproval() {
+        launch("shell")
+        selectTab("Devices")
+        XCTAssertTrue(element("mesh.devices.add").waitForExistence(timeout: 10))
+        element("mesh.devices.add").tap()
+        XCTAssertTrue(element("mesh.add.step.1").waitForExistence(timeout: 5))
+        attach("mesh-add-1-start")
+        element("mesh.add.start").tap()
+        XCTAssertTrue(element("mesh.add.step.2").waitForExistence(timeout: 5))
+        attach("mesh-add-2-code")
+        let field = element("mesh.add.payload")
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("astral-pair:v1:offer")
+        element("mesh.add.continue").tap()
+        XCTAssertTrue(element("mesh.add.step.3").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("mesh.add.code").exists)
+        attach("mesh-add-3-compare")
+        element("mesh.add.approve").tap()
+        XCTAssertTrue(element("mesh.add.done").waitForExistence(timeout: 5))
+        attach("mesh-add-4-done")
+        element("mesh.add.done").tap()
+        XCTAssertTrue(element("mesh.devices.add").waitForExistence(timeout: 5))
+    }
+
+    func testAnUnreadableCodeKeepsThePersonOnTheCodeStepWithAnError() {
+        launch("shell")
+        selectTab("Devices")
+        XCTAssertTrue(element("mesh.devices.add").waitForExistence(timeout: 10))
+        element("mesh.devices.add").tap()
+        element("mesh.add.start").tap()
+        let field = element("mesh.add.payload")
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("not a code")
+        element("mesh.add.continue").tap()
+        XCTAssertTrue(element("mesh.add.error").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("mesh.add.step.2").exists)
+        attach("mesh-add-error")
+    }
+
+    func testDeviceDetailOffersRequestAndRemovalWithConfirmation() {
+        launch("shell")
+        selectTab("Devices")
+        let row = app.staticTexts["Sam's iPhone"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.tap()
+        XCTAssertTrue(element("mesh.device.header").waitForExistence(timeout: 5))
+        attach("mesh-device-detail")
+        app.swipeUp()
+        XCTAssertTrue(element("mesh.device.request").waitForExistence(timeout: 5))
+        attach("mesh-device-detail-actions")
+        element("mesh.device.remove").tap()
+        XCTAssertTrue(app.buttons["Remove Device"].waitForExistence(timeout: 5))
+        attach("mesh-device-remove-confirm")
     }
 
     private func replace(_ field: XCUIElement, with text: String) {

@@ -31,7 +31,7 @@ struct MeshSettingsView: View {
                     LabeledContent("Mesh") { Text(meshId.suffix(12)).font(.system(.footnote, design: .monospaced)) }
                 }
                 LabeledContent("Keys", value: mesh.status.hardwareBacked ? "In secure hardware" : "In the Keychain")
-                LabeledContent("Identity", value: mesh.status.attested ? "Attested" : "Not attested")
+                LabeledContent("Identity", value: mesh.status.attested ? "Verified" : "Not verified")
                 if let version = mesh.kernelVersion { LabeledContent("Runtime", value: version) }
             }
             Section {

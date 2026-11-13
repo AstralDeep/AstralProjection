@@ -56,6 +56,7 @@ nonisolated struct MeshTurnState: Equatable, Sendable {
     var awaitingConsent: String?
     var unknown: [MeshUnknownOutcome] = []
     var failure: String?
+    var answeredOnDevice = false
     var interrupted = false
 }
 
@@ -98,6 +99,12 @@ nonisolated enum MeshJoinState: Equatable, Sendable {
     case starting
     case offered(MeshPairingOffer)
     case joined
+    case failed(String)
+}
+
+nonisolated enum MeshVerificationState: Equatable, Sendable {
+    case idle
+    case signingIn
     case failed(String)
 }
 
@@ -240,6 +247,7 @@ final class MeshRuntime {
     private(set) var join = MeshJoinState.idle
     private(set) var restore = MeshRestoreState.idle
     private(set) var addDevice = MeshAddDeviceState.idle
+    private(set) var verification = MeshVerificationState.idle
     private(set) var acknowledgedOutcomes: Set<String> = []
     private(set) var spoken: [VoiceSpokenRecord] = []
     private(set) var restoredInstall = false
@@ -716,6 +724,23 @@ final class MeshRuntime {
 
     func resetAddDevice() { addDevice = .idle }
 
+    func verifyIdentity() async {
+        guard kernel != nil, verification != .signingIn else { return }
+        verification = .signingIn
+        do {
+            let request = try await call { try $0.beginAttestation() }
+            let token = try await enrollment(request.nonce)
+            try await call { try $0.reattest(idToken: token) }
+            verification = .idle
+            await refreshStatus()
+            await refreshRoster()
+        } catch {
+            verification = .failed(Self.describe(error))
+        }
+    }
+
+    func dismissVerificationFailure() { verification = .idle }
+
     func removeDevice(_ member: MeshMember) async {
         guard !member.isThisDevice else { return }
         await perform { try $0.removeDevice(memberId: member.memberId) }
@@ -933,8 +958,9 @@ final class MeshRuntime {
             do {
                 try await self.call { try await $0.runTurn(chatId: chatId) }
             } catch {
-                if self.turns[chatId]?.interrupted != true {
-                    self.turns[chatId]?.failure = Self.describe(error)
+                if self.turns[chatId]?.interrupted != true, var state = self.turns[chatId] {
+                    self.record(failure: Self.describe(error), in: &state)
+                    self.turns[chatId] = state
                 }
                 self.turns[chatId]?.running = false
             }
@@ -1024,10 +1050,19 @@ final class MeshRuntime {
             if speaking { speakingChatId = nil }
         case .failed(let reason):
             state.running = false
-            state.failure = reason
+            record(failure: reason, in: &state)
             if speaking { speakingChatId = nil }
         }
         turns[progress.chatId] = state
+    }
+
+    private func record(failure text: String, in state: inout MeshTurnState) {
+        if text == KernelMapping.failureText(code: "provider."), providers.isEmpty, onDeviceModelAvailable {
+            state.answeredOnDevice = true
+            state.failure = nil
+        } else {
+            state.failure = text
+        }
     }
 
     private func call<T: Sendable>(_ work: @escaping @Sendable (any MeshKernel) async throws -> T) async throws -> T {

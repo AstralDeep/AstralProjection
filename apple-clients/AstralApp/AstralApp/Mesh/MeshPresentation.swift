@@ -39,6 +39,55 @@ nonisolated enum MeshPresentation {
         }
     }
 
+    static func icon(_ kind: MeshDeviceKind) -> String {
+        switch kind {
+        case .desktop: return "desktopcomputer"
+        case .pocket: return "iphone"
+        case .satellite: return "applewatch"
+        case .node: return "server.rack"
+        }
+    }
+
+    static func connection(_ path: MeshPath) -> String {
+        switch path {
+        case .direct: return "on this network"
+        case .relay: return "through a relay"
+        case .mailbox: return "through the mailbox"
+        case .none: return "not connected"
+        }
+    }
+
+    static func deviceStatus(
+        _ member: MeshMember, sync: MeshDeviceSync?, now: Date = Date(), calendar: Calendar = .current
+    ) -> String {
+        if member.isThisDevice { return member.attested ? "Verified" : "Needs sign-in to verify" }
+        if !member.attested { return "Needs sign-in to verify" }
+        let seen = sync?.lastSeen ?? member.lastSeen
+        let path = sync?.path ?? member.path
+        switch sync?.state {
+        case .synced:
+            return "Synced " + ago(seen, now: now) + " · " + connection(path)
+        case .behind:
+            return "Catching up · " + connection(path)
+        case .unreachable, nil:
+            guard let seen else { return "Not seen yet" }
+            return "Waiting since " + clock(seen, now: now, calendar: calendar)
+        }
+    }
+
+    static func clock(_ date: Date, now: Date, calendar: Calendar = .current) -> String {
+        let time = date.formatted(.dateTime.hour().minute())
+        if calendar.isDate(date, inSameDayAs: now) { return time }
+        return date.formatted(.dateTime.month(.abbreviated).day()) + ", " + time
+    }
+
+    private static func ago(_ date: Date?, now: Date) -> String {
+        guard let date, now.timeIntervalSince(date) >= 45 else { return "just now" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return formatter.localizedString(for: date, relativeTo: now)
+    }
+
     static func syncState(_ state: MeshDeviceSync.State) -> String {
         switch state {
         case .synced: return "Synced"
@@ -71,6 +120,12 @@ nonisolated enum MeshPresentation {
         let digits = Array(code)
         guard digits.count == 8 else { return code }
         return String(digits[0..<4]) + " " + String(digits[4..<8])
+    }
+
+    static func codeGroups(_ code: String) -> [String] {
+        let digits = code.filter { !$0.isWhitespace }
+        guard digits.count == 8 else { return [String(code)] }
+        return [String(digits.prefix(4)), String(digits.suffix(4))]
     }
 
     static func runStatus(_ run: MeshRun) -> String {

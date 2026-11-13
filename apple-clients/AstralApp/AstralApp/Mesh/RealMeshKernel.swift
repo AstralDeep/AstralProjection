@@ -136,6 +136,10 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
 
     func resumeStop() throws { try mapped { _ = try kernel.resumeStop() } }
 
+    func beginAttestation() throws -> MeshAttestationRequest {
+        try mapped { MeshAttestationRequest(nonce: try kernel.beginAttestation().nonce) }
+    }
+
     func reattest(idToken: String) throws { try mapped { try kernel.reattest(idToken: idToken) } }
 
     func exportBackup(path: String) throws { try mapped { _ = try kernel.exportBackup(path: path) } }

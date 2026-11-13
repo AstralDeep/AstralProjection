@@ -58,7 +58,7 @@ struct MeshRuntimeHarness {
 
     init(
         hasMesh: Bool = true, factoryError: MeshKernelError? = nil, mailbox: String? = nil, rejectMailbox: Bool = false,
-        enrollment: (@Sendable (String) async throws -> String)? = nil
+        onDeviceAvailable: Bool = false, enrollment: (@Sendable (String) async throws -> String)? = nil
     ) {
         let box = KernelBox()
         let tokens = TokenBox()
@@ -87,7 +87,7 @@ struct MeshRuntimeHarness {
                 try DeviceKeys(
                     store: MeshMemorySecretStore(), defaults: UserDefaults(suiteName: suite)!, preferHardware: false)
             },
-            consent: ConsentCoordinator(), onDeviceModel: FakeOnDeviceModel(available: false),
+            consent: ConsentCoordinator(), onDeviceModel: FakeOnDeviceModel(available: onDeviceAvailable),
             tools: DeviceLocalTools(), dataDirectory: FileManager.default.temporaryDirectory,
             deviceLabel: "Test Mac", deviceKind: .desktop, enrollment: signIn, defaults: defaults)
         self.box = box

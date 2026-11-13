@@ -1,5 +1,5 @@
-// The devices screen: members with attestation, last seen and path, requests for this device, a request to another member, removal, the emergency stop, and the add-a-device flow.
-// Removing or adding a device is signed through the host consent sheet, so every roster change asks for biometrics.
+// The devices screen: this device, the other devices on the mesh with a one-line plain status, requests waiting here, and the safety controls.
+// Adding, removing and stopping are signed through the host consent sheet, so every roster change asks for biometrics.
 
 import SwiftUI
 
@@ -13,229 +13,236 @@ struct MeshDevicesView: View {
     @Environment(MeshRuntime.self) private var mesh
     @Environment(ThemeStore.self) private var theme
     @State private var removing: MeshMember?
-    @State private var confirmingStop = false
+    @State private var adding = false
     private var p: AstralPalette { theme.palette }
 
+    private var thisDevice: [MeshMember] { mesh.members.filter(\.isThisDevice) }
+    private var otherDevices: [MeshMember] { mesh.members.filter { !$0.isThisDevice } }
+
     var body: some View {
-        List {
+        Form {
             if !mesh.requestsForMe.isEmpty {
                 Section("Requests for this device") {
                     ForEach(mesh.requestsForMe) { MeshRequestRow(request: $0) }
                 }
                 .accessibilityIdentifier("mesh.devices.requests")
             }
-            Section("Members") {
-                ForEach(mesh.members) { member in
-                    memberRow(member)
+            Section("This device") {
+                ForEach(thisDevice) { member in
+                    NavigationLink(value: member.memberId) { MeshDeviceRow(member: member, sync: sync(of: member)) }
+                        .accessibilityIdentifier("mesh.member.\(member.memberId.suffix(8))")
+                    if !member.attested { MeshVerifyButton() }
+                }
+            }
+            Section("Other devices") {
+                ForEach(otherDevices) { member in
+                    NavigationLink(value: member.memberId) { MeshDeviceRow(member: member, sync: sync(of: member)) }
+                        .accessibilityIdentifier("mesh.member.\(member.memberId.suffix(8))")
                         .swipeActions {
-                            if !member.isThisDevice {
-                                Button("Remove", role: .destructive) { removing = member }
-                            }
+                            Button("Remove", role: .destructive) { removing = member }
                         }
                         .contextMenu {
-                            if !member.isThisDevice {
-                                Button("Remove", role: .destructive) { removing = member }
-                            }
+                            Button("Remove Device", role: .destructive) { removing = member }
                         }
                 }
-                NavigationLink {
-                    MeshAddDeviceView()
+                if otherDevices.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("No other devices yet").font(ConsoleTypography.headline)
+                        Text("Add a phone or computer to keep your chats on every device.")
+                            .font(ConsoleTypography.subheadline).foregroundStyle(p.muted)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("mesh.devices.empty")
+                }
+                Button {
+                    adding = true
                 } label: {
-                    Label("Add a device", systemImage: "plus.circle")
+                    Label("Add Device", systemImage: "plus.circle.fill")
                 }
                 .accessibilityIdentifier("mesh.devices.add")
             }
-            Section {
-                if mesh.status.stopped {
-                    Label("The mesh is stopped. No device runs actions.", systemImage: "hand.raised.fill")
-                        .foregroundStyle(p.error)
-                        .accessibilityIdentifier("mesh.devices.halted")
-                    Button {
-                        Task { await mesh.resume() }
-                    } label: {
-                        Label("Resume the mesh with biometrics", systemImage: "play.fill")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityIdentifier("mesh.devices.resume")
-                } else {
-                    Button(role: .destructive) {
-                        confirmingStop = true
-                    } label: {
-                        Label("Emergency stop", systemImage: "hand.raised.fill")
-                    }
-                    .accessibilityIdentifier("mesh.devices.stop")
-                }
-            } footer: {
-                Text(
-                    mesh.status.stopped
-                        ? "Resuming asks for your approval and lets every device run actions again."
-                        : mesh.status.stopLevel == 0
-                        ? "Every device refuses actions that were already in progress."
-                        : "Stopped \(mesh.status.stopLevel) times. Every device refuses actions that were already in progress.")
-            }
+            MeshSafetySection()
         }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .meshReadableWidth()
+        .background(p.bg)
         .navigationTitle("Devices")
-        .confirmationDialog(
-            "Remove \(removing?.label ?? "this device")?", isPresented: Binding(
-                get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible
-        ) {
-            Button("Remove with biometrics", role: .destructive) {
-                if let member = removing { Task { await mesh.removeDevice(member) } }
-                removing = nil
+        .navigationDestination(for: String.self) { memberId in MeshDeviceDetailView(memberId: memberId) }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    adding = true
+                } label: {
+                    Label("Add Device", systemImage: "plus")
+                        #if os(macOS)
+                            .labelStyle(.titleAndIcon)
+                        #endif
+                }
+                .accessibilityIdentifier("mesh.devices.toolbar.add")
             }
-            Button("Cancel", role: .cancel) { removing = nil }
-        } message: {
-            Text("It will no longer read or write your chats.")
         }
-        .confirmationDialog("Stop the whole mesh?", isPresented: $confirmingStop, titleVisibility: .visible) {
-            Button("Emergency stop", role: .destructive) { Task { await mesh.raiseStop() } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Every device refuses actions that were already in progress. New requests start fresh.")
+        .sheet(isPresented: $adding) {
+            MeshAddDeviceSheet()
         }
+        .meshRemoveConfirmation($removing)
+    }
+
+    private func sync(of member: MeshMember) -> MeshDeviceSync? {
+        mesh.sync.devices.first { $0.memberId == member.memberId }
     }
 }
 
-extension MeshDevicesView {
+extension View {
     @ViewBuilder
-    fileprivate func memberRow(_ member: MeshMember) -> some View {
-        let row = MeshMemberRow(member: member, sync: mesh.sync.devices.first { $0.memberId == member.memberId })
-        if member.isThisDevice {
-            row
-        } else {
-            NavigationLink {
-                MeshSendRequestView(member: member)
-            } label: {
-                row
+    func meshReadableWidth() -> some View {
+        #if os(macOS)
+            frame(maxWidth: 640).frame(maxWidth: .infinity)
+        #else
+            self
+        #endif
+    }
+
+    func meshRemoveConfirmation(_ member: Binding<MeshMember?>) -> some View {
+        modifier(MeshRemoveConfirmation(member: member))
+    }
+}
+
+private struct MeshRemoveConfirmation: ViewModifier {
+    @Binding var member: MeshMember?
+    @Environment(MeshRuntime.self) private var mesh
+
+    func body(content: Content) -> some View {
+        content.confirmationDialog(
+            "Remove \(member?.label ?? "this device")?",
+            isPresented: Binding(get: { member != nil }, set: { if !$0 { member = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Remove Device", role: .destructive) {
+                if let target = member { Task { await mesh.removeDevice(target) } }
+                member = nil
             }
-            .accessibilityHint("Send a request to this device")
+            Button("Cancel", role: .cancel) { member = nil }
+        } message: {
+            Text("It will no longer read or write your chats. You will be asked to approve.")
         }
     }
 }
 
-struct MeshMemberRow: View {
+struct MeshDeviceRow: View {
     let member: MeshMember
     let sync: MeshDeviceSync?
     @Environment(ThemeStore.self) private var theme
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Image(systemName: icon).foregroundStyle(p.accent).accessibilityHidden(true)
+        HStack(spacing: 12) {
+            Image(systemName: MeshPresentation.icon(member.kind))
+                .font(.title3)
+                .foregroundStyle(p.accent)
+                .frame(width: 32)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
                 Text(member.label).font(ConsoleTypography.headline)
-                if member.isThisDevice { Text("This device").font(ConsoleTypography.caption).foregroundStyle(p.muted) }
-                Spacer()
-                Text(member.attested ? "Attested" : "Not attested")
-                    .font(ConsoleTypography.caption)
-                    .foregroundStyle(member.attested ? p.success : p.warning)
-            }
-            if !member.isThisDevice {
-                Text(
-                    MeshPresentation.lastSeen(member.lastSeen) + ". " + MeshPresentation.path(member.path)
-                        + (sync.map { ". " + MeshPresentation.syncState($0.state) } ?? "")
-                )
-                .font(ConsoleTypography.footnote)
-                .foregroundStyle(p.muted)
+                HStack(spacing: 4) {
+                    if !member.attested {
+                        Image(systemName: "exclamationmark.circle.fill").accessibilityHidden(true)
+                    }
+                    Text(MeshPresentation.deviceStatus(member, sync: sync))
+                }
+                .font(ConsoleTypography.subheadline)
+                .foregroundStyle(member.attested ? p.muted : p.warning)
             }
         }
+        .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("mesh.member.\(member.memberId.suffix(8))")
     }
+}
 
-    private var icon: String {
-        switch member.kind {
-        case .desktop: return "desktopcomputer"
-        case .pocket: return "iphone"
-        case .satellite: return "applewatch"
-        case .node: return "server.rack"
+struct MeshVerifyButton: View {
+    @Environment(MeshRuntime.self) private var mesh
+    @Environment(ThemeStore.self) private var theme
+    private var p: AstralPalette { theme.palette }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                Task { await mesh.verifyIdentity() }
+            } label: {
+                if mesh.verification == .signingIn {
+                    Label {
+                        Text("Signing in")
+                    } icon: {
+                        ProgressView().controlSize(.small)
+                    }
+                } else {
+                    Label("Verify", systemImage: "checkmark.shield")
+                }
+            }
+            .disabled(mesh.verification == .signingIn)
+            .accessibilityHint("Signs in to confirm this device belongs to you")
+            .accessibilityIdentifier("mesh.devices.verify")
+            if case .failed(let message) = mesh.verification {
+                Text(message).font(ConsoleTypography.footnote).foregroundStyle(p.error)
+                    .accessibilityIdentifier("mesh.devices.verify.error")
+            }
         }
     }
 }
 
-struct MeshAddDeviceView: View {
+struct MeshSafetySection: View {
     @Environment(MeshRuntime.self) private var mesh
     @Environment(ThemeStore.self) private var theme
-    @State private var payload = ""
+    @State private var confirmingStop = false
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
-        Form {
-            switch mesh.addDevice {
-            case .idle, .failed:
-                entry
-            case .previewing(let preview, _):
-                comparison(preview)
-            case .approving:
-                Section { ProgressView("Waiting for your approval") }
-            case .added(let label):
-                Section {
-                    Label("\(label) was added.", systemImage: "checkmark.circle.fill").foregroundStyle(p.success)
-                        .accessibilityIdentifier("mesh.add.done")
-                    Button("Done") { mesh.resetAddDevice() }
-                }
-            }
-            if case .failed(let message) = mesh.addDevice {
-                Section { Text(message).foregroundStyle(p.error).accessibilityIdentifier("mesh.add.error") }
-            }
-        }
-        .navigationTitle("Add a device")
-        .onDisappear { mesh.resetAddDevice() }
-    }
-
-    private var entry: some View {
         Section {
-            TextField("Pairing code from the new device", text: $payload, axis: .vertical)
-                .lineLimit(2...5)
-                .autocorrectionDisabled()
-                #if os(iOS)
-                    .textInputAutocapitalization(.never)
-                #endif
-                .accessibilityIdentifier("mesh.add.payload")
-            Button("Paste") { payload = MeshPasteboardReader.string() }
-                .accessibilityIdentifier("mesh.add.paste")
-            #if os(iOS)
-                if MeshScanner.isAvailable {
-                    NavigationLink("Scan a QR code") {
-                        MeshScannerScreen { scanned in
-                            payload = scanned
-                            Task { await mesh.previewAddDevice(payload: scanned) }
-                        }
-                    }
-                    .accessibilityIdentifier("mesh.add.scan")
+            if mesh.status.stopped {
+                Label("Every device is stopped", systemImage: "hand.raised.fill")
+                    .foregroundStyle(p.error)
+                    .accessibilityIdentifier("mesh.devices.halted")
+                Button {
+                    Task { await mesh.resume() }
+                } label: {
+                    Label("Resume", systemImage: "play.fill")
                 }
-            #endif
-            Button("Continue") { Task { await mesh.previewAddDevice(payload: payload) } }
-                .disabled(payload.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .accessibilityIdentifier("mesh.add.continue")
+                .accessibilityHint("Asks for your approval")
+                .accessibilityIdentifier("mesh.devices.resume")
+            } else {
+                Button(role: .destructive) {
+                    confirmingStop = true
+                } label: {
+                    Label("Emergency Stop", systemImage: "hand.raised.fill")
+                }
+                .accessibilityIdentifier("mesh.devices.stop")
+            }
+        } header: {
+            Text("Safety")
         } footer: {
-            Text("On the new device choose Join my mesh, then scan its QR code or paste its code here.")
+            Text(
+                mesh.status.stopped
+                    ? "Resuming asks for your approval and lets every device act again."
+                    : "Stops every device from taking any action until you resume.")
         }
-    }
-
-    private func comparison(_ preview: MeshPairingPreview) -> some View {
-        Group {
-            Section("Compare this code with the new device") {
-                Text(preview.comparisonCode)
-                    .font(.system(size: 34, weight: .semibold, design: .monospaced))
-                    .accessibilityIdentifier("mesh.add.code")
-                LabeledContent("Device", value: preview.deviceLabel)
-                LabeledContent("Type", value: MeshPresentation.kind(preview.deviceKind))
-                LabeledContent("Fingerprint", value: preview.fingerprint)
-                    .font(.system(.footnote, design: .monospaced))
-            }
-            Section {
-                Button("Approve with biometrics") { Task { await mesh.approveAddDevice() } }
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityIdentifier("mesh.add.approve")
-                Button("Cancel", role: .cancel) { mesh.resetAddDevice() }
-                    .accessibilityIdentifier("mesh.add.cancel")
-            }
+        .confirmationDialog("Stop every device?", isPresented: $confirmingStop, titleVisibility: .visible) {
+            Button("Stop All Devices", role: .destructive) { Task { await mesh.raiseStop() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("No device will take any action until you resume. You can resume from the Devices tab.")
         }
     }
 }
 
 enum MeshPasteboardReader {
+    static func hasString() -> Bool {
+        #if os(macOS)
+            return NSPasteboard.general.canReadObject(forClasses: [NSString.self], options: nil)
+        #else
+            return UIPasteboard.general.hasStrings
+        #endif
+    }
+
     static func string() -> String {
         #if os(macOS)
             return NSPasteboard.general.string(forType: .string) ?? ""

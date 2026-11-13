@@ -196,9 +196,23 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         listener.onChange(.allowanceChanged)
     }
 
+    func beginAttestation() throws -> MeshAttestationRequest {
+        try record("beginAttestation")
+        return MeshAttestationRequest(nonce: "nonce-2")
+    }
+
     func reattest(idToken: String) throws {
         try record("reattest", idToken)
-        lock.withLock { status.attested = true }
+        lock.withLock {
+            status.attested = true
+            members = members.map {
+                $0.isThisDevice
+                    ? MeshMember(
+                        memberId: $0.memberId, label: $0.label, kind: $0.kind, isThisDevice: true, attested: true,
+                        lastSeen: $0.lastSeen, path: $0.path)
+                    : $0
+            }
+        }
         listener.onChange(.rosterChanged)
     }
 

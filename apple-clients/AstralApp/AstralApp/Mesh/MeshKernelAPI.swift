@@ -435,6 +435,7 @@ nonisolated protocol MeshKernel: Sendable {
     func removeDevice(memberId: String) throws
     func raiseStop() throws
     func resumeStop() throws
+    func beginAttestation() throws -> MeshAttestationRequest
     func reattest(idToken: String) throws
     func exportBackup(path: String) throws
 
