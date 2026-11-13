@@ -26,6 +26,9 @@ struct MeshSettingsView: View {
                 NavigationLink("Tool permissions") { MeshPermissionsView() }
                     .accessibilityIdentifier("mesh.settings.permissions")
             }
+            #if os(macOS)
+                MacNodeHostSection()
+            #endif
             Section("This mesh") {
                 if let meshId = mesh.status.meshId {
                     LabeledContent("Mesh") { Text(meshId.suffix(12)).font(.system(.footnote, design: .monospaced)) }

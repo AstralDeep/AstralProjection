@@ -259,6 +259,7 @@
             await waitUntil { if case .running = await supervisor.state { return true } else { return false } }
             guard case .running(let pid, _) = await supervisor.state else { return XCTFail("not running") }
             XCTAssertEqual(kill(pid, 0), 0)
+            await waitUntil { (try? String(contentsOf: log, encoding: .utf8)) == "started\n" }
             supervisor.stopSynchronously(timeout: 3)
             var gone = false
             for _ in 0..<100 where !gone {

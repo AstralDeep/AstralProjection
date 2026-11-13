@@ -112,6 +112,7 @@
             phase = environment.available ? .notInstalled : .unavailable
         }
 
+        public var isAvailable: Bool { environment.available }
         public var isRunning: Bool { if case .running = phase { return true } else { return false } }
         public var isBusy: Bool {
             switch phase {
