@@ -24,6 +24,22 @@ final class MeshModeUITests: XCTestCase {
 
     private func element(_ id: String) -> XCUIElement { app.descendants(matching: .any)[id] }
 
+    func testAttachmentOnlyMessageShowsItsFileAndTheComposerCanAddAnother() {
+        launch("attachments")
+        let chat = app.staticTexts["Shared files"].firstMatch
+        XCTAssertTrue(chat.waitForExistence(timeout: 10))
+        chat.tap()
+        XCTAssertTrue(element("mesh.composer.attach").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["notes.txt"].exists)
+        XCTAssertTrue(app.buttons["Save notes.txt"].isEnabled)
+        attach("mesh-file-attachment")
+        element("mesh.composer.attach").tap()
+        let presented = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "hittable == false"), object: element("mesh.composer"))
+        XCTAssertEqual(XCTWaiter.wait(for: [presented], timeout: 5), .completed)
+        attach("mesh-file-picker")
+    }
+
     func testCreatingAMeshShowsRecoveryWordsOnceAndRequiresConfirmation() {
         launch("onboarding")
         XCTAssertTrue(element("mesh.create").waitForExistence(timeout: 10))

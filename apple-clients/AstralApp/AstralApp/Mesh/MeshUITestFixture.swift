@@ -9,6 +9,7 @@
         enum Scenario: String {
             case onboarding
             case shell
+            case attachments
         }
 
         private static let launchFlag = "--astral-ui-test-mesh"
@@ -39,7 +40,7 @@
             let defaults = UserDefaults(suiteName: suite)!
             let mode = AppModeStore(defaults: defaults)
             mode.choose(.mesh)
-            let hasMesh = scenario == .shell
+            let hasMesh = scenario != .onboarding
             let factory: MeshKernelFactory = { _, signer, _, _, listener in
                 let kernel = InMemoryMeshKernel(listener: listener, hasMesh: hasMesh)
                 kernel.actionSigner = { pending in
@@ -53,7 +54,13 @@
                 kernel.autoJoin = MeshJoinRequest(
                     comparisonCode: "4821 9307", deviceLabel: "New iPhone", deviceKind: .pocket,
                     deviceId: "sha256:" + String(repeating: "e", count: 64), expiresAt: Date().addingTimeInterval(540))
-                if hasMesh { seed(kernel) }
+                if scenario == .shell { seed(kernel) }
+                if scenario == .attachments {
+                    let chat = try kernel.createChat(title: "Shared files")
+                    let file = try kernel.addAttachment(
+                        chatId: chat, bytes: Data("Meeting notes\n".utf8), mime: "text/plain", name: "notes.txt")
+                    _ = try kernel.sendMessage(chatId: chat, text: "", continues: nil, attachments: [file.id])
+                }
                 return kernel
             }
             let runtime = MeshRuntime(

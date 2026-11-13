@@ -72,6 +72,16 @@
             await shell("chat") { .chat($0.chats.first?.chatId ?? "") }
         }
 
+        func testAttachmentOnlyChatScreen() async {
+            let rig = Rig(.attachments)
+            await rig.runtime.open()
+            await capture(
+                "mac-file-attachment",
+                rig.host(MeshRootView(start: .chat(rig.runtime.chats.first?.chatId ?? "")), width: 1280, height: 820),
+                width: 1280, height: 820)
+            await rig.runtime.close()
+        }
+
         func testPairingAndSheetScreens() async {
             let rig = Rig(.shell)
             await rig.runtime.open()
