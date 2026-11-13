@@ -1501,7 +1501,7 @@
             window.title = "Workbench mount \(UUID().uuidString)"
             window.appearance = NSAppearance(named: model.themeStore.colorScheme == .dark ? .darkAqua : .aqua)
             window.contentView = view
-            window.orderBack(nil)
+            SurfaceAccessibility.prepare(window)
             return window
         }
 
@@ -1576,7 +1576,7 @@
             window.title = "Workbench panel \(UUID().uuidString)"
             window.appearance = NSAppearance(named: model.themeStore.colorScheme == .dark ? .darkAqua : .aqua)
             window.contentView = view
-            window.orderBack(nil)
+            SurfaceAccessibility.prepare(window)
             return (view, window)
         }
 
