@@ -88,7 +88,7 @@ def _assert_core_trigger_and_python_coverage(text: str) -> None:
         "pytest tests apple-clients/NodePack/tests -q -p no:cacheprovider "
         "--cov=astralprojection --cov=webrender --cov=assemble_pack --cov=local_sources --cov=pack_manifest --cov=package_kernel_wheel --cov=pins --cov=astral_node_launch --cov=node_logging "
         "--cov=scripts.install_presentation_components --cov=scripts.merge_xccov_line_coverage --cov=scripts.build_offline_assets "
-        "--cov=scripts.build_native_export --cov=scripts.android_coverage --cov=scripts.native_xccov_domain --cov=scripts.collect_xccov_native_domain --cov=scripts.export_xccov_line_coverage --cov=scripts.check_changed_coverage --cov=scripts.ci_review_diagnostics --cov=scripts.ci_lanes --cov=scripts.ci_apple_ui_products --cov=scripts.ci_retry_diagnostics --cov=scripts.check_regression_effectiveness --cov=scripts.swift_inactive_input --cov-branch --cov-append "
+        "--cov=scripts.build_native_export --cov=scripts.android_coverage --cov=scripts.native_xccov_domain --cov=scripts.collect_xccov_native_domain --cov=scripts.export_xccov_line_coverage --cov=scripts.check_changed_coverage --cov=scripts.ci_review_diagnostics --cov=scripts.ci_lanes --cov=scripts.ci_apple_ui_products --cov=scripts.ci_kernel_apple --cov=scripts.ci_retry_diagnostics --cov=scripts.check_regression_effectiveness --cov=scripts.swift_inactive_input --cov-branch --cov-append "
         "--cov-report=xml:build/074/coverage/projection-python.xml"
     ) in python
     assert "run: python scripts/check_regression_effectiveness.py" in _step_block(
@@ -480,7 +480,7 @@ def _assert_apple_platform_contract(apple: str) -> None:
     assert "-resolvePackageDependencies" in package_prewarm
     assert "-onlyUsePackageVersionsFromResolvedFile" in package_prewarm
     assert "-skipPackageUpdates" in package_prewarm
-    assert "needs: [changes, swift-package-prewarm, ios-ui-build]" in first_login
+    assert "needs: [changes, swift-package-prewarm, ios-ui-build, kernel-apple]" in first_login
     assert first_login.count(cache_action) == 1
     assert first_login.count(package_cache_key) == 1
     assert "fail-on-cache-miss: true" in first_login
@@ -1018,6 +1018,8 @@ def test_native_ci_is_active_and_uses_standalone_paths() -> None:
     }
     assert _job_ids(apple) == {
         "changes",
+        "kernel-slices",
+        "kernel-apple",
         "swift-lint",
         "core-tests",
         "core-ios-tests",
@@ -1863,7 +1865,7 @@ def test_ios_ui_build_transport_is_required_and_bound_to_the_current_run():
     consumer = _job_block(apple, "first-login-ui")
     aggregate = _job_block(apple, "apple-required")
     assert "--cov=scripts.ci_apple_ui_products" in _job_block((ACTIVE / "ci.yml").read_text(), "python")
-    assert "needs: [changes, swift-package-prewarm]" in producer
+    assert "needs: [changes, swift-package-prewarm, kernel-apple]" in producer
     assert "if: needs.changes.outputs.apple == 'true'" in producer
     assert "timeout-minutes: 20" in producer
     assert "-scheme AstralApp" in producer and "-only-testing:" not in producer

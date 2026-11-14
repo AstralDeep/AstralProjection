@@ -169,6 +169,8 @@ def test_workflow_guard_mutants_cannot_hide_failed_or_skipped_native_work():
                 "ios-ui-build",
                 "first-login-ui",
                 "watch-continuity",
+                "kernel-slices",
+                "kernel-apple",
             ],
         ),
     ]:
@@ -176,8 +178,11 @@ def test_workflow_guard_mutants_cannot_hide_failed_or_skipped_native_work():
         for job in jobs:
             block = re.split(r"(?m)^  [\w-]+:\s*$", text.split(f"  {job}:\n", 1)[1], maxsplit=1)[0]
             expected_needs = {
-                ("apple", "first-login-ui"): "    needs: [changes, swift-package-prewarm, ios-ui-build]\n",
-                ("apple", "ios-ui-build"): "    needs: [changes, swift-package-prewarm]\n",
+                ("apple", "first-login-ui"): "    needs: [changes, swift-package-prewarm, ios-ui-build, kernel-apple]\n",
+                ("apple", "ios-ui-build"): "    needs: [changes, swift-package-prewarm, kernel-apple]\n",
+                ("apple", "app-unit-tests"): "    needs: [changes, kernel-apple]\n",
+                ("apple", "watch-continuity"): "    needs: [changes, kernel-apple]\n",
+                ("apple", "kernel-apple"): "    needs: [changes, kernel-slices]\n",
             }.get((lane, job), "    needs: [changes]\n")
             assert expected_needs in block
             assert f"if: needs.changes.outputs.{lane} == 'true'" in block
