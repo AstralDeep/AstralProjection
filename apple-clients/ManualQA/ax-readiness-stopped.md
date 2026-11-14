@@ -1,9 +1,19 @@
-# Unqualified accessibility readiness proposal
+# Native accessibility readiness
 
-Saved at the owner's stopping request. This branch adds explicit foreground/key-window preparation to the existing native test fixtures; it does not replace the public AX lookup or its missing, ambiguous and foreign-window checks.
+The surface fixtures now order each test window front, make it key and ask the app to activate before reading its public accessibility tree. The lookup still fails on a missing, ambiguous or foreign window.
 
-The earlier lookup-time preparation experiment failed two cases and was replaced by the current async-settle/mount proposal. The current proposal was not executed before stopping. Do not call it fixed or use it to waive the 18 accessibility-dependent failures from the full Mac gate.
+## What the qualification found
 
-Reproduction and failed diagnostic logs remain local at `/tmp/spec105-native-ax-publication-green.log` and `/tmp/spec105-native-ax-diagnostic-run.log`. The minimal Cocoa probes under `/tmp/spec105-ax-probe` found that both an active app and a key window were needed to publish its own AX window; this lead does not itself qualify the application fixture.
+The 21 accessibility failures seen in one full Mac run on the feature line did not reproduce. A second full run of the same source passed every one of them, and they also pass alone. Their trigger was outside the code. That run started right after another test host hung on a Desktop folder privacy prompt.
 
-Resume with the two unchanged accessibility boundary tests and all affected native classes before a full Mac gate. The main feature branch separately preserves the unfinished consent-presentation repair and its handoff.
+Running surfaces in a focused window exposed a real defect. The computer Stop control lost its error color and took the accent color once its window was key in an active app. It now keeps the error tint in both states.
+
+Text recognition read "Bypass on" with a Cyrillic first letter. The fixture handed Vision a transparent bitmap. The same image composited onto an opaque background reads correctly, and a language setting made no difference. Surface text is now read from the view drawn over its window background, and the failing assertions report the text they read.
+
+The session controls Stop button also takes the accent color in a focused window. No test asserts its color and it is not changed here.
+
+## Limits
+
+Activation is cooperative. When another app holds focus, the fixture window stays inactive and the run covers the inactive state only. The settle step still waits a fixed time. It does not observe accessibility publication.
+
+Two consent presentation tests fail in every full run, with and without this change. They belong to the consent presentation repair.
