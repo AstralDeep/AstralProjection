@@ -120,11 +120,27 @@
             return bitmap
         }
 
+        private func opaqueImage(in target: NSView) throws -> CGImage {
+            let source = try XCTUnwrap(bitmap(in: target).cgImage)
+            let bounds = CGRect(x: 0, y: 0, width: source.width, height: source.height)
+            let context = try XCTUnwrap(
+                CGContext(
+                    data: nil, width: source.width, height: source.height, bitsPerComponent: 8, bytesPerRow: 0,
+                    space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            let host = target.window ?? window
+            var background = NSColor.windowBackgroundColor.cgColor
+            host.effectiveAppearance.performAsCurrentDrawingAppearance { background = host.backgroundColor.cgColor }
+            context.setFillColor(background)
+            context.fill(bounds)
+            context.draw(source, in: bounds)
+            return try XCTUnwrap(context.makeImage())
+        }
+
         func lines() throws -> [String] {
             let request = VNRecognizeTextRequest()
             request.recognitionLevel = .accurate
             request.usesLanguageCorrection = false
-            try VNImageRequestHandler(cgImage: XCTUnwrap(bitmap().cgImage)).perform([request])
+            try VNImageRequestHandler(cgImage: opaqueImage(in: view)).perform([request])
             return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
         }
 
@@ -150,7 +166,7 @@
             let request = VNRecognizeTextRequest()
             request.recognitionLevel = .accurate
             request.usesLanguageCorrection = false
-            try VNImageRequestHandler(cgImage: XCTUnwrap(bitmap(in: target).cgImage)).perform([request])
+            try VNImageRequestHandler(cgImage: opaqueImage(in: target)).perform([request])
             var match: CGRect?
             for observation in request.results ?? [] {
                 guard let candidate = observation.topCandidates(1).first,

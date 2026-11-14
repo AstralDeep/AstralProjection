@@ -1320,8 +1320,8 @@
             XCTAssertEqual(computer.host.session?.state, "active")
             model.turnActive = true
             try await settle()
-            let stop = try XCTUnwrap(try stopControl(view))
             try attach(view, name: "workbench-stop")
+            let stop = try XCTUnwrap(try stopControl(view))
             for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
                 window.sendEvent(
                     try XCTUnwrap(
