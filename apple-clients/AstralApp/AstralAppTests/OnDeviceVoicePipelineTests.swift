@@ -143,15 +143,17 @@ final class OnDeviceVoicePipelineTests: XCTestCase {
         pipeline.stop()
     }
 
-    func testOnlyTheDeviceMicrophoneInAnOwnerSessionIsOwnerIntegrity() {
-        let sources: [VoiceAudioSource] = [.deviceMicrophone, .file, .call, .other]
+    func testOnlyLiveOwnerMicrophonesInAGestureSessionHaveOwnerIntegrity() {
+        let sources: [VoiceAudioSource] = [.deviceMicrophone, .pairedWatchMicrophone, .file, .call, .other]
         for source in sources {
             for trigger in [VoiceSessionTrigger.ownerGesture, .pushToTalk, .programmatic] {
                 let turn = OwnerVoiceTurn.make(
                     text: "hello", source: source, trigger: trigger, riskyActionPending: false)
                 let expected: VoiceTranscriptIntegrity =
-                    source == .deviceMicrophone && trigger != .programmatic ? .owner : .untrusted
+                    (source == .deviceMicrophone || source == .pairedWatchMicrophone) && trigger != .programmatic
+                    ? .owner : .untrusted
                 XCTAssertEqual(turn?.integrity, expected, "\(source) \(trigger)")
+                XCTAssertFalse(turn?.approvalEligible ?? true)
             }
         }
         XCTAssertNil(
@@ -188,6 +190,52 @@ final class OnDeviceVoicePipelineTests: XCTestCase {
         pipeline.answerFinished()
         XCTAssertEqual(audio.spoken.map(\.text), ["First sentence.", "Second sentence."])
         pipeline.stop()
+    }
+
+    func testCompletedAnswerRecordsOnlyAfterActualPlaybackAndOnlyOnce() throws {
+        let pipeline = try makePipeline()
+        defer { pipeline.stop() }
+        speak(pipeline, "tell me something")
+        pipeline.handleRecognizer(.final("Tell me something."))
+        pipeline.answerDelta("First sentence. Second sentence.")
+        pipeline.answerFinished()
+        XCTAssertTrue(link.spoken.isEmpty)
+        pipeline.handleSpeech(.finished(index: 0))
+        XCTAssertTrue(link.spoken.isEmpty)
+        pipeline.handleSpeech(.finished(index: 1))
+        XCTAssertEqual(link.spoken, [.init(kind: .answer, text: "First sentence. Second sentence.")])
+        pipeline.handleSpeech(.finished(index: 1))
+        pipeline.answerFinished()
+        XCTAssertEqual(link.spoken.count, 1)
+        speak(pipeline, "another answer")
+        pipeline.handleRecognizer(.final("Another answer."))
+        pipeline.answerDelta("New answer.")
+        pipeline.answerFinished()
+        pipeline.handleSpeech(.finished(index: 0))
+        XCTAssertEqual(link.spoken.map(\.text), ["First sentence. Second sentence.", "New answer."])
+    }
+
+    func testPlaybackFinishingBeforeStreamingStillWaitsForAnswerCompletion() throws {
+        let pipeline = try makePipeline()
+        defer { pipeline.stop() }
+        speak(pipeline, "answer")
+        pipeline.handleRecognizer(.final("Answer."))
+        pipeline.answerDelta("A sentence. ")
+        pipeline.handleSpeech(.finished(index: 0))
+        XCTAssertTrue(link.spoken.isEmpty)
+        pipeline.answerFinished()
+        XCTAssertEqual(link.spoken.map(\.text), ["A sentence."])
+    }
+
+    func testFailedPlaybackNeverRecordsUnheardAnswerAsCompleted() throws {
+        let pipeline = try makePipeline()
+        defer { pipeline.stop() }
+        speak(pipeline, "answer")
+        pipeline.handleRecognizer(.final("Answer."))
+        pipeline.answerDelta("A sentence.")
+        pipeline.answerFinished()
+        pipeline.handleSpeech(.failed(index: 0))
+        XCTAssertTrue(link.spoken.isEmpty)
     }
 
     func testAnswerBeforeAnyTurnIsIgnored() throws {

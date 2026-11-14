@@ -263,6 +263,9 @@ final class AppModel: NSObject {
     let voiceDeviceId: String
     @ObservationIgnored let voice: AppleVoiceSessionController
     @ObservationIgnored let onDeviceVoice: OnDeviceVoiceController
+    #if os(iOS)
+        @ObservationIgnored let watchVoice: PairedWatchVoiceRelay
+    #endif
 
     var signedIn = false {
         didSet {
@@ -751,7 +754,11 @@ final class AppModel: NSObject {
             macBrowser = MacBrowserDriver(host: host, defaults: defaults)
         #endif
         self.voice = voiceController ?? AppleVoiceSessionController()
-        self.onDeviceVoice = onDeviceVoiceController ?? OnDeviceVoiceController()
+        let localVoice = onDeviceVoiceController ?? OnDeviceVoiceController()
+        self.onDeviceVoice = localVoice
+        #if os(iOS)
+            self.watchVoice = PairedWatchVoiceRelay(controller: localVoice, channel: WatchOverrideSync.shared)
+        #endif
         self.store = tokenStore
         if tokenStore is InMemoryTokenStore {
             meshKeyStorage = InMemoryMeshKeyStorage()
@@ -825,13 +832,6 @@ final class AppModel: NSObject {
                 let chat = self.activeChatId, !chat.isEmpty
             else { return nil }
             return CanvasCaptureScope(owner: self.downloadOwner, server: self.serverBase, chat: chat)
-        }
-        voice.setFrameSender { [weak self] text in
-            self?.sendVoiceWire(text) ?? false
-        }
-        voice.setChatAdopter { [weak self] chatId in
-            self?.adoptChat(chatId)
-            return self?.refreshActiveChat()
         }
         #if os(iOS)
             configurePushNotifications()
@@ -2493,7 +2493,7 @@ final class AppModel: NSObject {
         #endif
         descriptor.microphonePermission = AppleVoicePermission.status
         descriptor.fullDuplex = true
-        descriptor.voiceTransport = "livekit"
+        descriptor.voiceTransport = ""
         #if os(macOS)
             descriptor.reducedMotion =
                 NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -7092,53 +7092,7 @@ final class AppModel: NSObject {
     }
 
     @discardableResult
-    func sendVoiceWire(_ text: String) -> Bool {
-        guard signedIn, connected,
-            currentConnectionVoiceSendOverride != nil || ws != nil,
-            VoiceCurrentConnectionFrame(frameText: text) != nil,
-            let frame = InboundFrame.parse(text)
-        else { return false }
-        if frame.name == "ui_event", frame.payload["action"]?.stringValue == "chat_message",
-            let submission = frame.payload["submission_id"]?.stringValue,
-            let request = frame.payload["request_generation"]?.stringValue,
-            let identity = ClientOperationIdentity(
-                submissionId: submission, requestGeneration: request),
-            let chatId = frame.payload["session_id"]?.stringValue
-        {
-            if localOperationSubmissions[submission] == nil {
-                guard
-                    continuity.connectionGeneration == nil
-                        || openConversationRequest(
-                            chatId: chatId, requestGeneration: request, purpose: .commit)
-                else { return false }
-                beginLocalOperationSubmission(
-                    identity: identity, action: "chat_message", surface: "chat",
-                    chatId: chatId)
-                let message = frame.payload["payload"]?["message"]?.stringValue ?? ""
-                if continuity.connectionGeneration == nil {
-                    appendTurn(role: "user", text: message)
-                } else {
-                    transientTurns.append(
-                        ChatTurn(
-                            id: "pending-voice-\(submission)", role: "user",
-                            text: message))
-                }
-                turnActive = true
-                workspaceStarted = true
-                consoleDashboardVisible = false
-                pendingReplace = true
-                pendingCanvas = []
-                liveOpsThisTurn = false
-            }
-        }
-        outboundTap?(text)
-        if let override = currentConnectionVoiceSendOverride {
-            override(text)
-        } else if let ws {
-            Task { _ = await ws.sendCurrentConnectionVoice(text) }
-        }
-        return true
-    }
+    func sendVoiceWire(_ text: String) -> Bool { false }
 
     func activateVoice() async {
         if onDeviceVoice.store?.state != .installed {

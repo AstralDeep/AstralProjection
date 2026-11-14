@@ -1,8 +1,7 @@
-// Offers on-device speech model downloads with their size shown first and downloads only after the owner confirms that exact offer.
-// VoicePipeline setup uses it when the newest transcriber's assets are missing, and it never starts a download on its own.
+// Coordinates explicit download offers for injected model asset providers.
+// The active voice model uses VoiceModelStore; no platform speech provider is created here.
 
 import Foundation
-import Speech
 
 nonisolated struct VoiceModelDownloadOffer: Equatable, Sendable {
     let identifier: String
@@ -83,50 +82,5 @@ final class VoiceModelDownloadCoordinator {
         } catch {
             state = .failed("download_failed")
         }
-    }
-}
-
-@available(iOS 26.0, macOS 26.0, *)
-nonisolated struct SpeechTranscriberAssetProvider: VoiceModelAssetProvider {
-    let locale: Locale
-
-    func status() async -> VoiceModelAssetStatus {
-        guard SpeechTranscriber.isAvailable,
-            let supported = await SpeechTranscriber.supportedLocale(equivalentTo: locale)
-        else { return .unsupported }
-        let module = Self.module(supported)
-        switch await AssetInventory.status(forModules: [module]) {
-        case .installed: return .ready
-        case .downloading: return .downloading
-        case .unsupported: return .unsupported
-        case .supported:
-            return .downloadRequired(
-                VoiceModelDownloadOffer(
-                    identifier: "speech_transcriber_\(supported.identifier)",
-                    displayName: "On-device speech recognition (\(supported.identifier))",
-                    sizeBytes: nil))
-        @unknown default: return .unsupported
-        }
-    }
-
-    func download(progress: @escaping @Sendable (Double) -> Void) async throws {
-        guard let supported = await SpeechTranscriber.supportedLocale(equivalentTo: locale),
-            let request = try await AssetInventory.assetInstallationRequest(supporting: [Self.module(supported)])
-        else { return }
-        let watcher = Task {
-            while !Task.isCancelled {
-                progress(request.progress.fractionCompleted)
-                try? await Task.sleep(for: .milliseconds(250))
-            }
-        }
-        defer { watcher.cancel() }
-        try await request.downloadAndInstall()
-        progress(1)
-    }
-
-    private static func module(_ locale: Locale) -> SpeechTranscriber {
-        SpeechTranscriber(
-            locale: locale, transcriptionOptions: [],
-            reportingOptions: [.volatileResults, .fastResults], attributeOptions: [])
     }
 }

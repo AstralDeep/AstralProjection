@@ -80,9 +80,33 @@ LFM3 provides no word-to-audio alignment. The graph records completed sentences
 only after their scheduled audio reports that it played. It omits an interrupted
 sentence, even when its beginning was audible, and never guesses a prefix from
 elapsed time or audio chunk lengths. This conservatively excludes unplayed words
-from history; it does not preserve every audible word. The watch's
-existing server bridge and server speech code remain for their current clients;
-phone-satellite binding is separate integration work.
+from history; it does not preserve every audible word.
+
+## Paired Watch voice
+
+Start voice explicitly on the Watch with the same signed-in account used to
+open the mesh on its paired iPhone. The phone must have the verified voice model
+installed and its mesh open. The phone verifies the exact issuer and subject
+against the Kernel's current enrolled principal, then binds the session to its
+current conversation. The Watch displays that phone conversation; its separate
+server chat does not receive the transcript. Missing or different owner context,
+a closed mesh, or a missing model is reported as unavailable.
+
+One WatchConnectivity delegate per app carries bounded, sequenced ephemeral PCM:
+16 kHz mono capture to the phone and 24 kHz mono speech back to the Watch. The
+Watch pauses capture during playback. Received text and audio are conversation
+input only and cannot approve an action. Playback records require actual Watch
+audio-start and audio-completion acknowledgements; synthesis completion alone
+never establishes that speech was heard.
+
+Server-provided speech text is retained only for explicit Replay. Replay uses
+the same verified phone model without requesting the Watch microphone. The
+former hosted REST, media and system-speech adapters refuse use, and neither
+Apple descriptor advertises a hosted voice transport. Backgrounding, owner or
+conversation changes, loss of reachability and Stop retire the session; returning
+does not restart it. Interactive sends, preparation, packet sizes and session
+lifetimes are bounded. Physical paired-device audio and latency remain manual
+qualification work.
 
 ## Verification
 

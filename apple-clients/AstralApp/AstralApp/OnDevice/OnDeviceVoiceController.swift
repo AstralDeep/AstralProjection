@@ -16,6 +16,8 @@ final class OnDeviceVoiceController {
     private(set) var isRunning = false
     private(set) var isPreparing = false
     private(set) var message: String?
+    var onSessionStopped: (() -> Void)?
+    var onTranscript: ((String, Bool) -> Void)?
     @ObservationIgnored private let requestPermission: () async -> Bool
     @ObservationIgnored private let makePipeline: @MainActor (URL, VoiceKernelLink) async throws -> VoicePipeline
     @ObservationIgnored private var link: VoiceKernelLink?
@@ -24,6 +26,7 @@ final class OnDeviceVoiceController {
     @ObservationIgnored private var foreground = true
     @ObservationIgnored private var interrupted = false
     @ObservationIgnored private var locked = false
+    @ObservationIgnored private var companion = false
 
     init(
         store: VoiceModelStore?,
@@ -58,6 +61,22 @@ final class OnDeviceVoiceController {
     }
 
     func activate() async {
+        if companion { stop() }
+        await start(makePipeline: makePipeline, needsPhoneMicrophone: true)
+    }
+
+    func activateForPairedWatch(
+        makePipeline: @escaping @MainActor (URL, VoiceKernelLink) async throws -> VoicePipeline
+    ) async {
+        stop()
+        companion = true
+        await start(makePipeline: makePipeline, needsPhoneMicrophone: false)
+    }
+
+    private func start(
+        makePipeline: @escaping @MainActor (URL, VoiceKernelLink) async throws -> VoicePipeline,
+        needsPhoneMicrophone: Bool
+    ) async {
         Self.log.info(
             "voice_start requested foreground=\(self.foreground, privacy: .public) interrupted=\(self.interrupted, privacy: .public) locked=\(self.locked, privacy: .public) preparing=\(self.isPreparing, privacy: .public) running=\(self.isRunning, privacy: .public)"
         )
@@ -106,7 +125,7 @@ final class OnDeviceVoiceController {
             showingSetup = true
             return
         }
-        let permitted = await requestPermission()
+        let permitted = needsPhoneMicrophone ? await requestPermission() : true
         Self.log.info(
             "voice_start permission granted=\(permitted, privacy: .public) current=\(self.generation == attempt, privacy: .public) eligible=\(self.eligible, privacy: .public)"
         )
@@ -143,6 +162,10 @@ final class OnDeviceVoiceController {
                 }
                 self.showingSetup = true
             }
+            prepared.onTranscript = { [weak self] text, final in
+                guard let self, self.generation == attempt else { return }
+                self.onTranscript?(text, final)
+            }
             try prepared.start(trigger: .ownerGesture)
             pipeline = prepared
             isRunning = true
@@ -169,6 +192,7 @@ final class OnDeviceVoiceController {
     }
 
     func stop() {
+        let notify = isRunning || isPreparing || companion
         if isRunning || isPreparing {
             Self.log.info(
                 "voice_stop preparing=\(self.isPreparing, privacy: .public) running=\(self.isRunning, privacy: .public)"
@@ -180,6 +204,8 @@ final class OnDeviceVoiceController {
         isRunning = false
         isPreparing = false
         message = nil
+        companion = false
+        if notify { onSessionStopped?() }
     }
 
     func suspend() {

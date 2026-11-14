@@ -1,83 +1,41 @@
-// On-device text-to-speech for the server's spoken turn rendition (SSML via AVSpeechUtterance, with
-// plain-text fallback); stops immediately on navigation and never re-speaks a turn, used by WatchModel and
-// WatchChatView.
+// Requests speech from the paired phone's verified on-device model and tracks actual Watch playback.
+// The Watch holds only the most recent ephemeral text for replay and never uses platform synthesis.
 
-import AVFoundation
 import AstralCore
 import Observation
 
 typealias AstralSpeech = AstralCore.Speech
 
+@MainActor
 @Observable
-final class Speaker: NSObject {
-    private let synthesizer = AVSpeechSynthesizer()
-    @ObservationIgnored private var lastSpokenKey: Int?
-    @ObservationIgnored private var lastSpeech: SpeechPayload?
+final class Speaker {
+    var onSpeak: ((String) -> Void)?
+    var onStop: (() -> Void)?
+    private var lastSpokenKey: String?
+    private var lastText: String?
+    private(set) var isSpeaking = false
 
-    struct SpeechPayload {
-        let ssml: String
-        let text: String
-    }
-
-    var isSpeaking = false
-
-    override init() {
-        super.init()
-        synthesizer.delegate = self
-        #if os(watchOS)
-            try? AVAudioSession.sharedInstance().setCategory(.ambient, options: [.duckOthers])
-        #endif
-    }
-
-    func speak(_ speech: AstralSpeech?) {
-        guard let speech else { return }
-        let key = speech.text.hashValue
-        guard key != lastSpokenKey else { return }
-        lastSpokenKey = key
-        let payload = SpeechPayload(ssml: speech.ssml, text: speech.text)
-        lastSpeech = payload
-        utter(payload)
+    func remember(_ speech: AstralSpeech?) {
+        guard let text = speech?.text, !text.isEmpty, text != lastSpokenKey else { return }
+        lastSpokenKey = text
+        lastText = text
     }
 
     func replay() {
-        guard let last = lastSpeech else { return }
+        guard let lastText else { return }
         stop()
-        utter(last)
+        onSpeak?(lastText)
     }
 
     func stop() {
-        synthesizer.stopSpeaking(at: .immediate)
+        onStop?()
         isSpeaking = false
     }
 
-    private func utter(_ payload: SpeechPayload) {
-        let utterance: AVSpeechUtterance
-        if !payload.ssml.isEmpty,
-            let ssml = AVSpeechUtterance(ssmlRepresentation: payload.ssml)
-        {
-            utterance = ssml
-        } else if !payload.text.isEmpty {
-            utterance = AVSpeechUtterance(string: payload.text)
-        } else {
-            return
-        }
-        isSpeaking = true
-        synthesizer.speak(utterance)
-    }
-}
-
-extension Speaker: AVSpeechSynthesizerDelegate {
-    func speechSynthesizer(
-        _ synthesizer: AVSpeechSynthesizer,
-        didFinish utterance: AVSpeechUtterance
-    ) {
-        isSpeaking = false
-    }
-
-    func speechSynthesizer(
-        _ synthesizer: AVSpeechSynthesizer,
-        didCancel utterance: AVSpeechUtterance
-    ) {
-        isSpeaking = false
+    func playbackChanged(_ speaking: Bool) { isSpeaking = speaking }
+    func clear() {
+        stop()
+        lastSpokenKey = nil
+        lastText = nil
     }
 }

@@ -1,5 +1,5 @@
 """Fails when an Apple production source starts the hosted voice controller or reaches api/voice or LiveKit.
-Only the dormant hosted files and the Watch REST client may name them, and the app model may only hold the inert controller.
+Retired compatibility types may remain, but no Apple voice implementation may restore a network or system-speech transport.
 """
 
 from __future__ import annotations
@@ -14,16 +14,12 @@ APP_SOURCES = ROOT / "AstralApp" / "AstralApp"
 SCANNED = ("AstralApp/AstralApp", "AstralCore/Sources", "AstralKernel/Sources", "AstralWatch")
 
 HOSTED_FILES = {
-    "AstralApp/AstralApp/Voice/VoiceSessionController.swift": "dormant hosted controller with the api/voice REST client and LiveKit media client",
-    "AstralApp/AstralApp/Voice/AppleLocalSpeech.swift": "client-local speech engine reachable only through the dormant hosted controller",
+    "AstralApp/AstralApp/Voice/VoiceSessionController.swift": "retired presentation and explicitly unavailable adapters",
+    "AstralApp/AstralApp/Voice/AppleLocalSpeech.swift": "legacy speech observation and explicitly unavailable engine",
     "AstralApp/AstralApp/Voice/AppleLocalSpeechProgress.swift": "progress tracker used only by the dormant client-local speech engine",
     "AstralApp/AstralApp/Voice/AppleLocalVoiceRuntime.swift": "client-local voice runtime reachable only through the dormant hosted controller",
 }
-WATCH_FILES = {
-    "AstralWatch/WatchVoiceREST.swift": "the Watch posts to api/voice by design",
-    "AstralWatch/WatchVoiceBridge.swift": "the Watch voice bridge drives its own api/voice client by design",
-}
-ALLOWED_FILES = {**HOSTED_FILES, **WATCH_FILES}
+ALLOWED_FILES = dict(HOSTED_FILES)
 
 APP_MODEL = "AstralApp/AstralApp/AppModel.swift"
 APP_MODEL_SYMBOLS = {
@@ -50,13 +46,31 @@ HOSTED_MEMBERS_NEVER_STARTING = {
     "sceneBecameInactive",
     "sessionLocked",
     "sessionUnlocked",
-    "setChatAdopter",
-    "setFrameSender",
     "terminalNotice",
     "updateVisibleChatLocally",
 }
 
-ALWAYS_FORBIDDEN = re.compile(r"api/voice|LiveKit")
+ALWAYS_FORBIDDEN = re.compile(r"api/voice|LiveKit|\b(?:AVSpeechSynthesizer|SFSpeechRecognizer|SpeechAnalyzer|SpeechTranscriber)\s*\(")
+
+
+@pytest.mark.parametrize("pattern", [r"api/voice", r"\bimport\s+LiveKit\b", r"\b(?:AVSpeechSynthesizer|SFSpeechRecognizer|SpeechAnalyzer|SpeechTranscriber)\s*\("])
+def test_apple_voice_implementations_have_no_hosted_or_system_fallback(pattern):
+    paths = list((APP_SOURCES / "Voice").glob("*.swift"))
+    paths += list((ROOT / "AstralWatch").glob("*Voice*.swift"))
+    paths.append(ROOT / "AstralWatch" / "Speaker.swift")
+    offenders = [str(path.relative_to(ROOT)) for path in paths if re.search(pattern, strip_comments(path.read_text()))]
+    assert offenders == []
+
+
+def test_apple_devices_do_not_advertise_retired_voice_transports():
+    for path in [APP_SOURCES / "AppModel.swift", ROOT / "AstralWatch" / "WatchModel.swift"]:
+        assert not re.search(r'voiceTransport\s*=\s*"(?:livekit|watch_pcm_websocket)"', strip_comments(path.read_text()))
+
+
+def test_apple_app_has_no_livekit_package_dependency():
+    project = ROOT / "AstralApp" / "AstralApp.xcodeproj"
+    for path in [project / "project.pbxproj", project / "project.xcworkspace/xcshareddata/swiftpm/Package.resolved"]:
+        assert "livekit" not in path.read_text().lower()
 DECLARATION = re.compile(
     r"^\s*(?:@\w+\s+)*(?:(?:public|internal|private|fileprivate|final|nonisolated)\s+)*"
     r"(?:class|struct|enum|protocol|actor)\s+(\w+)",
@@ -123,12 +137,14 @@ def hosted_members(code: str, relative: str = APP_MODEL) -> set[str]:
 
 
 def violations(relative: str, text: str, hosted_symbols: set[str]) -> list[str]:
-    if relative in ALLOWED_FILES:
-        return []
     found = [
         f"{relative}: reaches {match.group(0)!r}"
         for match in ALWAYS_FORBIDDEN.finditer(strip_comments(text))
     ]
+    if "/Voice/" in relative or relative.startswith("AstralWatch/"):
+        found.extend(f"{relative}: restores a voice network client" for _ in re.finditer(r"\bURLSession\b", strip_comments(text)))
+    if relative in ALLOWED_FILES:
+        return found
     code = strip_comments(text, keep_strings=False)
     for symbol in sorted(hosted_symbols):
         if re.search(rf"\b{symbol}\b", code) and not (
@@ -165,9 +181,10 @@ def test_allow_list_names_only_existing_files_with_reasons():
     for relative, reason in ALLOWED_FILES.items():
         assert (ROOT / relative).is_file(), relative
         assert reason.strip()
-    assert set(HOSTED_FILES) == {
+    assert set(HOSTED_FILES) < {
         f"AstralApp/AstralApp/Voice/{path.name}" for path in (APP_SOURCES / "Voice").glob("*.swift")
     }
+    assert not any(path.startswith("AstralWatch/") for path in ALLOWED_FILES)
 
 
 def test_hosted_files_are_the_only_main_app_declarations_of_hosted_voice():
@@ -175,13 +192,11 @@ def test_hosted_files_are_the_only_main_app_declarations_of_hosted_voice():
     symbols = hosted_symbols(sources)
     assert {
         "AppleVoiceSessionController",
-        "AppleLiveKitVoiceMediaClient",
-        "URLSessionAppleVoiceControlAPI",
+        "UnavailableAppleVoiceMediaClient",
+        "RetiredAppleVoiceControlAPI",
     } <= symbols
     assert set(APP_MODEL_SYMBOLS) <= symbols
-    assert any(
-        "api/voice" in text for relative, text in sources.items() if relative in HOSTED_FILES
-    )
+    assert not any("api/voice" in strip_comments(text) for text in sources.values())
 
 
 def test_no_production_source_outside_the_allow_list_reaches_hosted_voice():
@@ -200,7 +215,7 @@ def test_the_app_model_only_calls_non_starting_members_of_the_hosted_controller(
     assert not {"activate", "takeover", "perform", "end"} & members
 
 
-SYMBOLS = {"AppleVoiceSessionController", "AppleVoicePermission", "AppleLiveKitGrant"}
+SYMBOLS = {"AppleVoiceSessionController", "AppleVoicePermission", "AppleVoiceRetiredGrant"}
 
 
 @pytest.mark.parametrize(
@@ -238,19 +253,15 @@ def test_the_app_model_may_hold_the_controller_but_not_start_it():
     held = "let voice: AppleVoiceSessionController\nself.voice = AppleVoiceSessionController()\nvoice.consume(frame)"
     assert violations(APP_MODEL, held, SYMBOLS) == []
     assert violations(APP_MODEL, "voice.activate()", SYMBOLS)
-    assert violations(APP_MODEL, "let r = AppleLiveKitGrant.self", SYMBOLS)
+    assert violations(APP_MODEL, "let r = AppleVoiceRetiredGrant.self", SYMBOLS)
 
 
-def test_allow_listed_files_are_exempt():
-    assert (
-        violations("AstralWatch/WatchVoiceREST.swift", 'path: "api/voice/sessions"', SYMBOLS) == []
-    )
-    assert (
-        violations(
-            "AstralApp/AstralApp/Voice/VoiceSessionController.swift", "import LiveKit", SYMBOLS
-        )
-        == []
-    )
+def test_retired_and_watch_files_cannot_restore_a_hosted_transport():
+    for relative in ["AstralWatch/WatchVoiceREST.swift", "AstralApp/AstralApp/Voice/VoiceSessionController.swift"]:
+        assert violations(relative, 'path: "api/voice/sessions"', SYMBOLS)
+        assert violations(relative, "import LiveKit", SYMBOLS)
+        assert violations(relative, "let speech = AVSpeechSynthesizer()", SYMBOLS)
+        assert violations(relative, "let network = URLSession.shared", SYMBOLS)
 
 
 def test_string_scanner_keeps_code_after_a_url_literal():

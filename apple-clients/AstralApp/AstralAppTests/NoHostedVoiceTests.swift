@@ -1,11 +1,10 @@
 // Proves every voice entry point of the app model leaves the hosted voice controller, its REST client and its media client idle.
-// A URLProtocol recorder fails any api/voice request, and the on-device session is driven with the existing fakes and no microphone.
+// A URLProtocol recorder fails every HTTP request, and the on-device session is driven with the existing fakes and no microphone.
 
 import AstralCore
+@testable import AstralDeep
 import CryptoKit
 import XCTest
-
-@testable import AstralDeep
 
 final class HostedVoiceRequestRecorder: URLProtocol, @unchecked Sendable {
     private static let lock = NSLock()
@@ -15,7 +14,7 @@ final class HostedVoiceRequestRecorder: URLProtocol, @unchecked Sendable {
     static func reset() { lock.withLock { seen.removeAll() } }
 
     override class func canInit(with request: URLRequest) -> Bool {
-        request.url?.path.contains("api/voice") == true
+        ["http", "https"].contains(request.url?.scheme?.lowercased() ?? "")
     }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -78,7 +77,7 @@ private final class VoiceHarness {
             })
         onDevice.connect(link: link)
         let control: AppleVoiceControlAPI =
-            realRest ? URLSessionAppleVoiceControlAPI(session: HostedVoiceRequestRecorder.session) : api
+            realRest ? RetiredAppleVoiceControlAPI() : api
         let hosted = AppleVoiceSessionController(
             api: control, media: media,
             permissionProvider: {
@@ -125,13 +124,20 @@ private final class VoiceHarness {
         return try XCTUnwrap(InboundFrame.parse(raw))
     }
 
-    func assertHostedIdle(_ context: String, lifecycle: Bool = false, file: StaticString = #filePath, line: UInt = #line) {
+    func assertHostedIdle(
+        _ context: String, lifecycle: Bool = false, file: StaticString = #filePath, line: UInt = #line
+    ) {
         XCTAssertEqual(api.startCount, 0, "\(context): hosted start", file: file, line: line)
         XCTAssertEqual(api.takeoverCount, 0, "\(context): hosted takeover", file: file, line: line)
-        XCTAssertEqual(api.startLocalCount + api.takeoverLocalCount, 0, "\(context): local start", file: file, line: line)
-        XCTAssertEqual(api.updates.count + api.localUpdates.count, 0, "\(context): session update", file: file, line: line)
-        XCTAssertEqual(api.refreshIds.count + api.endCount + api.stopCount, 0, "\(context): refresh or end", file: file, line: line)
-        XCTAssertEqual(api.capabilityCount + api.consentCount, 0, "\(context): capability or consent", file: file, line: line)
+        XCTAssertEqual(
+            api.startLocalCount + api.takeoverLocalCount, 0, "\(context): local start", file: file, line: line)
+        XCTAssertEqual(
+            api.updates.count + api.localUpdates.count, 0, "\(context): session update", file: file, line: line)
+        XCTAssertEqual(
+            api.refreshIds.count + api.endCount + api.stopCount, 0, "\(context): refresh or end", file: file, line: line
+        )
+        XCTAssertEqual(
+            api.capabilityCount + api.consentCount, 0, "\(context): capability or consent", file: file, line: line)
         XCTAssertEqual(media.connectCount, 0, "\(context): media connect", file: file, line: line)
         XCTAssertTrue(media.microphoneValues.isEmpty, "\(context): media microphone", file: file, line: line)
         XCTAssertTrue(media.authorized.isEmpty, "\(context): media authorization", file: file, line: line)
@@ -141,7 +147,8 @@ private final class VoiceHarness {
         }
         XCTAssertEqual(permissions.count, 0, "\(context): hosted capability request", file: file, line: line)
         XCTAssertFalse(hosted.mediaConnected, "\(context): hosted media connected", file: file, line: line)
-        XCTAssertEqual(HostedVoiceRequestRecorder.requests, [], "\(context): api/voice request", file: file, line: line)
+        XCTAssertEqual(
+            HostedVoiceRequestRecorder.requests, [], "\(context): outbound HTTP request", file: file, line: line)
     }
 
     func speakOneTurn(_ text: String) throws {
@@ -195,18 +202,29 @@ final class NoHostedVoiceTests: XCTestCase {
         HostedVoiceRequestRecorder.reset()
     }
 
-    func testTheRecorderSeesAndFailsEveryApiVoiceRequest() async throws {
-        let url = try XCTUnwrap(URL(string: "https://voice.example.test/api/voice/sessions"))
-        for session in [URLSession.shared, HostedVoiceRequestRecorder.session] {
-            do {
-                _ = try await session.data(from: url)
-                XCTFail("an api/voice request must not succeed")
-            } catch {
-                XCTAssertEqual((error as? URLError)?.code, .notConnectedToInternet)
+    func testTheRecorderSeesAndFailsEveryHTTPRequest() async throws {
+        for path in ["/api/voice/sessions", "/ordinary-speech-endpoint"] {
+            let url = try XCTUnwrap(URL(string: "https://voice.example.test" + path))
+            for session in [URLSession.shared, HostedVoiceRequestRecorder.session] {
+                do {
+                    _ = try await session.data(from: url)
+                    XCTFail("an outbound HTTP request must not succeed")
+                } catch {
+                    XCTAssertEqual((error as? URLError)?.code, .notConnectedToInternet)
+                }
             }
         }
-        XCTAssertEqual(HostedVoiceRequestRecorder.requests, ["/api/voice/sessions", "/api/voice/sessions"])
+        XCTAssertEqual(
+            HostedVoiceRequestRecorder.requests,
+            ["/api/voice/sessions", "/api/voice/sessions", "/ordinary-speech-endpoint", "/ordinary-speech-endpoint"])
         HostedVoiceRequestRecorder.reset()
+    }
+
+    func testRegistrationDoesNotAdvertiseHostedMedia() throws {
+        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let value = try JSONValue.parse(Data(model.registrationFrame(token: "token", resumed: false).utf8))
+        XCTAssertEqual(value["device"]?["voice_transport"]?.stringValue, "")
+        XCTAssertEqual(HostedVoiceRequestRecorder.requests, [])
     }
 
     func testActivateVoiceStartsOnlyTheOnDevicePipeline() async throws {

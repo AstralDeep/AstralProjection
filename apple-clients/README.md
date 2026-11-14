@@ -1,7 +1,7 @@
 # AstralDeep — native Apple clients (features 051 + 053 + 065)
 
-Three SDUI targets on one shared Swift package, with a pinned LiveKit RTC
-dependency for conversational media on iOS and macOS:
+Three SDUI targets share one Swift protocol package. Apple voice uses the
+downloaded on-device model; Watch capture and playback use the paired iPhone:
 
 ```text
 AstralCore/    # SPM package: protocol, dispositions + drift guard, WS client,
@@ -9,15 +9,15 @@ AstralCore/    # SPM package: protocol, dispositions + drift guard, WS client,
 AstralApp/     # iOS (twin of android-client) + macOS (twin of windows-client)
                # — ONE multiplatform target; also embeds the watch app
 AstralWatch/   # watchOS: QR sign-in (RFC 8628 via backend broker), bounded
-               # PCM voice bridge in/out, and server-synthesized speech
+               # ephemeral paired-phone PCM capture and playback
 ```
 
 The original feature-051, feature-053, and feature-065 design history remains
 attributable through [`provenance/extraction.json`](../provenance/extraction.json).
-The standalone contracts now live in this tree. Feature 065 pins
-`client-sdk-swift` 2.15.3 and every resolved transitive revision in the
-committed `Package.resolved`; watchOS uses the owned bounded PCM-over-WSS bridge
-rather than the LiveKit package.
+The standalone contracts now live in this tree. The former hosted Apple voice
+transports and LiveKit package dependency are retired. Devices advertise an empty
+server voice transport; the companion pipeline is documented in
+[On-device Apple voice](ONDEVICE-VOICE.md).
 
 The optional macOS **DirectDownload** variant adds an explicitly enabled local
 computer host while Store builds remain controllers. Build, permissions,
@@ -251,7 +251,7 @@ caching to automate this development-only migration.
   (HTTPS to `sandbox.ai.uky.edu`) is fully ATS-compliant.
 - **Sandbox / entitlements**: the only entitlements file is
   `AstralApp/AstralApp-macOS.entitlements` (`app-sandbox`, `network.client`,
-  the `network.server` socket-bind capability required by LiveKit/WebRTC ICE,
+  the `network.server` socket-bind capability used by mesh peer networking,
   and audio input), wired via `CODE_SIGN_ENTITLEMENTS[sdk=macosx*]` on the
   **Release** config alongside `ENABLE_APP_SANDBOX[sdk=macosx*] = YES` and
   `ENABLE_HARDENED_RUNTIME[sdk=macosx*] = YES`. There is no iOS or watch
@@ -267,8 +267,8 @@ caching to automate this development-only migration.
   conversation mode and stops on end/background/ownership loss. The iOS/macOS
   chat microphone uses the downloaded MLX voice model; its size, installation,
   conversation-link contract and qualification limits are documented in
-  [On-device Apple voice](ONDEVICE-VOICE.md). The watch retains its existing
-  bounded server audio bridge pending phone-satellite integration.
+  [On-device Apple voice](ONDEVICE-VOICE.md). The Watch uses the paired phone
+  model and has no hosted or platform-speech fallback.
 - **BYO client-side agents (features 057/058) are AUTHOR-ONLY on these builds.**
   The App Sandbox forbids spawning arbitrary child processes / executing the
   packaged interpreter, so a Mac App Store build cannot *host* a user-authored

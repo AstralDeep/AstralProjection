@@ -14,7 +14,6 @@
 		AF1030000000000000000003 /* AstralVoiceModel in Frameworks */ = {isa = PBXBuildFile; productRef = AF1030000000000000000002 /* AstralVoiceModel */; };
 		AA00000000000000000000A5 /* AstralCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA00000000000000000000A3 /* AstralCore */; };
 		AA00000000000000000000C1 /* AstralWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000B1 /* AstralWatch.app */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		AC6500000000000000000003 /* LiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = AC6500000000000000000002 /* LiveKit */; };
 		AF1020000000000000000006 /* AstralSparkle in Frameworks */ = {isa = PBXBuildFile; productRef = AF1020000000000000000005 /* AstralSparkle */; };
 		AD0881000000000000000001 /* AstralCore in Harness Frameworks */ = {isa = PBXBuildFile; productRef = AD0881000000000000000002 /* AstralCore */; };
 /* End PBXBuildFile section */
@@ -133,7 +132,6 @@
 				AA00000000000000000000A4 /* AstralCore in Frameworks */,
 				AB00000000000000000000F4 /* AstralKernel in Frameworks */,
 				AF1030000000000000000003 /* AstralVoiceModel in Frameworks */,
-				AC6500000000000000000003 /* LiveKit in Frameworks */,
 				AF1020000000000000000006 /* AstralSparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -243,7 +241,6 @@
 				AA00000000000000000000A2 /* AstralCore */,
 				AB00000000000000000000F2 /* AstralKernel */,
 				AF1030000000000000000002 /* AstralVoiceModel */,
-				AC6500000000000000000002 /* LiveKit */,
 				AF1020000000000000000005 /* AstralSparkle */,
 			);
 			productName = AstralApp;
@@ -418,7 +415,6 @@
 				AB00000000000000000000F1 /* XCLocalSwiftPackageReference "../AstralKernel" */,
 				AF1020000000000000000004 /* XCLocalSwiftPackageReference "../AstralSparkle" */,
 				AF1030000000000000000001 /* XCLocalSwiftPackageReference "../AstralVoiceModel" */,
-				AC6500000000000000000001 /* XCRemoteSwiftPackageReference "client-sdk-swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 222F50282FFD60D80016B0D6 /* Products */;
@@ -1264,14 +1260,6 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		AC6500000000000000000001 /* XCRemoteSwiftPackageReference "client-sdk-swift" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/livekit/client-sdk-swift.git";
-			requirement = {
-				kind = exactVersion;
-				version = 2.15.3;
-			};
-		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1287,11 +1275,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AB00000000000000000000F1 /* XCLocalSwiftPackageReference "../AstralKernel" */;
 			productName = AstralKernel;
-		};
-		AC6500000000000000000002 /* LiveKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = AC6500000000000000000001 /* XCRemoteSwiftPackageReference "client-sdk-swift" */;
-			productName = LiveKit;
 		};
 		AF1020000000000000000005 /* AstralSparkle */ = {
 			isa = XCSwiftPackageProductDependency;

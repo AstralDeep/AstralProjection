@@ -26,6 +26,7 @@ final class VoicePipeline {
 
     var onFailure: ((String) -> Void)?
     var onSpeechIdle: (() -> Void)?
+    var onTranscript: ((String, Bool) -> Void)?
 
     private let audio: VoiceDuplexAudio
     private let transcriber: VoiceStreamingTranscriber
@@ -33,6 +34,7 @@ final class VoicePipeline {
     private weak var link: VoiceKernelLink?
     private let clock: VoiceClock
     private let configuration: VoicePipelineConfiguration
+    private let source: VoiceAudioSource
     private let barge: BargeInController
     private let detector: VoiceEndOfTurnDetector
     private var splitter = VoiceSentenceSplitter()
@@ -46,6 +48,8 @@ final class VoicePipeline {
     private var answerStarted = false
     private var acceptingAnswer = false
     private var answerFinishedStreaming = false
+    private var answerSpokenRecorded = false
+    private var answerPlaybackCompleted = false
     private var riskyActionPending = false
     private var acknowledgementPlaying: String?
     private var deferredSpeak: BargeInAction?
@@ -58,7 +62,8 @@ final class VoicePipeline {
     init(
         audio: VoiceDuplexAudio, transcriber: VoiceStreamingTranscriber, fastPath: VoiceFastPath?,
         link: VoiceKernelLink, clock: VoiceClock = SystemVoiceClock(),
-        configuration: VoicePipelineConfiguration = VoicePipelineConfiguration()
+        configuration: VoicePipelineConfiguration = VoicePipelineConfiguration(),
+        source: VoiceAudioSource = .deviceMicrophone
     ) {
         self.audio = audio
         self.transcriber = transcriber
@@ -66,6 +71,7 @@ final class VoicePipeline {
         self.link = link
         self.clock = clock
         self.configuration = configuration
+        self.source = source
         barge = BargeInController(configuration: configuration.bargeIn, clock: clock)
         detector = VoiceEndOfTurnDetector(configuration: configuration.turn, clock: clock)
     }
@@ -182,6 +188,7 @@ final class VoicePipeline {
         case .partial(let text, let segmentID):
             guard segmentHadVoice else { return }
             guard segmentID == nil || segmentID == transcriber.segmentID else { return }
+            onTranscript?(text, false)
             syncPlayedProgress()
             perform(barge.partialTranscript(text))
             if !barge.isSpeaking { handle(detector.partial(text)) }
@@ -212,6 +219,7 @@ final class VoicePipeline {
             if index < 0 {
                 finishAcknowledgement(completed: true)
             } else {
+                answerPlaybackCompleted = true
                 perform(barge.sentenceFinished(index: index, completed: true))
                 notifyIdleIfDrained()
             }
@@ -288,7 +296,7 @@ final class VoicePipeline {
         barge.transcriptSegmentReset()
         guard
             let transcript = OwnerVoiceTurn.make(
-                text: text, source: .deviceMicrophone, trigger: trigger,
+                text: text, source: source, trigger: trigger,
                 riskyActionPending: riskyActionPending)
         else {
             fastPath?.discard()
@@ -297,8 +305,11 @@ final class VoicePipeline {
         turnID += 1
         answerStarted = false
         answerFinishedStreaming = false
+        answerSpokenRecorded = false
+        answerPlaybackCompleted = false
         acceptingAnswer = true
         splitter.reset()
+        onTranscript?(transcript.text, true)
         link?.submit(turn: transcript)
         requestAcknowledgement(for: transcript.text, turn: turnID)
     }
@@ -356,7 +367,8 @@ final class VoicePipeline {
                 interruptionAt = voiceActivityAt
                 audio.setVolume(volume)
                 Self.log.info(
-                    "voice_barge_duck detected_at=\(self.voiceActivityAt, privacy: .public) control_latency_ms=\((self.clock.now - self.voiceActivityAt) * 1000, privacy: .public)")
+                    "voice_barge_duck detected_at=\(self.voiceActivityAt, privacy: .public) control_latency_ms=\((self.clock.now - self.voiceActivityAt) * 1000, privacy: .public)"
+                )
             case .restoreVolume:
                 audio.setVolume(1)
                 interruptionAt = nil
@@ -371,7 +383,8 @@ final class VoicePipeline {
                 audio.stopSpeaking()
                 if let onset = interruptionAt {
                     Self.log.info(
-                        "voice_barge_stop detected_at=\(onset, privacy: .public) control_latency_ms=\((self.clock.now - onset) * 1000, privacy: .public)")
+                        "voice_barge_stop detected_at=\(onset, privacy: .public) control_latency_ms=\((self.clock.now - onset) * 1000, privacy: .public)"
+                    )
                     interruptionAt = nil
                 }
             case .cancelModelStream:
@@ -379,7 +392,10 @@ final class VoicePipeline {
             case .cancelTool(let id):
                 link?.cancelTool(id: id)
             case .recordSpoken(let text):
-                link?.record(spoken: VoiceSpokenRecord(kind: .answer, text: text))
+                if !answerSpokenRecorded {
+                    answerSpokenRecorded = true
+                    link?.record(spoken: VoiceSpokenRecord(kind: .answer, text: text))
+                }
             case .beginUserTurn:
                 acceptingAnswer = false
                 splitter.reset()
@@ -390,6 +406,12 @@ final class VoicePipeline {
     }
 
     private func notifyIdleIfDrained() {
-        if answerFinishedStreaming, !barge.isSpeaking, acknowledgementPlaying == nil { onSpeechIdle?() }
+        guard answerFinishedStreaming, !barge.isSpeaking, acknowledgementPlaying == nil else { return }
+        if !answerSpokenRecorded, answerPlaybackCompleted, !barge.spokenText.isEmpty {
+            answerSpokenRecorded = true
+            link?.record(spoken: VoiceSpokenRecord(kind: .answer, text: barge.spokenText))
+            barge.reset()
+        }
+        onSpeechIdle?()
     }
 }

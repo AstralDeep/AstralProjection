@@ -5,6 +5,7 @@ import Foundation
 
 nonisolated enum VoiceAudioSource: Equatable, Sendable {
     case deviceMicrophone
+    case pairedWatchMicrophone
     case file
     case call
     case other
@@ -34,7 +35,7 @@ nonisolated struct OwnerVoiceTurn: Equatable, Sendable {
         riskyActionPending: Bool
     ) -> OwnerVoiceTurn? {
         guard let canonical = canonicalizeLocalFinal(text) else { return nil }
-        let ownerSpoken = source == .deviceMicrophone && trigger != .programmatic
+        let ownerSpoken = (source == .deviceMicrophone || source == .pairedWatchMicrophone) && trigger != .programmatic
         return OwnerVoiceTurn(
             text: canonical, integrity: ownerSpoken ? .owner : .untrusted, source: source,
             riskyActionPending: riskyActionPending)

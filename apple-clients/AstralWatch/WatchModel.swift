@@ -254,6 +254,7 @@ final class WatchModel {
     @ObservationIgnored private var pendingVoiceHydration: PendingVoiceActivation?
     @ObservationIgnored private var voiceHydrationTask: Task<Void, Never>?
     @ObservationIgnored var voiceHydrationTimeout: Duration = .seconds(10)
+    @ObservationIgnored private var companionVoiceAttempt = UUID()
     @ObservationIgnored private var pendingVoiceSubmissions: [String: PendingVoiceSubmission] = [:]
     @ObservationIgnored private var voiceTranscriptSequences: [String: UInt64] = [:]
     @ObservationIgnored private var voiceTurnSequences: [String: Int] = [:]
@@ -328,6 +329,8 @@ final class WatchModel {
         self.ws = webSocket
         self.store = tokenStore ?? Self.defaultTokenStore()
         self.authenticationNow = authenticationNow
+        speaker.onSpeak = { [weak self] text in self?.beginPairedVoice(mode: .playback, text: text) }
+        speaker.onStop = { [weak self] in self?.voiceBridge.interruptPlayback() }
     }
 
     private static func defaultTokenStore() -> TokenStorage {
@@ -340,6 +343,8 @@ final class WatchModel {
 
     func bindConversationAccount(_ account: ConversationAccount) {
         if conversationAccount != account {
+            stopPairedVoice()
+            speaker.clear()
             authenticationReadIntent = nil
             registeredAccessToken = nil
             ownerSurfaceControls = []
@@ -630,6 +635,8 @@ final class WatchModel {
     }
 
     func signOut(revokeRemote: Bool = true) async {
+        stopPairedVoice()
+        speaker.clear()
         let access = tokens?.accessToken
         let refresh = tokens?.refreshToken
         let logoutClient = RestClient(serverBase: serverBase) { access }
@@ -973,20 +980,8 @@ final class WatchModel {
             return
         }
         switch frame.name {
-        case "composer_state":
-            consumeVoiceComposer(frame)
-            return
-        case "voice_control_binding":
-            consumeVoiceControlBinding(frame)
-            return
-        case "voice_session_state":
-            consumeVoiceSessionState(frame)
-            return
-        case "voice_turn_state":
-            consumeVoiceTurnState(frame)
-            return
-        case "voice_submission_rejected":
-            consumeVoiceSubmissionRejected(frame)
+        case "composer_state", "voice_control_binding", "voice_session_state", "voice_turn_state",
+            "voice_submission_rejected":
             return
         default:
             break
@@ -1285,8 +1280,8 @@ final class WatchModel {
     }
 
     private func speakLegacy(_ speech: AstralSpeech?) {
-        guard voiceSession == nil else { return }
-        speaker.speak(speech)
+        guard !voiceBridge.companionActive else { return }
+        speaker.remember(speech)
     }
 
     private func adoptChat(_ chatId: String) {
@@ -1813,13 +1808,8 @@ final class WatchModel {
     }
 
     private func sendCurrentConnectionVoice(_ frame: String) {
-        guard connected, VoiceCurrentConnectionFrame(frameText: frame) != nil else { return }
-        outboundTap?(frame)
-        if let override = currentConnectionVoiceSendOverride {
-            override(frame)
-        } else if let ws {
-            Task { _ = await ws.sendCurrentConnectionVoice(frame) }
-        }
+        voiceReason = "transport_retired"
+        voiceMessage = "Use voice through the paired iPhone."
     }
 
     func newConversation() {
@@ -1937,55 +1927,124 @@ final class WatchModel {
                 requestGeneration: request))
     }
 
+    var companionVoiceActive: Bool { voiceBridge.companionActive || voiceActivationBusy }
+
     func performVoiceAction(_ action: String) {
-        guard let control = visibleVoiceControls.first(where: { $0.action == action }),
-            control.enabled, !control.busy, !voiceActivationBusy
-        else { return }
         switch action {
-        case "voice_session_start":
-            Task { await self.beginVoiceActivation(takeover: false) }
-        case "voice_session_takeover":
-            Task { await self.beginVoiceActivation(takeover: true) }
-        case "voice_session_end":
-            endVoiceConversation(reason: "ended_by_user")
-        case "voice_microphone_set":
-            Task { await self.setVoiceMicrophone(!(self.voiceSession?.microphoneEnabled ?? false)) }
-        case "voice_speech_mute_set":
-            Task { await self.setVoiceSpeechMuted(!(self.voiceSession?.speechMuted ?? false)) }
-        case "voice_speech_stop":
-            stopVoiceSpeech()
-        case "voice_visible_chat_update":
-            guard let chatId = activeChatId else { return }
-            Task { await self.updateVoiceVisibleChat(chatId) }
-        case "voice_sensitive_recap_request":
-            Task { await self.consentSensitiveVoiceRecap() }
-        default:
-            break
+        case "voice_session_start", "voice_session_takeover": beginPairedVoice(mode: .conversation)
+        case "voice_session_end", "voice_microphone_set": stopPairedVoice()
+        case "voice_speech_stop", "voice_speech_mute_set": voiceBridge.interruptPlayback()
+        default: voiceMessage = "Use the paired iPhone for this voice control."
         }
     }
 
     func performPrimaryVoiceAction() {
-        guard let primaryVoiceControl else { return }
-        performVoiceAction(primaryVoiceControl.action)
+        if companionVoiceActive { stopPairedVoice() } else { beginPairedVoice(mode: .conversation) }
     }
 
     func handleVoiceScenePhase(_ phase: ScenePhase) {
-        switch phase {
-        case .active:
-            guard !voiceForegroundActive else { return }
-            voiceForegroundActive = true
-            scheduleVoiceResume()
-        case .inactive, .background:
-            guard voiceForegroundActive else { return }
-            cancelVoiceHydration()
-            pendingVoiceActivation = nil
-            voiceForegroundActive = false
-            voiceResumeTask?.cancel()
-            voiceResumeTask = nil
-            stopVoiceLeaseRenewal()
-            suspendVoiceImmediately(reason: "backgrounded")
-        @unknown default:
-            suspendVoiceImmediately(reason: "backgrounded")
+        voiceForegroundActive = phase == .active
+        voiceBridge.setForeground(voiceForegroundActive)
+        if !voiceForegroundActive { stopPairedVoice() }
+    }
+
+    private func beginPairedVoice(mode: CompanionVoiceActivation.Mode, text: String? = nil) {
+        guard voiceForegroundActive, let account = conversationAccount,
+            let owner = CompanionVoiceOwner(issuer: account.issuer, subject: account.subject)
+        else {
+            voiceState = .unavailable
+            voiceReason = "phone_owner_unavailable"
+            voiceMessage = "Use the same signed-in account on your Watch and iPhone."
+            return
+        }
+        stopPairedVoice()
+        let attempt = UUID()
+        companionVoiceAttempt = attempt
+        voiceActivationBusy = true
+        voiceState = .connecting
+        voiceMessage = "Preparing voice on iPhone…"
+        let activation = CompanionVoiceActivation(owner: owner, mode: mode, text: text)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.voiceBridge.startCompanion(
+                    activation,
+                    onState: { [weak self] state in
+                        guard let self, self.companionVoiceAttempt == attempt, self.conversationAccount == account
+                        else { return }
+                        switch state {
+                        case .connecting:
+                            self.voiceState = .connecting
+                        case .ready:
+                            self.voiceActivationBusy = false
+                            self.voiceState = .listening
+                            self.voiceReason = "ready"
+                            let title = self.voiceBridge.companionConversation?.title ?? "Current conversation"
+                            self.voiceMessage = "iPhone: \(title)"
+                        case .failed(let reason):
+                            self.voiceActivationBusy = false
+                            self.voiceState = .unavailable
+                            self.voiceReason = reason
+                            self.voiceMessage = Self.pairedVoiceMessage(reason)
+                        case .ended, .idle:
+                            self.voiceActivationBusy = false
+                            self.voiceState = .ended
+                            self.voiceMessage = nil
+                            self.voicePartialTranscript = nil
+                        case .reconnecting:
+                            self.voiceActivationBusy = false
+                            self.voiceState = .unavailable
+                            self.voiceMessage = Self.pairedVoiceMessage("phone_unreachable")
+                        }
+                    },
+                    onTranscript: { [weak self] text, final in
+                        guard let self, self.companionVoiceAttempt == attempt, self.conversationAccount == account
+                        else { return }
+                        self.voicePartialTranscript = text
+                        self.voiceState = final ? .processing : .transcribing
+                    },
+                    onSpeaking: { [weak self] speaking in
+                        guard let self, self.companionVoiceAttempt == attempt, self.conversationAccount == account
+                        else { return }
+                        self.speaker.playbackChanged(speaking)
+                        if speaking {
+                            self.voiceState = .speakingResult
+                        } else if self.voiceBridge.companionActive {
+                            self.voiceState = .listening
+                        }
+                    })
+            } catch {
+                guard self.companionVoiceAttempt == attempt, self.conversationAccount == account else { return }
+                self.voiceActivationBusy = false
+                self.voiceState = .unavailable
+                if self.voiceMessage == "Preparing voice on iPhone…" {
+                    self.voiceMessage = Self.pairedVoiceMessage("phone_unreachable")
+                }
+            }
+        }
+    }
+
+    private func stopPairedVoice() {
+        companionVoiceAttempt = UUID()
+        voiceBridge.disconnect(reason: "owner_stopped")
+        voiceActivationBusy = false
+        voiceState = .ended
+        voiceMessage = nil
+        voicePartialTranscript = nil
+        speaker.playbackChanged(false)
+    }
+
+    private static func pairedVoiceMessage(_ reason: String) -> String {
+        switch reason {
+        case "phone_model_required": return "Download the voice model in AstralDeep on your iPhone."
+        case "phone_owner_unavailable", "phone_context_unavailable":
+            return "Open your mesh on the paired iPhone using the same account."
+        case "permission_denied": return "Allow microphone access on your Watch to use voice."
+        case "audio_interrupted", "audio_backpressure", "invalid_audio", "invalid_sequence":
+            return "Watch audio stopped. Start voice again."
+        case "phone_voice_unavailable":
+            return "On-device voice could not start on your iPhone. Open the app and try again."
+        default: return "Open AstralDeep on your paired iPhone, then start voice again."
         }
     }
 
@@ -2946,7 +3005,7 @@ extension WatchModel {
         device.hasAudioOutput = audio.output
         device.microphonePermission = voiceBridge.microphonePermission.rawValue
         device.fullDuplex = false
-        device.voiceTransport = "watch_pcm_websocket"
+        device.voiceTransport = ""
         return device
     }
 

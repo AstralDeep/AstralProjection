@@ -2,10 +2,9 @@
 // Failing media doubles reproduce transport callbacks followed by a thrown connection error.
 
 import AstralCore
+@testable import AstralDeep
 import Foundation
 import XCTest
-
-@testable import AstralDeep
 
 @MainActor
 final class VoiceRecoveryTests: XCTestCase {
@@ -250,8 +249,8 @@ private final class RecoveryVoiceAPI: AppleVoiceControlAPI {
             speechMuted: false, microphoneEnabled: true, leaseExpiresAt: "2099-07-31T12:01:00Z")
     }
 
-    private func grant(revision: Int) -> AppleLiveKitGrant {
-        AppleLiveKitGrant(
+    private func grant(revision: Int) -> AppleVoiceRetiredGrant {
+        AppleVoiceRetiredGrant(
             grantId: "grant-\(revision)", sessionId: Self.sessionId, generation: 1,
             mediaGrantRevision: revision, expiresAt: "2099-07-31T12:02:00Z",
             url: "wss://voice.example.test", joinToken: String(repeating: "a", count: 64),
@@ -268,7 +267,7 @@ private final class RecoveryVoiceMedia: AppleVoiceMediaClient {
     var holdNextConnect = false
     private var connectContinuation: CheckedContinuation<Void, Never>?
 
-    func connect(_ grant: AppleLiveKitGrant) async throws {
+    func connect(_ grant: AppleVoiceRetiredGrant) async throws {
         connectCount += 1
         if holdNextConnect {
             holdNextConnect = false
