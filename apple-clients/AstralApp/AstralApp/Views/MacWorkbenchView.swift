@@ -378,7 +378,7 @@
                     if model.macComputerHost.taskActive {
                         Button("Stop") { model.stopComputerTask() }
                             .font(ConsoleTypography.caption.weight(.semibold)).foregroundStyle(p.error)
-                            .buttonStyle(.bordered).help("Stop this Mac computer session")
+                            .buttonStyle(.bordered).tint(p.error).help("Stop this Mac computer session")
                             .accessibilityIdentifier("workbench-stop")
                     }
                 }
