@@ -53,9 +53,21 @@ nonisolated struct LocalAuthenticator: ConsentAuthenticating {
             policy = .deviceOwnerAuthenticationWithBiometrics
             context.localizedFallbackTitle = ""
         }
-        guard try await context.evaluatePolicy(policy, localizedReason: reason) else { throw ConsentDenial.denied }
+        let invalidation = ContextInvalidation(context: context)
+        let evaluated = try await withTaskCancellationHandler {
+            try await context.evaluatePolicy(policy, localizedReason: reason)
+        } onCancel: {
+            invalidation.invalidate()
+        }
+        guard evaluated else { throw ConsentDenial.denied }
+        guard !Task.isCancelled else { throw ConsentDenial.cancelled }
         return context
     }
+}
+
+private nonisolated struct ContextInvalidation: @unchecked Sendable {
+    let context: LAContext
+    func invalidate() { context.invalidate() }
 }
 
 @MainActor
@@ -80,6 +92,7 @@ final class ConsentCoordinator: ConsentPresenting {
     @ObservationIgnored private let timeout: Duration
     @ObservationIgnored private var presenters: [(id: UUID, depth: Int)] = []
     @ObservationIgnored private var presentationGeneration = UUID()
+    @ObservationIgnored private var authentication: (entry: UUID, attempt: Task<ConsentApproval, Error>)?
 
     init(authenticator: ConsentAuthenticating = LocalAuthenticator(), timeout: Duration = .seconds(120)) {
         self.authenticator = authenticator
@@ -94,17 +107,19 @@ final class ConsentCoordinator: ConsentPresenting {
     }
 
     func releasePresenter(_ id: UUID) {
-        var cancelled = queue.filter { $0.presenter == id }.map(\.id)
-        if let active, active.presenter == id || presentationOwner == id { cancelled.append(active.id) }
+        for entry in queue where entry.presenter == id { finish(entry.id, .denied(.cancelled)) }
+        if let active, active.presenter == id || presentationOwner == id { finish(active.id, .denied(.cancelled)) }
         presenters.removeAll { $0.id == id }
         updatePresentationOwner()
-        for entry in cancelled { finish(entry, .denied(.cancelled)) }
     }
 
     func presentation(for presenter: UUID) -> ConsentPresentation? {
-        guard presenter == presentationOwner, let active, let current else { return nil }
+        // Both observed values are read unconditionally so an idle host still tracks the next request.
+        let owner = presentationOwner
+        let prompt = current
+        guard presenter == owner, let prompt, let active else { return nil }
         return ConsentPresentation(
-            presenter: presenter, entry: active.id, generation: presentationGeneration, prompt: current)
+            presenter: presenter, entry: active.id, generation: presentationGeneration, prompt: prompt)
     }
 
     private func updatePresentationOwner() {
@@ -144,13 +159,20 @@ final class ConsentCoordinator: ConsentPresenting {
         guard isCurrent(presentation), let entry = active, !isAuthenticating else { return }
         isAuthenticating = true
         authenticationMessage = nil
-        do {
-            let context = try await authenticator.authenticate(
-                reason: entry.prompt.actionTitle, requiresBiometry: entry.prompt.requiresBiometry)
-            guard isCurrent(presentation) else { return }
-            finish(entry.id, .approved(ConsentApproval(context: context)))
-        } catch {
-            guard isCurrent(presentation) else { return }
+        let authenticator = self.authenticator
+        let attempt = Task {
+            ConsentApproval(
+                context: try await authenticator.authenticate(
+                    reason: entry.prompt.actionTitle, requiresBiometry: entry.prompt.requiresBiometry))
+        }
+        authentication = (entry.id, attempt)
+        let result = await attempt.result
+        if authentication?.entry == entry.id { authentication = nil }
+        guard isCurrent(presentation), !attempt.isCancelled else { return }
+        switch result {
+        case .success(let approval):
+            finish(entry.id, .approved(approval))
+        case .failure:
             isAuthenticating = false
             authenticationMessage = "Authentication did not complete. Try again or deny."
         }
@@ -181,6 +203,10 @@ final class ConsentCoordinator: ConsentPresenting {
             return
         }
         guard let entry = active, entry.id == id else { return }
+        if let authentication, authentication.entry == id {
+            authentication.attempt.cancel()
+            self.authentication = nil
+        }
         timeoutTask?.cancel()
         timeoutTask = nil
         active = nil

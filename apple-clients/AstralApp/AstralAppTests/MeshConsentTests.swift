@@ -35,7 +35,51 @@ private nonisolated final class StubPolicyContext: LAContext, @unchecked Sendabl
     }
 }
 
+private nonisolated final class HeldPolicyContext: LAContext, @unchecked Sendable {
+    private let lock = NSLock()
+    private var reply: ((Bool, (any Error)?) -> Void)?
+    private var invalidations = 0
+    var evaluating: Bool { lock.withLock { reply != nil } }
+    var invalidated: Int { lock.withLock { invalidations } }
+
+    override func canEvaluatePolicy(_ policy: LAPolicy, error: NSErrorPointer) -> Bool { true }
+
+    override func evaluatePolicy(
+        _ policy: LAPolicy, localizedReason: String, reply: @escaping (Bool, (any Error)?) -> Void
+    ) {
+        lock.withLock { self.reply = reply }
+    }
+
+    override func invalidate() {
+        let pending = lock.withLock {
+            invalidations += 1
+            let pending = reply
+            reply = nil
+            return pending
+        }
+        pending?(false, LAError(.appCancel))
+    }
+}
+
 final class LocalAuthenticatorTests: XCTestCase {
+    func testCancellingAuthenticationInvalidatesTheSystemPromptAndNeverApproves() async throws {
+        let context = HeldPolicyContext()
+        let authenticator = LocalAuthenticator(contextFactory: { context })
+        let attempt = Task { try await authenticator.authenticate(reason: "Add device", requiresBiometry: true) }
+        let clock = ContinuousClock()
+        let deadline = clock.now + .seconds(5)
+        while !context.evaluating, clock.now < deadline { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertTrue(context.evaluating)
+        attempt.cancel()
+        do {
+            _ = try await attempt.value
+            XCTFail("A cancelled authentication must not return a context")
+        } catch {
+            XCTAssertEqual((error as? LAError)?.code, .appCancel)
+        }
+        XCTAssertEqual(context.invalidated, 1)
+    }
+
     func testRequiredBiometryEvaluatesOnlyBiometricPolicy() async throws {
         let context = StubPolicyContext(
             biometryAvailable: true, expectedPolicy: .deviceOwnerAuthenticationWithBiometrics)
