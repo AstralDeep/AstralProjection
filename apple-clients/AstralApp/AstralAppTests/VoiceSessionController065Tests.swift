@@ -2357,6 +2357,8 @@ final class FakeVoiceAPI: AppleVoiceControlAPI {
     var endFences: [AppleVoiceSessionFence] = []
     var lastEndFence: AppleVoiceSessionFence?
     var stopCount = 0
+    var capabilityCount = 0
+    var consentCount = 0
     var lastUpdate: [String: JSONValue]?
     var updates: [[String: JSONValue]] = []
     var updatedSession: AppleVoiceRestSession?
@@ -2421,7 +2423,8 @@ final class FakeVoiceAPI: AppleVoiceControlAPI {
     }
 
     func capabilityV2(binding: AppleVoiceUIBinding) async -> (status: Int, payload: JSONValue?) {
-        (capabilityV2Status, capabilityV2Payload)
+        capabilityCount += 1
+        return (capabilityV2Status, capabilityV2Payload)
     }
 
     func startLocal(
@@ -2472,7 +2475,10 @@ final class FakeVoiceAPI: AppleVoiceControlAPI {
     func consent(
         binding: AppleVoiceUIBinding, session: AppleVoiceRestSession,
         resultId: String, turnId: String
-    ) async -> Bool { true }
+    ) async -> Bool {
+        consentCount += 1
+        return true
+    }
     func end(binding: AppleVoiceUIBinding, fence: AppleVoiceSessionFence) async -> Bool {
         endCount += 1
         endFences.append(fence)
