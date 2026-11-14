@@ -22,7 +22,6 @@ struct MeshRootView: View {
     var body: some View {
         content
             .background(p.bg.ignoresSafeArea())
-            .consentSheet(consent)
             .sheet(
                 isPresented: Binding(
                     get: { model.onDeviceVoice.showingSetup }, set: { model.onDeviceVoice.showingSetup = $0 })
@@ -30,7 +29,9 @@ struct MeshRootView: View {
                 VoiceModelSetupView(controller: model.onDeviceVoice) {
                     Task { await model.onDeviceVoice.toggle() }
                 }
+                .consentSheet(consent)
             }
+            .consentSheet(consent)
             #if os(iOS)
                 .task(id: scenePhase) {
                     guard scenePhase == .active, UIApplication.shared.isProtectedDataAvailable else { return }

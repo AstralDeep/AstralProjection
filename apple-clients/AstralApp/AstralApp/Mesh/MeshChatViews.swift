@@ -76,6 +76,7 @@ struct MeshChatListView: View {
 
 struct MeshChatDetailView: View {
     @Environment(MeshRuntime.self) private var mesh
+    @Environment(ConsentCoordinator.self) private var consent
     @Environment(AppModel.self) private var model
     @Environment(ThemeStore.self) private var theme
     @State private var draft = ""
@@ -113,6 +114,7 @@ struct MeshChatDetailView: View {
                 #if os(macOS)
                     .frame(minWidth: 420, minHeight: 360)
                 #endif
+                .consentSheet(consent)
         }
         .fileImporter(isPresented: $choosingAttachment, allowedContentTypes: MeshAttachmentFile.contentTypes) { result in
             switch result {

@@ -230,6 +230,7 @@ struct MeshJoinStartView: View {
     let onShowCode: () -> Void
     let onBack: () -> Void
     @Environment(MeshRuntime.self) private var mesh
+    @Environment(ConsentCoordinator.self) private var consent
     @Environment(ThemeStore.self) private var theme
     @State private var payload = ""
     @State private var scanning = false
@@ -287,6 +288,7 @@ struct MeshJoinStartView: View {
                         ToolbarItem(placement: .cancellationAction) { Button("Cancel") { scanning = false } }
                     }
                 }
+                .consentSheet(consent)
             }
         #endif
     }

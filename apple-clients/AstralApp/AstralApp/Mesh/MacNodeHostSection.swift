@@ -9,6 +9,7 @@
     struct MacNodeHostSection: View {
         @Environment(MacNodeHostStore.self) private var store
         @Environment(MeshRuntime.self) private var mesh
+        @Environment(ConsentCoordinator.self) private var consent
         @Environment(ThemeStore.self) private var theme
         @State private var pairing = false
         @State private var showingApproval = false
@@ -34,6 +35,7 @@
                 }
                 .sheet(isPresented: $showingApproval) {
                     NavigationStack { MeshAddDeviceView() }.frame(minWidth: 420, minHeight: 360)
+                        .consentSheet(consent)
                 }
                 .confirmationDialog("Remove the node pack?", isPresented: $confirmingRemoval, titleVisibility: .visible) {
                     Button("Remove", role: .destructive) { Task { await controller.remove() } }
