@@ -79,7 +79,14 @@ nonisolated enum VoiceModelDigest {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         var hasher = SHA256()
-        while let chunk = try handle.read(upToCount: 4 << 20), !chunk.isEmpty { hasher.update(data: chunk) }
+        while true {
+            let hasChunk = try autoreleasepool {
+                guard let chunk = try handle.read(upToCount: 4 << 20), !chunk.isEmpty else { return false }
+                hasher.update(data: chunk)
+                return true
+            }
+            if !hasChunk { break }
+        }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 }

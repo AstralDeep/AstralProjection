@@ -56,6 +56,27 @@ final class VoiceModelStoreTests: XCTestCase {
         }
     }
 
+    func testDigestMatchesSHA256AcrossMultipleReadChunks() throws {
+        let file = root.appendingPathComponent("multi-chunk-weights")
+        try Data(repeating: 0x5a, count: (9 << 20) + 37).write(to: file)
+        XCTAssertEqual(
+            try VoiceModelDigest.sha256(of: file),
+            "719beaba8d33a4cbc7c4e82a53987e5f15cfa9c6f0c8275abcab2480159401b1")
+    }
+
+    func testDigestMatchesSHA256ForAnEmptyFile() throws {
+        let file = root.appendingPathComponent("empty-weights")
+        try Data().write(to: file)
+        XCTAssertEqual(
+            try VoiceModelDigest.sha256(of: file),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+    }
+
+    func testDigestPropagatesFileOpenAndReadFailures() throws {
+        XCTAssertThrowsError(try VoiceModelDigest.sha256(of: root.appendingPathComponent("missing-weights")))
+        XCTAssertThrowsError(try VoiceModelDigest.sha256(of: root))
+    }
+
     func testManifestRejectsAnUnrelatedRepository() throws {
         XCTAssertThrowsError(try manifest(overrides: ["repository": "other/unreviewed-model"]))
     }
