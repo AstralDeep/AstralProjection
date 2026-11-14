@@ -1,4 +1,48 @@
-# Apple stopping point — 13 November 2026
+# Apple checkpoint, 14 November 2026
+
+This section is current. The 13 November record below it is history, and every `/tmp` path it names is gone. The full record is the "Fifth checkpoint" section of Deep's `specs/105-decentralized-personal-mesh/local-integration-handoff.md`.
+
+## State
+
+- Branch `feat/105-mesh-final` at `377ee45`, pushed. No app was installed, launched or quit. No pairing was attempted. The iPhone was not touched.
+- Consent repair is finished and tested (`71b7d18`, `e66aad6`, `0787ade`). The main defect was that an idle consent host never observed an incoming request, so no sheet appeared at all. Sheets that could hide consent now host it. A closed parent sheet now cancels its request on macOS.
+- The accessibility proposal is integrated with the two fixes it exposed: the workbench Stop button is error red in a focused window, and the surface text reader composites onto an opaque background.
+- A source guard and runtime tests show no main-app voice path reaches the hosted voice server.
+- The node pack is pinned to Deep `bd197b82` and requalified with `apple-clients/NodePack/qualify/tool_turn.py`.
+
+## Gates on `8931bd8`, no retries
+
+| Gate | Passed | Failed | Skipped |
+|---|---|---|---|
+| macOS AstralAppTests, two consecutive full runs | 1,618 each | 0 | 2 |
+| iOS simulator, iPhone 17 Pro, iOS 27.0 and 26.5 | 989 each | 0 | 2 |
+| AstralCore package | 621 | 0 | 1 |
+| Kernel Swift wrapper | 10 | 0 | 0 |
+| Windows client Python | 2,567 | 0 | 20 |
+| Projection Python at `377ee45` | 4,528 | 0 | 8 |
+
+The two commits after `8931bd8` change only `pins.json` and the provenance ledger.
+
+## Staged, not installed
+
+`/Users/sam/Desktop/Work/AstralProjection-wt/localtest-stage-20261114T2008Z-final/AstralDeep-localtest.app`
+
+Its designated requirement, team `593LGH35GS`, bundle identifier and entitlements are identical to `/Users/sam/Applications/AstralDeep Localtest.app`. Both pass `codesign --verify --deep --strict`.
+
+## Next, with the owner
+
+1. Take a stopped backup of the localtest data and preferences. Install the staged app at the canonical localtest path only.
+2. Run one fresh pairing attempt. The consent sheet should appear above Add Device. Do not reuse the expired transaction or reset keys.
+3. Recheck Mac voice for the duplicate acknowledgement fix and the idle CPU.
+4. Physical iPhone work needs a device build first. The repository has no script for one.
+
+## Test environment traps
+
+- Keep derived data and the source path out of `~/Desktop` for unsigned test runs. The Desktop privacy prompt freezes the test host. The final gates ran from a verified mirror outside Desktop.
+- Not verified: swipe dismissal of consent on iOS, and whether iOS sheets have the parent-close problem that the macOS watcher fixes.
+- The Stop button in the session-controls banner also turns accent purple in a focused window. No test checks it.
+
+# Apple stopping point, 13 November 2026 (history)
 
 Stopped at the owner’s explicit request. No new pairing attempt, approval, import, app installation, authentication, microphone capture or model download is authorized by this handoff. Parent agent owns synchronization to GitHub and the wiki.
 
