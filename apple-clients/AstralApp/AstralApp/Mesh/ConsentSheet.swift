@@ -3,6 +3,10 @@
 
 import SwiftUI
 
+#if os(macOS)
+    import AppKit
+#endif
+
 struct ConsentSheet: View {
     let prompt: ConsentPrompt
     let isAuthenticating: Bool
@@ -136,10 +140,43 @@ private struct ConsentSheetPresenter: ViewModifier {
                     onDeny: { coordinator.deny(presentation) })
             }
         }
+        #if os(macOS)
+            .background { ConsentHostSheetWatcher { coordinator.releasePresenter(presenter) } }
+        #endif
         .onAppear { coordinator.registerPresenter(presenter, depth: depth) }
         .onDisappear { coordinator.releasePresenter(presenter) }
     }
 }
+
+#if os(macOS)
+    // AppKit can end a parent sheet while SwiftUI keeps its content alive behind an attached consent sheet.
+    private struct ConsentHostSheetWatcher: NSViewRepresentable {
+        let onSheetEnded: () -> Void
+
+        func makeNSView(context: Context) -> WatcherView { WatcherView() }
+
+        func updateNSView(_ view: WatcherView, context: Context) { view.onSheetEnded = onSheetEnded }
+
+        final class WatcherView: NSView {
+            var onSheetEnded: (() -> Void)?
+
+            override func viewDidMoveToWindow() {
+                super.viewDidMoveToWindow()
+                NotificationCenter.default.removeObserver(self, name: NSWindow.didEndSheetNotification, object: nil)
+                guard window != nil else { return }
+                NotificationCenter.default.addObserver(
+                    self, selector: #selector(sheetEnded), name: NSWindow.didEndSheetNotification, object: nil)
+            }
+
+            @objc private func sheetEnded(_ notification: Notification) {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, let window = self.window, window.isSheet, window.sheetParent == nil else { return }
+                    self.onSheetEnded?()
+                }
+            }
+        }
+    }
+#endif
 
 extension View {
     func consentSheet(_ coordinator: ConsentCoordinator) -> some View {
