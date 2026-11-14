@@ -56,6 +56,27 @@ The app shows the download and installed sizes, downloads the archive, checks it
 
 The node runs with the personal profile and its own private home. The app restarts it after a crash with growing delays. It stops the node on quit unless Keep running is on. Logs go to `logs/node.log` in the node home, rotate at 2 MiB with four backups and have secret values removed.
 
+## Qualify an installed pack
+
+`qualify/tool_turn.py` proves an owner-authenticated tool turn against a pack with loopback fixtures only. It needs no sign-in, no network and none of the owner's apps or data. It uses a temporary home and removes it at the end.
+
+```text
+python3 qualify/tool_turn.py --pack ~/Library/Caches/AstralNodePack/pack-<id>
+```
+
+`--pack` takes an installed pack directory, or an assembled folder holding `node-pack.json` and its archive. The driver checks the archive size and SHA-256 against the descriptor before it unpacks it. `--keep` leaves the temporary folder for inspection.
+
+The driver runs the pack's own install script and launcher, with a loopback token issuer and a loopback model. It then checks, in order:
+
+- a request with no token and one with a forged token both get 401, and the owner token gets 200
+- the WebSocket registers and the provider is saved
+- the model is offered the bundled tools, including `generate_dynamic_chart`
+- the tool runs, its result reaches the model, and the turn completes
+- the chart streams to the client and is persisted in the chat history and in the node database
+- the node log holds no secret value and every process the run started has exited
+
+It prints one PASS or FAIL line per check with counts and never prints a token or key. It exits non-zero on any mismatch or setup failure. A run takes about half a minute plus the unpack time for an archive folder.
+
 ## Tests
 
 ```text
