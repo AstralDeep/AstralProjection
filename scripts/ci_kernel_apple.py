@@ -9,6 +9,7 @@ import re
 import subprocess
 
 RECEIPT = "ci-provenance.json"
+BUILD_MANIFEST = "apple-build-manifest.json"
 FORMAT = "astral.kernel-apple-ci/v1"
 REQUIRED_FILES = (
     "Bindings/AstralKernelBindings.swift",
@@ -43,19 +44,31 @@ def identity(repo):
     }
 
 
-def payloads(artifacts):
+def payloads(artifacts, source_commit):
     require(artifacts.is_dir() and not artifacts.is_symlink())
     paths = list(artifacts.rglob("*"))
     require(not any(path.is_symlink() for path in paths))
     files = {path.relative_to(artifacts).as_posix(): path for path in paths if path.is_file()}
-    require(set(files) - {RECEIPT, ".build-stamp"} == set(REQUIRED_FILES))
+    require(set(files) - {RECEIPT, ".build-stamp"} == {*REQUIRED_FILES, BUILD_MANIFEST})
     result = {}
-    for name in REQUIRED_FILES:
+    for name in (*REQUIRED_FILES, BUILD_MANIFEST):
         digest = hashlib.sha256()
         with files[name].open("rb") as stream:
             for chunk in iter(lambda: stream.read(1 << 20), b""):
                 digest.update(chunk)
         result[name] = digest.hexdigest()
+    manifest = json.loads(files[BUILD_MANIFEST].read_text())
+    require(isinstance(manifest, dict) and manifest.get("source_commit") == source_commit)
+    entries = manifest.get("artifacts")
+    require(isinstance(entries, list) and len(entries) == len(REQUIRED_FILES))
+    seen = set()
+    for entry in entries:
+        require(isinstance(entry, dict))
+        name = entry.get("path")
+        require(isinstance(name, str) and name in REQUIRED_FILES and name not in seen)
+        seen.add(name)
+        require(entry.get("sha256") == result[name])
+        require(type(entry.get("bytes")) is int and entry["bytes"] == files[name].stat().st_size)
     return result
 
 
@@ -65,7 +78,7 @@ def record(repo, kernel_source, artifacts):
     require(commit(kernel_source) == expected["kernel_commit"])
     receipt = artifacts / RECEIPT
     require(not receipt.exists() and not receipt.is_symlink())
-    value = {"format": FORMAT, "identity": expected, "files": payloads(artifacts)}
+    value = {"format": FORMAT, "identity": expected, "files": payloads(artifacts, expected["kernel_commit"])}
     receipt.write_text(json.dumps(value, sort_keys=True) + "\n")
 
 
@@ -73,7 +86,8 @@ def verify(repo, artifacts):
     receipt = artifacts / RECEIPT
     require(not receipt.is_symlink())
     value = json.loads(receipt.read_text())
-    require(value == {"format": FORMAT, "identity": identity(repo), "files": payloads(artifacts)})
+    expected = identity(repo)
+    require(value == {"format": FORMAT, "identity": expected, "files": payloads(artifacts, expected["kernel_commit"])})
 
 
 def main(argv=None):

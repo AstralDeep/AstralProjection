@@ -1,6 +1,7 @@
 """Checks same-run Kernel Apple artifacts against source, toolchain and complete payload identities."""
 
 import json
+import hashlib
 from pathlib import Path
 import re
 
@@ -27,6 +28,10 @@ def products(tmp_path, monkeypatch):
         path = artifacts / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(name.encode())
+    (artifacts / "apple-build-manifest.json").write_text(json.dumps({
+        "source_commit": "1" * 40,
+        "artifacts": [{"path": name, "sha256": hashlib.sha256(name.encode()).hexdigest(), "bytes": len(name.encode())} for name in subject.REQUIRED_FILES],
+    }))
     state = {"projection": "2" * 40, "kernel": "1" * 40, "xcode": "Xcode 26.6\nBuild version 17F113\n"}
     def output(command, **kwargs):
         return state["xcode"] if command[0] == "xcodebuild" else state[Path(command[2]).name]
@@ -40,7 +45,7 @@ def test_record_and_verify_bind_complete_payloads_to_both_sources_and_toolchain(
     receipt = json.loads((artifacts / subject.RECEIPT).read_text())
     assert receipt["identity"]["kernel_commit"] == "1" * 40
     assert receipt["identity"]["projection_commit"] == "2" * 40
-    assert set(receipt["files"]) == set(subject.REQUIRED_FILES)
+    assert set(receipt["files"]) == {*subject.REQUIRED_FILES, "apple-build-manifest.json"}
     subject.verify(repo, artifacts)
 
 
@@ -100,6 +105,43 @@ def test_hidden_build_stamp_is_not_a_required_payload(products):
 def test_missing_receipt_fails_without_accepting_local_builds(products):
     repo, _, artifacts, _ = products
     with pytest.raises(FileNotFoundError):
+        subject.verify(repo, artifacts)
+
+
+@pytest.mark.parametrize("change", ["missing", "source", "digest", "bytes", "duplicate", "extra", "traversal", "boolean-size"])
+def test_internal_assembly_manifest_is_required_and_validated_before_record(products, change):
+    repo, kernel, artifacts, _ = products
+    path = artifacts / "apple-build-manifest.json"
+    manifest = json.loads(path.read_text())
+    if change == "missing":
+        path.unlink()
+    else:
+        if change == "source":
+            manifest["source_commit"] = "3" * 40
+        elif change == "digest":
+            manifest["artifacts"][0]["sha256"] = "a" * 64
+        elif change in ("bytes", "boolean-size"):
+            manifest["artifacts"][0]["bytes"] = 0 if change == "bytes" else True
+        elif change == "duplicate":
+            manifest["artifacts"].append(manifest["artifacts"][0])
+        elif change == "extra":
+            manifest["artifacts"].append({"path": "extra", "sha256": "a" * 64, "bytes": 0})
+        else:
+            manifest["artifacts"][0]["path"] = "../outside"
+        path.write_text(json.dumps(manifest))
+    with pytest.raises((ValueError, FileNotFoundError)):
+        subject.record(repo, kernel, artifacts)
+    assert not (artifacts / subject.RECEIPT).exists()
+
+
+def test_internal_assembly_manifest_is_bound_in_consumer_receipt(products):
+    repo, kernel, artifacts, _ = products
+    subject.record(repo, kernel, artifacts)
+    path = artifacts / "apple-build-manifest.json"
+    value = json.loads(path.read_text())
+    value["new_metadata"] = "changed after assembly"
+    path.write_text(json.dumps(value))
+    with pytest.raises(ValueError):
         subject.verify(repo, artifacts)
 
 
