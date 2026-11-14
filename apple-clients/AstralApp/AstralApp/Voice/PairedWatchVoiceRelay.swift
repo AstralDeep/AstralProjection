@@ -151,7 +151,7 @@ final class PairedWatchVoiceRelay {
         }
         guard let context, await current(context), packet.session == session, controller.isRunning, let audio
         else {
-            await fail("phone_context_unavailable")
+            await fail("phone_context_unavailable", session: packet.session)
             throw CompanionVoiceError.rejected
         }
         switch packet.kind {
@@ -202,13 +202,15 @@ final class PairedWatchVoiceRelay {
             guard let self else { return }
             do {
                 guard self.prepare != nil, self.channel.reachable else {
-                    await self.fail("phone_context_unavailable")
+                    await self.fail("phone_context_unavailable", session: packet.session)
                     return
                 }
-                guard self.session == packet.session, context.owner == activation.owner, await self.current(context)
+                guard self.session == packet.session, context.owner == activation.owner, await self.current(context),
+                    self.session == packet.session
                 else { throw CompanionVoiceError.rejected }
+                try Task.checkCancellation()
                 guard self.controller.store?.state == .installed else {
-                    await self.fail("phone_model_required")
+                    await self.fail("phone_model_required", session: packet.session)
                     return
                 }
                 self.controller.onTranscript = { [weak self] text, final in
@@ -231,7 +233,8 @@ final class PairedWatchVoiceRelay {
                         try await self.send(kind, payload, session: packet.session)
                     }
                     audio.onPlaybackFinished = { [weak self] in
-                        if self?.mode == .playback { self?.stop() }
+                        guard let self, self.session == packet.session, self.mode == .playback else { return }
+                        self.stop()
                     }
                     let link = PairedWatchInputLink(
                         base: base, context: context,
@@ -239,8 +242,14 @@ final class PairedWatchVoiceRelay {
                             guard let self, self.mode == .conversation, self.session == packet.session else {
                                 return false
                             }
-                            return await self.current(context)
-                        }, invalidated: { [weak self] in self?.stop() })
+                            guard await self.current(context), self.session == packet.session,
+                                self.mode == .conversation
+                            else { return false }
+                            return true
+                        },
+                        invalidated: { [weak self] in
+                            if self?.session == packet.session { self?.stop() }
+                        })
                     self.audio = audio
                     self.inputLink = link
                     return VoicePipeline(
@@ -250,16 +259,20 @@ final class PairedWatchVoiceRelay {
                 }
                 try Task.checkCancellation()
                 guard self.controller.isRunning, await self.current(context), self.session == packet.session else {
-                    await self.fail("phone_voice_unavailable")
+                    await self.fail("phone_voice_unavailable", session: packet.session)
                     return
                 }
                 try await self.send(
                     .ready, CompanionVoiceConversation(chatId: context.chatId, title: context.title).encoded(),
                     session: packet.session)
+                try Task.checkCancellation()
+                guard self.session == packet.session else { return }
                 if let text = activation.text, activation.mode == .playback { self.audio?.speak(index: 0, text: text) }
             } catch is CancellationError {
             } catch {
-                if self.session == packet.session { await self.fail("phone_owner_unavailable") }
+                if self.session == packet.session {
+                    await self.fail("phone_owner_unavailable", session: packet.session)
+                }
             }
         }
     }
@@ -276,10 +289,11 @@ final class PairedWatchVoiceRelay {
         try await sender.send(kind, payload: payload)
     }
 
-    private func fail(_ reason: String) async {
+    private func fail(_ reason: String, session: UUID) async {
+        guard self.session == session else { return }
         let sender = sender
         try? await sender?.send(.failure, payload: Data(reason.utf8))
-        stop()
+        if self.session == session { stop() }
     }
 }
 
