@@ -3,6 +3,7 @@
 
 import AVFoundation
 import Foundation
+import OSLog
 
 nonisolated struct VoicePipelineConfiguration: Equatable, Sendable {
     var finalTimeout: TimeInterval = 8
@@ -17,6 +18,7 @@ nonisolated enum VoicePipelineError: Error, Equatable {
 
 @MainActor
 final class VoicePipeline {
+    private static let log = Logger(subsystem: "com.personalailabs.astraldeep.voice", category: "pipeline")
     private struct AwaitingFinal {
         let deadline: TimeInterval
         let segmentID: UUID?
@@ -50,6 +52,8 @@ final class VoicePipeline {
     private var userTalking = false
     private var ticker: Task<Void, Never>?
     private var microphonePreRoll: [AVAudioPCMBuffer] = []
+    private var voiceActivityAt: TimeInterval = 0
+    private var interruptionAt: TimeInterval?
 
     init(
         audio: VoiceDuplexAudio, transcriber: VoiceStreamingTranscriber, fastPath: VoiceFastPath?,
@@ -117,6 +121,7 @@ final class VoicePipeline {
         deferredSpeak = nil
         acceptingAnswer = false
         microphonePreRoll = []
+        interruptionAt = nil
     }
 
     func beginPushToTalk() {
@@ -161,6 +166,7 @@ final class VoicePipeline {
 
     func handleVoiceActivity(_ active: Bool) {
         guard running else { return }
+        if active { voiceActivityAt = clock.now }
         userTalking = active
         if active, segmentOpen { segmentHadVoice = true }
         if !active { transcriber.flushPartial() }
@@ -198,6 +204,7 @@ final class VoicePipeline {
 
     func handleSpeech(_ event: VoiceSpeechEvent) {
         guard running else { return }
+        Self.log.info("voice_speech_event event=\(String(describing: event), privacy: .public)")
         switch event {
         case .started:
             break
@@ -346,9 +353,13 @@ final class VoicePipeline {
         for action in actions {
             switch action {
             case .duck(let volume):
+                interruptionAt = voiceActivityAt
                 audio.setVolume(volume)
+                Self.log.info(
+                    "voice_barge_duck detected_at=\(self.voiceActivityAt, privacy: .public) control_latency_ms=\((self.clock.now - self.voiceActivityAt) * 1000, privacy: .public)")
             case .restoreVolume:
                 audio.setVolume(1)
+                interruptionAt = nil
             case .speak:
                 if acknowledgementPlaying != nil {
                     deferredSpeak = action
@@ -358,6 +369,11 @@ final class VoicePipeline {
             case .stopSpeech:
                 deferredSpeak = nil
                 audio.stopSpeaking()
+                if let onset = interruptionAt {
+                    Self.log.info(
+                        "voice_barge_stop detected_at=\(onset, privacy: .public) control_latency_ms=\((self.clock.now - onset) * 1000, privacy: .public)")
+                    interruptionAt = nil
+                }
             case .cancelModelStream:
                 link?.cancelTurn()
             case .cancelTool(let id):

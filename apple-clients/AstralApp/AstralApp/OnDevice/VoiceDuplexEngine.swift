@@ -28,6 +28,7 @@ final class VoiceSentenceAudio {
     private var frames = 0
     private var played = false
     var count: Int { buffers.count }
+    var frameCount: Int { frames }
 
     init(player: AVAudioPlayerNode, format: AVAudioFormat) {
         self.player = player
@@ -246,6 +247,7 @@ final class VoiceDuplexEngine: VoiceDuplexAudio {
         haltPlayback()
         generation += 1
         let token = generation
+        Self.log.info("voice_synthesis_started index=\(index, privacy: .public) characters=\(text.count, privacy: .public)")
         let current = Playback(
             index: index, text: text, audio: VoiceSentenceAudio(player: player, format: playbackFormat))
         playback = current
@@ -286,6 +288,10 @@ final class VoiceDuplexEngine: VoiceDuplexAudio {
     }
 
     private func haltPlayback() {
+        if let playback {
+            Self.log.info(
+                "voice_playback_stopped index=\(playback.index, privacy: .public) started=\(playback.started, privacy: .public) finished=\(playback.finished, privacy: .public) played=\(playback.played, privacy: .public) scheduled=\(playback.scheduled, privacy: .public)")
+        }
         generation += 1
         synthesis?.cancel()
         receiving?.cancel()
@@ -314,6 +320,8 @@ final class VoiceDuplexEngine: VoiceDuplexAudio {
         current.scheduled = current.audio.count
         guard current.scheduled > 0 else { return }
         current.started = true
+        Self.log.info(
+            "voice_playback_started index=\(current.index, privacy: .public) buffers=\(current.scheduled, privacy: .public) frames=\(current.audio.frameCount, privacy: .public)")
         current.audio.play { [weak self] in
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
@@ -329,6 +337,8 @@ final class VoiceDuplexEngine: VoiceDuplexAudio {
     private func completeIfDrained(_ current: Playback) {
         guard current.synthesisDone, current.played >= current.scheduled, !current.finished else { return }
         current.finished = true
+        Self.log.info(
+            "voice_playback_finished index=\(current.index, privacy: .public) played=\(current.played, privacy: .public) scheduled=\(current.scheduled, privacy: .public)")
         onEvent?(current.scheduled > 0 ? .finished(index: current.index) : .failed(index: current.index))
     }
 
