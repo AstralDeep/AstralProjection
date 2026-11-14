@@ -222,6 +222,27 @@ final class KernelMappingTests: XCTestCase {
         XCTAssertFalse(KernelMapping.isEnrollmentComplete(.enrollment(state: .creating)))
     }
 
+    func testAnIncompleteEndIsDistinctFromAnOrdinaryCompletedEnd() {
+        let complete = KernelMapping.turn(.ended(chatId: "c", turnId: "t", reason: "completed", code: nil))
+        let incomplete = KernelMapping.turn(.ended(chatId: "c", turnId: "t", reason: "incomplete", code: nil))
+        XCTAssertNotEqual(incomplete, complete)
+        let events = incomplete.compactMap {
+            if case .turnProgress(let progress) = $0 { return progress.event }
+            return nil
+        }
+        XCTAssertEqual(events, [.assistantFinished, .incomplete, .finished])
+    }
+
+    func testTurnNoticesKeepTheirChatAndTurnBindings() {
+        let changes = KernelMapping.turn(
+            .notice(chatId: "offline-chat", turnId: "pending-turn", text: "Waiting for network"))
+        XCTAssertEqual(changes.count, 1)
+        guard case .turnProgress(let progress) = changes.first else { return XCTFail("Expected a turn status notice") }
+        XCTAssertEqual(progress.chatId, "offline-chat")
+        XCTAssertEqual(progress.turnId, "pending-turn")
+        XCTAssertEqual(progress.event, .notice("Waiting for network"))
+    }
+
     func testRunsAndProposalsMap() {
         let run = KernelMapping.run(
             RunInfo(

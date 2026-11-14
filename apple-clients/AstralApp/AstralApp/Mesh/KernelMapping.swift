@@ -252,7 +252,7 @@ nonisolated enum KernelMapping {
         switch progress {
         case .started(let chat, let turn): return [event(chat, turn, .started)]
         case .textDelta(let chat, let turn, let text): return [event(chat, turn, .assistantDelta(text))]
-        case .notice: return []
+        case .notice(let chat, let turn, let text): return [event(chat, turn, .notice(text))]
         case .toolProposed(let chat, let turn, let call, let tool, _):
             return [event(chat, turn, .toolStarted(id: call, name: tool, cancelSafe: false))]
         case .toolResult(let chat, let turn, let call, let status, _):
@@ -268,8 +268,12 @@ nonisolated enum KernelMapping {
             return [event(chat, turn, .outcomeUnknown(unknownOutcome(callId: call, tool: tool)))]
         case .ended(let chat, let turn, let reason, let code):
             switch reason {
-            case "completed", "incomplete":
+            case "completed":
                 return [event(chat, turn, .assistantFinished), event(chat, turn, .finished)]
+            case "incomplete":
+                return [
+                    event(chat, turn, .assistantFinished), event(chat, turn, .incomplete), event(chat, turn, .finished),
+                ]
             case "interrupted": return [event(chat, turn, .interrupted)]
             case "repeat_stop": return [event(chat, turn, .failed("The assistant repeated itself, so it was stopped."))]
             case "max_rounds": return [event(chat, turn, .failed("The assistant reached its step limit."))]

@@ -1,10 +1,11 @@
-// Renders the mesh screens on macOS from the in-memory fixture into window bitmaps and attaches them to the test result.
-// It never shows a window, so it needs no screen control and can run beside other apps.
+// Renders mesh screens from in-memory fixtures into window bitmaps and checks the visible chat status.
+// The windows stay behind other apps, and status text is read from an opaque image without accessibility focus.
 
 #if os(macOS)
     @testable import AstralDeep
     import AppKit
     import SwiftUI
+    import Vision
     import XCTest
 
     @MainActor
@@ -54,6 +55,106 @@
             attachment.lifetime = .keepAlways
             add(attachment)
             window.orderOut(nil)
+        }
+
+        private func activityWindow(_ runtime: MeshRuntime) -> (NSWindow, NSView) {
+            let theme = ThemeStore()
+            let hosting = NSHostingView(
+                rootView: MeshTurnActivityView().environment(runtime).environment(theme)
+                    .preferredColorScheme(theme.colorScheme).frame(width: 700, height: 180).background(theme.palette.bg)
+            )
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 700, height: 180), styleMask: [.titled],
+                backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.appearance = NSAppearance(named: .darkAqua)
+            window.contentView = hosting
+            window.orderBack(nil)
+            return (window, hosting)
+        }
+
+        private func statusText(in view: NSView) throws -> String {
+            view.layoutSubtreeIfNeeded()
+            let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            let source = try XCTUnwrap(bitmap.cgImage)
+            let context = try XCTUnwrap(
+                CGContext(
+                    data: nil, width: source.width, height: source.height, bitsPerComponent: 8, bytesPerRow: 0,
+                    space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            let bounds = CGRect(x: 0, y: 0, width: source.width, height: source.height)
+            context.setFillColor(NSColor.black.cgColor)
+            context.fill(bounds)
+            context.draw(source, in: bounds)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.usesLanguageCorrection = false
+            try VNImageRequestHandler(cgImage: try XCTUnwrap(context.makeImage())).perform([request])
+            return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
+        }
+
+        func testAnUnfinishedLogTurnRendersAwaitingAnswer() async throws {
+            let h = MeshRuntimeHarness()
+            defer { h.cleanUp() }
+            await h.runtime.open()
+            let chat = h.kernel.seedChat(
+                title: "Offline", messages: [MeshRuntimeHarness.message("q", parent: nil, at: 1)])
+            h.kernel.setChatStatus(chatId: chat, .running(turnId: "unfinished"))
+            await h.runtime.openChat(chat)
+            let (window, view) = activityWindow(h.runtime)
+            defer { window.close() }
+            var text = ""
+            let visible = await eventually {
+                text = (try? self.statusText(in: view)) ?? ""
+                return text.contains("Awaiting answer")
+            }
+            XCTAssertTrue(visible, text)
+            XCTAssertFalse(text.contains("Working"), text)
+        }
+
+        func testANetworkWaitNoticeRendersInsteadOfGenericWorking() async throws {
+            let h = MeshRuntimeHarness()
+            defer { h.cleanUp() }
+            await h.runtime.open()
+            _ = await h.runtime.newChat()
+            h.kernel.turnScript = [.started, .notice("The network is unreachable. Waiting to reconnect.")]
+            _ = await h.runtime.send("hello")
+            await h.runtime.settle()
+            let (window, view) = activityWindow(h.runtime)
+            defer { window.close() }
+            var text = ""
+            let visible = await eventually {
+                text = (try? self.statusText(in: view)) ?? ""
+                return text.contains("Waiting to reconnect")
+            }
+            XCTAssertTrue(visible, text)
+            XCTAssertFalse(text.contains("Working"), text)
+        }
+
+        func testAnIncompleteAnswerKeepsItsWarningAfterTheTurnFinishes() async throws {
+            let h = MeshRuntimeHarness()
+            defer { h.cleanUp() }
+            await h.runtime.open()
+            _ = await h.runtime.newChat()
+            let ending = KernelMapping.turn(.ended(chatId: "c", turnId: "t", reason: "incomplete", code: nil))
+                .compactMap {
+                    if case .turnProgress(let progress) = $0 { return progress.event }
+                    return nil
+                }
+            h.kernel.turnScript =
+                [.started, .notice("Waiting to reconnect"), .assistantDelta("Partial answer")] + ending
+            _ = await h.runtime.send("hello")
+            await h.runtime.settle()
+            XCTAssertEqual(h.runtime.currentTurn?.running, false)
+            let (window, view) = activityWindow(h.runtime)
+            defer { window.close() }
+            var text = ""
+            let visible = await eventually {
+                text = (try? self.statusText(in: view)) ?? ""
+                return text.contains("The answer may be incomplete")
+            }
+            XCTAssertTrue(visible, text)
+            XCTAssertFalse(text.contains("Waiting to reconnect"), text)
         }
 
         private func shell(_ name: String, _ destination: (MeshRuntime) -> MeshDestination) async {

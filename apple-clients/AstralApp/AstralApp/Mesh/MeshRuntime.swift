@@ -53,6 +53,9 @@ nonisolated struct MeshTurnState: Equatable, Sendable {
     var turnId: String
     var running: Bool
     var streamingText = ""
+    var restored = false
+    var notice: String?
+    var completionWarning: String?
     var tools: [MeshToolActivity] = []
     var awaitingConsent: String?
     var unknown: [MeshUnknownOutcome] = []
@@ -1224,9 +1227,23 @@ final class MeshRuntime {
             selectedHead = nil
             headPinned = false
         }
-        if case .outcomeUnknown(let outcome) = view.status, turns[chatId]?.unknown.contains(outcome) != true {
+        switch view.status {
+        case .running(let turnId):
+            if turnTasks[chatId] == nil, turns[chatId]?.turnId != turnId {
+                turns[chatId] = MeshTurnState(turnId: turnId, running: true, restored: true)
+            }
+        case .idle:
+            if turns[chatId]?.restored == true {
+                turns[chatId]?.running = false
+                turns[chatId]?.restored = false
+            }
+        case .outcomeUnknown(let outcome):
             var state = turns[chatId] ?? MeshTurnState(turnId: "", running: false)
-            state.unknown.append(outcome)
+            if state.restored {
+                state.running = false
+                state.restored = false
+            }
+            if !state.unknown.contains(outcome) { state.unknown.append(outcome) }
             turns[chatId] = state
         }
     }
@@ -1285,6 +1302,7 @@ final class MeshRuntime {
     private func apply(_ progress: MeshTurnProgress) async {
         var state = turns[progress.chatId] ?? MeshTurnState(turnId: progress.turnId, running: true)
         state.turnId = progress.turnId
+        state.restored = false
         let speaking = speakingChatId == progress.chatId
         switch progress.event {
         case .started:
@@ -1294,6 +1312,8 @@ final class MeshRuntime {
             if speaking { speechSink?.answerDelta(text) }
         case .assistantFinished:
             if speaking { speechSink?.answerFinished() }
+        case .notice(let text):
+            if state.running { state.notice = text }
         case .toolStarted(let id, let name, let cancelSafe):
             state.tools.append(MeshToolActivity(id: id, name: name, cancelSafe: cancelSafe, state: .running))
             if speaking { speechSink?.toolStarted(id: id, cancelSafe: cancelSafe) }
@@ -1307,8 +1327,11 @@ final class MeshRuntime {
             await refreshConsents()
         case .outcomeUnknown(let outcome):
             if !state.unknown.contains(outcome) { state.unknown.append(outcome) }
+        case .incomplete:
+            state.completionWarning = "The answer may be incomplete."
         case .finished:
             state.running = false
+            state.notice = nil
             state.awaitingConsent = nil
             turns[progress.chatId] = state
             if progress.chatId == currentChatId { await reloadChat(progress.chatId) }
@@ -1316,11 +1339,13 @@ final class MeshRuntime {
             if speaking { speakingChatId = nil }
         case .interrupted:
             state.running = false
+            state.notice = nil
             state.interrupted = true
             state.awaitingConsent = nil
             if speaking { speakingChatId = nil }
         case .failed(let reason):
             state.running = false
+            state.notice = nil
             record(failure: reason, in: &state)
             if speaking { speakingChatId = nil }
         }

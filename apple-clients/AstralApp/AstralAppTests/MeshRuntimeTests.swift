@@ -461,6 +461,142 @@ final class MeshRuntimeTests: XCTestCase {
         XCTAssertEqual(h.runtime.currentTurn?.unknown, [outcome])
     }
 
+    func testAnUnfinishedTurnFromTheLogStaysVisibleWithoutStartingAnotherTurn() async {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        let chat = h.kernel.seedChat(
+            title: "Offline", messages: [MeshRuntimeHarness.message("q", parent: nil, at: 1, delivery: .queued)])
+        h.kernel.setChatStatus(chatId: chat, .running(turnId: "unfinished"))
+        await h.runtime.openChat(chat)
+        XCTAssertEqual(h.runtime.currentTurn?.turnId, "unfinished")
+        XCTAssertEqual(h.runtime.currentTurn?.running, true)
+        XCTAssertEqual(h.runtime.currentTurn?.restored, true)
+        XCTAssertEqual(h.runtime.currentChat?.messages.first?.delivery, .queued)
+        h.runtime.closeChat()
+        await h.runtime.openChat(chat)
+        XCTAssertEqual(h.runtime.currentTurn?.turnId, "unfinished")
+        XCTAssertFalse(h.kernel.calls.contains { $0.name == "runTurn" || $0.name == "interrupt" })
+    }
+
+    func testACompletedLogTurnClearsRestoredActivity() async {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        let chat = h.kernel.seedChat(title: "Synced", messages: [MeshRuntimeHarness.message("q", parent: nil, at: 1)])
+        h.kernel.setChatStatus(chatId: chat, .running(turnId: "remote-turn"))
+        await h.runtime.openChat(chat)
+        XCTAssertEqual(h.runtime.currentTurn?.running, true)
+        h.kernel.setChatStatus(chatId: chat, .idle)
+        await h.runtime.settle()
+        XCTAssertEqual(h.runtime.currentTurn?.running, false)
+        XCTAssertFalse(h.kernel.calls.contains { $0.name == "runTurn" })
+    }
+
+    func testAnUnknownOutcomeReplacesRestoredRunningActivityWithoutRestarting() async {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        let chat = h.kernel.seedChat(
+            title: "Interrupted", messages: [MeshRuntimeHarness.message("q", parent: nil, at: 1)])
+        h.kernel.setChatStatus(chatId: chat, .running(turnId: "unfinished"))
+        await h.runtime.openChat(chat)
+        let outcome = MeshUnknownOutcome(stepId: "effect", tool: "send_mail", summary: "Send the update")
+        h.kernel.setChatStatus(chatId: chat, .outcomeUnknown(outcome))
+        await h.runtime.settle()
+        XCTAssertEqual(h.runtime.currentTurn?.running, false)
+        XCTAssertEqual(h.runtime.currentTurn?.restored, false)
+        XCTAssertEqual(h.runtime.currentTurn?.unknown, [outcome])
+        XCTAssertFalse(h.kernel.calls.contains { $0.name == "runTurn" || $0.name == "interrupt" })
+    }
+
+    func testACompletedAnswerClearsItsNetworkWaitNotice() async {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        _ = await h.runtime.newChat()
+        h.kernel.turnScript = [.started, .notice("Waiting to reconnect"), .assistantDelta("The answer"), .finished]
+        _ = await h.runtime.send("hello")
+        await h.runtime.settle()
+        XCTAssertEqual(h.runtime.currentTurn?.running, false)
+        XCTAssertNil(h.runtime.currentTurn?.notice)
+        XCTAssertNil(h.runtime.currentTurn?.failure)
+    }
+
+    func testALateNetworkNoticeCannotReplaceACompletedAnswerStatus() async {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        _ = await h.runtime.newChat()
+        h.kernel.turnScript = [.started, .assistantDelta("The answer"), .finished, .notice("Waiting to reconnect")]
+        _ = await h.runtime.send("hello")
+        await h.runtime.settle()
+        XCTAssertEqual(h.runtime.currentTurn?.running, false)
+        XCTAssertNil(h.runtime.currentTurn?.notice)
+        XCTAssertNil(h.runtime.currentTurn?.completionWarning)
+    }
+
+    func testAnIncompleteWarningSurvivesCompletionAndClearsForTheNextAnswer() async {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        _ = await h.runtime.newChat()
+        h.kernel.turnScript = [.started, .notice("Waiting to reconnect"), .incomplete, .finished]
+        _ = await h.runtime.send("hello")
+        await h.runtime.settle()
+        XCTAssertEqual(h.runtime.currentTurn?.completionWarning, "The answer may be incomplete.")
+        XCTAssertNil(h.runtime.currentTurn?.notice)
+        XCTAssertEqual(h.runtime.currentTurn?.running, false)
+        h.kernel.turnScript = [.started, .finished]
+        _ = await h.runtime.send("next")
+        await h.runtime.settle()
+        XCTAssertNil(h.runtime.currentTurn?.completionWarning)
+    }
+
+    func testAnOnDeviceFallbackNoticeIsVisibleWhileTheAnswerIsRunning() async {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        _ = await h.runtime.newChat()
+        h.kernel.turnScript = [.started, .notice("This turn is using on-device."), .assistantDelta("Local answer")]
+        _ = await h.runtime.send("hello")
+        await h.runtime.settle()
+        XCTAssertEqual(h.runtime.currentTurn?.notice, "This turn is using on-device.")
+        XCTAssertEqual(h.runtime.currentTurn?.running, true)
+        XCTAssertNil(h.runtime.currentTurn?.failure)
+        h.kernel.turnScript = [.started, .finished]
+        _ = await h.runtime.send("next")
+        await h.runtime.settle()
+        XCTAssertNil(h.runtime.currentTurn?.notice)
+    }
+
+    func testReloadingARunningChatPreservesItsLiveNoticeAndStream() async {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        let chat = await h.runtime.newChat()!
+        h.kernel.turnScript = [.started, .notice("Waiting to reconnect"), .assistantDelta("Partial answer")]
+        _ = await h.runtime.send("hello")
+        await h.runtime.settle()
+        await h.runtime.openChat(chat)
+        XCTAssertEqual(h.runtime.currentTurn?.streamingText, "Partial answer")
+        XCTAssertEqual(h.runtime.currentTurn?.notice, "Waiting to reconnect")
+        XCTAssertEqual(h.runtime.currentTurn?.restored, false)
+        XCTAssertEqual(h.kernel.calls.filter { $0.name == "runTurn" }.count, 1)
+    }
+
+    func testAFailedTurnClearsItsNetworkWaitNotice() async {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        _ = await h.runtime.newChat()
+        h.kernel.turnScript = [.started, .notice("Waiting to reconnect"), .failed("No model is reachable.")]
+        _ = await h.runtime.send("hello")
+        await h.runtime.settle()
+        XCTAssertNil(h.runtime.currentTurn?.notice)
+        XCTAssertEqual(h.runtime.currentTurn?.failure, "No model is reachable.")
+    }
+
     func testInterruptIsSentOnceForARunningTurn() async {
         let h = MeshRuntimeHarness()
         defer { h.cleanUp() }

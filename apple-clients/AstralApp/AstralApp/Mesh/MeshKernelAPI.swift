@@ -373,10 +373,12 @@ nonisolated enum MeshTurnEvent: Equatable, Sendable {
     case started
     case assistantDelta(String)
     case assistantFinished
+    case notice(String)
     case toolStarted(id: String, name: String, cancelSafe: Bool)
     case toolFinished(id: String, succeeded: Bool)
     case awaitingConsent(requestId: String)
     case outcomeUnknown(MeshUnknownOutcome)
+    case incomplete
     case finished
     case interrupted
     case failed(String)

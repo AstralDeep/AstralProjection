@@ -372,8 +372,26 @@ struct MeshTurnActivityView: View {
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("mesh.tool.\(tool.id)")
                 }
-                if turn.running, turn.streamingText.isEmpty, turn.tools.isEmpty, turn.awaitingConsent == nil {
+                if turn.restored {
+                    StatusLine(text: "Awaiting answer", showsActivity: false)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Awaiting answer")
+                        .accessibilityIdentifier("mesh.turn.unfinished")
+                } else if let notice = turn.notice {
+                    StatusLine(text: notice, showsActivity: turn.running)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel(notice)
+                        .accessibilityIdentifier("mesh.turn.notice")
+                } else if turn.running, turn.streamingText.isEmpty, turn.tools.isEmpty, turn.awaitingConsent == nil {
                     StatusLine(text: "Working", showsActivity: true)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Working")
+                        .accessibilityIdentifier("mesh.turn.working")
+                }
+                if let warning = turn.completionWarning {
+                    Text(warning).font(ConsoleTypography.footnote).foregroundStyle(p.warning)
+                        .accessibilityLabel(warning)
+                        .accessibilityIdentifier("mesh.turn.incomplete")
                 }
                 if turn.awaitingConsent != nil {
                     Label("Waiting for your approval", systemImage: "hand.raised")
