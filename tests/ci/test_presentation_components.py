@@ -256,15 +256,17 @@ def test_windows_jobs_upload_wheels_only_after_install_failure():
 
 def test_pinned_source_checkouts_are_refreshed_with_autocrlf_disabled(tmp_path):
     action = (tool.ROOT / ".github/actions/presentation/action.yml").read_text()
+    clean_check = action.index("status --porcelain --untracked-files=all")
     refresh = action.index("git -C \"$source\" config core.autocrlf false")
     install = action.index("scripts/install_presentation_components.py install")
+    assert clean_check < refresh < install
     assert refresh < install
     assert '"$GITHUB_WORKSPACE/.presentation-sources/Deep"' in action
     assert '"$GITHUB_WORKSPACE/.presentation-sources/Primitives"' in action
     assert '"$GITHUB_WORKSPACE/.presentation-sources/Kernel"' in action
     assert 'status --porcelain --untracked-files=all' in action
     assert 'git -C "$source" config core.eol lf' in action
-    assert "git -C \"$source\" checkout-index --all --force" in action
+    assert 'git -C "$source" checkout --force HEAD -- .' in action
     repository_root = tmp_path / "checkout"
     subprocess.run(["git", "init", "-q", str(repository_root)], check=True)
     source = repository_root / "source.py"
@@ -277,25 +279,40 @@ def test_pinned_source_checkouts_are_refreshed_with_autocrlf_disabled(tmp_path):
         ["git", "-C", str(repository_root), "config", "user.name", "Fixture"], check=True
     )
     subprocess.run(["git", "-C", str(repository_root), "config", "core.autocrlf", "true"], check=True)
+    source.write_bytes(b"first\r\nsecond\r\n")
+    source_bytes = source.read_bytes()
+    crlf_count = source_bytes.count(b"\r\n")
+    assert crlf_count == 2
+    assert source_bytes.count(b"\n") - crlf_count == 0
     subprocess.run(["git", "-C", str(repository_root), "add", "source.py"], check=True)
     subprocess.run(["git", "-C", str(repository_root), "commit", "-qm", "Fixture"], check=True)
     source_identity = subprocess.check_output(
         ["git", "-C", str(repository_root), "rev-parse", "HEAD"], text=True
     ).strip()
-    subprocess.run(["git", "-C", str(repository_root), "checkout-index", "--all", "--force"], check=True)
-    source_bytes = source.read_bytes()
-    crlf_count = source_bytes.count(b"\r\n")
-    assert crlf_count == 2
-    assert source_bytes.count(b"\n") - crlf_count == 0
+    status = subprocess.check_output(
+        ["git", "-C", str(repository_root), "status", "--porcelain", "--untracked-files=all"],
+        text=True,
+    )
+    assert status == ""
+    assert subprocess.check_output(
+        ["git", "-C", str(repository_root), "show", ":source.py"], text=True
+    ) == "first\nsecond\n"
 
     subprocess.run(["git", "-C", str(repository_root), "config", "core.autocrlf", "false"], check=True)
     subprocess.run(["git", "-C", str(repository_root), "config", "core.eol", "lf"], check=True)
-    subprocess.run(["git", "-C", str(repository_root), "checkout-index", "--all", "--force"], check=True)
+    subprocess.run(
+        ["git", "-C", str(repository_root), "checkout", "--force", "HEAD", "--", "."],
+        check=True,
+    )
     source_bytes = source.read_bytes()
     assert source_bytes == b"first\nsecond\n"
     crlf_count = source_bytes.count(b"\r\n")
     assert crlf_count == 0
     assert source_bytes.count(b"\n") == 2
+    assert subprocess.check_output(
+        ["git", "-C", str(repository_root), "status", "--porcelain", "--untracked-files=all"],
+        text=True,
+    ) == ""
     assert subprocess.check_output(
         ["git", "-C", str(repository_root), "rev-parse", "HEAD"], text=True
     ).strip() == source_identity
