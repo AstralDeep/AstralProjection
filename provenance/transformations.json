@@ -1278,7 +1278,7 @@
       "sourceMode": "100644",
       "task": "T060/T010/T024/T025",
       "reason": "Feature 088 native CI fixture repair: Hold the bounded DEBUG-only completion peer until actual active-state editing, duplicate-control, and phase checks finish; keep 250ms feedback and five-second terminal dismissal bounds with no automation-time deduction. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Native settings UI qualification uses the correct macOS click and iOS tap input, keeps secure-field and provider terminal assertions, and opens the collapsed conversation drawer before checking preserved text and attachments. Fair bounded CI: type the append before starting the bounded held completion, retain post-submission editable, single-flight, phase and loopback-wire assertions, and verify completion through form dismissal and the composer. Replace shared-runner elapsed-time performance assertions with semantic state checks while preserving actual watchdog, scene, editability and retry behavior; the eight-second fixture and ten-second production watchdog remain unchanged. Observe the real identified status and expected value through a native semantic query, retaining every existing phase, denial and allowance; avoid a synchronous cross-process value RPC inside a near-deadline custom predicate. An idle Save button carries no spoken value; only a pending one says Submitting.",
-      "resultSha256": "c8079183d6cd26607a85313d3aaf3742f02a79abcbaef103696aa145e1e354d7"
+      "resultSha256": "e672d5de37668e30a39bb57cde9a192f11cf0bd419cec4e2fafb702d0f7602f5"
     },
     {
       "path": "apple-clients/AstralApp/AstralAppUITests/ReleaseEvidenceUITests.swift",
