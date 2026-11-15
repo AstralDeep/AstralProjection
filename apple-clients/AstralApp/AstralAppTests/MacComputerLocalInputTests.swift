@@ -111,7 +111,8 @@
                     let current = MacComputerTestFrontmost()
                     let monitor = MacComputerInputMonitor(
                         marker: 30, monitors: monitors, frontmost: { current.bundle },
-                        hostBundle: "com.personalailabs.astraldeep", schedule: scheduler.schedule)
+                        hostBundle: "com.personalailabs.astraldeep", pointerOverHost: { false },
+                        schedule: scheduler.schedule)
                     var takeovers = 0
                     XCTAssertTrue(monitor.start { takeovers += 1 })
                     monitors.emitGlobal(try XCTUnwrap(NSEvent(cgEvent: kind)))
