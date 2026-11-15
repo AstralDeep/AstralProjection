@@ -172,6 +172,45 @@ def test_qualified_thin_macho_and_native_lane_metadata(lane):
     domain.test_identity(*_metadata(lane), lane)
 
 
+def _ios_skip(summary, tests, identifier, reason):
+    test_suite = tests["testNodes"][0]["children"][0]["children"][0]
+    test_suite["children"].append(
+        {
+            "nodeType": "Test Case",
+            "nodeIdentifier": identifier,
+            "result": "Skipped",
+            "children": [{"nodeType": "Failure Message", "name": "Test skipped - " + reason}],
+        }
+    )
+    summary["totalTestCount"] += 1
+    summary["skippedTests"] += 1
+
+
+def test_ios_unit_profile_accepts_only_exact_owner_waived_host_checks():
+    summary, tests = _metadata("unit")
+    for identifier, reason in domain.IOS_SKIP_DISPOSITIONS["unit"].items():
+        _ios_skip(summary, tests, identifier, reason)
+    domain.test_identity(summary, tests, "unit")
+    for mutation in ("unknown", "reason", "lane", "status"):
+        summary, tests = _metadata("unit")
+        identifier, reason = next(iter(domain.IOS_SKIP_DISPOSITIONS["unit"].items()))
+        if mutation == "unknown":
+            identifier = "UnknownTests/testUnlistedSkip()"
+        elif mutation == "reason":
+            reason = "not the approved local hardware condition"
+        _ios_skip(summary, tests, identifier, reason)
+        if mutation == "lane":
+            with pytest.raises(domain.DomainError):
+                domain.test_identity(summary, tests, "ui")
+        elif mutation == "status":
+            tests["testNodes"][0]["children"][0]["children"][0]["children"][-1]["result"] = "Failed"
+            with pytest.raises(domain.DomainError):
+                domain.test_identity(summary, tests, "unit")
+        else:
+            with pytest.raises(domain.DomainError):
+                domain.test_identity(summary, tests, "unit")
+
+
 @pytest.mark.parametrize(
     "raw",
     [
@@ -327,6 +366,15 @@ def test_mapping_rejects_duplicate_file_function_and_undeclared_filename():
     value["data"][0]["functions"][0]["filenames"] = ["/unlisted/other.swift"]
     with pytest.raises(domain.DomainError):
         _geometry(value)
+
+
+def test_mapping_accepts_repeated_file_indices_for_one_source():
+    value = _mapping()
+    function = value["data"][0]["functions"][0]
+    filename = function["filenames"][0]
+    function["filenames"] = [filename, filename]
+    function["regions"].append([2, 3, 2, 39, 0, 1, 1, 0])
+    assert set(_geometry(value)) == {APP}
 
 
 @pytest.mark.parametrize(
@@ -810,6 +858,19 @@ def test_mac_profile_retains_only_exact_existing_lane_skip_dispositions(lane):
             )
         with pytest.raises(domain.DomainError):
             domain.test_identity(summary, tests, lane, platform="macos", architecture="arm64")
+
+
+def test_macos_unit_profile_accepts_exact_owner_waived_model_check_and_existing_host_skip():
+    summary, tests = _mac_metadata("unit")
+    for identifier, reason in domain.MACOS_SKIP_DISPOSITIONS["unit"].items():
+        _ios_skip(summary, tests, identifier, reason)
+    domain.test_identity(summary, tests, "unit", platform="macos", architecture="arm64")
+    summary, tests = _mac_metadata("unit")
+    for identifier, reason in domain.MACOS_SKIP_DISPOSITIONS["unit"].items():
+        _ios_skip(summary, tests, identifier, reason)
+    _ios_skip(summary, tests, "UnknownTests/testUnlistedSkip()", "unlisted skip")
+    with pytest.raises(domain.DomainError):
+        domain.test_identity(summary, tests, "unit", platform="macos", architecture="arm64")
 
 
 @pytest.mark.parametrize(
