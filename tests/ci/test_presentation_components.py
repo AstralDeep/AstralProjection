@@ -3,7 +3,6 @@
 import hashlib
 import json
 import subprocess
-import sys
 from types import SimpleNamespace
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
@@ -266,9 +265,6 @@ def test_pinned_source_checkouts_are_refreshed_with_autocrlf_disabled(tmp_path):
     assert 'status --porcelain --untracked-files=all' in action
     assert 'git -C "$source" config core.eol lf' in action
     assert "git -C \"$source\" checkout-index --all --force" in action
-    if sys.platform != "win32":
-        pytest.skip("core.autocrlf conversion requires a Windows checkout")
-
     repository_root = tmp_path / "checkout"
     subprocess.run(["git", "init", "-q", str(repository_root)], check=True)
     source = repository_root / "source.py"
