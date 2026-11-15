@@ -77,6 +77,8 @@
 	<string>AstralDeep uses the camera only while you scan a pairing code from another of your devices. It never records or saves photos or video.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>AstralDeep finds your other devices on this network to keep your chats in sync.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>AstralDeep uses Face ID to verify your approval before creating a personal mesh or authorizing sensitive actions.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_astral-mesh._udp</string>

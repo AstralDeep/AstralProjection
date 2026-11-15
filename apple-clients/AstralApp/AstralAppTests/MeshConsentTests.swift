@@ -63,6 +63,12 @@ private nonisolated final class HeldPolicyContext: LAContext, @unchecked Sendabl
 }
 
 final class LocalAuthenticatorTests: XCTestCase {
+    func testAppBundleDeclaresFaceIDPurposeForBiometricConsent() throws {
+        let purpose = try XCTUnwrap(
+            Bundle(for: AppModel.self).object(forInfoDictionaryKey: "NSFaceIDUsageDescription") as? String)
+        XCTAssertFalse(purpose.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
     func testCancellingAuthenticationInvalidatesTheSystemPromptAndNeverApproves() async throws {
         let context = HeldPolicyContext()
         let authenticator = LocalAuthenticator(contextFactory: { context })
