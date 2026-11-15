@@ -1,4 +1,4 @@
-// Verifies that every Keychain service the app uses derives from the bundle identifier, keeping production names unchanged.
+// Verifies bundle-scoped Keychain services and the separate legacy and current mesh namespaces.
 
 import AstralCore
 import XCTest
@@ -6,7 +6,9 @@ import XCTest
 @testable import AstralDeep
 
 final class KeychainServiceNameTests: XCTestCase {
-    private let suffixes = ["tokens", "mesh", "server-session", "push", "unsent-message", "mesh-device"]
+    private let suffixes = [
+        "tokens", "mesh", "server-session", "push", "unsent-message", "mesh-device", "mesh-device-v2",
+    ]
 
     func testProductionBundleKeepsTodaysNames() {
         for suffix in suffixes {
@@ -33,7 +35,7 @@ final class KeychainServiceNameTests: XCTestCase {
         XCTAssertEqual(KeychainTokenStore().service, KeychainServices.name("tokens"))
         XCTAssertEqual(KeychainMeshKeyStorage().service, KeychainServices.name("mesh"))
         XCTAssertEqual(KeychainUnsentMessageStore().service, KeychainServices.name("unsent-message"))
-        XCTAssertEqual(MeshKeychainStore.defaultService, KeychainServices.name("mesh-device"))
+        XCTAssertEqual(MeshKeychainStore.defaultService, KeychainServices.name("mesh-device-v2"))
     }
 
     func testRunningBundleMatchesDerivation() {
