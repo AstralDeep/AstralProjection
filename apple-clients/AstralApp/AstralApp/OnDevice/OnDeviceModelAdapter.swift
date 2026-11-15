@@ -136,12 +136,18 @@ nonisolated final class FoundationModelsOnDeviceModel: AstralOnDeviceModelWarmab
 
     @available(iOS 26.0, macOS 26.0, *)
     nonisolated extension OnDeviceJSONSchema {
-        func generationSchema() throws -> GenerationSchema {
-            try GenerationSchema(root: dynamicSchema(name: "Answer"), dependencies: [])
+        func generationSchema(name: String = "Answer") throws -> GenerationSchema {
+            try GenerationSchema(root: dynamicSchema(name: name), dependencies: [])
         }
 
         private func dynamicSchema(name: String) -> DynamicGenerationSchema {
             switch self {
+            case .alternatives(let choices):
+                return DynamicGenerationSchema(
+                    name: name,
+                    anyOf: choices.enumerated().map {
+                        $0.element.dynamicSchema(name: "\(name).choice\($0.offset)")
+                    })
             case .object(let properties):
                 return DynamicGenerationSchema(
                     name: name,
@@ -182,18 +188,22 @@ nonisolated final class FoundationModelsOnDeviceModel: AstralOnDeviceModelWarmab
                 return .failed(.emptyRequest)
             }
             let schema: OnDeviceJSONSchema?
+            let catalog: OnDeviceToolCatalog?
             if let schemaJSON = request.schemaJSON {
-                guard let parsed = try? OnDeviceJSONSchema(json: schemaJSON) else {
-                    return .failed(.schemaUnsupported)
-                }
-                schema = parsed
+                do {
+                    catalog = try OnDeviceToolCatalog(schemaJSON: schemaJSON)
+                    schema = try OnDeviceJSONSchema(json: schemaJSON)
+                } catch { return .failed(.schemaUnsupported) }
             } else {
                 schema = nil
+                catalog = nil
             }
-            let session = LanguageModelSession(
-                model: model, tools: [], instructions: composed.instructions)
             let options = GenerationOptions(maximumResponseTokens: max(1, request.maxTokens))
             do {
+                if let catalog {
+                    return try await FoundationToolProposals.perform(catalog, composed: composed, options: options)
+                }
+                let session = LanguageModelSession(model: model, tools: [], instructions: composed.instructions)
                 if let schema {
                     let response = try await session.respond(
                         to: composed.prompt, schema: try schema.generationSchema(), options: options)

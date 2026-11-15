@@ -16,6 +16,7 @@ nonisolated enum OnDeviceSchemaError: Error, Equatable {
 
 nonisolated indirect enum OnDeviceJSONSchema: Equatable, Sendable {
     case object([OnDeviceSchemaProperty])
+    case alternatives([OnDeviceJSONSchema])
     case string(allowed: [String]?)
     case integer(minimum: Int?, maximum: Int?)
     case number
@@ -30,6 +31,10 @@ nonisolated indirect enum OnDeviceJSONSchema: Equatable, Sendable {
     }
 
     private static func parse(_ node: [String: Any]) throws -> OnDeviceJSONSchema {
+        if let value = node["const"] as? String { return .string(allowed: [value]) }
+        if let choices = node["anyOf"] as? [[String: Any]], !choices.isEmpty, choices.count <= 64 {
+            return .alternatives(try choices.map(parse))
+        }
         guard let type = node["type"] as? String else {
             throw OnDeviceSchemaError.unsupported("type")
         }
@@ -83,6 +88,8 @@ nonisolated indirect enum OnDeviceJSONSchema: Equatable, Sendable {
 
     private func accepts(value: Any) -> Bool {
         switch self {
+        case .alternatives(let choices):
+            return choices.contains { $0.accepts(value: value) }
         case .object(let properties):
             guard let dictionary = value as? [String: Any] else { return false }
             let known = Set(properties.map(\.name))
