@@ -2878,9 +2878,9 @@
       "sourcePath": "windows-client/requirements-release.lock.txt",
       "sourceBlob": "f533dbb4dfcedf6398a8c1649dccd37fd4c1f7f7",
       "sourceMode": "100644",
-      "resultSha256": "bcbc222b7f306f501c80bde5f6347a1b37efadcb4c911cfac32637b47b435c0d",
+      "resultSha256": "cd62b676cf8fbe50647d7f3fd0e9dc565944fa9fc8ba43048e6b73a4e2feaab2",
       "task": "T166",
-      "reason": "Pin the exact signed LETS v1.0.11 wheel URL and digest for reproducible Windows candidates. Pin astralprims 0.4.0 with its PyPI wheel hash so pyproject.toml, the CI lock and the Windows requirements agree (Projection Constitution XI); no other lock line changes. Bind source-pinned local Primitives and ROTE wheel installation and the composed Windows runtime closure."
+      "reason": "Pin the exact signed LETS v1.0.11 wheel URL and digest for reproducible Windows candidates. Pin astralprims 0.4.0 with its PyPI wheel hash so pyproject.toml, the CI lock and the Windows requirements agree (Projection Constitution XI); no other lock line changes. Bind source-pinned local Primitives and ROTE wheel installation and the composed Windows runtime closure. Canonicalize source-built presentation wheel ZIP metadata across operating systems while preserving every member payload and bind the reviewed canonical wheel digests."
     },
     {
       "path": "windows-client/requirements.in",

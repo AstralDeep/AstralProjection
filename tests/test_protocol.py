@@ -617,7 +617,7 @@ def test_runtime_manifests_bind_exact_owning_dependency_inventory() -> None:
             "d301d1e3a1b523fda5c1488693cf9a7a4336504c0d168bd0f4e220c8b0302c95"
         ),
         "windows-client/requirements-release.lock.txt": (
-            "bcbc222b7f306f501c80bde5f6347a1b37efadcb4c911cfac32637b47b435c0d"
+            "cd62b676cf8fbe50647d7f3fd0e9dc565944fa9fc8ba43048e6b73a4e2feaab2"
         ),
         "windows-client/deployment/runtime-lock-contract.json": (
             "b3ef5ea7cbeced022eb2ba244dc2b734e001b3f0e0f68091dcad503f66aff693"
