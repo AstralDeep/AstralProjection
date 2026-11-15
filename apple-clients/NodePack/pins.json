@@ -7,7 +7,7 @@
   },
   "deep": {
     "repository": "https://github.com/AstralDeep/AstralDeep.git",
-    "commit": "540fc9a709bfbd2c3daecf656ea25d066216101b"
+    "commit": "dff3abf355b1cd17a84911d1d9a232be4a2191f6"
   },
   "python": {
     "version": "3.11.18",
