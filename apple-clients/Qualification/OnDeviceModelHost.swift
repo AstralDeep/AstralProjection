@@ -10,8 +10,14 @@ private struct Request: Decodable {
     }
     let id: Int
     let messages: [Message]
-    let json_schema: String?
-    let max_tokens: Int
+    let schemaJSON: String?
+    let maxTokens: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id, messages
+        case schemaJSON = "json_schema"
+        case maxTokens = "max_tokens"
+    }
 }
 
 @main
@@ -33,7 +39,7 @@ private struct OnDeviceModelHost {
             guard line.utf8.count <= 1_048_576,
                 let request = try? JSONDecoder().decode(Request.self, from: Data(line.utf8)),
                 request.id > 0, request.messages.count <= 128,
-                (1...4096).contains(request.max_tokens)
+                (1...4096).contains(request.maxTokens)
             else {
                 try emit(["id": 0, "status": "failed", "code": "invalid_request"])
                 continue
@@ -48,7 +54,7 @@ private struct OnDeviceModelHost {
             }
             let result = await model.complete(
                 OnDeviceRequest(
-                    messages: messages, schemaJSON: request.json_schema, maxTokens: request.max_tokens))
+                    messages: messages, schemaJSON: request.schemaJSON, maxTokens: request.maxTokens))
             var output: [String: Any] = ["id": request.id]
             switch result {
             case .text(let text): output.merge(["status": "text", "text": text]) { _, value in value }
