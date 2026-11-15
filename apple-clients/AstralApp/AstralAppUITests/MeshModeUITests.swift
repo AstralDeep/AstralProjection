@@ -151,8 +151,11 @@ final class MeshModeUITests: XCTestCase {
         XCTAssertFalse(element("mesh.tool.grant.this-device/current_datetime").exists)
         attach("mesh-permissions-granted")
         goBack()
-        XCTAssertTrue(element("mesh.settings.mailbox").waitForExistence(timeout: 5))
-        element("mesh.settings.mailbox").tap()
+        let mailbox = element("mesh.settings.mailbox")
+        for _ in 0..<4 where !mailbox.exists || !mailbox.isHittable { app.swipeUp() }
+        XCTAssertTrue(mailbox.waitForExistence(timeout: 5))
+        XCTAssertTrue(mailbox.isHittable)
+        mailbox.tap()
         XCTAssertTrue(element("mesh.mailbox.status").waitForExistence(timeout: 5))
         XCTAssertTrue(element("mesh.mailbox.status").label.contains("No mailbox is set"))
     }
@@ -203,7 +206,7 @@ final class MeshModeUITests: XCTestCase {
         element("mesh.devices.toolbar.add").tap()
         XCTAssertTrue(element("mesh.invite.code").waitForExistence(timeout: 5))
         attach("mesh-xxxl-add-device")
-        element("mesh.add.close").tap()
+        app.buttons["mesh.add.close"].tap()
         selectTab("Settings")
         XCTAssertTrue(element("mesh.settings.rename").waitForExistence(timeout: 5))
         attach("mesh-xxxl-settings")
