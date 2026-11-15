@@ -480,6 +480,13 @@ def _assert_apple_platform_contract(apple: str) -> None:
     assert "-resolvePackageDependencies" in package_prewarm
     assert "-onlyUsePackageVersionsFromResolvedFile" in package_prewarm
     assert "-skipPackageUpdates" in package_prewarm
+    assert "needs: [changes, swift-package-prewarm, kernel-apple]" in app_unit
+    assert app_unit.count(cache_action) == 1
+    assert app_unit.count(package_cache_key) == 1
+    assert "fail-on-cache-miss: true" in app_unit
+    assert app_unit.count('-clonedSourcePackagesDirPath "$PWD/build/060/swift-package-clones"') == 2
+    assert app_unit.count("-disableAutomaticPackageResolution") == 2
+    assert app_unit.count("-skipPackageUpdates") == 2
     assert "needs: [changes, swift-package-prewarm, ios-ui-build, kernel-apple]" in first_login
     assert first_login.count(cache_action) == 1
     assert first_login.count(package_cache_key) == 1

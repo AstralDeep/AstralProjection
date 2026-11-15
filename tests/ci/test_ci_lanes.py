@@ -180,7 +180,7 @@ def test_workflow_guard_mutants_cannot_hide_failed_or_skipped_native_work():
             expected_needs = {
                 ("apple", "first-login-ui"): "    needs: [changes, swift-package-prewarm, ios-ui-build, kernel-apple]\n",
                 ("apple", "ios-ui-build"): "    needs: [changes, swift-package-prewarm, kernel-apple]\n",
-                ("apple", "app-unit-tests"): "    needs: [changes, kernel-apple]\n",
+                ("apple", "app-unit-tests"): "    needs: [changes, swift-package-prewarm, kernel-apple]\n",
                 ("apple", "watch-continuity"): "    needs: [changes, kernel-apple]\n",
                 ("apple", "kernel-apple"): "    needs: [changes, kernel-slices]\n",
             }.get((lane, job), "    needs: [changes]\n")

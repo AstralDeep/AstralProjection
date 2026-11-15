@@ -397,7 +397,7 @@ jobs:
           fi
 
   app-unit-tests:
-    needs: [changes, kernel-apple]
+    needs: [changes, swift-package-prewarm, kernel-apple]
     if: needs.changes.outputs.apple == 'true'
     name: Required · ${{ matrix.name }} app continuity/unit coverage
     runs-on: macos-26
@@ -439,6 +439,12 @@ jobs:
           path: apple-clients/AstralKernel/Artifacts
       - name: Verify Kernel source, toolchain and complete payloads
         run: python3 scripts/ci_kernel_apple.py verify --repo "$PWD" --artifacts "$PWD/apple-clients/AstralKernel/Artifacts"
+      - name: Restore pinned Swift package clones
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/060/swift-package-clones
+          key: astralprojection-swiftpm-xcode-${{ env.XCODE_BUILD }}-${{ hashFiles('apple-clients/AstralApp/AstralApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          fail-on-cache-miss: true
       - name: Require the supported iOS runtime
         if: matrix.slug == 'ios'
         shell: bash
@@ -460,6 +466,8 @@ jobs:
           xcodebuild -project "${APP_PROJECT}" -scheme AstralApp \
             -destination '${{ matrix.destination }}' -configuration Debug \
             CODE_SIGNING_ALLOWED=NO -enableCodeCoverage YES -derivedDataPath "$derived" \
+            -clonedSourcePackagesDirPath "$PWD/build/060/swift-package-clones" \
+            -disableAutomaticPackageResolution -skipPackageUpdates \
             build-for-testing
           test_action=test-without-building
           set +e
@@ -475,6 +483,8 @@ jobs:
             -maximum-test-execution-time-allowance 300 \
             -retry-tests-on-failure \
             -test-iterations 2 \
+            -clonedSourcePackagesDirPath "$PWD/build/060/swift-package-clones" \
+            -disableAutomaticPackageResolution -skipPackageUpdates \
             -derivedDataPath "$derived" \
             -resultBundlePath "$result" \
             -only-testing:AstralAppTests \
