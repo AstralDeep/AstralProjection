@@ -137,7 +137,13 @@ def test_wheel_zip_bytes_are_canonical_across_filesystem_metadata(tmp_path):
         assert all(member.external_attr == 0o100644 << 16 for member in archive.infolist())
 
 
-def test_wheel_metadata_newlines_and_record_digest_are_canonicalized(tmp_path):
+@pytest.mark.parametrize(
+    ("record_ending", "record_final_ending"),
+    [(b"\n", b"\n"), (b"\r\n", b"\r\n"), (b"\n", b"")],
+)
+def test_wheel_metadata_newlines_and_record_digest_are_canonicalized(
+    tmp_path, record_ending, record_final_ending
+):
     path = tmp_path / "component.whl"
     metadata_path = "component-1.0.dist-info/METADATA"
     record_path = "component-1.0.dist-info/RECORD"
@@ -146,9 +152,11 @@ def test_wheel_metadata_newlines_and_record_digest_are_canonicalized(tmp_path):
         base64.urlsafe_b64encode(hashlib.sha256(metadata).digest()).rstrip(b"=").decode()
     )
     record = (
-        f"{metadata_path},sha256={metadata_digest},{len(metadata)}\n"
-        f"{record_path},,\n"
-    ).encode()
+        f"{metadata_path},sha256={metadata_digest},{len(metadata)}".encode()
+        + record_ending
+        + f"{record_path},,".encode()
+        + record_final_ending
+    )
     with ZipFile(path, "w") as archive:
         archive.writestr("component/__init__.py", b"VALUE = 1\n")
         archive.writestr(metadata_path, metadata)
@@ -161,8 +169,9 @@ def test_wheel_metadata_newlines_and_record_digest_are_canonicalized(tmp_path):
         assert normalized == b"Name: component\nVersion: 1.0\n"
         updated_record = archive.read(record_path)
         rows = list(csv.reader(io.StringIO(updated_record.decode(), newline="")))
-    assert updated_record.endswith(f"{record_path},,\n".encode())
-    assert updated_record.splitlines(keepends=True)[1] == record.splitlines(keepends=True)[1]
+    record_lines = record.splitlines(keepends=True)
+    updated_lines = updated_record.splitlines(keepends=True)
+    assert updated_lines[1] == record_lines[1]
     metadata_row = next(row for row in rows if row[0] == metadata_path)
     expected_digest = (
         base64.urlsafe_b64encode(hashlib.sha256(normalized).digest()).rstrip(b"=").decode()
@@ -180,37 +189,71 @@ def test_lf_wheel_metadata_is_unchanged_without_requiring_record():
     assert members == before
 
 
-@pytest.mark.parametrize("corruption", ["missing", "duplicate", "digest", "size", "signed"])
+@pytest.mark.parametrize(
+    "corruption",
+    [
+        "missing-file", "missing-row", "duplicate", "row", "digest", "bad-base64",
+        "padded-base64", "size", "algorithm", "metadata-bare-cr", "record-utf8",
+        "record-csv", "record-bare-cr", "multiline-csv", "noncanonical-csv", "jws", "p7s",
+    ],
+)
 def test_wheel_metadata_newline_rewrite_rejects_invalid_or_signed_record(tmp_path, corruption):
     path = tmp_path / "component.whl"
     metadata_path = "component-1.0.dist-info/METADATA"
     record_path = "component-1.0.dist-info/RECORD"
     signature_path = "component-1.0.dist-info/RECORD.jws"
-    metadata = b"Name: component\r\nVersion: 1.0\r\n"
+    metadata = (
+        b"Name: component\rVersion: 1.0\r\n"
+        if corruption == "metadata-bare-cr"
+        else b"Name: component\r\nVersion: 1.0\r\n"
+    )
     digest = base64.urlsafe_b64encode(hashlib.sha256(metadata).digest()).rstrip(b"=").decode()
     metadata_row = [metadata_path, f"sha256={digest}", str(len(metadata))]
-    if corruption == "missing":
+    if corruption in {"missing-file", "missing-row"}:
         rows = [[record_path, "", ""]]
     elif corruption == "duplicate":
         rows = [metadata_row, metadata_row.copy(), [record_path, "", ""]]
-    elif corruption == "digest":
+    elif corruption in {"digest", "bad-base64", "padded-base64", "algorithm", "size", "row"}:
         rows = [metadata_row.copy(), [record_path, "", ""]]
-        rows[0][1] = "sha256=" + ("A" * 43)
-    elif corruption == "size":
-        rows = [metadata_row.copy(), [record_path, "", ""]]
-        rows[0][2] = str(len(metadata) + 1)
+        if corruption == "digest":
+            rows[0][1] = "sha256=" + ("A" * 43)
+        elif corruption == "bad-base64":
+            rows[0][1] = "sha256=!"
+        elif corruption == "padded-base64":
+            rows[0][1] += "="
+        elif corruption == "algorithm":
+            rows[0][1] = rows[0][1].replace("sha256=", "sha512=")
+        elif corruption == "size":
+            rows[0][2] = str(len(metadata) + 1)
+        else:
+            rows[0].pop()
     else:
         rows = [metadata_row, [record_path, "", ""]]
+    if corruption == "multiline-csv":
+        rows.append(["other\nmember", "", ""])
     output = io.StringIO(newline="")
     csv.writer(output, lineterminator="\n").writerows(rows)
+    record_payload = output.getvalue().encode()
+    if corruption == "record-utf8":
+        record_payload = b"\xff\n"
+    elif corruption == "record-csv":
+        record_payload = b'"unterminated\n'
+    elif corruption == "record-bare-cr":
+        record_payload = record_payload.replace(b"\n", b"\r")
+    elif corruption == "noncanonical-csv":
+        record_payload = record_payload.replace(metadata_path.encode(), f'"{metadata_path}"'.encode(), 1)
     with ZipFile(path, "w") as archive:
         archive.writestr(metadata_path, metadata)
-        archive.writestr(record_path, output.getvalue().encode())
-        if corruption == "signed":
-            archive.writestr(signature_path, b"signature")
+        if corruption != "missing-file":
+            archive.writestr(record_path, record_payload)
+        if corruption in {"jws", "p7s"}:
+            archive.writestr(
+                signature_path.replace(".jws", ".p7s") if corruption == "p7s" else signature_path,
+                b"signature",
+            )
     original = path.read_bytes()
 
-    with pytest.raises(ValueError, match="RECORD|signed"):
+    with pytest.raises(ValueError, match="RECORD|signed|carriage return"):
         tool.normalize_wheel_archive(path)
 
     assert path.read_bytes() == original

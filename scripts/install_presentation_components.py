@@ -87,12 +87,9 @@ def normalize_metadata_newlines(members):
             else:
                 body, line_ending = line, b""
             try:
-                parsed_rows = list(csv.reader([body.decode("utf-8")], strict=True))
+                parsed = next(csv.reader([body.decode("utf-8")], strict=True))
             except (UnicodeDecodeError, csv.Error) as error:
                 raise ValueError("wheel RECORD is invalid") from error
-            if len(parsed_rows) != 1:
-                raise ValueError("wheel RECORD is invalid")
-            parsed = parsed_rows[0]
             if parsed and parsed[0] == metadata_path:
                 output = io.StringIO(newline="")
                 writer = csv.writer(output, lineterminator="\n")
