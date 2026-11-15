@@ -354,6 +354,12 @@ final class KernelMappingTests: XCTestCase {
         XCTAssertFalse(signer.hardwareBacked())
     }
 
+    func testNativeMeshStopDenialPreservesItsActualReason() {
+        XCTAssertEqual(
+            KernelMapping.error(KernelError.Denied(code: "gate.mesh_stopped", message: "No current wake authority"))
+                as? MeshKernelError, .stopped)
+    }
+
     func testStopAndTakeoverPromptsParseTheirExactSigningInput() throws {
         func id(_ c: Character) -> String { "sha256:" + String(repeating: c, count: 64) }
         func hash(_ data: Data) -> String {

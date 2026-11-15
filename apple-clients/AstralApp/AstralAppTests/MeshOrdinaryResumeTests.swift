@@ -271,7 +271,9 @@ final class MeshOrdinaryResumeTests: XCTestCase {
         XCTAssertTrue(entered)
         let message = try XCTUnwrap(runtime.currentChat?.messages.last?.eventId)
         let stopping = Task { await runtime.interrupt() }
-        let requested = await eventually { runtime.currentTurn?.stopRequested == true }
+        let requested = await eventually {
+            runtime.currentTurn?.stopRequested == true || runtime.currentTurn?.interrupted == true
+        }
         XCTAssertTrue(requested)
         gate.release()
         await stopping.value

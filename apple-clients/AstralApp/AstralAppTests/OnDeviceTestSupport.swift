@@ -83,7 +83,9 @@ nonisolated enum FakeOnDeviceResponses {
         guard case .text(let text) = response, let schema = request.schemaJSON,
             let value = try? JSONDecoder().decode(JSONValue.self, from: Data(schema.utf8)),
             let outer = value.objectValue,
-            Set(outer.keys) == ["type", "properties", "required", "additionalProperties"],
+            Set(outer.keys).subtracting(["x-astral-tool-proposals"]) == [
+                "type", "properties", "required", "additionalProperties",
+            ],
             outer["type"] == .string("object"), outer["additionalProperties"] == .bool(false),
             required(outer["required"], is: ["text", "calls"]), let properties = outer["properties"]?.objectValue,
             Set(properties.keys) == ["text", "calls"], let textSchema = properties["text"]?.objectValue,
@@ -100,9 +102,15 @@ nonisolated enum FakeOnDeviceResponses {
             tool["type"] == .string("string"),
             let names = tool["enum"]?.arrayValue, !names.isEmpty,
             names.allSatisfy({ $0.stringValue.map { !$0.isEmpty } == true }),
+            Set(names.compactMap(\.stringValue)).count == names.count,
             let arguments = fields["arguments_json"]?.objectValue, Set(arguments.keys) == ["type"],
             arguments["type"] == .string("string")
         else { return response }
+        if outer["x-astral-tool-proposals"] != nil {
+            guard let catalog = try? OnDeviceToolCatalog(schemaJSON: schema),
+                Set(catalog.tools.map(\.name)) == Set(names.compactMap(\.stringValue))
+            else { return response }
+        }
         let answer = JSONValue.object(["text": .string(text), "calls": .array([])])
         guard let data = try? JSONEncoder().encode(answer) else { return .failed(.generationFailed) }
         return .json(String(decoding: data, as: UTF8.self))

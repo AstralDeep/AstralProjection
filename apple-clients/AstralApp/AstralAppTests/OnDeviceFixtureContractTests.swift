@@ -27,6 +27,27 @@ final class OnDeviceFixtureContractTests: XCTestCase {
         XCTAssertEqual((object["calls"] as? [Any])?.count, 0)
     }
 
+    func testVersionedNativeProposalCatalogMustMatchTheConstrainedEnvelope() async throws {
+        let model = FakeOnDeviceModel(mode: .respond(.text("Four")))
+        var value = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(envelope.utf8)) as? [String: Any])
+        let tool: [String: Any] = [
+            "name": "current_datetime", "description": "Get the time",
+            "parameters": ["type": "object", "properties": [:], "additionalProperties": false],
+        ]
+        value["x-astral-tool-proposals"] = ["version": 1, "tools": [tool]]
+        let schema = String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self)
+        let result = await model.complete(request(schema))
+        guard case .json = result else {
+            return XCTFail("The valid native proposal catalog needs a valid fixture envelope")
+        }
+        for metadata: [String: Any] in [["version": 2, "tools": [tool]], ["version": 1, "tools": []]] {
+            value["x-astral-tool-proposals"] = metadata
+            let invalid = String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self)
+            let unchanged = await model.complete(request(invalid))
+            XCTAssertEqual(unchanged, .text("Four"))
+        }
+    }
+
     func testMissingDifferentAndMalformedSchemasDoNotChangePlainResponses() async throws {
         let model = FakeOnDeviceModel(mode: .respond(.text("Plain")))
         var alternate = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(envelope.utf8)) as? [String: Any])

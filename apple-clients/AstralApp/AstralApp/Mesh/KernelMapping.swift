@@ -394,7 +394,8 @@ nonisolated enum KernelMapping {
         case let known as MeshKernelError: return known
         case let kernel as KernelError:
             switch kernel {
-            case .Denied: return MeshKernelError.consentDenied
+            case .Denied(let code, _):
+                return code == "gate.mesh_stopped" ? MeshKernelError.stopped : MeshKernelError.consentDenied
             case .InvalidInput(let code, _), .Verification(let code, _), .Network(let code, _), .Custody(let code, _),
                 .State(let code, _), .Mesh(let code, _):
                 return MeshKernelError.refused(failureText(code: code))
