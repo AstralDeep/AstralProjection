@@ -3,10 +3,10 @@
 // inert.
 
 import AstralCore
-@testable import AstralDeep
 import SwiftUI
 import WebKit
 import XCTest
+@testable import AstralDeep
 
 @MainActor
 final class OfflineChartTests: XCTestCase {
