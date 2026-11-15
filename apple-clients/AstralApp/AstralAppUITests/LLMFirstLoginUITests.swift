@@ -28,7 +28,7 @@ final class LLMFirstLoginUITests: XCTestCase {
         XCTAssertTrue(apiKey.waitForExistence(timeout: 2))
         XCTAssertTrue(save.waitForExistence(timeout: 2))
         focusAndType(apiKey, "ui-only-placeholder")
-        focusAndType(apiKey, "x")
+        apiKey.typeText("x")
         let status = app.staticTexts["llm-save-status"]
         _ = status.exists
         save.press()
