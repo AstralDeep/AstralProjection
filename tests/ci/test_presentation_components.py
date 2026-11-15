@@ -1,6 +1,9 @@
 """Checks exact presentation source custody and local-wheel receipt denial before freezing clients."""
 
+import base64
+import csv
 import hashlib
+import io
 import json
 import subprocess
 from types import SimpleNamespace
@@ -132,6 +135,85 @@ def test_wheel_zip_bytes_are_canonical_across_filesystem_metadata(tmp_path):
         assert {member.filename: archive.read(member.filename) for member in archive.infolist()} == contents
         assert all(member.create_system == 3 for member in archive.infolist())
         assert all(member.external_attr == 0o100644 << 16 for member in archive.infolist())
+
+
+def test_wheel_metadata_newlines_and_record_digest_are_canonicalized(tmp_path):
+    path = tmp_path / "component.whl"
+    metadata_path = "component-1.0.dist-info/METADATA"
+    record_path = "component-1.0.dist-info/RECORD"
+    metadata = b"Name: component\r\nVersion: 1.0\r\n"
+    metadata_digest = (
+        base64.urlsafe_b64encode(hashlib.sha256(metadata).digest()).rstrip(b"=").decode()
+    )
+    record = (
+        f"{metadata_path},sha256={metadata_digest},{len(metadata)}\n"
+        f"{record_path},,\n"
+    ).encode()
+    with ZipFile(path, "w") as archive:
+        archive.writestr("component/__init__.py", b"VALUE = 1\n")
+        archive.writestr(metadata_path, metadata)
+        archive.writestr(record_path, record)
+
+    tool.normalize_wheel_archive(path)
+
+    with ZipFile(path) as archive:
+        normalized = archive.read(metadata_path)
+        assert normalized == b"Name: component\nVersion: 1.0\n"
+        updated_record = archive.read(record_path)
+        rows = list(csv.reader(io.StringIO(updated_record.decode(), newline="")))
+    assert updated_record.endswith(f"{record_path},,\n".encode())
+    assert updated_record.splitlines(keepends=True)[1] == record.splitlines(keepends=True)[1]
+    metadata_row = next(row for row in rows if row[0] == metadata_path)
+    expected_digest = (
+        base64.urlsafe_b64encode(hashlib.sha256(normalized).digest()).rstrip(b"=").decode()
+    )
+    assert metadata_row == [metadata_path, f"sha256={expected_digest}", str(len(normalized))]
+    assert all(row[-1] != "" or row[0] == record_path for row in rows)
+
+
+def test_lf_wheel_metadata_is_unchanged_without_requiring_record():
+    members = {"component-1.0.dist-info/METADATA": b"Name: component\nVersion: 1.0\n"}
+    before = members.copy()
+
+    tool.normalize_metadata_newlines(members)
+
+    assert members == before
+
+
+@pytest.mark.parametrize("corruption", ["missing", "duplicate", "digest", "size", "signed"])
+def test_wheel_metadata_newline_rewrite_rejects_invalid_or_signed_record(tmp_path, corruption):
+    path = tmp_path / "component.whl"
+    metadata_path = "component-1.0.dist-info/METADATA"
+    record_path = "component-1.0.dist-info/RECORD"
+    signature_path = "component-1.0.dist-info/RECORD.jws"
+    metadata = b"Name: component\r\nVersion: 1.0\r\n"
+    digest = base64.urlsafe_b64encode(hashlib.sha256(metadata).digest()).rstrip(b"=").decode()
+    metadata_row = [metadata_path, f"sha256={digest}", str(len(metadata))]
+    if corruption == "missing":
+        rows = [[record_path, "", ""]]
+    elif corruption == "duplicate":
+        rows = [metadata_row, metadata_row.copy(), [record_path, "", ""]]
+    elif corruption == "digest":
+        rows = [metadata_row.copy(), [record_path, "", ""]]
+        rows[0][1] = "sha256=" + ("A" * 43)
+    elif corruption == "size":
+        rows = [metadata_row.copy(), [record_path, "", ""]]
+        rows[0][2] = str(len(metadata) + 1)
+    else:
+        rows = [metadata_row, [record_path, "", ""]]
+    output = io.StringIO(newline="")
+    csv.writer(output, lineterminator="\n").writerows(rows)
+    with ZipFile(path, "w") as archive:
+        archive.writestr(metadata_path, metadata)
+        archive.writestr(record_path, output.getvalue().encode())
+        if corruption == "signed":
+            archive.writestr(signature_path, b"signature")
+    original = path.read_bytes()
+
+    with pytest.raises(ValueError, match="RECORD|signed"):
+        tool.normalize_wheel_archive(path)
+
+    assert path.read_bytes() == original
 
 
 def test_normalized_component_wheel_updates_receipt_digest(tmp_path):
@@ -278,7 +360,9 @@ def test_pinned_source_checkouts_are_refreshed_with_autocrlf_disabled(tmp_path):
     subprocess.run(
         ["git", "-C", str(repository_root), "config", "user.name", "Fixture"], check=True
     )
-    subprocess.run(["git", "-C", str(repository_root), "config", "core.autocrlf", "true"], check=True)
+    subprocess.run(
+        ["git", "-C", str(repository_root), "config", "core.autocrlf", "true"], check=True
+    )
     source.write_bytes(b"first\r\nsecond\r\n")
     source_bytes = source.read_bytes()
     crlf_count = source_bytes.count(b"\r\n")
@@ -298,7 +382,9 @@ def test_pinned_source_checkouts_are_refreshed_with_autocrlf_disabled(tmp_path):
         ["git", "-C", str(repository_root), "show", ":source.py"], text=True
     ) == "first\nsecond\n"
 
-    subprocess.run(["git", "-C", str(repository_root), "config", "core.autocrlf", "false"], check=True)
+    subprocess.run(
+        ["git", "-C", str(repository_root), "config", "core.autocrlf", "false"], check=True
+    )
     subprocess.run(["git", "-C", str(repository_root), "config", "core.eol", "lf"], check=True)
     subprocess.run(
         ["git", "-C", str(repository_root), "checkout", "--force", "HEAD", "--", "."],

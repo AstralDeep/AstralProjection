@@ -3,8 +3,12 @@ Windows and Projection CI install these local wheels after their hash-locked ext
 """
 
 import argparse
+import base64
+import binascii
+import csv
 import hashlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -24,6 +28,89 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def normalize_metadata_newlines(members):
+    metadata_paths = [path for path in members if path.endswith(".dist-info/METADATA")]
+    for metadata_path in metadata_paths:
+        original = members[metadata_path]
+        normalized = original.replace(b"\r\n", b"\n")
+        if b"\r" in normalized:
+            raise ValueError("wheel metadata contains a bare carriage return")
+        if normalized == original:
+            continue
+        record_path = f"{metadata_path.rsplit('/', 1)[0]}/RECORD"
+        if record_path not in members:
+            raise ValueError("wheel metadata has no matching RECORD")
+        record_directory = record_path.rsplit("/", 1)[0]
+        if any(
+            path in {f"{record_directory}/RECORD.jws", f"{record_directory}/RECORD.p7s"}
+            for path in members
+        ):
+            raise ValueError("signed wheel metadata cannot be normalized")
+        try:
+            record_bytes = members[record_path]
+            rows = list(
+                csv.reader(io.StringIO(record_bytes.decode("utf-8"), newline=""), strict=True)
+            )
+        except (UnicodeDecodeError, csv.Error) as error:
+            raise ValueError("wheel RECORD is invalid") from error
+        matching_rows = [row for row in rows if row and row[0] == metadata_path]
+        if len(matching_rows) != 1 or len(matching_rows[0]) != 3:
+            raise ValueError("wheel RECORD has no unique metadata entry")
+        original_row = matching_rows[0].copy()
+        row = original_row.copy()
+        algorithm, separator, encoded_digest = row[1].partition("=")
+        if algorithm != "sha256" or not separator or row[2] != str(len(original)):
+            raise ValueError("wheel RECORD metadata digest or size is invalid")
+        try:
+            recorded_digest = base64.b64decode(
+                encoded_digest + "=" * (-len(encoded_digest) % 4), altchars=b"-_", validate=True
+            )
+        except (ValueError, binascii.Error) as error:
+            raise ValueError("wheel RECORD metadata digest is invalid") from error
+        if (
+            base64.urlsafe_b64encode(recorded_digest).rstrip(b"=").decode("ascii") != encoded_digest
+            or recorded_digest != hashlib.sha256(original).digest()
+        ):
+            raise ValueError("wheel RECORD metadata digest is invalid")
+        digest_value = base64.urlsafe_b64encode(hashlib.sha256(normalized).digest())
+        row[1] = "sha256=" + digest_value.rstrip(b"=").decode("ascii")
+        row[2] = str(len(normalized))
+        rewritten_lines = []
+        replacements = 0
+        for line in record_bytes.splitlines(keepends=True):
+            if line.endswith(b"\r\n"):
+                body, line_ending = line[:-2], b"\r\n"
+            elif line.endswith(b"\n"):
+                body, line_ending = line[:-1], b"\n"
+            elif line.endswith(b"\r"):
+                raise ValueError("wheel RECORD uses bare carriage returns")
+            else:
+                body, line_ending = line, b""
+            try:
+                parsed_rows = list(csv.reader([body.decode("utf-8")], strict=True))
+            except (UnicodeDecodeError, csv.Error) as error:
+                raise ValueError("wheel RECORD is invalid") from error
+            if len(parsed_rows) != 1:
+                raise ValueError("wheel RECORD is invalid")
+            parsed = parsed_rows[0]
+            if parsed and parsed[0] == metadata_path:
+                output = io.StringIO(newline="")
+                writer = csv.writer(output, lineterminator="\n")
+                writer.writerow(original_row)
+                expected_old_line = output.getvalue().encode("utf-8")[:-1] + line_ending
+                if expected_old_line != line:
+                    raise ValueError("wheel RECORD metadata row is not canonical CSV")
+                output = io.StringIO(newline="")
+                csv.writer(output, lineterminator="\n").writerow(row)
+                line = output.getvalue().encode("utf-8")[:-1] + line_ending
+                replacements += 1
+            rewritten_lines.append(line)
+        if replacements != 1:
+            raise ValueError("wheel RECORD has no unique metadata entry")
+        members[metadata_path] = normalized
+        members[record_path] = b"".join(rewritten_lines)
+
+
 def normalize_wheel_archive(path):
     temporary = path.with_suffix(path.suffix + ".normalized")
     try:
@@ -31,6 +118,8 @@ def normalize_wheel_archive(path):
             names = [item.filename for item in source.infolist()]
             if len(names) != len(set(names)):
                 raise ValueError("wheel contains duplicate archive members")
+            members = {item.filename: source.read(item.filename) for item in source.infolist()}
+            normalize_metadata_newlines(members)
             with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED) as target:
                 for item in source.infolist():
                     if item.is_dir() or item.extra or item.comment:
@@ -40,7 +129,7 @@ def normalize_wheel_archive(path):
                     info.create_system = 3
                     info.external_attr = 0o100644 << 16
                     info.internal_attr = 0
-                    target.writestr(info, source.read(item.filename), compress_type=item.compress_type)
+                    target.writestr(info, members[item.filename], compress_type=item.compress_type)
         temporary.replace(path)
     except (OSError, zipfile.BadZipFile) as error:
         temporary.unlink(missing_ok=True)
