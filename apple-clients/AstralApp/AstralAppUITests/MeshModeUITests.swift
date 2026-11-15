@@ -152,8 +152,12 @@ final class MeshModeUITests: XCTestCase {
         attach("mesh-permissions-granted")
         goBack()
         let mailbox = element("mesh.settings.mailbox")
-        for _ in 0..<4 where !mailbox.exists || !mailbox.isHittable { app.swipeDown() }
-        for _ in 0..<6 where !mailbox.exists || !mailbox.isHittable { app.swipeUp() }
+        let settings = app.collectionViews.firstMatch
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        let start = settings.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.65))
+        let end = settings.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.2)
+        attach("mesh-settings-mailbox-revealed")
         XCTAssertTrue(mailbox.waitForExistence(timeout: 5))
         XCTAssertTrue(mailbox.isHittable)
         mailbox.tap()

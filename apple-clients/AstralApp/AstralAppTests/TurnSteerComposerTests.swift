@@ -103,11 +103,11 @@
                 model.composerDraft = draft
                 try await mount.settle()
                 let field = try XCTUnwrap(
-                    mount.hostedAccessibility.first { $0.accessibilityIdentifier() == "chat-composer-input" })
+                    try mount.accessibility.first { $0.identifier == "chat-composer-input" })
 
-                XCTAssertEqual(field.accessibilityLabel(), "Message AstralDeep", mode)
-                XCTAssertEqual(field.accessibilityValue() as? String, draft, mode)
-                XCTAssertEqual(field.accessibilityHelp(), hint, mode)
+                XCTAssertEqual(field.label, "Message AstralDeep", mode)
+                XCTAssertEqual(field.value, draft, mode)
+                XCTAssertEqual(field.help, hint, mode)
             }
         }
 
