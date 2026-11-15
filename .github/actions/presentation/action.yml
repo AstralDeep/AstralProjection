@@ -38,6 +38,20 @@ runs:
         ref: d02e4ea15098016855dc99a579590a21c6e65b12
         path: .presentation-sources/Kernel
     - shell: bash
+      run: |
+        set -euo pipefail
+        for source in "$GITHUB_WORKSPACE/.presentation-sources/Deep" \
+                      "$GITHUB_WORKSPACE/.presentation-sources/Primitives" \
+                      "$GITHUB_WORKSPACE/.presentation-sources/Kernel"; do
+          if [[ -n "$(git -C "$source" status --porcelain --untracked-files=all)" ]]; then
+            echo "pinned presentation source checkout is not clean: $source" >&2
+            exit 2
+          fi
+          git -C "$source" config core.autocrlf false
+          git -C "$source" config core.eol lf
+          git -C "$source" checkout-index --all --force
+        done
+    - shell: bash
       working-directory: ${{ inputs.projection-root }}
       env:
         PRESENTATION_PYTHON: ${{ inputs.python }}
