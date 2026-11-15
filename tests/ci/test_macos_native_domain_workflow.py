@@ -40,9 +40,21 @@ def test_mac_native_domain_uses_the_same_generated_products_without_rebuild(job)
     text = (ROOT / ".github/workflows/apple-ci.yml").read_text()
     block = text.split("  " + job + ":\n", 1)[1]
     block = re.split(r"(?m)^  [a-z][a-z-]+:\s*$", block, maxsplit=1)[0]
-    prepared = block.split("test_action='test'\n", 1)[1].split(
-        "test_action=test-without-building", 1
-    )[0]
-    assert "build-for-testing" in prepared
-    assert "if [[ '${{ matrix.slug }}' == ios ]]" not in prepared
-    assert "-only-testing:" not in prepared
+    assert "apple-${{ matrix.slug }}-ui-build-products" in block or "apple-${{ matrix.platform }}-ui-build-products" in block
+    assert "scripts/ci_apple_ui_products.py restore" in block
+    assert "--platform '${{ matrix.slug }}'" in block or "--platform '${{ matrix.platform }}'" in block
+    assert "build-for-testing" not in block
+    assert "test-without-building" in block
+    assert "if [[ '${{ matrix.slug }}' == ios ]]" not in block
+    if job == "first-login-ui":
+        assert "-only-testing:AstralAppUITests/" in block
+    else:
+        assert "-only-testing:AstralAppTests" in block
+
+
+def test_macos_products_are_built_once_for_unit_and_ui_consumers():
+    text = (ROOT / ".github/workflows/apple-ci.yml").read_text()
+    producer = text.split("  macos-app-build:\n", 1)[1].split("\n  first-login-ui:", 1)[0]
+    assert "build-for-testing" in producer
+    assert "scripts/ci_apple_ui_products.py pack --repo \"$PWD\" --platform macos" in producer
+    assert "apple-macos-ui-build-products" in producer

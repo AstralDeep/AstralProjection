@@ -397,7 +397,7 @@ jobs:
           fi
 
   app-unit-tests:
-    needs: [changes, swift-package-prewarm, kernel-apple]
+    needs: [changes, swift-package-prewarm, kernel-apple, ios-ui-build, macos-app-build]
     if: needs.changes.outputs.apple == 'true'
     name: Required · ${{ matrix.name }} app continuity/unit coverage
     runs-on: macos-26
@@ -445,6 +445,19 @@ jobs:
           path: build/060/swift-package-clones
           key: astralprojection-swiftpm-xcode-${{ env.XCODE_BUILD }}-${{ hashFiles('apple-clients/AstralApp/AstralApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
           fail-on-cache-miss: true
+      - name: Download same-run app test Products
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: apple-${{ matrix.slug }}-ui-build-products
+          path: build/060
+      - name: Restore source-bound app test Products
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci_apple_ui_products.py restore --repo "$PWD" \
+            --platform '${{ matrix.slug }}' \
+            --derived "$PWD/build/060/app-${{ matrix.slug }}-ui-dd" \
+            --archive "$PWD/build/060/${{ matrix.slug }}-ui-build-products.tar"
       - name: Require the supported iOS runtime
         if: matrix.slug == 'ios'
         shell: bash
@@ -461,19 +474,15 @@ jobs:
           report="${COVERAGE_ROOT}/apple-${{ matrix.slug }}-unit-xccov.json"
           rm -rf "$result"
           rm -f "$report"
-          derived="$PWD/build/060/app-${{ matrix.slug }}-unit-dd"
-          test_action='test'
-          xcodebuild -project "${APP_PROJECT}" -scheme AstralApp \
-            -destination '${{ matrix.destination }}' -configuration Debug \
-            CODE_SIGNING_ALLOWED=NO -enableCodeCoverage YES -derivedDataPath "$derived" \
-            -clonedSourcePackagesDirPath "$PWD/build/060/swift-package-clones" \
-            -disableAutomaticPackageResolution -skipPackageUpdates \
-            build-for-testing
-          test_action=test-without-building
+          derived="$PWD/build/060/app-${{ matrix.slug }}-ui-dd"
+          runs=("$derived"/Build/Products/*.xctestrun)
+          if [[ ${#runs[@]} -ne 1 || ! -f "${runs[0]}" || -L "${runs[0]}" ]]; then
+            echo "::error::Expected one restored xctestrun file"
+            exit 1
+          fi
           set +e
           xcodebuild \
-            -project "${APP_PROJECT}" \
-            -scheme AstralApp \
+            -xctestrun "${runs[0]}" \
             -destination '${{ matrix.destination }}' \
             -configuration Debug \
             CODE_SIGNING_ALLOWED=NO \
@@ -483,12 +492,9 @@ jobs:
             -maximum-test-execution-time-allowance 300 \
             -retry-tests-on-failure \
             -test-iterations 2 \
-            -clonedSourcePackagesDirPath "$PWD/build/060/swift-package-clones" \
-            -disableAutomaticPackageResolution -skipPackageUpdates \
-            -derivedDataPath "$derived" \
             -resultBundlePath "$result" \
             -only-testing:AstralAppTests \
-            "$test_action"
+            test-without-building
           status=$?
           set -e
           if [[ -d "$result" ]]; then
@@ -689,8 +695,71 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  macos-app-build:
+    needs: [changes, swift-package-prewarm, kernel-apple]
+    if: needs.changes.outputs.apple == 'true'
+    name: Required · build macOS app test Products once
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - name: Check out candidate
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Select exact Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          selected=""
+          for candidate in /Applications/Xcode_26.6.app /Applications/Xcode_26.6*.app /Applications/Xcode.app; do
+            [[ -d "$candidate" ]] || continue
+            if [[ "$("$candidate/Contents/Developer/usr/bin/xcodebuild" -version | sed -n '1p')" == "Xcode ${XCODE_VERSION}" ]] && \
+               [[ "$("$candidate/Contents/Developer/usr/bin/xcodebuild" -version | sed -n '2p')" == "Build version ${XCODE_BUILD}" ]]; then
+              selected="$candidate"
+              break
+            fi
+          done
+          [[ -n "$selected" ]] || { echo "Xcode ${XCODE_VERSION} (${XCODE_BUILD}) is required" >&2; exit 1; }
+          sudo xcode-select --switch "$selected/Contents/Developer"
+          [[ "$(xcodebuild -version | sed -n '1p')" == "Xcode ${XCODE_VERSION}" ]]
+          [[ "$(xcodebuild -version | sed -n '2p')" == "Build version ${XCODE_BUILD}" ]]
+      - name: Download the same-run Kernel artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: apple-kernel-artifacts
+          path: apple-clients/AstralKernel/Artifacts
+      - name: Verify Kernel source, toolchain and complete payloads
+        run: python3 scripts/ci_kernel_apple.py verify --repo "$PWD" --artifacts "$PWD/apple-clients/AstralKernel/Artifacts"
+      - name: Restore pinned Swift package clones
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/060/swift-package-clones
+          key: astralprojection-swiftpm-xcode-${{ env.XCODE_BUILD }}-${{ hashFiles('apple-clients/AstralApp/AstralApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          fail-on-cache-miss: true
+      - name: Build complete macOS app test Products with coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          derived="$PWD/build/060/app-macos-ui-dd"
+          xcodebuild -project "${APP_PROJECT}" -scheme AstralApp \
+            -destination 'platform=macOS' -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO -enableCodeCoverage YES \
+            COMPILER_INDEX_STORE_ENABLE=NO -derivedDataPath "$derived" \
+            -clonedSourcePackagesDirPath "$PWD/build/060/swift-package-clones" \
+            -disableAutomaticPackageResolution -skipPackageUpdates build-for-testing
+          python3 scripts/ci_apple_ui_products.py pack --repo "$PWD" --platform macos \
+            --derived "$derived" --archive "$PWD/build/060/macos-ui-build-products.tar"
+      - name: Publish same-run macOS app test Products
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: apple-macos-ui-build-products
+          path: |
+            build/060/macos-ui-build-products.tar
+            build/060/macos-ui-build-products.json
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
+
   first-login-ui:
-    needs: [changes, swift-package-prewarm, ios-ui-build, kernel-apple]
+    needs: [changes, swift-package-prewarm, ios-ui-build, macos-app-build, kernel-apple]
     if: needs.changes.outputs.apple == 'true'
     name: Required · ${{ matrix.name }} first-login and voice UI
     runs-on: macos-26
@@ -756,20 +825,19 @@ jobs:
           path: build/060/swift-package-clones
           key: astralprojection-swiftpm-xcode-${{ env.XCODE_BUILD }}-${{ hashFiles('apple-clients/AstralApp/AstralApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
           fail-on-cache-miss: true
-      - name: Download same-run iOS UI test Products
-        if: matrix.platform == 'ios'
+      - name: Download same-run app test Products
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: apple-ios-ui-build-products
+          name: apple-${{ matrix.platform }}-ui-build-products
           path: build/060
-      - name: Restore source-bound iOS UI test Products
-        if: matrix.platform == 'ios'
+      - name: Restore source-bound app test Products
         shell: bash
         run: |
           set -euo pipefail
           python3 scripts/ci_apple_ui_products.py restore --repo "$PWD" \
-            --derived "$PWD/build/060/app-ios-ui-dd" \
-            --archive "$PWD/build/060/ios-ui-build-products.tar"
+            --platform '${{ matrix.platform }}' \
+            --derived "$PWD/build/060/app-${{ matrix.platform }}-ui-dd" \
+            --archive "$PWD/build/060/${{ matrix.platform }}-ui-build-products.tar"
       - name: Require the supported iOS runtime
         if: matrix.platform == 'ios'
         shell: bash
@@ -817,32 +885,17 @@ jobs:
             selectors+=("-only-testing:AstralAppUITests/$selected")
           done
           derived="$PWD/build/060/app-${{ matrix.platform }}-ui-dd"
-          target_args=(-project "${APP_PROJECT}" -scheme AstralApp)
-          project_args=(-derivedDataPath "$derived"
-            -clonedSourcePackagesDirPath "$PWD/build/060/swift-package-clones"
-            -disableAutomaticPackageResolution -skipPackageUpdates)
-          test_action='test'
-          if [[ "${{ matrix.platform }}" == "macos" ]]; then
-            xcodebuild -project "${APP_PROJECT}" -scheme AstralApp -destination "$dest" \
-              -configuration Debug CODE_SIGNING_ALLOWED=NO -enableCodeCoverage YES \
-              COMPILER_INDEX_STORE_ENABLE=NO -derivedDataPath "$derived" \
-              -clonedSourcePackagesDirPath "$PWD/build/060/swift-package-clones" \
-              -disableAutomaticPackageResolution -skipPackageUpdates build-for-testing
+          runs=("$derived"/Build/Products/*.xctestrun)
+          if [[ ${#runs[@]} -ne 1 || ! -f "${runs[0]}" || -L "${runs[0]}" ]]; then
+            echo "::error::Expected one restored xctestrun file"
+            exit 1
           fi
           if [[ "${{ matrix.platform }}" == "ios" ]]; then
-            runs=("$derived"/Build/Products/*.xctestrun)
-            if [[ ${#runs[@]} -ne 1 || ! -f "${runs[0]}" || -L "${runs[0]}" ]]; then
-              echo "::error::Expected one restored xctestrun file"
-              exit 1
-            fi
-            target_args=(-xctestrun "${runs[0]}")
-            project_args=()
             xcrun simctl bootstatus "${{ steps.ios_sim.outputs.udid }}" -b
           fi
-          test_action=test-without-building
           set +e
           xcodebuild \
-            "${target_args[@]}" \
+            -xctestrun "${runs[0]}" \
             -destination "$dest" \
             -configuration Debug \
             CODE_SIGNING_ALLOWED=NO \
@@ -852,10 +905,9 @@ jobs:
             -maximum-test-execution-time-allowance 300 \
             -retry-tests-on-failure \
             -test-iterations 2 \
-            ${project_args[@]+"${project_args[@]}"} \
             -resultBundlePath "$result" \
             "${selectors[@]}" \
-            "$test_action"
+            test-without-building
           status=$?
           set -e
           if [[ -d "$result" ]]; then
@@ -1067,6 +1119,7 @@ jobs:
       - core-ios-tests
       - app-unit-tests
       - ios-ui-build
+      - macos-app-build
       - first-login-ui
       - watch-continuity
       - kernel-slices
@@ -1079,7 +1132,7 @@ jobs:
         run: |
           [[ '${{ needs.changes.result }}' == 'success' ]]
           python3 scripts/ci_lanes.py --applicable '${{ needs.changes.outputs.apple }}' \
-            --results '${{ needs.swift-lint.result }}' '${{ needs.core-tests.result }}' '${{ needs.core-ios-tests.result }}' '${{ needs.app-unit-tests.result }}' '${{ needs.ios-ui-build.result }}' '${{ needs.first-login-ui.result }}' '${{ needs.watch-continuity.result }}' '${{ needs.kernel-slices.result }}' '${{ needs.kernel-apple.result }}' >> "$GITHUB_STEP_SUMMARY"
+            --results '${{ needs.swift-lint.result }}' '${{ needs.core-tests.result }}' '${{ needs.core-ios-tests.result }}' '${{ needs.app-unit-tests.result }}' '${{ needs.ios-ui-build.result }}' '${{ needs.macos-app-build.result }}' '${{ needs.first-login-ui.result }}' '${{ needs.watch-continuity.result }}' '${{ needs.kernel-slices.result }}' '${{ needs.kernel-apple.result }}' >> "$GITHUB_STEP_SUMMARY"
       # `needs.<matrix-job>.result` can report the result of only one matrix
       # child. Requiring one current-run artifact from every child prevents a
       # later successful sibling from hiding a failed platform.
@@ -1202,6 +1255,7 @@ jobs:
           [[ '${{ needs.core-ios-tests.result }}' == 'success' ]]
           [[ '${{ needs.app-unit-tests.result }}' == 'success' ]]
           [[ '${{ needs.ios-ui-build.result }}' == 'success' ]]
+          [[ '${{ needs.macos-app-build.result }}' == 'success' ]]
           [[ '${{ needs.first-login-ui.result }}' == 'success' ]]
           [[ '${{ needs.watch-continuity.result }}' == 'success' ]]
           [[ '${{ needs.kernel-slices.result }}' == 'success' ]]

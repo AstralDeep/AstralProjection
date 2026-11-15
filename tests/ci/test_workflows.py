@@ -480,19 +480,18 @@ def _assert_apple_platform_contract(apple: str) -> None:
     assert "-resolvePackageDependencies" in package_prewarm
     assert "-onlyUsePackageVersionsFromResolvedFile" in package_prewarm
     assert "-skipPackageUpdates" in package_prewarm
-    assert "needs: [changes, swift-package-prewarm, kernel-apple]" in app_unit
+    assert "needs: [changes, swift-package-prewarm, kernel-apple, ios-ui-build, macos-app-build]" in app_unit
     assert app_unit.count(cache_action) == 1
     assert app_unit.count(package_cache_key) == 1
     assert "fail-on-cache-miss: true" in app_unit
-    assert app_unit.count('-clonedSourcePackagesDirPath "$PWD/build/060/swift-package-clones"') == 2
-    assert app_unit.count("-disableAutomaticPackageResolution") == 2
-    assert app_unit.count("-skipPackageUpdates") == 2
-    assert "needs: [changes, swift-package-prewarm, ios-ui-build, kernel-apple]" in first_login
+    assert "build-for-testing" not in app_unit
+    assert "test-without-building" in app_unit
+    assert "needs: [changes, swift-package-prewarm, ios-ui-build, macos-app-build, kernel-apple]" in first_login
     assert first_login.count(cache_action) == 1
     assert first_login.count(package_cache_key) == 1
     assert "fail-on-cache-miss: true" in first_login
-    assert '-clonedSourcePackagesDirPath "$PWD/build/060/swift-package-clones"' in first_login
-    assert "-disableAutomaticPackageResolution -skipPackageUpdates build-for-testing" in first_login
+    assert "build-for-testing" not in first_login
+    assert "test-without-building" in first_login
     for job_id in (
         "swift-lint",
         "core-tests",
@@ -500,6 +499,7 @@ def _assert_apple_platform_contract(apple: str) -> None:
         "app-unit-tests",
         "swift-package-prewarm",
         "ios-ui-build",
+        "macos-app-build",
         "first-login-ui",
         "watch-continuity",
     ):
@@ -517,8 +517,8 @@ def _assert_apple_platform_contract(apple: str) -> None:
         assert ios_destination in job
         assert macos_destination in job
         assert ios_runtime_check in job
-        assert job.count("CODE_SIGNING_ALLOWED=NO") == 2
-        assert job.count("-enableCodeCoverage YES") == 2
+        assert "CODE_SIGNING_ALLOWED=NO" in job
+        assert "-enableCodeCoverage YES" in job
         assert job.count(exporter) == 1
         assert f"--platform '${{{{ {key} }}}}'" in job
 
@@ -550,14 +550,12 @@ def _assert_apple_platform_contract(apple: str) -> None:
     assert "-only-testing:AstralAppUITests/" in first_login
     provision = _step_block(first_login, "Provision a dedicated iOS simulator")
     assert 'xcrun simctl boot "$udid"' in provision and "bootstatus" not in provision
-    assert first_login.index("build-for-testing") < first_login.index(
-        'xcrun simctl bootstatus "${{ steps.ios_sim.outputs.udid }}" -b'
-    ) < first_login.index("test_action=test-without-building")
-    assert 'if [[ "${{ matrix.platform }}" == "macos" ]]; then' in first_login
-    assert "COMPILER_INDEX_STORE_ENABLE=NO" in first_login
-    assert first_login.count('-clonedSourcePackagesDirPath "$PWD/build/060/swift-package-clones"') == 2
-    assert first_login.count("-disableAutomaticPackageResolution") == 2
-    assert first_login.count("-skipPackageUpdates") == 2
+    assert "build-for-testing" not in first_login
+    assert first_login.index("Restore source-bound app test Products") < first_login.index(
+        "test-without-building"
+    )
+    assert 'if [[ "${{ matrix.platform }}" == "ios" ]]; then' in first_login
+    assert "test-without-building" in first_login
     assert all("-parallel-testing" not in job for job in (first_login, app_unit, core_ios))
     assert 'result="${COVERAGE_ROOT}/AstralApp-${{ matrix.slug }}-first-login.xcresult"' in first_login
     assert APPLE_RESULT_GUARD in first_login
@@ -1033,6 +1031,7 @@ def test_native_ci_is_active_and_uses_standalone_paths() -> None:
         "app-unit-tests",
         "swift-package-prewarm",
         "ios-ui-build",
+        "macos-app-build",
         "first-login-ui",
         "watch-continuity",
         "apple-required",
@@ -1448,10 +1447,13 @@ def _assert_ios_domain_collection(text):
                                ("first-login-ui", "ui", '"$derived"')):
         block = _job_block(text, job)
         assert block.count("python3 scripts/collect_xccov_native_domain.py") == 1
-        assert "build-for-testing" in block and "test-without-building" in block
-        assert block.index("build-for-testing") < block.index("test-without-building") < block.index("python3 scripts/collect_xccov_native_domain.py")
+        assert "test-without-building" in block
+        assert block.index("test-without-building") < block.index("python3 scripts/collect_xccov_native_domain.py")
         assert f"--lane {lane}" in block
-        assert f"-derivedDataPath {derived}" in block
+        if job == "core-ios-tests":
+            assert f"-derivedDataPath {derived}" in block
+        else:
+            assert f"derived=\"$PWD/build/060/app-${{{{ matrix.{('slug' if lane == 'unit' else 'platform')} }}}}-ui-dd\"" in block
         archive_platform = {
             "core": "ios", "unit": "${{ matrix.slug }}", "ui": "${{ matrix.platform }}"
         }[lane]
@@ -1459,13 +1461,12 @@ def _assert_ios_domain_collection(text):
         assert "--native-domain" in block
         assert "-enableCodeCoverage YES" in block
     unit = _job_block(text, "app-unit-tests")
-    _, marker, after_default = unit.partition("test_action='test'\n")
-    assert marker
-    prepare = after_default.partition("test_action=test-without-building")[0]
-    assert "-only-testing:" not in prepare
+    assert "build-for-testing" not in unit
     assert "-only-testing:AstralAppTests" in unit
     ui = _job_block(text, "first-login-ui")
-    assert ui.index("build-for-testing") < ui.index('-resultBundlePath "$result"')
+    assert "build-for-testing" not in ui
+    assert "Restore source-bound app test Products" in ui
+    assert "test-without-building" in ui
     assert 'result="${COVERAGE_ROOT}/AstralApp-${{ matrix.slug }}-first-login.xcresult"' in ui
     assert "--lane" not in _job_block(text, "watch-continuity")
 
@@ -1489,8 +1490,8 @@ def test_ios_mapping_collection_guard_refuses_lane_rebuild_or_domain_loss(old, n
         _assert_ios_domain_collection(text.replace(old, new, 1))
 
 
-def _ios_ui_runfile(tmp_path, index=0):
-    products = tmp_path / "build/060/app-ios-ui-dd/Build/Products"
+def _app_ui_runfile(tmp_path, platform="ios", index=0):
+    products = tmp_path / f"build/060/app-{platform}-ui-dd/Build/Products"
     products.mkdir(parents=True, exist_ok=True)
     path = products / f"AstralApp fixture {index}.xctestrun"
     path.write_text("restored test specification")
@@ -1551,7 +1552,7 @@ def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, lane, slug)
         f'python3() {{ {command} python3 "$@"; }}\n'
     )
     record = tmp_path / "commands.jsonl"
-    runfile = _ios_ui_runfile(tmp_path) if lane == "ui" and platform == "ios" else None
+    runfile = _app_ui_runfile(tmp_path, platform)
     result = subprocess.run(
         [bash, "-c", prefix + script],
         cwd=tmp_path,
@@ -1569,32 +1570,21 @@ def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, lane, slug)
     calls = [json.loads(line) for line in record.read_text().splitlines()]
     assert all("" not in call for call in calls)
     xcode = [call for call in calls if call[0] == "xcodebuild"]
-    builds_locally = lane == "unit" or platform == "macos"
-    assert len(xcode) == (2 if builds_locally else 1)
+    assert len(xcode) == 1
     builds = [call for call in xcode if "build-for-testing" in call]
-    assert len(builds) == int(builds_locally)
+    assert not builds
     if builds:
         assert not any(value.startswith("-only-testing:") for value in builds[0])
     assert xcode[-1][-1] == "test-without-building"
-    if runfile is not None:
-        assert xcode[-1][xcode[-1].index("-xctestrun") + 1] == str(runfile)
-        assert all(flag not in xcode[-1] for flag in (
-            "-project", "-scheme", "-derivedDataPath", "-clonedSourcePackagesDirPath",
-            "-disableAutomaticPackageResolution", "-skipPackageUpdates",
-        ))
-    else:
-        assert xcode[-1][xcode[-1].index("-project") + 1] == "Owned Fixture.xcodeproj"
-        assert "-xctestrun" not in xcode[-1]
-        if lane == "ui":
-            assert "-disableAutomaticPackageResolution" in xcode[-1]
-            assert "-skipPackageUpdates" in xcode[-1]
-            assert xcode[-1][xcode[-1].index("-clonedSourcePackagesDirPath") + 1] == str(
-                tmp_path / "build/060/swift-package-clones"
-            )
+    assert xcode[-1][xcode[-1].index("-xctestrun") + 1] == str(runfile)
+    assert all(flag not in xcode[-1] for flag in (
+        "-project", "-scheme", "-derivedDataPath", "-clonedSourcePackagesDirPath",
+        "-disableAutomaticPackageResolution", "-skipPackageUpdates",
+    ))
     assert "CODE_SIGNING_ALLOWED=NO" in xcode[-1]
     _assert_retried_test_run(xcode)
     assert not any(value.startswith("-parallel") for call in xcode for value in call)
-    assert any("COMPILER_INDEX_STORE_ENABLE=NO" in call for call in builds) == (lane == "ui" and platform == "macos")
+    assert "COMPILER_INDEX_STORE_ENABLE=NO" not in xcode[-1]
     boots = [call for call in calls if call[0] == "xcrun"]
     if lane == "ui":
         selectors = [arg for arg in xcode[-1] if arg.startswith("-only-testing:")]
@@ -1716,9 +1706,9 @@ def _run_first_login_step(tmp_path, slug, *, suite_exit, runfile_count=1):
     ) + "\n"
     record = tmp_path / "commands.jsonl"
     record.touch()
-    if slug != "macos":
-        for index in range(runfile_count):
-            _ios_ui_runfile(tmp_path, index)
+    platform = "ios" if slug.startswith("ios-") else "macos"
+    for index in range(runfile_count):
+        _app_ui_runfile(tmp_path, platform, index)
     result = subprocess.run(
         [bash, "-c", prefix + script],
         cwd=tmp_path,
@@ -1869,6 +1859,8 @@ def test_external_panel_browser_gate_executes_the_built_wheel() -> None:
 def test_ios_ui_build_transport_is_required_and_bound_to_the_current_run():
     apple = (ACTIVE / "apple-ci.yml").read_text()
     producer = _job_block(apple, "ios-ui-build")
+    macos_producer = _job_block(apple, "macos-app-build")
+    unit_consumer = _job_block(apple, "app-unit-tests")
     consumer = _job_block(apple, "first-login-ui")
     aggregate = _job_block(apple, "apple-required")
     assert "--cov=scripts.ci_apple_ui_products" in _job_block((ACTIVE / "ci.yml").read_text(), "python")
@@ -1882,23 +1874,43 @@ def test_ios_ui_build_transport_is_required_and_bound_to_the_current_run():
     assert "scripts/ci_apple_ui_products.py pack" in producer
     assert "test-without-building" not in producer
     assert "xcrun simctl boot" not in producer
+    assert "needs: [changes, swift-package-prewarm, kernel-apple]" in macos_producer
+    assert "timeout-minutes: 20" in macos_producer
+    assert "-scheme AstralApp" in macos_producer and "-only-testing:" not in macos_producer
+    assert "-destination 'platform=macOS'" in macos_producer
+    assert "-disableAutomaticPackageResolution -skipPackageUpdates build-for-testing" in macos_producer
+    assert "scripts/ci_apple_ui_products.py pack --repo \"$PWD\" --platform macos" in macos_producer
+    assert "test-without-building" not in macos_producer
+    macos_upload = _step_block(macos_producer, "Publish same-run macOS app test Products")
+    assert "name: apple-macos-ui-build-products" in macos_upload
+    assert "build/060/macos-ui-build-products.tar" in macos_upload
+    assert "build/060/macos-ui-build-products.json" in macos_upload
     upload = _step_block(producer, "Publish same-run iOS UI test Products")
-    download = _step_block(consumer, "Download same-run iOS UI test Products")
+    download = _step_block(consumer, "Download same-run app test Products")
+    unit_download = _step_block(unit_consumer, "Download same-run app test Products")
     assert "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02" in upload
     assert "if-no-files-found: error" in upload and "compression-level: 0" in upload
     assert "build/060/ios-ui-build-products.tar" in upload
     assert "build/060/ios-ui-build-products.json" in upload
     assert "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093" in download
-    assert "name: apple-ios-ui-build-products" in upload and "name: apple-ios-ui-build-products" in download
+    assert "name: apple-ios-ui-build-products" in upload
     assert "run-id:" not in download and "github-token:" not in download
-    assert "if: matrix.platform == 'ios'" in download
-    restore = _step_block(consumer, "Restore source-bound iOS UI test Products")
-    assert "if: matrix.platform == 'ios'" in restore
+    assert "name: apple-${{ matrix.platform }}-ui-build-products" in download
+    assert "name: apple-${{ matrix.slug }}-ui-build-products" in unit_download
+    restore = _step_block(consumer, "Restore source-bound app test Products")
+    assert "if: matrix.platform == 'ios'" not in restore
     assert "scripts/ci_apple_ui_products.py restore" in restore
-    assert '--derived "$PWD/build/060/app-ios-ui-dd"' in restore
+    assert "--platform '${{ matrix.platform }}'" in restore
+    assert '--derived "$PWD/build/060/app-${{ matrix.platform }}-ui-dd"' in restore
+    assert "run-id:" not in download and "github-token:" not in download
+    unit_restore = _step_block(unit_consumer, "Restore source-bound app test Products")
+    assert "apple-${{ matrix.slug }}-ui-build-products" in unit_download
+    assert "--platform '${{ matrix.slug }}'" in unit_restore
+    assert '--derived "$PWD/build/060/app-${{ matrix.slug }}-ui-dd"' in unit_restore
     assert "set -euo pipefail" in restore
-    assert "      - ios-ui-build\n" in aggregate
-    assert aggregate.count("${{ needs.ios-ui-build.result }}") == 2
+    for producer_job in ("ios-ui-build", "macos-app-build"):
+        assert f"      - {producer_job}\n" in aggregate
+        assert aggregate.count(f"${{{{ needs.{producer_job}.result }}}}") == 2
 
 
 @pytest.mark.parametrize("build_exit", [0, 65])
@@ -1944,7 +1956,7 @@ def test_ios_ui_refuses_missing_or_ambiguous_restored_test_specification(tmp_pat
 
 @pytest.mark.parametrize("slug", ["ios-1", "ios-2", "ios-3"])
 def test_ios_ui_refuses_a_symlinked_restored_test_specification(tmp_path, slug):
-    runfile = _ios_ui_runfile(tmp_path)
+    runfile = _app_ui_runfile(tmp_path)
     runfile.unlink()
     target = tmp_path / "other.xctestrun"
     target.write_text("outside restored Products")
