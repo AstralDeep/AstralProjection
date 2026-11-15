@@ -152,6 +152,108 @@ def test_normalized_component_wheel_updates_receipt_digest(tmp_path):
         assert archive.read("component.py") == b"VALUE = 1\n"
 
 
+def test_failed_wheel_diagnostic_records_hashes_member_metadata_and_source_newlines(tmp_path):
+    source_root = tmp_path / "source/components/AstralKernel"
+    source_root.mkdir(parents=True)
+    source = source_root / "src/rote.py"
+    source.parent.mkdir()
+    source.write_bytes(b"first\r\nsecond\n")
+    wheel = tmp_path / "wheels/component.whl"
+    wheel.parent.mkdir()
+    with ZipFile(wheel, "w") as archive:
+        archive.writestr("rote.py", b"payload")
+    wheel_digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    lock = wheel.parent / "astral-component-wheels.lock.json"
+    lock.write_text(json.dumps({"components": [{"component": "astral-kernel", "source_sha256": "source-hash",
+        "wheel": wheel.name, "wheel_sha256": wheel_digest}]}))
+    component = SimpleNamespace(key="astral-kernel", distribution="astral-rote", version="0.1.0",
+        relative_path="components/AstralKernel", source_root=lambda _: source_root)
+    contract = SimpleNamespace(repository_root=tmp_path, components=(component,))
+    helper = SimpleNamespace(_iter_build_files=lambda *_: (source,))
+
+    result = tool.wheel_failure_report(helper, contract, lock, {"astral-kernel": "expected-hash"})
+
+    entry = result["components"][0]
+    assert entry["expectedWheelSha256"] == "expected-hash"
+    assert entry["actualWheelSha256"] == wheel_digest
+    assert entry["wheelMembers"][0]["sha256"] == hashlib.sha256(b"payload").hexdigest()
+    assert entry["sourceFiles"] == [{"path": "src/rote.py", "size": 14,
+        "sha256": hashlib.sha256(b"first\r\nsecond\n").hexdigest(), "crlfCount": 1,
+        "bareLfCount": 1, "bareCrCount": 0}]
+
+
+def test_install_reports_hash_mismatch_and_preserves_built_wheel(tmp_path, monkeypatch):
+    output = tmp_path / "build/presentation"
+    wheel_directory = output / "wheels"
+    wheel_directory.mkdir(parents=True)
+    wheel = wheel_directory / "component.whl"
+    with ZipFile(wheel, "w") as archive:
+        archive.writestr("rote.py", b"wheel bytes")
+    actual = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    lock = wheel_directory / "astral-component-wheels.lock.json"
+    lock.write_text(json.dumps({"components": [{"component": "astral-kernel", "source_sha256": "source-hash",
+        "wheel": wheel.name, "wheel_sha256": actual}]}))
+    source_root = tmp_path / "source/components/AstralKernel"
+    source_root.mkdir(parents=True)
+    source = source_root / "kernel.py"
+    source.write_bytes(b"source")
+    component = SimpleNamespace(key="astral-kernel", distribution="astral-rote", version="0.1.0",
+        relative_path="components/AstralKernel", source_root=lambda _: source_root)
+    contract = SimpleNamespace(repository_root=tmp_path, components=(component,))
+    helper = SimpleNamespace(_iter_build_files=lambda *_: (source,))
+    monkeypatch.setattr(tool, "sources", lambda *_: (helper, tmp_path, {}, {}))
+    monkeypatch.setattr(tool, "build", lambda *_: (helper, contract, lock))
+    monkeypatch.setattr(tool, "expected_hashes", lambda: {"astral-kernel": "expected-hash"})
+    monkeypatch.setattr(tool.subprocess, "run", lambda *args, **kwargs: None)
+    external_lock = tmp_path / "external.lock"
+    external_lock.write_text("\n")
+
+    with pytest.raises(ValueError, match=f"expected=expected-hash, actual={actual}"):
+        tool.install(output, tmp_path, tmp_path, tmp_path, external_lock)
+
+    report = json.loads((output / "presentation-wheel-failure.json").read_text())
+    assert report["components"][0]["actualWheelSha256"] == actual
+    assert wheel.is_file()
+
+
+def test_install_uses_normalized_wheel_after_exact_hash_match(tmp_path, monkeypatch):
+    output = tmp_path / "build/presentation"
+    wheel_directory = output / "wheels"
+    wheel_directory.mkdir(parents=True)
+    wheel = wheel_directory / "component.whl"
+    with ZipFile(wheel, "w") as archive:
+        archive.writestr("rote.py", b"wheel bytes")
+    actual = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    lock = wheel_directory / "astral-component-wheels.lock.json"
+    lock.write_text(json.dumps({"components": [{"component": "astral-kernel", "wheel": wheel.name,
+        "wheel_sha256": actual}]}))
+    installed = []
+    helper = SimpleNamespace(install_wheels=lambda *args: installed.append(args), pip_check=lambda *_: None)
+    contract = SimpleNamespace()
+    monkeypatch.setattr(tool, "sources", lambda *_: (helper, tmp_path, {}, {}))
+    monkeypatch.setattr(tool, "build", lambda *_: (helper, contract, lock))
+    monkeypatch.setattr(tool, "expected_hashes", lambda: {"astral-kernel": actual})
+    monkeypatch.setattr(tool.subprocess, "run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(tool, "verify", lambda *_: None)
+    external_lock = tmp_path / "external.lock"
+    external_lock.write_text("\n")
+
+    tool.install(output, tmp_path, tmp_path, tmp_path, external_lock)
+
+    assert len(installed) == 1
+    assert installed[0] == (contract, lock)
+
+
+def test_windows_jobs_upload_wheels_only_after_install_failure():
+    workflow = (tool.ROOT / ".github/workflows/ci.yml").read_text()
+    assert workflow.count("Retain failed pinned presentation wheel diagnostics") == 2
+    assert workflow.count("if: failure()") >= 2
+    assert workflow.count("build/presentation/presentation-wheel-failure.json") == 2
+    assert workflow.count("build/presentation/wheels/*.whl") == 2
+    assert "name: projection-windows-tests-wheel-diagnostics" in workflow
+    assert "name: projection-windows-package-wheel-diagnostics" in workflow
+
+
 @pytest.mark.parametrize("case", ["duplicate", "directory", "extra", "comment", "invalid-zip"])
 def test_noncanonical_wheel_archives_are_rejected(tmp_path, case):
     path = tmp_path / "component.whl"

@@ -230,6 +230,16 @@ jobs:
           python-version: "3.11"
       - name: Install the locked Windows release runtime and pinned presentation wheels
         uses: ./.github/actions/presentation
+      - name: Retain failed pinned presentation wheel diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: projection-windows-tests-wheel-diagnostics
+          path: |
+            build/presentation/presentation-wheel-failure.json
+            build/presentation/wheels/*.whl
+          if-no-files-found: warn
+          retention-days: 7
       - name: Install locked CI tooling and Projection package
         shell: pwsh
         run: |
@@ -288,6 +298,16 @@ jobs:
           }
       - name: Install the locked Windows release runtime and pinned presentation wheels
         uses: ./.github/actions/presentation
+      - name: Retain failed pinned presentation wheel diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: projection-windows-package-wheel-diagnostics
+          path: |
+            build/presentation/presentation-wheel-failure.json
+            build/presentation/wheels/*.whl
+          if-no-files-found: warn
+          retention-days: 7
       - name: Restore the native helper from its exact lock
         run: dotnet restore windows-client\asr-helper\tests\AstralSpeechHelper.Tests.csproj --locked-mode
       - name: Verify native helper formatting

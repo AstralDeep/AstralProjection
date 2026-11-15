@@ -59,6 +59,61 @@ def normalize_component_wheels(helper, lock_path):
     helper._write_lock(lock_path, lock_document)
 
 
+def wheel_failure_report(helper, contract, lock_path, expected):
+    lock_document = json.loads(lock_path.read_text())
+    components = {component.key: component for component in contract.components}
+    findings = []
+    for entry in lock_document["components"]:
+        wheel = lock_path.parent / entry["wheel"]
+        component = components[entry["component"]]
+        with zipfile.ZipFile(wheel, "r") as archive:
+            members = [
+                {
+                    "path": item.filename,
+                    "size": item.file_size,
+                    "compressedSize": item.compress_size,
+                    "sha256": hashlib.sha256(archive.read(item.filename)).hexdigest(),
+                    "compression": item.compress_type,
+                    "creatorSystem": item.create_system,
+                    "externalAttributes": item.external_attr,
+                    "timestamp": list(item.date_time),
+                }
+                for item in archive.infolist()
+            ]
+        source_root = component.source_root(contract.repository_root)
+        source_files = []
+        for path in helper._iter_build_files(component, contract.repository_root):
+            content = path.read_bytes()
+            crlf = content.count(b"\r\n")
+            lf = content.count(b"\n")
+            source_files.append(
+                {
+                    "path": path.relative_to(source_root).as_posix(),
+                    "size": len(content),
+                    "sha256": hashlib.sha256(content).hexdigest(),
+                    "crlfCount": crlf,
+                    "bareLfCount": lf - crlf,
+                    "bareCrCount": content.count(b"\r") - crlf,
+                }
+            )
+        actual = digest(wheel)
+        findings.append(
+            {
+                "component": component.key,
+                "distribution": component.distribution,
+                "version": component.version,
+                "sourcePath": component.relative_path,
+                "sourceSha256": entry["source_sha256"],
+                "expectedWheelSha256": expected[component.key],
+                "actualWheelSha256": actual,
+                "wheelSize": wheel.stat().st_size,
+                "sourceFiles": source_files,
+                "wheelMembers": members,
+            }
+        )
+    return {"format": "astralprojection.presentation-wheel-failure/v1", "components": findings}
+
+
 def module(path, name):
     spec = importlib.util.spec_from_file_location(name, path)
     value = importlib.util.module_from_spec(spec)
@@ -158,10 +213,17 @@ def install(output, deep, primitives, kernel, external_lock=None):
         subprocess.run([sys.executable, "-m", "pip", "install", "--require-hashes", "-r", str(requirements)], check=True)
     helper, contract, lock = build(output, deep, primitives, kernel)
     expected = expected_hashes()
-    for entry in json.loads(lock.read_text())["components"]:
-        if entry["wheel_sha256"] != expected[entry["component"]]:
-            raise ValueError("built presentation wheel differs from the committed release hash")
-    for entry in json.loads(lock.read_text())["components"]:
+    entries = json.loads(lock.read_text())["components"]
+    mismatches = [entry for entry in entries if entry["wheel_sha256"] != expected[entry["component"]]]
+    if mismatches:
+        report = output / "presentation-wheel-failure.json"
+        report.write_text(json.dumps(wheel_failure_report(helper, contract, lock, expected), indent=2, sort_keys=True) + "\n")
+        details = "; ".join(
+            f"{entry['component']}: expected={expected[entry['component']]}, actual={entry['wheel_sha256']}"
+            for entry in mismatches
+        )
+        raise ValueError(f"built presentation wheel differs from the committed release hash ({details}); see {report.name}")
+    for entry in entries:
         os.environ[VARIABLES[entry["component"]]] = (lock.parent / entry["wheel"]).as_uri()
     helper.install_wheels(contract, lock)
     verify(output)
