@@ -23,7 +23,9 @@ struct MeshChatRow: View {
                             .accessibilityIdentifier("mesh.chat.queued.\(chat.chatId)")
                     }
                     if chat.branchCount > 0 {
-                        Label(chat.branchCount == 1 ? "1 branch" : "\(chat.branchCount) branches", systemImage: "arrow.triangle.branch")
+                        Label(
+                            chat.branchCount == 1 ? "1 branch" : "\(chat.branchCount) branches",
+                            systemImage: "arrow.triangle.branch")
                     }
                 }
                 .font(ConsoleTypography.caption).foregroundStyle(p.muted)
@@ -111,16 +113,19 @@ struct MeshChatDetailView: View {
                         ToolbarItem(placement: .cancellationAction) { Button("Cancel") { requesting = nil } }
                     }
             }
-                #if os(macOS)
-                    .frame(minWidth: 420, minHeight: 360)
-                #endif
-                .consentSheet(consent)
+            #if os(macOS)
+                .frame(minWidth: 420, minHeight: 360)
+            #endif
+            .consentSheet(consent)
         }
-        .fileImporter(isPresented: $choosingAttachment, allowedContentTypes: MeshAttachmentFile.contentTypes) { result in
+        .fileImporter(isPresented: $choosingAttachment, allowedContentTypes: MeshAttachmentFile.contentTypes) {
+            result in
             switch result {
             case .success(let url): Task { _ = await mesh.attachFile(url) }
             case .failure(let error):
-                if (error as NSError).code != NSUserCancelledError { fileProblem = "The file could not be opened. Try again." }
+                if (error as NSError).code != NSUserCancelledError {
+                    fileProblem = "The file could not be opened. Try again."
+                }
             }
         }
     }
@@ -201,9 +206,18 @@ struct MeshChatDetailView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(p.accent)
                 .disabled(model.onDeviceVoice.isPreparing)
-                .help(model.onDeviceVoice.isPreparing ? "Preparing voice" : model.onDeviceVoice.isRunning ? "Stop Voice" : "Talk")
-                .accessibilityLabel(model.onDeviceVoice.isPreparing ? "Preparing voice" : model.onDeviceVoice.isRunning ? "Stop Voice" : "Talk")
-                .accessibilityValue(model.onDeviceVoice.isPreparing ? "Microphone starting" : model.onDeviceVoice.isRunning ? "Microphone on" : "Microphone off")
+                .help(
+                    model.onDeviceVoice.isPreparing
+                        ? "Preparing voice" : model.onDeviceVoice.isRunning ? "Stop Voice" : "Talk"
+                )
+                .accessibilityLabel(
+                    model.onDeviceVoice.isPreparing
+                        ? "Preparing voice" : model.onDeviceVoice.isRunning ? "Stop Voice" : "Talk"
+                )
+                .accessibilityValue(
+                    model.onDeviceVoice.isPreparing
+                        ? "Microphone starting" : model.onDeviceVoice.isRunning ? "Microphone on" : "Microphone off"
+                )
                 .accessibilityIdentifier("mesh.composer.mic")
                 if running {
                     Button {

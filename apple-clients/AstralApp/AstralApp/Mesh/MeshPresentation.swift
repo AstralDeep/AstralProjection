@@ -103,7 +103,8 @@ nonisolated enum MeshPresentation {
         case .effectClassExhausted: return "This kind of action has reached its limit for today."
         case .modelSpendExhausted: return "This device has used its model allowance for today."
         case .soloNeedsConsent:
-            return "This device has not heard from your other devices today, so each action outside the mesh needs your approval."
+            return
+                "This device has not heard from your other devices today, so each action outside the mesh needs your approval."
         case .stale: return "This device has not heard from your mesh recently."
         case .stopped: return "The mesh is stopped."
         case .notAMember: return "This device is no longer in the mesh."

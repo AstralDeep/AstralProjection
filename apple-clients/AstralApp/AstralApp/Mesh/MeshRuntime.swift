@@ -3,8 +3,8 @@
 
 import AstralCore
 import Foundation
-import Observation
 import OSLog
+import Observation
 
 @MainActor
 protocol MeshSpeechSink: AnyObject {
@@ -508,7 +508,9 @@ final class MeshRuntime {
     var kernelVersion: String? { kernel?.version() }
 
     var syncSummary: MeshSyncSummary {
-        let others = sync.devices.filter { device in members.first { $0.memberId == device.memberId }?.isThisDevice != true }
+        let others = sync.devices.filter { device in
+            members.first { $0.memberId == device.memberId }?.isThisDevice != true
+        }
         if others.isEmpty { return members.count <= 1 ? .alone : .unknown }
         if let behind = others.first(where: { $0.state != .synced }) {
             return .waiting(device: behind.label, since: behind.lastSeen)
@@ -579,7 +581,8 @@ final class MeshRuntime {
             var diagnosticCode = (error as NSError).code
             if case MeshSecretStoreError.keychain(let status) = error { diagnosticCode = Int(status) }
             Logger(subsystem: "com.personalailabs.astraldeep.mesh", category: "runtime").error(
-                "mesh_open_failed type=\(String(reflecting: type(of: error)), privacy: .public) code=\(diagnosticCode, privacy: .public)")
+                "mesh_open_failed type=\(String(reflecting: type(of: error)), privacy: .public) code=\(diagnosticCode, privacy: .public)"
+            )
             if mailboxAddress != nil, Self.isMailboxRefusal(error) {
                 storeMailbox(nil)
                 phase = .closed
@@ -610,7 +613,11 @@ final class MeshRuntime {
 
     private func storeMailbox(_ address: String?) {
         mailboxAddress = address
-        if let address { defaults.set(address, forKey: Self.mailboxKey) } else { defaults.removeObject(forKey: Self.mailboxKey) }
+        if let address {
+            defaults.set(address, forKey: Self.mailboxKey)
+        } else {
+            defaults.removeObject(forKey: Self.mailboxKey)
+        }
     }
 
     private static func isMailboxRefusal(_ error: Error) -> Bool {
@@ -779,7 +786,8 @@ final class MeshRuntime {
         let chat: String
         if let chatId {
             chat = chatId
-        } else if let created = await attempt({ [title = Self.title(from: trimmed)] in try $0.createChat(title: title) }) {
+        } else if let created = await attempt({ [title = Self.title(from: trimmed)] in try $0.createChat(title: title) }
+        ) {
             chat = created
         } else {
             return false
@@ -805,8 +813,8 @@ final class MeshRuntime {
         startTurn(
             chatId: request.chatId, announcesFailure: true,
             interrupt: { kernel, _ in try kernel.interruptRequest(requestId: id) },
-            steer: { kernel, _, text in try kernel.steerRequest(requestId: id, text: text) }
-        ) { try await $0.answerRequest(requestId: id) }
+            steer: { kernel, _, text in try kernel.steerRequest(requestId: id, text: text) },
+            run: { try await $0.answerRequest(requestId: id) })
         await Task.yield()
         await refreshRequests()
         if request.chatId == currentChatId { await reloadChat(request.chatId) }
@@ -1138,9 +1146,13 @@ final class MeshRuntime {
             return false
         }
         let chatId: String
-        if let current = currentChatId { chatId = current }
-        else if let created = await newChat() { chatId = created }
-        else { return false }
+        if let current = currentChatId {
+            chatId = current
+        } else if let created = await newChat() {
+            chatId = created
+        } else {
+            return false
+        }
         guard attachmentDrafts[chatId, default: []].count < MeshAttachmentFile.maximumCount else {
             notice = "A message can hold up to eight files."
             return false
@@ -1148,10 +1160,12 @@ final class MeshRuntime {
         importingAttachment = true
         let session = attachmentSession
         defer { if attachmentSession == session { importingAttachment = false } }
-        guard let attachment = await attempt({ kernel in
-            let input = try MeshAttachmentFile.read(url)
-            return try kernel.addAttachment(chatId: chatId, bytes: input.bytes, mime: input.mime, name: input.name)
-        }) else { return false }
+        guard
+            let attachment = await attempt({ kernel in
+                let input = try MeshAttachmentFile.read(url)
+                return try kernel.addAttachment(chatId: chatId, bytes: input.bytes, mime: input.mime, name: input.name)
+            })
+        else { return false }
         guard attachmentSession == session else { return false }
         attachmentDrafts[chatId, default: []].append(attachment)
         await refreshChats()
@@ -1201,9 +1215,12 @@ final class MeshRuntime {
             let eventId = await attempt(
                 allowRetired: true,
                 { kernel in
-            if attachments.isEmpty { return try kernel.sendMessage(chatId: chatId, text: trimmed, continues: continues) }
-            return try kernel.sendMessage(chatId: chatId, text: trimmed, continues: continues, attachments: attachments)
-        })
+                    if attachments.isEmpty {
+                        return try kernel.sendMessage(chatId: chatId, text: trimmed, continues: continues)
+                    }
+                    return try kernel.sendMessage(
+                        chatId: chatId, text: trimmed, continues: continues, attachments: attachments)
+                })
         else { return false }
         guard isReady, wakeSession == session else { return true }
         attachmentDrafts[chatId] = nil
@@ -1215,8 +1232,8 @@ final class MeshRuntime {
             chatId: chatId, reservation: reservation,
             interrupt: { kernel, chat in try kernel.interruptMessage(chatId: chat, messageId: eventId) },
             steer: { kernel, chat, text in try kernel.steerMessage(chatId: chat, messageId: eventId, text: text) },
-            cancelPending: { kernel, chat in try await kernel.cancelPendingMessage(chatId: chat, messageId: eventId) }
-        ) { try await $0.runMessage(chatId: chatId, messageId: eventId) }
+            cancelPending: { kernel, chat in try await kernel.cancelPendingMessage(chatId: chat, messageId: eventId) },
+            run: { try await $0.runMessage(chatId: chatId, messageId: eventId) })
         return true
     }
 
@@ -1307,9 +1324,11 @@ final class MeshRuntime {
         let chatId = currentChatId ?? "surface:" + surfaceId
         guard let reservation = reserveTurn(chatId: chatId), let kernel else { return }
         let session = wakeSession
-        let work = launchWork(chatId: chatId, id: reservation, kernel: kernel, announcesFailure: true) {
-            try await $0.act(surfaceId: surfaceId, componentId: componentId, capability: capability, args: args)
-        }
+        let work = launchWork(
+            chatId: chatId, id: reservation, kernel: kernel, announcesFailure: true,
+            operation: {
+                try await $0.act(surfaceId: surfaceId, componentId: componentId, capability: capability, args: args)
+            })
         let result = await work.task.value
         guard isReady, wakeSession == session else { return }
         if case .success(let value) = result, let value, value.refused {
@@ -1622,11 +1641,11 @@ final class MeshRuntime {
         turns[chatId] = MeshTurnState(turnId: turnId, running: true)
         _ = launchWork(
             chatId: chatId, id: id, kernel: kernel, announcesFailure: announcesFailure, interrupt: interrupt,
-            steer: steer, cancelPending: cancelPending
-        ) { kernel in
-            try await run(kernel)
-            return nil
-        }
+            steer: steer, cancelPending: cancelPending,
+            operation: { kernel in
+                try await run(kernel)
+                return nil
+            })
     }
 
     private func launchWork(
@@ -1678,10 +1697,10 @@ final class MeshRuntime {
             startTurn(
                 chatId: target.chatId, reservation: id, turnId: target.turnId,
                 interrupt: { kernel, chat in try kernel.interruptTurn(chatId: chat, turnId: target.turnId) },
-                steer: { kernel, chat, text in try kernel.steerTurn(chatId: chat, turnId: target.turnId, text: text) }
-            ) {
-                try await $0.resumeTurn(chatId: target.chatId, turnId: target.turnId)
-            }
+                steer: { kernel, chat, text in try kernel.steerTurn(chatId: chat, turnId: target.turnId, text: text) },
+                run: {
+                    try await $0.resumeTurn(chatId: target.chatId, turnId: target.turnId)
+                })
         }
         let pending = (try? await call({ try await $0.pendingOrdinaryMessages() })) ?? []
         guard isReady, wakeSession == session else { return }
@@ -1695,10 +1714,10 @@ final class MeshRuntime {
                 },
                 cancelPending: { kernel, chat in
                     try await kernel.cancelPendingMessage(chatId: chat, messageId: message.messageId)
-                }
-            ) {
-                try await $0.resumePendingMessage(chatId: message.chatId, messageId: message.messageId)
-            }
+                },
+                run: {
+                    try await $0.resumePendingMessage(chatId: message.chatId, messageId: message.messageId)
+                })
         }
     }
 

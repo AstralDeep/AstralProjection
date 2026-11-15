@@ -1,8 +1,8 @@
 // Verifies that model text cannot render links or images, that surfaces keep only handle-free properties, and that branch trees and presentation text are stable.
 // It also checks the app mode store, provider-free helpers and the QR renderer that the mesh screens rely on.
 
-@testable import AstralDeep
 import AstralCore
+@testable import AstralDeep
 import XCTest
 
 final class MeshChatMappingTests: XCTestCase {
@@ -40,13 +40,15 @@ final class MeshChatMappingTests: XCTestCase {
     }
 
     func testNeutralizedTextShowsTheOriginalCharacters() {
-        let text = "See [docs](https://x.example) and ![alt](https://y.example/i.png) <b>bold</b> www.z.example a@b.example"
+        let text =
+            "See [docs](https://x.example) and ![alt](https://y.example/i.png) <b>bold</b> www.z.example a@b.example"
         let shown = String(InlineMarkdown.attributed(MeshModelText.neutralize(text)).characters)
         XCTAssertEqual(shown.replacingOccurrences(of: String(MeshModelText.joiner), with: ""), text)
     }
 
     func testNeutralizeLeavesPlainTextUnchanged() {
-        XCTAssertEqual(MeshModelText.neutralize("plain **bold** and `code` 3.5: yes"), "plain **bold** and `code` 3.5: yes")
+        XCTAssertEqual(
+            MeshModelText.neutralize("plain **bold** and `code` 3.5: yes"), "plain **bold** and `code` 3.5: yes")
         XCTAssertEqual(MeshModelText.neutralize(""), "")
     }
 
@@ -188,7 +190,10 @@ final class MeshChatMappingTests: XCTestCase {
                 "Waiting to sync with Sam's iPhone."))
         XCTAssertEqual(MeshPresentation.groupedCode("12345678"), "1234 5678")
         XCTAssertEqual(MeshPresentation.groupedCode("123"), "123")
-        for refusal in [MeshAllowance.Refusal.periodExhausted, .effectClassExhausted, .modelSpendExhausted, .soloNeedsConsent, .stale, .stopped, .notAMember] {
+        for refusal in [
+            MeshAllowance.Refusal.periodExhausted, .effectClassExhausted, .modelSpendExhausted, .soloNeedsConsent,
+            .stale, .stopped, .notAMember,
+        ] {
             XCTAssertFalse(MeshPresentation.refusal(refusal).isEmpty)
         }
     }

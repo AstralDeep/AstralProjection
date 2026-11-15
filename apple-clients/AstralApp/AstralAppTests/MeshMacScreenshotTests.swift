@@ -34,9 +34,12 @@
             }
         }
 
-        private func capture<V: View>(_ name: String, _ view: V, width: CGFloat, height: CGFloat, settle: Double = 1.0) async {
+        private func capture<V: View>(_ name: String, _ view: V, width: CGFloat, height: CGFloat, settle: Double = 1.0)
+            async
+        {
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: width, height: height), styleMask: [.titled, .closable, .resizable],
+                contentRect: NSRect(x: 0, y: 0, width: width, height: height),
+                styleMask: [.titled, .closable, .resizable],
                 backing: .buffered, defer: false)
             let hosting = NSHostingView(rootView: view)
             window.contentView = hosting
@@ -182,7 +185,8 @@
             await rig.runtime.open()
             await rig.runtime.settle()
             let start = destination(rig.runtime)
-            await capture("mac-" + name, rig.host(MeshRootView(start: start), width: 1280, height: 820), width: 1280, height: 820)
+            await capture(
+                "mac-" + name, rig.host(MeshRootView(start: start), width: 1280, height: 820), width: 1280, height: 820)
             await rig.runtime.close()
         }
 
@@ -265,11 +269,13 @@
             await capture(
                 "mac-join",
                 rig.host(
-                    MeshJoinStartView(onShowCode: {}, onBack: {}).padding(24).frame(maxWidth: 480), width: 760, height: 640),
+                    MeshJoinStartView(onShowCode: {}, onBack: {}).padding(24).frame(maxWidth: 480), width: 760,
+                    height: 640),
                 width: 760, height: 640)
             await capture(
                 "mac-recovery",
-                rig.host(MeshRecoveryView(words: (1...24).map { "word\($0)" }), width: 760, height: 700), width: 760, height: 700)
+                rig.host(MeshRecoveryView(words: (1...24).map { "word\($0)" }), width: 760, height: 700), width: 760,
+                height: 700)
             await capture(
                 "mac-restore",
                 rig.host(MeshRestoreView(onCancel: {}).padding(24), width: 760, height: 640), width: 760, height: 640)
@@ -278,8 +284,10 @@
                 "mac-outcome-unknown",
                 rig.host(
                     MeshUnknownOutcomeCard(
-                        outcome: MeshUnknownOutcome(stepId: "s1", tool: "mail.send", summary: "Send the weekly plan to the lab"))
-                        .padding(20).frame(maxWidth: 520),
+                        outcome: MeshUnknownOutcome(
+                            stepId: "s1", tool: "mail.send", summary: "Send the weekly plan to the lab")
+                    )
+                    .padding(20).frame(maxWidth: 520),
                     width: 560, height: 260),
                 width: 560, height: 260)
             let shell = Rig(.shell)
@@ -287,7 +295,8 @@
             await shell.runtime.refreshTools()
             await capture(
                 "mac-permissions",
-                shell.host(NavigationStack { MeshPermissionsView() }, width: 1000, height: 640), width: 1000, height: 640)
+                shell.host(NavigationStack { MeshPermissionsView() }, width: 1000, height: 640), width: 1000,
+                height: 640)
             if let pending = shell.runtime.pendingConsents.first, let prompt = shell.runtime.prompt(for: pending) {
                 await capture(
                     "mac-consent",

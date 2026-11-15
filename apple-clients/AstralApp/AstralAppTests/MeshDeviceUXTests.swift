@@ -13,8 +13,12 @@ final class MeshDeviceUXTests: XCTestCase {
         return calendar
     }
 
-    private func member(attested: Bool = true, this: Bool = false, seen: Date? = nil, path: MeshPath = .none) -> MeshMember {
-        MeshMember(memberId: "sha256:m", label: "Phone", kind: .pocket, isThisDevice: this, attested: attested, lastSeen: seen, path: path)
+    private func member(attested: Bool = true, this: Bool = false, seen: Date? = nil, path: MeshPath = .none)
+        -> MeshMember
+    {
+        MeshMember(
+            memberId: "sha256:m", label: "Phone", kind: .pocket, isThisDevice: this, attested: attested, lastSeen: seen,
+            path: path)
     }
 
     private func sync(_ state: MeshDeviceSync.State, seen: Date?, path: MeshPath) -> MeshDeviceSync {
@@ -56,7 +60,8 @@ final class MeshDeviceUXTests: XCTestCase {
 
     func testUnverifiedDevicesNeedSignInAndThisDeviceReadsVerified() {
         XCTAssertEqual(MeshPresentation.deviceStatus(member(attested: false), sync: nil), "Needs sign-in to verify")
-        XCTAssertEqual(MeshPresentation.deviceStatus(member(attested: false, this: true), sync: nil), "Needs sign-in to verify")
+        XCTAssertEqual(
+            MeshPresentation.deviceStatus(member(attested: false, this: true), sync: nil), "Needs sign-in to verify")
         XCTAssertEqual(MeshPresentation.deviceStatus(member(this: true), sync: nil), "Verified")
     }
 

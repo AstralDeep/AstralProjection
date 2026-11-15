@@ -230,7 +230,9 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
     }
 
     func addAttachment(chatId: String, bytes: Data, mime: String, name: String) throws -> MeshAttachment {
-        try mapped { KernelMapping.attachment(try kernel.addAttachment(chatId: chatId, bytes: bytes, mime: mime, name: name)) }
+        try mapped {
+            KernelMapping.attachment(try kernel.addAttachment(chatId: chatId, bytes: bytes, mime: mime, name: name))
+        }
     }
 
     func fetchAttachment(handle: String) async throws -> Data {
@@ -265,7 +267,8 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
             }
             guard message.author == .owner else { return message.eventId }
             guard let parent = message.parentId else {
-                throw MeshKernelError.refused("This message starts the chat, so there is nothing before it to branch from.")
+                throw MeshKernelError.refused(
+                    "This message starts the chat, so there is nothing before it to branch from.")
             }
             return parent
         }
@@ -275,7 +278,8 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
         -> MeshActResult
     {
         do {
-            let body = try JSONEncoder().encode(JSONValue.object(["capability": .string(capability), "args": .object(args)]))
+            let body = try JSONEncoder().encode(
+                JSONValue.object(["capability": .string(capability), "args": .object(args)]))
             let result = try await kernel.act(
                 surfaceId: surfaceId, componentId: componentId, actionJson: String(decoding: body, as: UTF8.self))
             return MeshActResult(status: result.status, code: result.code, text: result.text)
@@ -438,7 +442,9 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
         do { _ = try await kernel.answerRequest(requestId: requestId) } catch { throw KernelMapping.error(error) }
     }
 
-    func grantTool(name: String, scope: String) throws { try mapped { _ = try kernel.grantTool(tool: name, scope: scope) } }
+    func grantTool(name: String, scope: String) throws {
+        try mapped { _ = try kernel.grantTool(tool: name, scope: scope) }
+    }
 
     func revokeTool(name: String, scope: String) throws {
         try mapped { _ = try kernel.revokeTool(tool: name, scope: scope) }
@@ -545,11 +551,15 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
     }
 
     func handOffRun(runId: String, memberId: String) async throws {
-        do { try await activeRuns().handOffRun(runId: runId, memberId: memberId) } catch { throw KernelMapping.error(error) }
+        do { try await activeRuns().handOffRun(runId: runId, memberId: memberId) } catch {
+            throw KernelMapping.error(error)
+        }
     }
 
     func takeOverRun(runId: String) async throws -> MeshTakeOver {
-        do { return MeshTakeOver(unknownSteps: try await activeRuns().takeOverRun(runId: runId).unknownSteps.count) } catch {
+        do {
+            return MeshTakeOver(unknownSteps: try await activeRuns().takeOverRun(runId: runId).unknownSteps.count)
+        } catch {
             throw KernelMapping.error(error)
         }
     }

@@ -1,8 +1,8 @@
 // Verifies the voice link: owner transcripts become messages and turns, untrusted audio is refused, spoken text streams to the pipeline, and interruption maps to the kernel.
 // It uses MeshRuntime over the in-memory kernel and a recording speech sink in place of the voice pipeline.
 
-@testable import AstralDeep
 import AstralCore
+@testable import AstralDeep
 import XCTest
 
 final class MeshVoiceLinkTests: XCTestCase {

@@ -74,8 +74,12 @@ final class MeshRequestTests: XCTestCase {
         defer { h.cleanUp() }
         await h.runtime.open()
         h.kernel.setMembers([
-            MeshMember(memberId: me, label: "Mac", kind: .desktop, isThisDevice: true, attested: true, lastSeen: nil, path: .none),
-            MeshMember(memberId: phone, label: "Phone", kind: .pocket, isThisDevice: false, attested: true, lastSeen: nil, path: .direct),
+            MeshMember(
+                memberId: me, label: "Mac", kind: .desktop, isThisDevice: true, attested: true, lastSeen: nil,
+                path: .none),
+            MeshMember(
+                memberId: phone, label: "Phone", kind: .pocket, isThisDevice: false, attested: true, lastSeen: nil,
+                path: .direct),
         ])
         await h.runtime.refreshAll()
         let other = try XCTUnwrap(h.runtime.members.first { !$0.isThisDevice })
@@ -170,7 +174,8 @@ final class MeshRequestTests: XCTestCase {
 
     func testRefusalCodesHaveTextAndEveryRefusalCodeIsADottedKernelCode() {
         for reason in MeshRequestRefusal.allCases {
-            XCTAssertTrue(reason.rawValue.range(of: #"^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$"#, options: .regularExpression) != nil)
+            XCTAssertTrue(
+                reason.rawValue.range(of: #"^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$"#, options: .regularExpression) != nil)
             XCTAssertEqual(MeshPresentation.requestRefusal(reason.rawValue), "Refused: " + reason.reason)
             XCTAssertFalse(reason.title.isEmpty)
         }

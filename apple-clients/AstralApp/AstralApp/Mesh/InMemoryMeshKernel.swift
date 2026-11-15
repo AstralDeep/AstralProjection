@@ -410,7 +410,8 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         return try appendMessage(chatId: chatId, text: text, continues: continues, attachments: attachments)
     }
 
-    private func appendMessage(chatId: String, text: String, continues: String?, attachments: [String]) throws -> String {
+    private func appendMessage(chatId: String, text: String, continues: String?, attachments: [String]) throws -> String
+    {
         guard !text.isEmpty || !attachments.isEmpty else { throw MeshKernelError.refused("message.empty") }
         let id = nextId("event")
         let now = clock()

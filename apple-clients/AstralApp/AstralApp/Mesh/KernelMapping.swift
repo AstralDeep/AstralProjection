@@ -13,7 +13,8 @@ nonisolated enum KernelMapping {
         let enrolled = value.state == .enrolled
         return MeshStatus(
             hasMesh: enrolled, meshId: value.meshId, deviceId: value.deviceId.isEmpty ? nil : value.deviceId,
-            attested: !value.unattested, stopped: value.stopped, hardwareBacked: value.hardwareBacked, stopLevel: value.stop)
+            attested: !value.unattested, stopped: value.stopped, hardwareBacked: value.hardwareBacked,
+            stopLevel: value.stop)
     }
 
     static func deviceKind(_ text: String) -> MeshDeviceKind { MeshDeviceKind(rawValue: text) ?? .node }
@@ -71,7 +72,8 @@ nonisolated enum KernelMapping {
 
     static func pairingOffer(_ offer: PairingOffer, now _: Date = Date()) -> MeshPairingOffer {
         MeshPairingOffer(
-            shortCode: offer.code, payload: offer.payload, expiresAt: Date(timeIntervalSince1970: Double(offer.expiresS)))
+            shortCode: offer.code, payload: offer.payload,
+            expiresAt: Date(timeIntervalSince1970: Double(offer.expiresS)))
     }
 
     static func pairingPreview(_ preview: PairingPreview, now _: Date = Date()) -> MeshPairingPreview {
@@ -81,7 +83,8 @@ nonisolated enum KernelMapping {
     }
 
     static func invitation(_ value: Invitation, now _: Date = Date()) -> MeshInvitation {
-        MeshInvitation(code: value.code, payload: value.payload, expiresAt: Date(timeIntervalSince1970: Double(value.expiresS)))
+        MeshInvitation(
+            code: value.code, payload: value.payload, expiresAt: Date(timeIntervalSince1970: Double(value.expiresS)))
     }
 
     static func accepted(_ value: InvitationAccepted, now _: Date = Date()) -> MeshInvitationAccepted {
@@ -289,7 +292,8 @@ nonisolated enum KernelMapping {
                 return [
                     event(
                         chat, turn,
-                        .failed(failureText(code: code ?? reason, fallback: "The assistant could not finish this turn.")))
+                        .failed(
+                            failureText(code: code ?? reason, fallback: "The assistant could not finish this turn.")))
                 ]
             }
         }
@@ -304,7 +308,10 @@ nonisolated enum KernelMapping {
         ("attachment.too_large", "Choose a file no larger than 16 MB."),
         ("attachment.too_many", "A message can hold up to eight files."),
         ("attachment.empty", "That file is empty."),
-        ("attachment.chunks_unavailable", "Get the file from its attachment card before continuing. The device holding it must be connected."),
+        (
+            "attachment.chunks_unavailable",
+            "Get the file from its attachment card before continuing. The device holding it must be connected."
+        ),
         ("attachment.unavailable", "An attachment in this chat could not be opened. Get the file before continuing."),
         ("attachment.context_too_large", "The selected attachment text exceeds the 256 KiB answer limit."),
         ("attachment.label", "Files cannot be attached to a chat that holds secrets."),
@@ -339,7 +346,10 @@ nonisolated enum KernelMapping {
         ("gate.", "A safety check refused this step."),
         ("consent.declined", MeshKernelError.consentDenied.message),
         ("signer.denied", MeshKernelError.consentDenied.message),
-        ("config.no_issuer", "The sign-in service could not be reached when the app started. Open the app again with a connection."),
+        (
+            "config.no_issuer",
+            "The sign-in service could not be reached when the app started. Open the app again with a connection."
+        ),
         ("mesh.already_enrolled", "This device already belongs to a mesh."),
         ("mesh.not_enrolled", "This device has no mesh yet."),
         ("attestation.", "The sign-in could not be verified for this mesh."),
@@ -392,7 +402,8 @@ nonisolated enum KernelMapping {
             }
         case let turns as TurnsError:
             if case .Failed(let code, _) = turns {
-                return code.hasPrefix("consent.declined") ? MeshKernelError.consentDenied
+                return code.hasPrefix("consent.declined")
+                    ? MeshKernelError.consentDenied
                     : MeshKernelError.refused(failureText(code: code))
             }
             return turns

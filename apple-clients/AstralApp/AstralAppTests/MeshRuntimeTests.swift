@@ -1,8 +1,8 @@
 // Verifies MeshRuntime against an in-memory kernel: opening, enrollment, pairing, chats and branches, turns, consent, models, allowance, sync state and voice.
 // Each test drives kernel changes through the listener so the published state is checked the way the screens read it.
 
-@testable import AstralDeep
 import AstralCore
+@testable import AstralDeep
 import XCTest
 
 final class MeshRuntimeTests: XCTestCase {
@@ -29,7 +29,9 @@ final class MeshRuntimeTests: XCTestCase {
     func testBuildWithoutRuntimeFailsHonestly() async {
         let defaults = UserDefaults(suiteName: "mesh.unavailable." + UUID().uuidString)!
         let runtime = MeshRuntime(
-            makeKernel: { _, _, _, _, _ in throw MeshKernelError.unavailable("This build does not include the mesh runtime yet.") },
+            makeKernel: { _, _, _, _, _ in
+                throw MeshKernelError.unavailable("This build does not include the mesh runtime yet.")
+            },
             makeKeys: {
                 try DeviceKeys(
                     store: MeshMemorySecretStore(), defaults: UserDefaults(suiteName: "mesh.k." + UUID().uuidString)!,
@@ -786,7 +788,9 @@ final class MeshRuntimeTests: XCTestCase {
         XCTAssertTrue(h.kernel.calls.contains { $0.name == "act" && $0.detail.hasPrefix("s/c/cap?value=") })
         h.kernel.actResult = MeshActResult(status: "refused", code: "gate.permission_denied", text: "")
         await h.runtime.act(surfaceId: "s", componentId: "c", capability: "cap")
-        XCTAssertEqual(h.runtime.notice, KernelMapping.failureText(code: "gate.permission_denied", fallback: "That action did not run."))
+        XCTAssertEqual(
+            h.runtime.notice,
+            KernelMapping.failureText(code: "gate.permission_denied", fallback: "That action did not run."))
         XCTAssertTrue(h.runtime.notice?.contains("safety check") == true)
         h.runtime.notice = nil
         h.kernel.actResult = MeshActResult(status: "error", code: nil, text: "boom")

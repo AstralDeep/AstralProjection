@@ -1,9 +1,9 @@
 // Drives two real kernels on loopback through RealMeshKernel with real device keys, the real host signer and a recording consent presenter.
 // It covers mesh creation, pairing with a roster consent, chat sync both ways, denial, refused actions and the issuer key cache.
 
+import AstralCore
 @testable import AstralDeep
 import AstralKernel
-import AstralCore
 import CryptoKit
 import XCTest
 
@@ -86,7 +86,8 @@ final class RealMeshKernelTests: XCTestCase {
         let presenter = RecordingPresenter()
         let changes = ChangeLog()
         let config = MeshKernelConfig(
-            dataDirectory: directory, deviceLabel: label, deviceKind: kind, operationsSecret: try keys.operationsSecret(),
+            dataDirectory: directory, deviceLabel: label, deviceKind: kind,
+            operationsSecret: try keys.operationsSecret(),
             wrapSecret: try keys.wrapSecret(), installMarker: try keys.installMarker(), restoredInstall: false,
             mailbox: mailbox)
         var network = KernelNetworking.loopback
@@ -181,7 +182,9 @@ final class RealMeshKernelTests: XCTestCase {
         XCTAssertEqual(Set(roster.map(\.label)), ["Mac", "Phone"])
         try await until("the phone to read the chat") { (try? phone.kernel.chat(chatId: chat))?.messages.count == 1 }
         let second = try phone.kernel.sendMessage(chatId: chat, text: "from phone", continues: nil)
-        try await until("the mac to read the phone message") { (try? mac.kernel.chat(chatId: chat))?.messages.count == 2 }
+        try await until("the mac to read the phone message") {
+            (try? mac.kernel.chat(chatId: chat))?.messages.count == 2
+        }
         let macView = try mac.kernel.chat(chatId: chat)
         let phoneView = try await phoneViewWhenCaughtUp(phone, chat: chat, count: 2)
         XCTAssertEqual(Set(macView.messages.map(\.eventId)), Set([first, second]))
@@ -222,7 +225,9 @@ final class RealMeshKernelTests: XCTestCase {
                 $0 as? MeshKernelError,
                 .refused("One of the words is not on the recovery word list. Check the spelling."))
         }
-        XCTAssertThrowsError(try fresh.kernel.recoverWithWords(words: kit.words.joined(separator: " "), backupPath: nil)) {
+        XCTAssertThrowsError(
+            try fresh.kernel.recoverWithWords(words: kit.words.joined(separator: " "), backupPath: nil)
+        ) {
             XCTAssertEqual(
                 $0 as? MeshKernelError,
                 .refused("Choose a backup file. This device holds no copy of your mesh."))
@@ -276,8 +281,11 @@ final class RealMeshKernelTests: XCTestCase {
         let fetched = try await phone.kernel.fetchAttachment(handle: attachment.handle)
         XCTAssertEqual(fetched, bytes)
         let elsewhere = try mac.kernel.createChat(title: "Other chat")
-        XCTAssertThrowsError(try mac.kernel.sendMessage(chatId: elsewhere, text: "wrong chat", continues: nil, attachments: [attachment.id]))
-        XCTAssertThrowsError(try mac.kernel.addAttachment(chatId: chat, bytes: Data(), mime: "text/plain", name: "empty.txt"))
+        XCTAssertThrowsError(
+            try mac.kernel.sendMessage(
+                chatId: elsewhere, text: "wrong chat", continues: nil, attachments: [attachment.id]))
+        XCTAssertThrowsError(
+            try mac.kernel.addAttachment(chatId: chat, bytes: Data(), mime: "text/plain", name: "empty.txt"))
         await mac.kernel.stopNetwork()
         await phone.kernel.stopNetwork()
     }

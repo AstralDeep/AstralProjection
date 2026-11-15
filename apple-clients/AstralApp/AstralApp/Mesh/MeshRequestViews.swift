@@ -18,8 +18,11 @@ struct MeshRequestRow: View {
             HStack(alignment: .firstTextBaseline) {
                 Image(systemName: forThisDevice ? "tray.and.arrow.down" : "paperplane").foregroundStyle(p.accent)
                     .accessibilityHidden(true)
-                Text(forThisDevice ? "From " + mesh.memberLabel(request.fromMember) : "To " + mesh.memberLabel(request.toMember))
-                    .font(ConsoleTypography.headline)
+                Text(
+                    forThisDevice
+                        ? "From " + mesh.memberLabel(request.fromMember) : "To " + mesh.memberLabel(request.toMember)
+                )
+                .font(ConsoleTypography.headline)
                 Spacer()
                 Text(MeshPresentation.requestState(request.state))
                     .font(ConsoleTypography.caption).foregroundStyle(stateColor)

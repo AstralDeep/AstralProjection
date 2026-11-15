@@ -422,11 +422,11 @@ final class MeshResumeSchedulingTests: XCTestCase {
         }
         let work = MeshTurnWork(
             id: UUID(), kernel: kernel, chatId: chat, waitForEntry: { await entry.wait() },
-            cancelPending: { _, _ in await cancellation.wait() }
-        ) { _ in
-            _ = calls.record(.zero)
-            return nil
-        }
+            cancelPending: { _, _ in await cancellation.wait() },
+            operation: { _ in
+                _ = calls.record(.zero)
+                return nil
+            })
         let entered = await eventually { entry.entered == 1 }
         XCTAssertTrue(entered)
         let retirement = work.retire(explicitStop: true)
@@ -456,11 +456,11 @@ final class MeshResumeSchedulingTests: XCTestCase {
         defer { entry.release() }
         let work = MeshTurnWork(
             id: UUID(), kernel: kernel, chatId: chat, waitForEntry: { await entry.wait() },
-            cancelPending: { _, _ in _ = calls.record(.zero) }
-        ) { _ in
-            _ = calls.record(.zero)
-            return nil
-        }
+            cancelPending: { _, _ in _ = calls.record(.zero) },
+            operation: { _ in
+                _ = calls.record(.zero)
+                return nil
+            })
         let entered = await eventually { entry.entered == 1 }
         XCTAssertTrue(entered)
         let retirement = work.retire()
@@ -477,11 +477,11 @@ final class MeshResumeSchedulingTests: XCTestCase {
         defer { entry.release() }
         let work = MeshTurnWork(
             id: UUID(), kernel: kernel, chatId: chat, waitForEntry: { await entry.wait() },
-            cancelPending: { _, _ in throw MeshKernelError.refused("Stop was refused") }
-        ) { _ in
-            XCTFail("Retired input entered")
-            return nil
-        }
+            cancelPending: { _, _ in throw MeshKernelError.refused("Stop was refused") },
+            operation: { _ in
+                XCTFail("Retired input entered")
+                return nil
+            })
         let entered = await eventually { entry.entered == 1 }
         XCTAssertTrue(entered)
         let retirement = work.retire(explicitStop: true)
@@ -508,12 +508,12 @@ final class MeshResumeSchedulingTests: XCTestCase {
         }
         let work = MeshTurnWork(
             id: UUID(), kernel: kernel, chatId: chat,
-            interrupt: { kernel, chat in try kernel.interruptTurn(chatId: chat, turnId: "expected-turn") }
-        ) { kernel in
-            await entry.wait()
-            try await kernel.runTurn(chatId: chat)
-            return nil
-        }
+            interrupt: { kernel, chat in try kernel.interruptTurn(chatId: chat, turnId: "expected-turn") },
+            operation: { kernel in
+                await entry.wait()
+                try await kernel.runTurn(chatId: chat)
+                return nil
+            })
         let entered = await eventually { entry.entered == 1 }
         XCTAssertTrue(entered)
         let retirement = work.retire()
@@ -557,12 +557,12 @@ final class MeshResumeSchedulingTests: XCTestCase {
                 own.interrupt()
                 own.release()
                 return true
-            }
-        ) { kernel in
-            await entry.wait()
-            try await kernel.runTurn(chatId: chat)
-            return nil
-        }
+            },
+            operation: { kernel in
+                await entry.wait()
+                try await kernel.runTurn(chatId: chat)
+                return nil
+            })
         let entered = await eventually { entry.entered == 1 }
         XCTAssertTrue(entered)
         let retirement = work.retire()
@@ -592,11 +592,13 @@ final class MeshResumeSchedulingTests: XCTestCase {
             native.release()
         }
         kernel.turnGate = { await native.wait() }
-        let work = MeshTurnWork(id: UUID(), kernel: kernel, chatId: chat) { kernel in
-            await entry.wait()
-            try await kernel.runTurn(chatId: chat)
-            return nil
-        }
+        let work = MeshTurnWork(
+            id: UUID(), kernel: kernel, chatId: chat,
+            operation: { kernel in
+                await entry.wait()
+                try await kernel.runTurn(chatId: chat)
+                return nil
+            })
         let entered = await eventually { entry.entered == 1 }
         XCTAssertTrue(entered)
         let retirement = work.retire()
@@ -638,12 +640,12 @@ final class MeshResumeSchedulingTests: XCTestCase {
             waitForRetry: { delay in
                 if retries.record(delay) >= 101 { await retryBarrier.wait() } else { await Task.yield() }
             },
-            interrupt: { kernel, chat in try kernel.interruptTurn(chatId: chat, turnId: "expected-turn") }
-        ) { kernel in
-            await entry.wait()
-            try await kernel.runTurn(chatId: chat)
-            return nil
-        }
+            interrupt: { kernel, chat in try kernel.interruptTurn(chatId: chat, turnId: "expected-turn") },
+            operation: { kernel in
+                await entry.wait()
+                try await kernel.runTurn(chatId: chat)
+                return nil
+            })
         let entered = await eventually { entry.entered == 1 }
         XCTAssertTrue(entered)
         let retirement = work.retire()

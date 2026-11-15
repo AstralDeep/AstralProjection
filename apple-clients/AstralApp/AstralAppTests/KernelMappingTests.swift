@@ -128,7 +128,8 @@ final class KernelMappingTests: XCTestCase {
             #"{"document":{"v":1,"surface":"new","root":"root","components":{"root":{"id":"root","type":"container","props":{},"children":["card"],"prov":"model"},"card":{"id":"card","type":"metric_card","props":{"title":"Focus"},"children":[],"prov":"tool"}},"capabilities":{}}}"#
         let patch =
             #"{"surface":"s1","ops":[{"op":"set","id":"card","prop":"title","value":"Updated"},{"op":"add","parent":"root","index":null,"component":{"id":"extra","type":"text","props":{},"children":[],"prov":"model"}},{"op":"remove","id":"missing"}]}"#
-        let badPatch = #"{"surface":"s1","ops":[{"op":"remove","id":"root"},{"op":"add","parent":"root","index":0,"component":{"id":"card","type":"x","props":{},"children":[],"prov":"model"}}]}"#
+        let badPatch =
+            #"{"surface":"s1","ops":[{"op":"remove","id":"root"},{"op":"add","parent":"root","index":0,"component":{"id":"card","type":"x","props":{},"children":[],"prov":"model"}}]}"#
         let badDocument = #"{"document":{"v":1,"surface":"new","root":"nope","components":{}}}"#
         let events = [
             event("s1", "ui.surface_put", 1, document), event("p1", "ui.patch", 2, patch),
@@ -157,15 +158,18 @@ final class KernelMappingTests: XCTestCase {
         let status = KernelMapping.status(
             AstralKernel.MeshStatus(
                 state: .enrolled, meshId: "m", deviceId: "d", feed: "f", marker: .matches, members: 2, unattested: true,
-                attestationDueS: nil, stop: 3, stopped: true, hardwareBacked: true, endpoint: .stopped, pairingOpen: false))
+                attestationDueS: nil, stop: 3, stopped: true, hardwareBacked: true, endpoint: .stopped,
+                pairingOpen: false))
         XCTAssertTrue(status.hasMesh)
         XCTAssertFalse(status.attested)
         XCTAssertTrue(status.stopped)
         XCTAssertEqual(status.stopLevel, 3)
         let restored = KernelMapping.status(
             AstralKernel.MeshStatus(
-                state: .restored, meshId: "m", deviceId: "d", feed: "f", marker: .mismatch, members: 2, unattested: false,
-                attestationDueS: nil, stop: 0, stopped: false, hardwareBacked: false, endpoint: .stopped, pairingOpen: false))
+                state: .restored, meshId: "m", deviceId: "d", feed: "f", marker: .mismatch, members: 2,
+                unattested: false,
+                attestationDueS: nil, stop: 0, stopped: false, hardwareBacked: false, endpoint: .stopped,
+                pairingOpen: false))
         XCTAssertFalse(restored.hasMesh)
 
         let allowance = KernelMapping.allowance(
@@ -217,8 +221,9 @@ final class KernelMappingTests: XCTestCase {
         XCTAssertEqual(
             KernelMapping.error(RunsFfiError.Failed(code: "signer.denied", message: "")) as? MeshKernelError,
             .consentDenied)
-        guard case MeshKernelError.refused(let text) = KernelMapping.error(
-            RunsFfiError.Failed(code: "run.unknown", message: ""))
+        guard
+            case MeshKernelError.refused(let text) = KernelMapping.error(
+                RunsFfiError.Failed(code: "run.unknown", message: ""))
         else { return XCTFail("expected refusal") }
         XCTAssertTrue(text.contains("run.unknown"))
         guard case MeshKernelError.storage = KernelMapping.error(KernelError.Store(code: "store.io", message: ""))
@@ -253,7 +258,9 @@ final class KernelMappingTests: XCTestCase {
         XCTAssertTrue(requested.contains(.consentRequested(requestId: "r")))
         XCTAssertEqual(KernelMapping.changes(.syncStateChanged), [.syncStateChanged])
         XCTAssertEqual(KernelMapping.changes(.chatChanged(chatId: nil)), [.chatChanged(chatId: nil)])
-        XCTAssertEqual(KernelMapping.changes(.pairing(progress: .failed(code: "pairing.expired"))), [.pairingFailed(code: "pairing.expired")])
+        XCTAssertEqual(
+            KernelMapping.changes(.pairing(progress: .failed(code: "pairing.expired"))),
+            [.pairingFailed(code: "pairing.expired")])
         XCTAssertTrue(KernelMapping.isEnrollmentComplete(.enrollment(state: .enrolled)))
         XCTAssertFalse(KernelMapping.isEnrollmentComplete(.enrollment(state: .creating)))
     }
@@ -326,14 +333,20 @@ final class KernelMappingTests: XCTestCase {
                 signingInput: input, digest: "d", untrustedSources: [], labels: [], requiresBiometry: true)
         }
         let input = Data("astral.roster/v1\n{}".utf8)
-        XCTAssertThrowsError(try KernelHostSigner.display(for: prompt(kind: .rosterAdd, input: input), message: Data("other".utf8)))
+        XCTAssertThrowsError(
+            try KernelHostSigner.display(for: prompt(kind: .rosterAdd, input: input), message: Data("other".utf8)))
         XCTAssertThrowsError(try KernelHostSigner.display(for: prompt(kind: .other, input: input), message: input))
         XCTAssertThrowsError(try KernelHostSigner.display(for: prompt(kind: .rosterAdd, input: input), message: input))
-        XCTAssertThrowsError(try KernelHostSigner.display(for: prompt(kind: .toolEffect, title: "run.takeover", input: input), message: input))
-        let signer = KernelHostSigner(MeshHostSigner(keys: try! DeviceKeys(
-            store: MeshMemorySecretStore(), defaults: UserDefaults(suiteName: "k." + UUID().uuidString)!,
-            preferHardware: false), presenter: RecordingPresenter()))
-        XCTAssertThrowsError(try signer.presenceSign(prompt: prompt(kind: .stop, input: input), message: input)) { error in
+        XCTAssertThrowsError(
+            try KernelHostSigner.display(
+                for: prompt(kind: .toolEffect, title: "run.takeover", input: input), message: input))
+        let signer = KernelHostSigner(
+            MeshHostSigner(
+                keys: try! DeviceKeys(
+                    store: MeshMemorySecretStore(), defaults: UserDefaults(suiteName: "k." + UUID().uuidString)!,
+                    preferHardware: false), presenter: RecordingPresenter()))
+        XCTAssertThrowsError(try signer.presenceSign(prompt: prompt(kind: .stop, input: input), message: input)) {
+            error in
             guard case HostSignerError.Failed = error else { return XCTFail("\(error)") }
         }
         XCTAssertEqual(signer.identityPublicKey().count, 65)
@@ -343,9 +356,12 @@ final class KernelMappingTests: XCTestCase {
 
     func testStopAndTakeoverPromptsParseTheirExactSigningInput() throws {
         func id(_ c: Character) -> String { "sha256:" + String(repeating: c, count: 64) }
-        func hash(_ data: Data) -> String { "sha256:" + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+        func hash(_ data: Data) -> String {
+            "sha256:" + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        }
         let key = String(repeating: "A", count: 43)
-        let stop = #"{"author":"\#(id("2"))","body":{"counter":2},"clock":{"ms":1,"n":0},"follows":["\#(id("3"))"],"mesh":"\#(id("1"))","type":"stop","v":1}"#
+        let stop =
+            #"{"author":"\#(id("2"))","body":{"counter":2},"clock":{"ms":1,"n":0},"follows":["\#(id("3"))"],"mesh":"\#(id("1"))","type":"stop","v":1}"#
         let stopPrompt = try AstralDeep.ConsentPrompt.roster(signingInput: Data(("astral.roster/v1\n" + stop).utf8))
         XCTAssertEqual(stopPrompt.effect, "roster.stop")
         XCTAssertEqual(stopPrompt.actionTitle, "Stop the mesh")
@@ -356,17 +372,22 @@ final class KernelMappingTests: XCTestCase {
         XCTAssertEqual(resumePrompt.target, "Resume counter 2")
         XCTAssertTrue(resumePrompt.requiresBiometry)
         let zero = stop.replacingOccurrences(of: #""counter":2"#, with: #""counter":0"#)
-        XCTAssertThrowsError(try AstralDeep.ConsentPrompt.roster(signingInput: Data(("astral.roster/v1\n" + zero).utf8)))
+        XCTAssertThrowsError(
+            try AstralDeep.ConsentPrompt.roster(signingInput: Data(("astral.roster/v1\n" + zero).utf8)))
         _ = key
 
-        let action = Data(#"{"executor":"\#(id("2"))","kind":"run.takeover","run":"chat.run1","supersedes":["\#(id("4"))"],"v":1}"#.utf8)
-        let consent = Data(#"{"clock":{"ms":1,"n":0},"device":"\#(id("2"))","digest":"\#(hash(action))","kind":"action","v":1}"#.utf8)
+        let action = Data(
+            #"{"executor":"\#(id("2"))","kind":"run.takeover","run":"chat.run1","supersedes":["\#(id("4"))"],"v":1}"#
+                .utf8)
+        let consent = Data(
+            #"{"clock":{"ms":1,"n":0},"device":"\#(id("2"))","digest":"\#(hash(action))","kind":"action","v":1}"#.utf8)
         let input = Data("astral.consent/v1\n".utf8) + consent
         let takeover = try AstralDeep.ConsentPrompt.takeover(canonicalAction: action, signingInput: input)
         XCTAssertTrue(takeover.isBound(to: input))
         XCTAssertTrue(takeover.requiresBiometry)
         XCTAssertFalse(takeover.isBound(to: input + Data([0])))
-        let other = Data(#"{"executor":"\#(id("5"))","kind":"run.takeover","run":"chat.run1","supersedes":[],"v":1}"#.utf8)
+        let other = Data(
+            #"{"executor":"\#(id("5"))","kind":"run.takeover","run":"chat.run1","supersedes":[],"v":1}"#.utf8)
         XCTAssertThrowsError(try AstralDeep.ConsentPrompt.takeover(canonicalAction: other, signingInput: input))
 
         let signer = AstralKernel.ConsentPrompt(
@@ -380,17 +401,23 @@ final class KernelMappingTests: XCTestCase {
 
     func testGrantPromptsParseTheirExactSigningInputAndRequireBiometry() throws {
         func id(_ c: Character) -> String { "sha256:" + String(repeating: c, count: 64) }
-        let action = Data(#"{"agent":"kernel","grant":"\#(id("a"))","kind":"auth.grant","scope":"mesh_read","tool":"files.read"}"#.utf8)
-        func input(kind: String = "grant", digest: String? = nil, device: String? = nil, context: String = "astral.consent/v1") -> Data {
+        let action = Data(
+            #"{"agent":"kernel","grant":"\#(id("a"))","kind":"auth.grant","scope":"mesh_read","tool":"files.read"}"#
+                .utf8)
+        func input(
+            kind: String = "grant", digest: String? = nil, device: String? = nil, context: String = "astral.consent/v1"
+        ) -> Data {
             Data(
-                (context + "\n" + #"{"clock":{"ms":1,"n":0},"device":"\#(device ?? id("2"))","digest":"\#(digest ?? id("a"))","kind":"\#(kind)","v":1}"#)
+                (context + "\n"
+                    + #"{"clock":{"ms":1,"n":0},"device":"\#(device ?? id("2"))","digest":"\#(digest ?? id("a"))","kind":"\#(kind)","v":1}"#)
                     .utf8)
         }
         XCTAssertTrue(AstralDeep.ConsentPrompt.isGrant(canonicalAction: action))
         XCTAssertFalse(AstralDeep.ConsentPrompt.isGrant(canonicalAction: Data(#"{"tool":"x"}"#.utf8)))
         XCTAssertFalse(AstralDeep.ConsentPrompt.isGrant(canonicalAction: Data("not json".utf8)))
         let good = input()
-        let prompt = try AstralDeep.ConsentPrompt.grant(canonicalAction: action, canonicalArguments: action, signingInput: good)
+        let prompt = try AstralDeep.ConsentPrompt.grant(
+            canonicalAction: action, canonicalArguments: action, signingInput: good)
         XCTAssertEqual(prompt.actionTitle, "Allow files.read")
         XCTAssertEqual(prompt.effect, "files.read")
         XCTAssertEqual(prompt.target, "Permission: read your mesh, for kernel")
@@ -403,14 +430,32 @@ final class KernelMappingTests: XCTestCase {
             (action, action, input(digest: id("b"))),
             (action, action, input(device: "device")),
             (action, action, input(context: "astral.roster/v1")),
-            (Data(#"{"agent":"kernel","grant":"\#(id("a"))","kind":"auth.grant","scope":"mesh_read"}"#.utf8), action, good),
-            (Data(#"{"agent":"","grant":"\#(id("a"))","kind":"auth.grant","scope":"mesh_read","tool":"x"}"#.utf8), action, good),
-            (Data(#"{"agent":"kernel","grant":"\#(id("a"))","kind":"auth.grant","scope":"","tool":"x"}"#.utf8), action, good),
-            (Data(#"{"agent":"kernel","grant":"g","kind":"auth.grant","scope":"mesh_read","tool":"x"}"#.utf8), action, good),
-            (Data(#"{"agent":"kernel","grant":"\#(id("a"))","kind":"auth.grant", "scope":"mesh_read","tool":"x"}"#.utf8), action, good),
+            (
+                Data(#"{"agent":"kernel","grant":"\#(id("a"))","kind":"auth.grant","scope":"mesh_read"}"#.utf8), action,
+                good
+            ),
+            (
+                Data(#"{"agent":"","grant":"\#(id("a"))","kind":"auth.grant","scope":"mesh_read","tool":"x"}"#.utf8),
+                action, good
+            ),
+            (
+                Data(#"{"agent":"kernel","grant":"\#(id("a"))","kind":"auth.grant","scope":"","tool":"x"}"#.utf8),
+                action, good
+            ),
+            (
+                Data(#"{"agent":"kernel","grant":"g","kind":"auth.grant","scope":"mesh_read","tool":"x"}"#.utf8),
+                action, good
+            ),
+            (
+                Data(
+                    #"{"agent":"kernel","grant":"\#(id("a"))","kind":"auth.grant", "scope":"mesh_read","tool":"x"}"#
+                        .utf8), action, good
+            ),
         ]
         for (shown, arguments, signing) in bad {
-            XCTAssertThrowsError(try AstralDeep.ConsentPrompt.grant(canonicalAction: shown, canonicalArguments: arguments, signingInput: signing))
+            XCTAssertThrowsError(
+                try AstralDeep.ConsentPrompt.grant(
+                    canonicalAction: shown, canonicalArguments: arguments, signingInput: signing))
         }
         let routed = AstralKernel.ConsentPrompt(
             kind: .toolEffect, title: "files.read", target: "grant mesh_read", canonicalAction: action,
@@ -426,17 +471,25 @@ final class KernelMappingTests: XCTestCase {
 
     func testPendingConsentCardsRequireMatchingArguments() throws {
         func id(_ c: Character) -> String { "sha256:" + String(repeating: c, count: 64) }
-        func hash(_ data: Data) -> String { "sha256:" + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+        func hash(_ data: Data) -> String {
+            "sha256:" + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        }
         let arguments = Data(#"{"to":"a@b.c"}"#.utf8)
         let action = Data(
-            #"{"agent":"mail","args_digest":"\#(hash(arguments))","device":"\#(id("2"))","influence":["\#(id("9"))"],"mesh":"\#(id("1"))","tool":"mail.send","tool_def":"\#(id("3"))","turn":"\#(id("4"))","v":1}"#.utf8)
+            #"{"agent":"mail","args_digest":"\#(hash(arguments))","device":"\#(id("2"))","influence":["\#(id("9"))"],"mesh":"\#(id("1"))","tool":"mail.send","tool_def":"\#(id("3"))","turn":"\#(id("4"))","v":1}"#
+                .utf8)
         let card = try AstralDeep.ConsentPrompt.pending(canonicalAction: action, canonicalArguments: arguments)
         XCTAssertEqual(card.actionTitle, "Approve mail.send")
         XCTAssertNotNil(card.untrustedSource)
-        XCTAssertThrowsError(try AstralDeep.ConsentPrompt.pending(canonicalAction: action, canonicalArguments: Data(#"{"to":"x"}"#.utf8)))
+        XCTAssertThrowsError(
+            try AstralDeep.ConsentPrompt.pending(canonicalAction: action, canonicalArguments: Data(#"{"to":"x"}"#.utf8))
+        )
         let runtimeCard = MeshPendingConsent(
             requestId: "r", chatId: "c", kind: .action, canonicalAction: action, canonicalArguments: arguments,
             signingInput: Data())
-        XCTAssertEqual(try AstralDeep.ConsentPrompt.pending(canonicalAction: runtimeCard.canonicalAction, canonicalArguments: runtimeCard.canonicalArguments).digest, hash(action))
+        XCTAssertEqual(
+            try AstralDeep.ConsentPrompt.pending(
+                canonicalAction: runtimeCard.canonicalAction, canonicalArguments: runtimeCard.canonicalArguments
+            ).digest, hash(action))
     }
 }

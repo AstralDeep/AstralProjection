@@ -45,19 +45,27 @@ struct MeshSettingsView: View {
                 .accessibilityIdentifier("mesh.settings.voice")
             }
             Section("Assistant") {
-                NavigationLink { MeshModelProviderView() } label: {
+                NavigationLink {
+                    MeshModelProviderView()
+                } label: {
                     Label("Model provider", systemImage: "sparkles")
                 }
                 .accessibilityIdentifier("mesh.settings.models")
-                NavigationLink { MeshRemoteMCPView() } label: {
+                NavigationLink {
+                    MeshRemoteMCPView()
+                } label: {
                     Label("Remote MCP tools", systemImage: "network")
                 }
                 .accessibilityIdentifier("mesh.settings.mcp")
-                NavigationLink { MeshPermissionsView() } label: {
+                NavigationLink {
+                    MeshPermissionsView()
+                } label: {
                     Label("Tool permissions", systemImage: "checkmark.shield")
                 }
                 .accessibilityIdentifier("mesh.settings.permissions")
-                NavigationLink { MeshAllowanceView() } label: {
+                NavigationLink {
+                    MeshAllowanceView()
+                } label: {
                     Label("Allowance", systemImage: "gauge.with.dots.needle.33percent")
                 }
                 .accessibilityIdentifier("mesh.settings.allowance")
@@ -77,7 +85,9 @@ struct MeshSettingsView: View {
                 }
             #endif
             Section("Network") {
-                NavigationLink { MeshMailboxView() } label: {
+                NavigationLink {
+                    MeshMailboxView()
+                } label: {
                     Label("Mailbox", systemImage: "tray")
                 }
                 .accessibilityIdentifier("mesh.settings.mailbox")
@@ -100,7 +110,9 @@ struct MeshSettingsView: View {
                 }
                 LabeledContent("Keys", value: mesh.status.hardwareBacked ? "In secure hardware" : "In the Keychain")
                 LabeledContent("Identity", value: mesh.status.attested ? "Verified" : "Not verified")
-                NavigationLink { MeshRecoveryInfoView() } label: {
+                NavigationLink {
+                    MeshRecoveryInfoView()
+                } label: {
                     Label("Recovery words", systemImage: "key")
                 }
                 .accessibilityIdentifier("mesh.settings.recovery")
@@ -171,7 +183,8 @@ struct MeshRecoveryInfoView: View {
             }
             Section {
                 Button("Make a Backup File") {
-                    let url = FileManager.default.temporaryDirectory.appendingPathComponent("astraldeep-mesh-backup.bin")
+                    let url = FileManager.default.temporaryDirectory.appendingPathComponent(
+                        "astraldeep-mesh-backup.bin")
                     try? FileManager.default.removeItem(at: url)
                     Task {
                         await mesh.exportBackup(to: url)
@@ -470,10 +483,14 @@ struct MeshMailboxView: View {
                         saving = false
                     }
                 }
-                .disabled(saving || address.trimmingCharacters(in: .whitespacesAndNewlines) == (mesh.mailboxAddress ?? ""))
+                .disabled(
+                    saving || address.trimmingCharacters(in: .whitespacesAndNewlines) == (mesh.mailboxAddress ?? "")
+                )
                 .accessibilityIdentifier("mesh.mailbox.save")
             } footer: {
-                Text("A mailbox holds encrypted updates for your devices while they are offline. Leave this empty to use none. Saving restarts the mesh connection.")
+                Text(
+                    "A mailbox holds encrypted updates for your devices while they are offline. Leave this empty to use none. Saving restarts the mesh connection."
+                )
             }
             Section("Status") {
                 Text(MeshPresentation.mailbox(mesh.mailbox))
