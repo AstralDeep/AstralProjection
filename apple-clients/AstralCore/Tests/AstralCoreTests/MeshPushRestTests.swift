@@ -113,6 +113,7 @@ final class MeshPushRestTests: XCTestCase {
         let rest = try XCTUnwrap(
             MeshPushRest(publisherURL: URL(string: "https://publisher.example")!, now: { self.now }) { _ in
                 await gate.wait()
+                try Task.checkCancellation()
                 return (200, data)
             })
         let task = Task {

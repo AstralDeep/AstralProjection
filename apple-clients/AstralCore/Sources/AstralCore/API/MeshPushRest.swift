@@ -103,7 +103,7 @@ public struct MeshPushRest: Sendable {
                 access: access, method: "POST", meshId: meshId, deviceId: deviceId,
                 extra: ["token": pushToken, "expected_revision": expectedRevision])
         else { return .unavailable("target_invalid") }
-        let (status, row) = await outcome(request)
+        let (status, row) = await outcome(request, preserveCommit: true)
         switch status {
         case 200:
             guard let row, Set(row.keys) == ["mesh_id", "device_id", "revision", "route"],
@@ -182,8 +182,14 @@ public struct MeshPushRest: Sendable {
         return request
     }
 
-    private func outcome(_ request: URLRequest) async -> (Int, [String: Any]?) {
-        guard let (status, data) = try? await transport(request), data.count <= 8192 else { return (0, nil) }
+    private func outcome(_ request: URLRequest, preserveCommit: Bool = false) async -> (Int, [String: Any]?) {
+        let response: (Int, Data)?
+        if preserveCommit {
+            response = try? await Task.detached { [transport] in try await transport(request) }.value
+        } else {
+            response = try? await transport(request)
+        }
+        guard let (status, data) = response, data.count <= 8192 else { return (0, nil) }
         return (status, (try? JSONSerialization.jsonObject(with: data)) as? [String: Any])
     }
 
