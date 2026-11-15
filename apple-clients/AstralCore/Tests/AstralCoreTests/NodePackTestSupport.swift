@@ -34,7 +34,8 @@
         }
 
         static func build(
-            version: String = "3.11.18-test", files: [(String, String, Bool)] = defaultFiles, platform: String = "macos-arm64",
+            version: String = "3.11.18-test", files: [(String, String, Bool)] = defaultFiles,
+            platform: String = "macos-arm64",
             mutate: (URL) throws -> Void = { _ in }
         ) throws -> BuiltPack {
             let directory = try temporaryDirectory()
@@ -45,9 +46,11 @@
                 try FileManager.default.createDirectory(
                     at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try Data(body.utf8).write(to: url)
-                try FileManager.default.setAttributes([.posixPermissions: executable ? 0o755 : 0o644], ofItemAtPath: url.path)
+                try FileManager.default.setAttributes(
+                    [.posixPermissions: executable ? 0o755 : 0o644], ofItemAtPath: url.path)
                 entries.append(
-                    .init(path: path, sha256: sha(Data(body.utf8)), size: Int64(body.utf8.count), executable: executable))
+                    .init(
+                        path: path, sha256: sha(Data(body.utf8)), size: Int64(body.utf8.count), executable: executable))
             }
             let link = tree.appendingPathComponent("python/bin/python")
             try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: "python3.11")
@@ -68,7 +71,8 @@
             let descriptorURL = directory.appendingPathComponent("node-pack.json")
             try JSONEncoder().encode(descriptor).write(to: descriptorURL)
             return BuiltPack(
-                directory: directory, descriptorURL: descriptorURL, descriptor: descriptor, manifest: manifest, tree: tree)
+                directory: directory, descriptorURL: descriptorURL, descriptor: descriptor, manifest: manifest,
+                tree: tree)
         }
 
         static let defaultFiles: [(String, String, Bool)] = [
@@ -90,7 +94,9 @@
             return data
         }
 
-        func download(from url: URL, to destination: URL, progress: @escaping @Sendable (Int64, Int64) -> Void) async throws {
+        func download(from url: URL, to destination: URL, progress: @escaping @Sendable (Int64, Int64) -> Void)
+            async throws
+        {
             if failDownload { throw NodePackError.downloadFailed("offline") }
             var data = try Data(contentsOf: url)
             progress(Int64(data.count / 2), Int64(data.count))

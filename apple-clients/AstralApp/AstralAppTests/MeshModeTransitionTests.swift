@@ -1,8 +1,9 @@
 // Verifies that a signed-in node client can enter its personal mesh without retiring credentials or hiding active work.
 
 import AstralCore
-@testable import AstralDeep
 import XCTest
+
+@testable import AstralDeep
 
 @MainActor
 final class MeshModeTransitionTests: XCTestCase {

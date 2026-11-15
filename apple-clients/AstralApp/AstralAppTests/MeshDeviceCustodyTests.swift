@@ -1,9 +1,10 @@
 // Verifies device-only operations and wrapping key custody, persistence, and fail-closed recovery using isolated stores.
 
-@testable import AstralDeep
 import AstralKernel
 import CryptoKit
 import XCTest
+
+@testable import AstralDeep
 
 nonisolated private final class FailingCustodyStore: MeshSecretStore, @unchecked Sendable {
     let memory = MeshMemorySecretStore()

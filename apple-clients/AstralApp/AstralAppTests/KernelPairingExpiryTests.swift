@@ -1,8 +1,9 @@
 // Verifies absolute pairing deadlines from generated Kernel records remain fixed when the host remaps them.
 
-@testable import AstralDeep
 import AstralKernel
 import XCTest
+
+@testable import AstralDeep
 
 final class KernelPairingExpiryTests: XCTestCase {
     private let issuedAt = Date(timeIntervalSince1970: 1_800_000_000)

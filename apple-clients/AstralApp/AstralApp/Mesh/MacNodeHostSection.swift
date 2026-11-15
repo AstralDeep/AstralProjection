@@ -37,10 +37,13 @@
                     NavigationStack { MeshAddDeviceView() }.frame(minWidth: 420, minHeight: 360)
                         .consentSheet(consent)
                 }
-                .confirmationDialog("Remove the node pack?", isPresented: $confirmingRemoval, titleVisibility: .visible) {
+                .confirmationDialog("Remove the node pack?", isPresented: $confirmingRemoval, titleVisibility: .visible)
+                {
                     Button("Remove", role: .destructive) { Task { await controller.remove() } }
                 } message: {
-                    Text("The node stops and its program files are deleted. Its data and identity stay in the node folder.")
+                    Text(
+                        "The node stops and its program files are deleted. Its data and identity stay in the node folder."
+                    )
                 }
             }
         }
@@ -75,7 +78,8 @@
                 Button("Stop") { Task { await controller.stop() } }
             case .running(let port):
                 LabeledContent("Status") {
-                    Label("Running on 127.0.0.1:\(port)", systemImage: "checkmark.circle.fill").foregroundStyle(p.success)
+                    Label("Running on 127.0.0.1:\(port)", systemImage: "checkmark.circle.fill").foregroundStyle(
+                        p.success)
                 }
                 .accessibilityIdentifier("mesh.node.running")
                 if let mesh = controller.descriptor?.mesh {
@@ -95,8 +99,13 @@
                 Label(reason, systemImage: "exclamationmark.triangle.fill").foregroundStyle(p.error)
                     .accessibilityIdentifier("mesh.node.failed")
                 HStack {
-                    Button("Try again") { Task { await controller.stop(); await controller.start() } }
-                        .accessibilityIdentifier("mesh.node.retry")
+                    Button("Try again") {
+                        Task {
+                            await controller.stop()
+                            await controller.start()
+                        }
+                    }
+                    .accessibilityIdentifier("mesh.node.retry")
                     Button("Show log") { NSWorkspace.shared.open(controller.logDirectory) }
                 }
                 removeButton
@@ -142,7 +151,9 @@
             } catch NodePairingError.unauthorized {
                 notice = "The node did not accept this sign-in."
             } catch NodePairingError.refused(_, let detail) {
-                notice = detail == "node_owner_mismatch" ? "This node belongs to a different account." : "The node refused the request."
+                notice =
+                    detail == "node_owner_mismatch"
+                    ? "This node belongs to a different account." : "The node refused the request."
             } catch NodePairingError.meshUnavailable(let code) {
                 notice = "The node cannot join a mesh yet (\(code))."
             } catch EnrollmentSignInError.cancelled {

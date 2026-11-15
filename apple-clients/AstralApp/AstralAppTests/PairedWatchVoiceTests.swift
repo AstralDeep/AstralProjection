@@ -2,9 +2,10 @@
 // The injected principal callbacks model explicit verified admission; native principal membership is covered by MeshVoiceLinkTests.
 
 import AstralCore
-@testable import AstralDeep
 import Foundation
 import XCTest
+
+@testable import AstralDeep
 
 @MainActor
 final class PairedWatchVoiceTests: XCTestCase {

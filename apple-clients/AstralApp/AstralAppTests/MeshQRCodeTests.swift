@@ -1,7 +1,8 @@
 // Verifies that pairing payloads render as QR images so the iOS simulator and Mac can show them without a camera.
 
-@testable import AstralDeep
 import XCTest
+
+@testable import AstralDeep
 
 final class MeshQRCodeTests: XCTestCase {
     func testQRCodeRendersAndDiffersByPayload() {

@@ -3,9 +3,10 @@
 // takeover/end race guards.
 
 import AstralCore
-@testable import AstralDeep
 import Foundation
 import XCTest
+
+@testable import AstralDeep
 
 @MainActor
 final class VoiceSessionController065Tests: XCTestCase {

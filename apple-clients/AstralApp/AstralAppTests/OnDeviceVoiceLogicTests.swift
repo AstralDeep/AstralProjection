@@ -2,8 +2,9 @@
 // All inputs are synthetic and the clock is controlled.
 
 import AVFoundation
-@testable import AstralDeep
 import XCTest
+
+@testable import AstralDeep
 
 final class OnDeviceVoiceLogicTests: XCTestCase {
     func testVoiceLevelHandlesInterleavedIntegerAndPlanarFloatingPointPCM() throws {

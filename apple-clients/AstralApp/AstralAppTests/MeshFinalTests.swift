@@ -2,8 +2,9 @@
 // Everything runs over the in-memory kernel, so no network, Keychain or identity provider is involved.
 
 import AstralCore
-@testable import AstralDeep
 import XCTest
+
+@testable import AstralDeep
 
 @MainActor
 final class MeshFinalTests: XCTestCase {

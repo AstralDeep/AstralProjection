@@ -20,12 +20,23 @@ final class MeshStoredSurfaceUITests: XCTestCase {
         XCTAssertTrue(pulse.isHittable)
         XCTAssertGreaterThan(pulse.frame.width, 0)
         XCTAssertGreaterThan(pulse.frame.height, 0)
-        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "text with a link was removed", "text with a link was removed")).firstMatch.exists)
+        XCTAssertTrue(
+            app.staticTexts.containing(
+                NSPredicate(
+                    format: "label CONTAINS %@ OR value CONTAINS %@", "text with a link was removed",
+                    "text with a link was removed")
+            ).firstMatch.exists)
         XCTAssertTrue(app.staticTexts["Send patient record"].exists)
         XCTAssertFalse(app.buttons["Send patient record"].exists)
         XCTAssertFalse(app.links.firstMatch.exists)
-        XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "outside.example", "outside.example")).firstMatch.exists)
-        let identity = XCTAttachment(string: "stored_event=\(event)\nfixture_sha256=050d11e29a5ed8c2892986bf0aff776c2be79812ab382f405151d9dad627e7e0")
+        XCTAssertFalse(
+            app.staticTexts.containing(
+                NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "outside.example", "outside.example")
+            ).firstMatch.exists)
+        let identity = XCTAttachment(
+            string:
+                "stored_event=\(event)\nfixture_sha256=050d11e29a5ed8c2892986bf0aff776c2be79812ab382f405151d9dad627e7e0"
+        )
         identity.name = "same-stored-surface-identity"
         identity.lifetime = .keepAlways
         add(identity)

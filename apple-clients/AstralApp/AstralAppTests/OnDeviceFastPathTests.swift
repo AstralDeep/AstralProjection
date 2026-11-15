@@ -1,8 +1,9 @@
 // Verifies the fast path: drafts start on a stable partial, are discarded when the person keeps talking, and yield only short, safe acknowledgements.
 // A scripted model stands in for the system model.
 
-@testable import AstralDeep
 import XCTest
+
+@testable import AstralDeep
 
 @MainActor
 final class OnDeviceFastPathTests: XCTestCase {

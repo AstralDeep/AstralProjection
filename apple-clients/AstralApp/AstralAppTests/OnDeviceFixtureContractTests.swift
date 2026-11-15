@@ -1,9 +1,10 @@
 // Keeps scripted model answers compatible with the engine's constrained local tool envelope.
 // Other reader schemas and explicit malformed or refused responses remain unchanged.
 
-@testable import AstralDeep
 import Foundation
 import XCTest
+
+@testable import AstralDeep
 
 final class OnDeviceFixtureContractTests: XCTestCase {
     private let envelope =

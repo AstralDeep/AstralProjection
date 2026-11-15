@@ -1,10 +1,11 @@
 // Verifies canonical consent binding, roster signing, authentication policy, queue lifecycle and the signer's guards.
 // Authentication is stubbed, so no biometric prompt appears and nothing here depends on the device.
 
-@testable import AstralDeep
 import CryptoKit
 import LocalAuthentication
 import XCTest
+
+@testable import AstralDeep
 
 private nonisolated struct StubAuthenticator: ConsentAuthenticating {
     let succeeds: Bool

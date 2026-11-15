@@ -138,30 +138,36 @@ final class MeshEnrollmentSignInTests: XCTestCase {
 
     func testMismatchedNonceIsRefused() async {
         let token = jwt(claims(nonce: "someone-elses"))
-        await assertThrows(.nonceMismatch, web: StubWeb(respond: echoState()), transport: StubTransport(body: tokenBody(token)))
+        await assertThrows(
+            .nonceMismatch, web: StubWeb(respond: echoState()), transport: StubTransport(body: tokenBody(token)))
     }
 
     func testMissingNonceIsRefused() async {
         var withoutNonce = claims()
         withoutNonce["nonce"] = nil
         await assertThrows(
-            .nonceMismatch, web: StubWeb(respond: echoState()), transport: StubTransport(body: tokenBody(jwt(withoutNonce))))
+            .nonceMismatch, web: StubWeb(respond: echoState()),
+            transport: StubTransport(body: tokenBody(jwt(withoutNonce))))
     }
 
     func testWrongIssuerIsRefused() async {
         let token = jwt(claims(iss: "https://evil.test/realms/Astral"))
-        await assertThrows(.issuerMismatch, web: StubWeb(respond: echoState()), transport: StubTransport(body: tokenBody(token)))
+        await assertThrows(
+            .issuerMismatch, web: StubWeb(respond: echoState()), transport: StubTransport(body: tokenBody(token)))
     }
 
     func testWrongAudienceIsRefused() async {
         let token = jwt(claims(aud: "astral-mobile"))
-        await assertThrows(.audienceMismatch, web: StubWeb(respond: echoState()), transport: StubTransport(body: tokenBody(token)))
+        await assertThrows(
+            .audienceMismatch, web: StubWeb(respond: echoState()), transport: StubTransport(body: tokenBody(token)))
     }
 
     func testAudienceListContainingClientIsAccepted() async throws {
         let token = jwt(claims(aud: ["account", "astral-desktop"]))
-        let result = try await flow(web: StubWeb(respond: echoState()), transport: StubTransport(body: tokenBody(token)))
-            .signIn(nonce: nonce)
+        let result = try await flow(
+            web: StubWeb(respond: echoState()), transport: StubTransport(body: tokenBody(token))
+        )
+        .signIn(nonce: nonce)
         XCTAssertEqual(result, token)
     }
 
@@ -173,16 +179,19 @@ final class MeshEnrollmentSignInTests: XCTestCase {
 
     func testExpiredTokenIsRefused() async {
         let token = jwt(claims(exp: 1_999_999_999))
-        await assertThrows(.expired, web: StubWeb(respond: echoState()), transport: StubTransport(body: tokenBody(token)))
+        await assertThrows(
+            .expired, web: StubWeb(respond: echoState()), transport: StubTransport(body: tokenBody(token)))
     }
 
     func testMalformedTokenIsRefused() async {
         await assertThrows(
-            .malformedIdToken, web: StubWeb(respond: echoState()), transport: StubTransport(body: tokenBody("not-a-jwt")))
+            .malformedIdToken, web: StubWeb(respond: echoState()),
+            transport: StubTransport(body: tokenBody("not-a-jwt")))
     }
 
     func testMissingIdTokenIsRefused() async {
-        await assertThrows(.missingIdToken, web: StubWeb(respond: echoState()), transport: StubTransport(body: tokenBody(nil)))
+        await assertThrows(
+            .missingIdToken, web: StubWeb(respond: echoState()), transport: StubTransport(body: tokenBody(nil)))
     }
 
     func testTokenEndpointErrorIsReported() async {

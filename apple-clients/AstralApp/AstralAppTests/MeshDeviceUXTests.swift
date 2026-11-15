@@ -1,8 +1,9 @@
 // Tests for the plain-language device status lines, the comparison code grouping, the identity verification flow and the on-device answer notice.
 // They run over the in-memory kernel, so no sign-in, Keychain item or network is involved.
 
-@testable import AstralDeep
 import XCTest
+
+@testable import AstralDeep
 
 @MainActor
 final class MeshDeviceUXTests: XCTestCase {

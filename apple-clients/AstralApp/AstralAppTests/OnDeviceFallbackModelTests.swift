@@ -1,9 +1,10 @@
 // Checks Foundation Models preference and verified local text fallback without loading real weights.
 // Controlled inference gates exercise shared loading, cancellation and asset retirement.
 
-@testable import AstralDeep
 import Foundation
 import XCTest
+
+@testable import AstralDeep
 
 final class OnDeviceFallbackModelTests: XCTestCase {
     private let request = OnDeviceRequest(
@@ -280,7 +281,9 @@ private actor FallbackGate {
         open = true
         let values = pending
         pending.removeAll()
-        values.forEach { $0.resume() }
+        for continuation in values {
+            continuation.resume()
+        }
     }
 }
 

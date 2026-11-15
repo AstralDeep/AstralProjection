@@ -2,8 +2,9 @@
 // The in-memory facade controls suspension, Stop and failures while the real route facade is covered separately.
 
 import AstralCore
-@testable import AstralDeep
 import XCTest
+
+@testable import AstralDeep
 
 @MainActor
 final class MeshPushBindingTests: XCTestCase {

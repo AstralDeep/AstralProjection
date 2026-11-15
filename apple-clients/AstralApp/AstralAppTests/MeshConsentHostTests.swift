@@ -1,11 +1,12 @@
 // Verifies the mounted consent host owns exact-entry callbacks and closing a host cancels its pending work.
 // Authentication is controlled in memory, including a late result after a modal has closed.
 
-@testable import AstralDeep
 import Foundation
 import LocalAuthentication
 import Observation
 import XCTest
+
+@testable import AstralDeep
 
 private nonisolated final class ConsentAuthenticationProbe: ConsentAuthenticating, @unchecked Sendable {
     private let lock = NSLock()

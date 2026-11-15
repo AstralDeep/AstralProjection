@@ -23,7 +23,8 @@
         }
 
         static func requestedDestination(arguments: [String] = ProcessInfo.processInfo.arguments) -> MeshDestination? {
-            guard let index = arguments.firstIndex(of: "--astral-ui-test-destination"), arguments.indices.contains(index + 1)
+            guard let index = arguments.firstIndex(of: "--astral-ui-test-destination"),
+                arguments.indices.contains(index + 1)
             else { return nil }
             switch arguments[index + 1] {
             case "devices": return .devices
@@ -119,24 +120,26 @@
                 ], surfaces: [planSurface()])
             let me = "sha256:" + String(repeating: "b", count: 64)
             let phone = "sha256:" + String(repeating: "c", count: 64)
-            kernel.setRequests([
-                MeshRequest(
-                    requestId: "sha256:" + String(repeating: "1", count: 64), chatId: chat, fromMember: phone,
-                    toMember: me, state: .pending, text: "Summarize today's lab notes", refusalCode: nil, tool: nil,
-                    createdAt: now.addingTimeInterval(-300)),
-                MeshRequest(
-                    requestId: "sha256:" + String(repeating: "2", count: 64), chatId: chat, fromMember: me,
-                    toMember: phone, state: .refused, text: "Print the weekly plan", refusalCode: "request.busy",
-                    tool: nil, createdAt: now.addingTimeInterval(-500)),
-                MeshRequest(
-                    requestId: "sha256:" + String(repeating: "3", count: 64), chatId: chat, fromMember: me,
-                    toMember: phone, state: .claimed, text: "Check the calendar for Friday", refusalCode: nil,
-                    tool: "calendar.read", createdAt: now.addingTimeInterval(-120)),
-            ], notify: false)
+            kernel.setRequests(
+                [
+                    MeshRequest(
+                        requestId: "sha256:" + String(repeating: "1", count: 64), chatId: chat, fromMember: phone,
+                        toMember: me, state: .pending, text: "Summarize today's lab notes", refusalCode: nil, tool: nil,
+                        createdAt: now.addingTimeInterval(-300)),
+                    MeshRequest(
+                        requestId: "sha256:" + String(repeating: "2", count: 64), chatId: chat, fromMember: me,
+                        toMember: phone, state: .refused, text: "Print the weekly plan", refusalCode: "request.busy",
+                        tool: nil, createdAt: now.addingTimeInterval(-500)),
+                    MeshRequest(
+                        requestId: "sha256:" + String(repeating: "3", count: 64), chatId: chat, fromMember: me,
+                        toMember: phone, state: .claimed, text: "Check the calendar for Friday", refusalCode: nil,
+                        tool: "calendar.read", createdAt: now.addingTimeInterval(-120)),
+                ], notify: false)
             kernel.setChatStatus(
                 chatId: chat,
                 .outcomeUnknown(
-                    MeshUnknownOutcome(stepId: "step-1", tool: "mail.send", summary: "Send the weekly plan to the lab")))
+                    MeshUnknownOutcome(stepId: "step-1", tool: "mail.send", summary: "Send the weekly plan to the lab"))
+            )
             kernel.setPending([pendingConsent()])
         }
 
@@ -164,7 +167,9 @@
                         children: [], provenance: "tool"),
                     "go": MeshSurfaceNode(
                         id: "go", type: "button",
-                        props: ["label": .string("Add to calendar"), "action": .object(["capability": .string("cap1")])],
+                        props: [
+                            "label": .string("Add to calendar"), "action": .object(["capability": .string("cap1")]),
+                        ],
                         children: [], provenance: "model"),
                 ])
         }

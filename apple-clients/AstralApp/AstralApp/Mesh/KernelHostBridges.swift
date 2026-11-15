@@ -22,7 +22,8 @@ nonisolated final class KernelHostSigner: AstralKernel.HostSigner, @unchecked Se
     func presenceSign(prompt: AstralKernel.ConsentPrompt, message: Data) throws -> Data {
         let display: ConsentPrompt
         do { display = try Self.display(for: prompt, message: message) } catch {
-            throw HostSignerError.Failed(message: "consent.unreadable: the request could not be shown, so nothing was signed")
+            throw HostSignerError.Failed(
+                message: "consent.unreadable: the request could not be shown, so nothing was signed")
         }
         do { return try signer.presenceSign(prompt: display, message: message) } catch { throw Self.signerError(error) }
     }

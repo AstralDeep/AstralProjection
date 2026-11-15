@@ -26,12 +26,16 @@ nonisolated struct DeviceLocalTools: MeshLocalTools {
             MeshLocalToolSpec(
                 name: Self.currentDateTime,
                 summary: "Returns the current date and time on this device with its time zone.",
-                schemaJSON: Self.emptySchema, annotationsJSON: #"{"readOnlyHint":true,"title":"Current date and time","effectNote":"Reads the clock only"}"#,
+                schemaJSON: Self.emptySchema,
+                annotationsJSON:
+                    #"{"readOnlyHint":true,"title":"Current date and time","effectNote":"Reads the clock only"}"#,
                 effect: .meshRead, confidentiality: .public),
             MeshLocalToolSpec(
                 name: Self.deviceLocale,
                 summary: "Returns this device's language, region and calendar settings.",
-                schemaJSON: Self.emptySchema, annotationsJSON: #"{"readOnlyHint":true,"title":"Language and region","effectNote":"Reads language and region settings only"}"#,
+                schemaJSON: Self.emptySchema,
+                annotationsJSON:
+                    #"{"readOnlyHint":true,"title":"Language and region","effectNote":"Reads language and region settings only"}"#,
                 effect: .meshRead, confidentiality: .private),
         ]
     }

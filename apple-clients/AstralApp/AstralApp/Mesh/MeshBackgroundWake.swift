@@ -63,7 +63,10 @@ final class MeshBackgroundWake {
         let current = Delivery(completion: completion)
         delivery = current
         let work = Task { [weak self, current] in
-            guard let self else { current.finish(.noData); return }
+            guard let self else {
+                current.finish(.noData)
+                return
+            }
             let result: Result
             do {
                 let changed = try await synchronize()

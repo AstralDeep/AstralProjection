@@ -26,7 +26,8 @@ struct MeshPermissionsView: View {
             } header: {
                 Text("This device")
             } footer: {
-                Text("A granted tool runs without asking each time. Granting asks for your approval. Revoking does not.")
+                Text(
+                    "A granted tool runs without asking each time. Granting asks for your approval. Revoking does not.")
             }
             if remoteByDevice.isEmpty {
                 Section("Other devices") {
@@ -64,7 +65,8 @@ struct MeshToolRow: View {
                 if tool.deviceId == nil {
                     Text(tool.name).font(.system(.caption, design: .monospaced)).foregroundStyle(p.muted).lineLimit(1)
                 } else {
-                    Text("On " + mesh.memberLabel(tool.deviceId)).font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                    Text("On " + mesh.memberLabel(tool.deviceId)).font(ConsoleTypography.caption).foregroundStyle(
+                        p.muted)
                 }
                 Text(tool.summary).font(ConsoleTypography.subheadline).foregroundStyle(p.muted)
                 Text(detail).font(ConsoleTypography.footnote).foregroundStyle(p.text)

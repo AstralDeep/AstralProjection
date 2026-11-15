@@ -130,7 +130,8 @@
                 for type in [NSEvent.EventType.keyDown, .keyUp] {
                     let escape = try XCTUnwrap(
                         NSEvent.keyEvent(
-                            with: type, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                            with: type, location: .zero, modifierFlags: [],
+                            timestamp: ProcessInfo.processInfo.systemUptime,
                             windowNumber: sheet.windowNumber, context: nil, characters: "\u{1b}",
                             charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
                     NSApp.sendEvent(escape)

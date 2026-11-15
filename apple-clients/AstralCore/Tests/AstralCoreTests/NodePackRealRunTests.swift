@@ -34,10 +34,14 @@
             controller.packURLText = address
 
             await controller.lookUpOffer()
-            guard case .offered(let offer) = controller.phase else { return XCTFail("\(controller.phase) \(controller.message ?? "")") }
+            guard case .offered(let offer) = controller.phase else {
+                return XCTFail("\(controller.phase) \(controller.message ?? "")")
+            }
             print("OFFER", offer.sizeDescription)
             await controller.install()
-            guard case .installed(let version) = controller.phase else { return XCTFail("\(controller.phase) \(controller.message ?? "")") }
+            guard case .installed(let version) = controller.phase else {
+                return XCTFail("\(controller.phase) \(controller.message ?? "")")
+            }
             print("INSTALLED", version)
 
             await controller.start()

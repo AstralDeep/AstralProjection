@@ -102,7 +102,8 @@ nonisolated final class VoiceEndOfTurnDetector {
     }
 
     private func endSilence(for spoken: String) -> TimeInterval {
-        let last = spoken.split(whereSeparator: { $0.isWhitespace }).last
+        let last =
+            spoken.split(whereSeparator: { $0.isWhitespace }).last
             .map { $0.lowercased().filter { $0.isLetter } } ?? ""
         let extra = configuration.continuationWords.contains(last) ? configuration.continuationExtension : 0
         return configuration.endSilence + extra

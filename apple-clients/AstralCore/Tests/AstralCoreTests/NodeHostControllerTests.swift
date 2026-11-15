@@ -32,15 +32,19 @@
             return NodeHostEnvironment(
                 root: root.appendingPathComponent("node"), available: available, issuer: "https://iam.example/realms/a",
                 clientId: "astral-desktop", meshLabel: "Test Mac", defaults: defaults, transport: transport,
-                launcher: launcher, probe: probe, http: http, policy: policy, sleep: { _ in try await Task.sleep(nanoseconds: 2_000_000) },
+                launcher: launcher, probe: probe, http: http, policy: policy,
+                sleep: { _ in try await Task.sleep(nanoseconds: 2_000_000) },
                 freePort: { 18_731 },
                 runInstaller: { _, _ in
-                    try "ASTRAL_NODE_PROFILE=personal\n".write(to: home.appendingPathComponent("node.env"), atomically: true, encoding: .utf8)
+                    try "ASTRAL_NODE_PROFILE=personal\n".write(
+                        to: home.appendingPathComponent("node.env"), atomically: true, encoding: .utf8)
                     return (0, "")
                 })
         }
 
-        private func waitFor(_ controller: NodeHostController, _ predicate: @escaping (NodeHostController.Phase) -> Bool) async {
+        private func waitFor(
+            _ controller: NodeHostController, _ predicate: @escaping (NodeHostController.Phase) -> Bool
+        ) async {
             let deadline = Date().addingTimeInterval(5)
             while Date() < deadline, !predicate(controller.phase) { try? await Task.sleep(nanoseconds: 5_000_000) }
             XCTAssertTrue(predicate(controller.phase), "phase was \(controller.phase)")
@@ -60,8 +64,16 @@
             let launcher = FakeLauncher()
             let http = FakeNodeHTTP()
             http.responses = [
-                (Data(#"{"node_id":"astral-node:1","capabilities":["mesh-peer"],"mesh":{"state":"not_enrolled"}}"#.utf8), 200),
-                (Data(#"{"node_id":"astral-node:1","capabilities":["mesh-peer"],"mesh":{"state":"not_enrolled"}}"#.utf8), 200),
+                (
+                    Data(
+                        #"{"node_id":"astral-node:1","capabilities":["mesh-peer"],"mesh":{"state":"not_enrolled"}}"#
+                            .utf8), 200
+                ),
+                (
+                    Data(
+                        #"{"node_id":"astral-node:1","capabilities":["mesh-peer"],"mesh":{"state":"not_enrolled"}}"#
+                            .utf8), 200
+                ),
                 (Data(#"{"mesh":{"state":"offer","code":"ABCD-1234","payload":"the-payload"}}"#.utf8), 200),
             ]
             let controller = NodeHostController(environment: environment(launcher: launcher, http: http))
@@ -84,7 +96,8 @@
             XCTAssertTrue(FileManager.default.fileExists(atPath: record.path))
 
             let offerResult = try await controller.requestPairing { "owner-token" }
-            XCTAssertEqual(offerResult, .offer(NodePairingOffer(code: "ABCD-1234", payload: "the-payload", expiresMs: nil)))
+            XCTAssertEqual(
+                offerResult, .offer(NodePairingOffer(code: "ABCD-1234", payload: "the-payload", expiresMs: nil)))
             XCTAssertEqual(controller.descriptor?.canJoinMesh, true)
 
             await controller.stop()
@@ -137,7 +150,8 @@
 
         func testAFailedInstallReportsWhyAndLeavesNothingInstalled() async throws {
             let built = try NodePackTestSupport.build()
-            let controller = NodeHostController(environment: environment(transport: FileTransport(corruptDownload: true)))
+            let controller = NodeHostController(
+                environment: environment(transport: FileTransport(corruptDownload: true)))
             controller.packURLText = built.descriptorURL.absoluteString
             await controller.lookUpOffer()
             await controller.install()
@@ -200,8 +214,11 @@
             encoder.dateEncodingStrategy = .iso8601
             let home = root.appendingPathComponent("node/home")
             try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
-            try encoder.encode(NodeRunRecord(pid: child.processIdentifier, port: 18_740, packVersion: "3.11.18-test", startedAt: Date()))
-                .write(to: home.appendingPathComponent("run.json"))
+            try encoder.encode(
+                NodeRunRecord(
+                    pid: child.processIdentifier, port: 18_740, packVersion: "3.11.18-test", startedAt: Date())
+            )
+            .write(to: home.appendingPathComponent("run.json"))
             let launcher = FakeLauncher()
             let second = NodeHostController(environment: environment(launcher: launcher))
             await second.refresh()
@@ -220,8 +237,10 @@
             try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
-            try encoder.encode(NodeRunRecord(pid: 2_000_000_001, port: 18_741, packVersion: "3.11.18-test", startedAt: Date()))
-                .write(to: home.appendingPathComponent("run.json"))
+            try encoder.encode(
+                NodeRunRecord(pid: 2_000_000_001, port: 18_741, packVersion: "3.11.18-test", startedAt: Date())
+            )
+            .write(to: home.appendingPathComponent("run.json"))
             let controller = NodeHostController(environment: environment())
             await controller.refresh()
             XCTAssertEqual(controller.phase, .installed(version: "3.11.18-test"))

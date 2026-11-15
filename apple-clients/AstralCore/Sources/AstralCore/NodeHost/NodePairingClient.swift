@@ -88,7 +88,8 @@
             return descriptor
         }
 
-        public func pairingOffer(bearer: String, label: String, ttlSeconds: Int = 300) async throws -> NodePairingResult {
+        public func pairingOffer(bearer: String, label: String, ttlSeconds: Int = 300) async throws -> NodePairingResult
+        {
             var request = URLRequest(url: base.appendingPathComponent("api/node/pairing"))
             request.httpMethod = "POST"
             request.timeoutInterval = 15
@@ -119,7 +120,8 @@
                     !payload.isEmpty
                 else { throw NodePairingError.unexpectedResponse }
                 return .offer(
-                    NodePairingOffer(code: code, payload: payload, expiresMs: (mesh["expires_ms"] as? NSNumber)?.int64Value))
+                    NodePairingOffer(
+                        code: code, payload: payload, expiresMs: (mesh["expires_ms"] as? NSNumber)?.int64Value))
             }
             if let error = mesh["error"] as? String { throw NodePairingError.meshUnavailable(error) }
             return .alreadyJoined(meshId: mesh["mesh_id"] as? String)

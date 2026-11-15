@@ -2,9 +2,10 @@
 // The fake inference boundary avoids model downloads while checking cancellation and transcript ownership.
 
 import AVFoundation
-@testable import AstralDeep
 import AstralVoiceModel
 import XCTest
+
+@testable import AstralDeep
 
 final class MLXVoiceRuntimeTests: XCTestCase {
     func testTextFallbackKeepsToolHistoryAsDataWithoutAnUnsupportedModelRole() {

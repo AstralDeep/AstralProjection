@@ -1,9 +1,10 @@
 // Verifies requests in MeshRuntime over an in-memory kernel: the chat's request list, sending to another member, answering by claiming then running a turn, and refusing with a reason.
 // It also checks the mapping of the generated request records and the plain-language request texts.
 
-@testable import AstralDeep
 import AstralKernel
 import XCTest
+
+@testable import AstralDeep
 
 @MainActor
 final class MeshRequestTests: XCTestCase {

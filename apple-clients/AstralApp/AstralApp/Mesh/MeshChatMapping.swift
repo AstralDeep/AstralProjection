@@ -122,7 +122,9 @@ nonisolated enum MeshChatTree {
 }
 
 nonisolated enum MeshComponentTypes {
-    private static let aliases = ["metric_card": "metric", "stat_card": "metric", "metric_tile": "metric", "kpi": "metric"]
+    private static let aliases = [
+        "metric_card": "metric", "stat_card": "metric", "metric_tile": "metric", "kpi": "metric",
+    ]
 
     static func canonical(_ type: String) -> String { aliases[type] ?? type }
 }
@@ -191,7 +193,9 @@ nonisolated enum MeshRenderedMapper {
         return found
     }
 
-    static func components(for surface: MeshRenderedSurface, resolved: [String: MeshResolvedHandle]) -> [AstralComponent] {
+    static func components(for surface: MeshRenderedSurface, resolved: [String: MeshResolvedHandle])
+        -> [AstralComponent]
+    {
         surface.tree.compactMap { node in
             clean(node, depth: 0, resolved: resolved).flatMap { AstralComponent(json: $0) }
         }

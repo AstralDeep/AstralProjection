@@ -10,7 +10,9 @@
             marker == "direct-download" && !sandboxed
         }
 
-        public static func current(bundle: Bundle = .main, environment: [String: String] = ProcessInfo.processInfo.environment)
+        public static func current(
+            bundle: Bundle = .main, environment: [String: String] = ProcessInfo.processInfo.environment
+        )
             -> Bool
         {
             permits(
@@ -40,7 +42,8 @@
         public init(
             root: URL, available: Bool, issuer: String, clientId: String, meshLabel: String,
             defaults: UserDefaults = .standard, transport: NodePackTransport = URLSessionNodePackTransport(),
-            launcher: NodeProcessLauncher = PosixNodeProcessLauncher(), probe: NodeHealthProbe = LoopbackNodeHealthProbe(),
+            launcher: NodeProcessLauncher = PosixNodeProcessLauncher(),
+            probe: NodeHealthProbe = LoopbackNodeHealthProbe(),
             http: NodeHTTP = URLSessionNodeHTTP(), policy: NodeSupervisorPolicy = NodeSupervisorPolicy(),
             sleep: @escaping @Sendable (Double) async throws -> Void = { seconds in
                 try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
@@ -277,7 +280,8 @@
             guard let data = try? Data(contentsOf: home.runRecord) else { return nil }
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
-            guard let record = try? decoder.decode(NodeRunRecord.self, from: data), record.packVersion == installed?.version,
+            guard let record = try? decoder.decode(NodeRunRecord.self, from: data),
+                record.packVersion == installed?.version,
                 kill(record.pid, 0) == 0
             else {
                 try? FileManager.default.removeItem(at: home.runRecord)

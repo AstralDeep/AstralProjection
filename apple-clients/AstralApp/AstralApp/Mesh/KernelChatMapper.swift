@@ -25,7 +25,9 @@ nonisolated enum KernelChatMapper {
             queuedCount: view?.messages.filter { $0.delivery == .queued }.count ?? 0)
     }
 
-    static func map(_ detail: AstralKernel.ChatDetail, unknown: [UnknownOutcomeInfo], queuedBases: [String: String]) -> MeshChatView {
+    static func map(_ detail: AstralKernel.ChatDetail, unknown: [UnknownOutcomeInfo], queuedBases: [String: String])
+        -> MeshChatView
+    {
         let view = detail.view
         let folded = fold(view, queuedBases: queuedBases)
         let status: MeshChatStatus
@@ -84,14 +86,18 @@ nonisolated enum KernelChatMapper {
             tails[turn.id] = list.last?.id ?? inherited
         }
         var lastQueued: [String: String] = [:]
-        for message in queued.sorted(by: { ($0.clock.ms, $0.clock.n, $0.feed, $0.seq) < ($1.clock.ms, $1.clock.n, $1.feed, $1.seq) }) {
+        for message in queued.sorted(by: {
+            ($0.clock.ms, $0.clock.n, $0.feed, $0.seq) < ($1.clock.ms, $1.clock.n, $1.feed, $1.seq)
+        }) {
             let anchor = anchorTurn(of: message, in: view, queuedBases: queuedBases)
             let key = anchor ?? ""
             linked.append((message, lastQueued[key] ?? anchor.flatMap { tails[$0] }))
             lastQueued[key] = message.id
         }
         var tail = linked.last?.0.id
-        for message in loose.sorted(by: { ($0.clock.ms, $0.clock.n, $0.feed, $0.seq) < ($1.clock.ms, $1.clock.n, $1.feed, $1.seq) }) {
+        for message in loose.sorted(by: {
+            ($0.clock.ms, $0.clock.n, $0.feed, $0.seq) < ($1.clock.ms, $1.clock.n, $1.feed, $1.seq)
+        }) {
             linked.append((message, tail))
             tail = message.id
         }
@@ -257,7 +263,9 @@ nonisolated enum KernelSurfaceFold {
         var parents: [String: String] = [:]
         for component in document.components.values {
             for child in component.children {
-                guard document.components[child] != nil, parents[child] == nil, child != document.root else { return nil }
+                guard document.components[child] != nil, parents[child] == nil, child != document.root else {
+                    return nil
+                }
                 parents[child] = component.id
             }
         }
@@ -300,7 +308,9 @@ nonisolated enum KernelSurfaceFold {
                 var doomed: Set<String> = []
                 var stack = [id]
                 while let next = stack.popLast() {
-                    if doomed.insert(next).inserted { stack.append(contentsOf: document.components[next]?.children ?? []) }
+                    if doomed.insert(next).inserted {
+                        stack.append(contentsOf: document.components[next]?.children ?? [])
+                    }
                 }
                 for key in doomed { document.components[key] = nil }
                 for key in Array(document.components.keys) {

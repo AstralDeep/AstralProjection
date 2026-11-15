@@ -25,12 +25,19 @@
         }
         override func tearDownWithError() throws { try? FileManager.default.removeItem(at: root) }
 
-        private func fakeInstaller(_ home: NodeHome, content: String = "ASTRAL_NODE_PROFILE=personal\nKEYCLOAK_CLIENT_ID=x\n")
+        private func fakeInstaller(
+            _ home: NodeHome, content: String = "ASTRAL_NODE_PROFILE=personal\nKEYCLOAK_CLIENT_ID=x\n"
+        )
             -> @Sendable (URL, [String]) throws -> (status: Int32, output: String)
         {
             { script, arguments in
                 XCTAssertTrue(script.path.hasSuffix("app/scripts/node/install-personal-node.sh"))
-                XCTAssertEqual(arguments, ["--issuer", "https://iam.example/realms/a", "--client-id", "astral-desktop", "--home", home.root.path])
+                XCTAssertEqual(
+                    arguments,
+                    [
+                        "--issuer", "https://iam.example/realms/a", "--client-id", "astral-desktop", "--home",
+                        home.root.path,
+                    ])
                 try content.write(to: home.envFile, atomically: true, encoding: .utf8)
                 return (0, "ok")
             }
@@ -40,13 +47,16 @@
             let home = NodeHome(root: root.appendingPathComponent("home"))
             for _ in 0..<2 {
                 try home.prepare(
-                    pack: pack, issuer: "https://iam.example/realms/a", clientId: "astral-desktop", meshLabel: "Sam's Mac",
+                    pack: pack, issuer: "https://iam.example/realms/a", clientId: "astral-desktop",
+                    meshLabel: "Sam's Mac",
                     runScript: fakeInstaller(home))
             }
             let env = try String(contentsOf: home.envFile, encoding: .utf8)
             XCTAssertEqual(env.components(separatedBy: "ASTRAL_NODE_MESH_LABEL=").count, 2)
             XCTAssertTrue(env.contains("ASTRAL_NODE_MESH_LABEL=Sam's Mac\n"))
-            func mode(_ url: URL) -> Int { (try? FileManager.default.attributesOfItem(atPath: url.path))?[.posixPermissions] as? Int ?? 0 }
+            func mode(_ url: URL) -> Int {
+                (try? FileManager.default.attributesOfItem(atPath: url.path))?[.posixPermissions] as? Int ?? 0
+            }
             XCTAssertEqual(mode(home.root), 0o700)
             XCTAssertEqual(mode(home.logs), 0o700)
             XCTAssertEqual(mode(home.envFile), 0o600)
@@ -71,10 +81,12 @@
         func testAFailingInstallerOrMissingEnvFileIsReported() {
             let home = NodeHome(root: root.appendingPathComponent("home"))
             XCTAssertThrowsError(
-                try home.prepare(pack: pack, issuer: "i", clientId: "c", meshLabel: "m", runScript: { _, _ in (2, "boom") })
+                try home.prepare(
+                    pack: pack, issuer: "i", clientId: "c", meshLabel: "m", runScript: { _, _ in (2, "boom") })
             ) { XCTAssertEqual($0 as? NodeHostError, .homeSetupFailed("boom")) }
             XCTAssertThrowsError(
-                try home.prepare(pack: pack, issuer: "i", clientId: "c", meshLabel: "m", runScript: { _, _ in (0, "silent") })
+                try home.prepare(
+                    pack: pack, issuer: "i", clientId: "c", meshLabel: "m", runScript: { _, _ in (0, "silent") })
             ) { XCTAssertEqual($0 as? NodeHostError, .homeSetupFailed("silent")) }
         }
 
@@ -104,21 +116,32 @@
             XCTAssertFalse(NodeHostAvailability.permits(marker: "direct-download", sandboxed: true))
             XCTAssertFalse(NodeHostAvailability.permits(marker: nil, sandboxed: false))
             XCTAssertFalse(NodeHostAvailability.permits(marker: "app-store", sandboxed: false))
-            XCTAssertFalse(NodeHostAvailability.current(bundle: Bundle(for: NodeHostSupportTests.self), environment: [:]))
+            XCTAssertFalse(
+                NodeHostAvailability.current(bundle: Bundle(for: NodeHostSupportTests.self), environment: [:]))
         }
 
         func testPairingClientReadsTheDescriptorAndTheOffer() async throws {
             let http = FakeNodeHTTP()
             http.responses = [
-                (Data(#"{"node_id":"astral-node:1","capabilities":["chat","mesh-peer"],"mesh":{"state":"not_enrolled","mesh_id":null,"member_id":null,"requests":true}}"#.utf8), 200),
-                (Data(#"{"pairing":{},"mesh":{"state":"offer","code":"ABCD-1234","payload":"payload-text","expires_ms":1700000000000}}"#.utf8), 200),
+                (
+                    Data(
+                        #"{"node_id":"astral-node:1","capabilities":["chat","mesh-peer"],"mesh":{"state":"not_enrolled","mesh_id":null,"member_id":null,"requests":true}}"#
+                            .utf8), 200
+                ),
+                (
+                    Data(
+                        #"{"pairing":{},"mesh":{"state":"offer","code":"ABCD-1234","payload":"payload-text","expires_ms":1700000000000}}"#
+                            .utf8), 200
+                ),
             ]
             let client = try NodePairingClient(port: 18_700, http: http)
             let descriptor = try await client.descriptor()
             XCTAssertTrue(descriptor.canJoinMesh)
             XCTAssertEqual(descriptor.mesh?.state, "not_enrolled")
             let result = try await client.pairingOffer(bearer: "tok", label: "Sam's Mac")
-            XCTAssertEqual(result, .offer(NodePairingOffer(code: "ABCD-1234", payload: "payload-text", expiresMs: 1_700_000_000_000)))
+            XCTAssertEqual(
+                result,
+                .offer(NodePairingOffer(code: "ABCD-1234", payload: "payload-text", expiresMs: 1_700_000_000_000)))
             let request = http.requests[1]
             XCTAssertEqual(request.url?.absoluteString, "http://127.0.0.1:18700/api/node/pairing")
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer tok")
@@ -140,18 +163,30 @@
             let joined = try await client.pairingOffer(bearer: "t", label: "l")
             XCTAssertEqual(joined, .alreadyJoined(meshId: "m1"))
             http.responses = [(Data(#"{"mesh":{"state":"not_enrolled","error":"kernel_unavailable"}}"#.utf8), 200)]
-            await assertThrows(NodePairingError.meshUnavailable("kernel_unavailable")) { _ = try await client.pairingOffer(bearer: "t", label: "l") }
+            await assertThrows(NodePairingError.meshUnavailable("kernel_unavailable")) {
+                _ = try await client.pairingOffer(bearer: "t", label: "l")
+            }
             http.responses = [(Data(), 401)]
-            await assertThrows(NodePairingError.unauthorized) { _ = try await client.pairingOffer(bearer: "t", label: "l") }
+            await assertThrows(NodePairingError.unauthorized) {
+                _ = try await client.pairingOffer(bearer: "t", label: "l")
+            }
             http.responses = [(Data(#"{"detail":"node_owner_mismatch"}"#.utf8), 403)]
-            await assertThrows(NodePairingError.refused(status: 403, detail: "node_owner_mismatch")) { _ = try await client.pairingOffer(bearer: "t", label: "l") }
+            await assertThrows(NodePairingError.refused(status: 403, detail: "node_owner_mismatch")) {
+                _ = try await client.pairingOffer(bearer: "t", label: "l")
+            }
             http.responses = [(Data(#"{"no":"mesh"}"#.utf8), 200)]
-            await assertThrows(NodePairingError.unexpectedResponse) { _ = try await client.pairingOffer(bearer: "t", label: "l") }
+            await assertThrows(NodePairingError.unexpectedResponse) {
+                _ = try await client.pairingOffer(bearer: "t", label: "l")
+            }
             http.responses = [(Data(#"{"mesh":{"state":"offer","code":"x","payload":""}}"#.utf8), 200)]
-            await assertThrows(NodePairingError.unexpectedResponse) { _ = try await client.pairingOffer(bearer: "t", label: "l") }
+            await assertThrows(NodePairingError.unexpectedResponse) {
+                _ = try await client.pairingOffer(bearer: "t", label: "l")
+            }
             http.responses = [(Data("x".utf8), 500)]
             await assertThrows(NodePairingError.unexpectedResponse) { _ = try await client.descriptor() }
-            XCTAssertThrowsError(try NodePairingClient(port: 0, http: http)) { XCTAssertEqual($0 as? NodePairingError, .notLoopback) }
+            XCTAssertThrowsError(try NodePairingClient(port: 0, http: http)) {
+                XCTAssertEqual($0 as? NodePairingError, .notLoopback)
+            }
         }
 
         private func assertThrows(_ expected: NodePairingError, _ body: () async throws -> Void) async {

@@ -1,10 +1,11 @@
 // Unit tests for the pure mapping layer between the generated kernel records and the host's Mesh types: status, allowance, errors, turn events, the chat tree, surfaces, host-signer prompts and local tools.
 // They build the generated records directly, so no kernel is opened.
 
-@testable import AstralDeep
 import AstralKernel
 import CryptoKit
 import XCTest
+
+@testable import AstralDeep
 
 final class KernelMappingTests: XCTestCase {
     private let feed = "feed-a"

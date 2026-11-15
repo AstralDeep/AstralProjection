@@ -1,7 +1,8 @@
 // Verifies strict publisher registration responses, explicit HTTPS configuration and content-free, owner-authenticated request bounds.
 
-@testable import AstralCore
 import XCTest
+
+@testable import AstralCore
 
 final class MeshPushRestTests: XCTestCase {
     let mesh = "sha256:" + String(repeating: "a", count: 64)

@@ -1,8 +1,10 @@
 // Checks content-free wake admission, bounded completion and lifecycle cancellation without an APNs service or wall-clock waits.
 // The runtime checks ensure a wake never opens custody or starts work outside an existing enrolled mesh.
 
-@testable import AstralDeep
 import XCTest
+
+@testable import AstralDeep
+
 #if os(iOS)
     import UIKit
 #endif
@@ -25,7 +27,12 @@ final class MeshBackgroundWakeTests: XCTestCase {
 
     func testRejectedAndUnauthorizedWakeCompletesWithoutRunningWork() {
         var calls = 0
-        let handler = MeshBackgroundWake(authorized: { false }, synchronize: { calls += 1; return true })
+        let handler = MeshBackgroundWake(
+            authorized: { false },
+            synchronize: {
+                calls += 1
+                return true
+            })
         var outcomes: [MeshBackgroundWake.Result] = []
         XCTAssertNil(handler.receive(payload) { outcomes.append($0) })
         XCTAssertEqual(outcomes, [.noData])
@@ -51,10 +58,17 @@ final class MeshBackgroundWakeTests: XCTestCase {
         let deadline = WakeGate()
         let completed = expectation(description: "budget completion")
         let handler = MeshBackgroundWake(
-            authorized: { true }, synchronize: { await work.wait(); return true },
+            authorized: { true },
+            synchronize: {
+                await work.wait()
+                return true
+            },
             waitBudget: { await deadline.wait() })
         var outcomes: [MeshBackgroundWake.Result] = []
-        let task = handler.receive(payload) { outcomes.append($0); completed.fulfill() }
+        let task = handler.receive(payload) {
+            outcomes.append($0)
+            completed.fulfill()
+        }
         await deadline.started()
         deadline.release()
         await fulfillment(of: [completed], timeout: 5)
@@ -67,11 +81,13 @@ final class MeshBackgroundWakeTests: XCTestCase {
         let work = WakeGate()
         var allowed = true
         var calls = 0
-        let handler = MeshBackgroundWake(authorized: { allowed }, synchronize: {
-            calls += 1
-            await work.wait()
-            return true
-        })
+        let handler = MeshBackgroundWake(
+            authorized: { allowed },
+            synchronize: {
+                calls += 1
+                await work.wait()
+                return true
+            })
         var first: [MeshBackgroundWake.Result] = []
         var duplicate: [MeshBackgroundWake.Result] = []
         let task = handler.receive(payload) { first.append($0) }
@@ -90,7 +106,12 @@ final class MeshBackgroundWakeTests: XCTestCase {
     func testAuthorizationIsRecheckedAfterSuspension() async {
         let work = WakeGate()
         var allowed = true
-        let handler = MeshBackgroundWake(authorized: { allowed }, synchronize: { await work.wait(); return true })
+        let handler = MeshBackgroundWake(
+            authorized: { allowed },
+            synchronize: {
+                await work.wait()
+                return true
+            })
         var outcomes: [MeshBackgroundWake.Result] = []
         let task = handler.receive(payload) { outcomes.append($0) }
         await work.started()
@@ -103,12 +124,12 @@ final class MeshBackgroundWakeTests: XCTestCase {
     func testColdAndUnenrolledRuntimeNeverOpenKeysOrSync() async throws {
         let h = MeshRuntimeHarness(hasMesh: false)
         defer { h.cleanUp() }
-        let cold = try await h.runtime.synchronizeAfterWake(waitForChange: { })
+        let cold = try await h.runtime.synchronizeAfterWake(waitForChange: {})
         XCTAssertFalse(cold)
         XCTAssertNil(h.box.kernel)
         await h.runtime.open()
         let count = h.kernel.calls.count
-        let unenrolled = try await h.runtime.synchronizeAfterWake(waitForChange: { })
+        let unenrolled = try await h.runtime.synchronizeAfterWake(waitForChange: {})
         XCTAssertFalse(unenrolled)
         XCTAssertEqual(h.kernel.calls.count, count)
     }
@@ -135,7 +156,9 @@ final class MeshBackgroundWakeTests: XCTestCase {
 
     #if os(iOS)
         func testAppDeclaresBackgroundRemoteNotifications() {
-            XCTAssertTrue((Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String])?.contains("remote-notification") == true)
+            XCTAssertTrue(
+                (Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String])?.contains(
+                    "remote-notification") == true)
         }
 
         func testDelegateCompletesWithoutAnActiveMeshAndRejectsContentfulPushes() {
@@ -147,9 +170,17 @@ final class MeshBackgroundWakeTests: XCTestCase {
             delegate.application(.shared, didReceiveRemoteNotification: payload) { outcomes.append($0) }
             XCTAssertEqual(outcomes, [.noData])
             var calls = 0
-            let handler = MeshBackgroundWake(authorized: { true }, synchronize: { calls += 1; return true })
+            let handler = MeshBackgroundWake(
+                authorized: { true },
+                synchronize: {
+                    calls += 1
+                    return true
+                })
             MeshBackgroundWake.active = handler
-            delegate.application(.shared, didReceiveRemoteNotification: ["aps": ["alert": "legacy"], "notification_id": "existing-alert"]) {
+            delegate.application(
+                .shared,
+                didReceiveRemoteNotification: ["aps": ["alert": "legacy"], "notification_id": "existing-alert"]
+            ) {
                 outcomes.append($0)
             }
             XCTAssertEqual(calls, 0)
@@ -160,7 +191,12 @@ final class MeshBackgroundWakeTests: XCTestCase {
             let previous = MeshBackgroundWake.active
             defer { MeshBackgroundWake.active = previous }
             let gate = WakeGate()
-            let handler = MeshBackgroundWake(authorized: { true }, synchronize: { await gate.wait(); return true })
+            let handler = MeshBackgroundWake(
+                authorized: { true },
+                synchronize: {
+                    await gate.wait()
+                    return true
+                })
             MeshBackgroundWake.active = handler
             var outcomes: [MeshBackgroundWake.Result] = []
             let task = handler.receive(payload) { outcomes.append($0) }

@@ -83,9 +83,11 @@ nonisolated struct MeshIssuerSource: Sendable {
 }
 
 nonisolated enum MeshKernelFactories {
-    static func live(issuerSource: MeshIssuerSource = .keycloak(), network: NetworkConfig = NetworkConfig(
-        relay: .default, localDiscovery: true, internetLookup: true, loopbackOnly: false, syncIntervalMs: 30_000,
-        mailbox: nil)
+    static func live(
+        issuerSource: MeshIssuerSource = .keycloak(),
+        network: NetworkConfig = NetworkConfig(
+            relay: .default, localDiscovery: true, internetLookup: true, loopbackOnly: false, syncIntervalMs: 30_000,
+            mailbox: nil)
     ) -> MeshKernelFactory {
         { config, signer, model, tools, listener in
             let issuers = await issuerSource.issuers(cacheIn: config.dataDirectory)

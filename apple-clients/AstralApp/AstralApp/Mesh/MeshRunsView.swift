@@ -169,8 +169,11 @@ struct MeshProposalRow: View {
 
     @ViewBuilder private var checks: some View {
         if let gate = proposal.gatePassed {
-            Label(gate ? "Safety checks passed" : "Safety checks failed", systemImage: gate ? "checkmark.shield" : "xmark.shield")
-                .font(ConsoleTypography.caption).foregroundStyle(gate ? p.success : p.error)
+            Label(
+                gate ? "Safety checks passed" : "Safety checks failed",
+                systemImage: gate ? "checkmark.shield" : "xmark.shield"
+            )
+            .font(ConsoleTypography.caption).foregroundStyle(gate ? p.success : p.error)
         }
         if let replay = proposal.replayPassed {
             Label(replay ? "Replay passed" : "Replay failed", systemImage: replay ? "checkmark.circle" : "xmark.circle")

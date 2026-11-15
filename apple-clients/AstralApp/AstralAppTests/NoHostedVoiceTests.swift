@@ -2,9 +2,10 @@
 // A URLProtocol recorder fails every HTTP request, and the on-device session is driven with the existing fakes and no microphone.
 
 import AstralCore
-@testable import AstralDeep
 import CryptoKit
 import XCTest
+
+@testable import AstralDeep
 
 final class HostedVoiceRequestRecorder: URLProtocol, @unchecked Sendable {
     private static let lock = NSLock()

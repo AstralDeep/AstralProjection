@@ -1,9 +1,10 @@
 // Builds a MeshRuntime over an InMemoryMeshKernel with in-memory custody so tests can drive kernel events and inspect state.
 // It also provides a recording speech sink and small helpers shared by the mesh runtime tests.
 
-@testable import AstralDeep
 import AstralCore
 import XCTest
+
+@testable import AstralDeep
 
 nonisolated final class KernelBox: @unchecked Sendable {
     private let lock = NSLock()

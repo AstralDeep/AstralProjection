@@ -2,9 +2,10 @@
 // Failing media doubles reproduce transport callbacks followed by a thrown connection error.
 
 import AstralCore
-@testable import AstralDeep
 import Foundation
 import XCTest
+
+@testable import AstralDeep
 
 @MainActor
 final class VoiceRecoveryTests: XCTestCase {

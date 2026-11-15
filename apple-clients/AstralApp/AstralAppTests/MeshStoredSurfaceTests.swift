@@ -1,8 +1,9 @@
-// Verifies one real kernel capture reaches native primitives with its stored identity, outside-agent provenance and denied links and controls intact.
-@testable import AstralDeep
 import AstralCore
 import AstralKernel
 import XCTest
+
+// Verifies one real kernel capture reaches native primitives with its stored identity, outside-agent provenance and denied links and controls intact.
+@testable import AstralDeep
 
 @MainActor
 final class MeshStoredSurfaceTests: XCTestCase {
@@ -25,7 +26,9 @@ final class MeshStoredSurfaceTests: XCTestCase {
             let components = MeshRenderedMapper.components(for: rendered, resolved: [:])
             XCTAssertEqual(components.first?.children.map(\.componentId), ["heading", "pulse", "link", "send"])
             XCTAssertEqual(components.first?.children.dropFirst().first?.textContent, "Pulse: 72 bpm")
-            XCTAssertEqual(components.first?.children.dropFirst(2).first?.textContent, MeshModelText.neutralize("[text with a link was removed]"))
+            XCTAssertEqual(
+                components.first?.children.dropFirst(2).first?.textContent,
+                MeshModelText.neutralize("[text with a link was removed]"))
             XCTAssertEqual(components.first?.children.dropFirst(3).first?.type, "text")
             for component in components.first?.children ?? [] {
                 XCTAssertNil(component.raw["action"])
@@ -53,7 +56,8 @@ final class MeshStoredSurfaceTests: XCTestCase {
     }
 
     func testTheRealKernelImportsTheCapturedOutsidePageBeforeNativeMapping() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("surface-import-" + UUID().uuidString)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "surface-import-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let suite = "surface-import-" + UUID().uuidString
@@ -82,13 +86,16 @@ final class MeshStoredSurfaceTests: XCTestCase {
         XCTAssertEqual(body.objectValue?["source"], snapshot.event.body.objectValue?["source"])
         XCTAssertEqual(KernelSurfaceFold.fold([event]).first?.surface.surfaceId, imported.surfaceId)
         for (device, width) in [("browser", 1280), ("mobile", 390)] {
-            try kernel.setDeviceProfile(deviceProfileJson: "{\"device_type\":\"\(device)\",\"viewport_width\":\(width)}")
+            try kernel.setDeviceProfile(
+                deviceProfileJson: "{\"device_type\":\"\(device)\",\"viewport_width\":\(width)}")
             let rendered = try XCTUnwrap(kernel.chat(chatId: chat).rendered.first)
             XCTAssertTrue(rendered.untrusted)
             let document = try JSONDecoder().decode(JSONValue.self, from: Data(rendered.documentJson.utf8))
             XCTAssertEqual(document, snapshot.event.body.objectValue?["document"])
             let native = try XCTUnwrap(KernelChatMapper.rendered(rendered))
-            XCTAssertEqual(MeshRenderedMapper.components(for: native, resolved: [:]).first?.children.dropFirst().first?.textContent, "Pulse: 72 bpm")
+            XCTAssertEqual(
+                MeshRenderedMapper.components(for: native, resolved: [:]).first?.children.dropFirst().first?
+                    .textContent, "Pulse: 72 bpm")
         }
         do {
             _ = try await kernel.act(surfaceId: imported.surfaceId, componentId: "send", actionJson: "{}")

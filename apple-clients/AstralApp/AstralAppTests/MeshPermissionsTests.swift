@@ -1,8 +1,9 @@
 // Verifies the tool permissions state in MeshRuntime over an in-memory kernel: the listed tools, granting through the consent gate, revoking at once, and the grants remembered for this mesh.
 // The real consent sheet content is covered in KernelMappingTests and RealMeshKernelTests.
 
-@testable import AstralDeep
 import XCTest
+
+@testable import AstralDeep
 
 @MainActor
 final class MeshPermissionsTests: XCTestCase {

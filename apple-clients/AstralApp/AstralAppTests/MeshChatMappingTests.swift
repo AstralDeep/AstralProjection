@@ -2,8 +2,9 @@
 // It also checks the app mode store, provider-free helpers and the QR renderer that the mesh screens rely on.
 
 import AstralCore
-@testable import AstralDeep
 import XCTest
+
+@testable import AstralDeep
 
 final class MeshChatMappingTests: XCTestCase {
     private func hasLinkOrImage(_ markdown: String) -> Bool {

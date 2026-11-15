@@ -55,7 +55,8 @@
                 let directory = relative.isEmpty ? root : root.appendingPathComponent(relative)
                 for name in (try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? [] {
                     let child = relative.isEmpty ? name : relative + "/" + name
-                    let type = (try? fileManager.attributesOfItem(atPath: root.appendingPathComponent(child).path))?[.type]
+                    let type =
+                        (try? fileManager.attributesOfItem(atPath: root.appendingPathComponent(child).path))?[.type]
                         as? FileAttributeType
                     if type == .typeDirectory {
                         walk(child)
@@ -76,7 +77,9 @@
                 }
                 let url = root.appendingPathComponent(entry.path)
                 if let link = entry.link {
-                    if type != .typeSymbolicLink || (try? fileManager.destinationOfSymbolicLink(atPath: url.path)) != link {
+                    if type != .typeSymbolicLink
+                        || (try? fileManager.destinationOfSymbolicLink(atPath: url.path)) != link
+                    {
                         problems.append("link changed \(entry.path)")
                     } else if linkEscapes(path: entry.path, target: link) {
                         problems.append("link leaves the pack \(entry.path)")
@@ -85,7 +88,8 @@
                     problems.append("not a regular file \(entry.path)")
                 } else {
                     let size = ((try? fileManager.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.int64Value
-                    let mode = ((try? fileManager.attributesOfItem(atPath: url.path))?[.posixPermissions] as? NSNumber)?
+                    let mode =
+                        ((try? fileManager.attributesOfItem(atPath: url.path))?[.posixPermissions] as? NSNumber)?
                         .intValue ?? 0
                     if size != entry.size || (try? sha256(of: url)) != entry.sha256 {
                         problems.append("content changed \(entry.path)")
@@ -130,7 +134,9 @@
             }
             let raw = try await transport.data(from: descriptorURL, maxBytes: Self.maximumDescriptorBytes)
             let digest = SHA256.hash(data: raw).map { String(format: "%02x", $0) }.joined()
-            if let pinnedDescriptorSha256, pinnedDescriptorSha256 != digest { throw NodePackError.descriptorPinMismatch }
+            if let pinnedDescriptorSha256, pinnedDescriptorSha256 != digest {
+                throw NodePackError.descriptorPinMismatch
+            }
             guard let descriptor = try? JSONDecoder().decode(NodePackDescriptor.self, from: raw),
                 descriptor.format == NodePackDescriptor.formatName
             else { throw NodePackError.descriptorInvalid("unrecognized format") }
@@ -176,7 +182,8 @@
             }
 
             progress(.verifying)
-            let actualSize = ((try? fileManager.attributesOfItem(atPath: archive.path))?[.size] as? NSNumber)?.int64Value ?? -1
+            let actualSize =
+                ((try? fileManager.attributesOfItem(atPath: archive.path))?[.size] as? NSNumber)?.int64Value ?? -1
             guard actualSize == offer.descriptor.archive.size else {
                 throw NodePackError.sizeMismatch(expected: offer.descriptor.archive.size, actual: actualSize)
             }
@@ -218,7 +225,8 @@
         public func installed() -> InstalledNodePack? {
             guard let data = try? Data(contentsOf: recordURL),
                 let installed = try? Self.decoder.decode(InstalledNodePack.self, from: data),
-                fileManager.isExecutableFile(atPath: installed.root.appendingPathComponent("python/bin/python3.11").path)
+                fileManager.isExecutableFile(
+                    atPath: installed.root.appendingPathComponent("python/bin/python3.11").path)
             else { return nil }
             return installed
         }
@@ -286,7 +294,9 @@
                             throwing: NodePackError.extractionFailed(String(message.prefix(400))))
                     }
                 }
-                do { try process.run() } catch { continuation.resume(throwing: NodePackError.extractionFailed("\(error)")) }
+                do { try process.run() } catch {
+                    continuation.resume(throwing: NodePackError.extractionFailed("\(error)"))
+                }
             }
         }
     }
@@ -320,7 +330,9 @@
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                 throw NodePackError.downloadFailed("http \(http.statusCode)")
             }
-            guard data.count <= maxBytes else { throw NodePackError.downloadFailed("response is larger than \(maxBytes) bytes") }
+            guard data.count <= maxBytes else {
+                throw NodePackError.downloadFailed("response is larger than \(maxBytes) bytes")
+            }
             return data
         }
 
@@ -353,12 +365,15 @@
             handler?(totalBytesWritten, max(totalBytesExpectedToWrite, 0))
         }
 
-        public func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        public func urlSession(
+            _ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL
+        ) {
             lock.lock()
             let destination = destinations[downloadTask.taskIdentifier]
             lock.unlock()
             if let http = downloadTask.response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                record(failure: NodePackError.downloadFailed("http \(http.statusCode)"), for: downloadTask.taskIdentifier)
+                record(
+                    failure: NodePackError.downloadFailed("http \(http.statusCode)"), for: downloadTask.taskIdentifier)
                 return
             }
             guard let destination else { return }

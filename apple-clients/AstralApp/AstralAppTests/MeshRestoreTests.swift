@@ -1,8 +1,9 @@
 // Verifies recovery from the 24 words in MeshRuntime over an in-memory kernel: word normalization, the restored mesh and device, clear errors, and that the words are neither logged nor stored.
 // The real-kernel recovery is covered next to the other wrapper tests in RealMeshKernelTests.
 
-@testable import AstralDeep
 import XCTest
+
+@testable import AstralDeep
 
 @MainActor
 final class MeshRestoreTests: XCTestCase {

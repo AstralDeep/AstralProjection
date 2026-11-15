@@ -1,8 +1,9 @@
 // Verifies that every Keychain service the app uses derives from the bundle identifier, keeping production names unchanged.
 
-@testable import AstralDeep
 import AstralCore
 import XCTest
+
+@testable import AstralDeep
 
 final class KeychainServiceNameTests: XCTestCase {
     private let suffixes = ["tokens", "mesh", "server-session", "push", "unsent-message", "mesh-device"]

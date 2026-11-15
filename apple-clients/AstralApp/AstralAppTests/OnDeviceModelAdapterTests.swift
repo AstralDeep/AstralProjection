@@ -4,11 +4,11 @@
 import Foundation
 import XCTest
 
+@testable import AstralDeep
+
 #if canImport(FoundationModels)
     import FoundationModels
 #endif
-
-@testable import AstralDeep
 
 final class OnDeviceModelAdapterTests: XCTestCase {
     private let schemaJSON = """

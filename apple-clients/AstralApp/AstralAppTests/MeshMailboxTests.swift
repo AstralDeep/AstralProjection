@@ -1,9 +1,10 @@
 // Verifies the mailbox setting in MeshRuntime over an in-memory kernel: empty by default, validation, passing the address at open, reopening on a change, and the state the settings screen reads.
 // The real kernel's address check and reopen are covered in RealMeshKernelTests.
 
-@testable import AstralDeep
 import AstralKernel
 import XCTest
+
+@testable import AstralDeep
 
 @MainActor
 final class MeshMailboxTests: XCTestCase {
@@ -98,7 +99,8 @@ final class MeshMailboxTests: XCTestCase {
         await h.runtime.open()
         let when = Date(timeIntervalSince1970: 1_000)
         h.kernel.setMailboxState(
-            MeshMailboxState(configured: true, status: .ok, lastError: nil, lastOk: when, pendingNotices: 2, truncated: true))
+            MeshMailboxState(
+                configured: true, status: .ok, lastError: nil, lastOk: when, pendingNotices: 2, truncated: true))
         await h.runtime.refreshMailbox()
         XCTAssertEqual(h.runtime.mailbox.pendingNotices, 2)
         XCTAssertTrue(h.runtime.mailbox.truncated)
@@ -109,10 +111,13 @@ final class MeshMailboxTests: XCTestCase {
 
     func testEveryMailboxStatusHasPlainText() {
         let now = Date(timeIntervalSince1970: 10_000)
-        func text(_ status: MeshMailboxState.Status, error: String? = nil, ok: Date? = nil, configured: Bool = true) -> String {
+        func text(_ status: MeshMailboxState.Status, error: String? = nil, ok: Date? = nil, configured: Bool = true)
+            -> String
+        {
             MeshPresentation.mailbox(
                 MeshMailboxState(
-                    configured: configured, status: status, lastError: error, lastOk: ok, pendingNotices: 0, truncated: false),
+                    configured: configured, status: status, lastError: error, lastOk: ok, pendingNotices: 0,
+                    truncated: false),
                 now: now)
         }
         XCTAssertEqual(text(.disabled), "No mailbox is set.")
@@ -124,7 +129,8 @@ final class MeshMailboxTests: XCTestCase {
         XCTAssertEqual(text(.waiting), "Waiting for the mailbox to answer.")
         XCTAssertEqual(text(.removed), "The mailbox no longer accepts this device.")
         XCTAssertEqual(text(.unreachable), "The mailbox cannot be reached right now.")
-        XCTAssertEqual(text(.error, error: "mailbox.too_large"), "The mailbox refused the exchange (mailbox.too_large).")
+        XCTAssertEqual(
+            text(.error, error: "mailbox.too_large"), "The mailbox refused the exchange (mailbox.too_large).")
         XCTAssertEqual(text(.error), "The mailbox refused the exchange.")
         XCTAssertEqual(text(.unknown), "The mailbox state is not known.")
     }

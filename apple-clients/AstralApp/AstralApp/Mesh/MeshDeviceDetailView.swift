@@ -64,12 +64,20 @@ struct MeshDeviceDetailView: View {
                 }
                 LabeledContent("Added", value: MeshPresentation.added(member.addedAt))
                     .accessibilityIdentifier("mesh.device.added")
-                LabeledContent("Verification", value: MeshPresentation.verificationAge(member.attested ? member.attestedAt ?? member.addedAt : nil))
-                    .accessibilityIdentifier("mesh.device.verified")
-                LabeledContent("Kind", value: member.isThisDevice ? "This " + MeshPresentation.kind(member.kind).lowercased() : MeshPresentation.kind(member.kind))
+                LabeledContent(
+                    "Verification",
+                    value: MeshPresentation.verificationAge(member.attested ? member.attestedAt ?? member.addedAt : nil)
+                )
+                .accessibilityIdentifier("mesh.device.verified")
+                LabeledContent(
+                    "Kind",
+                    value: member.isThisDevice
+                        ? "This " + MeshPresentation.kind(member.kind).lowercased() : MeshPresentation.kind(member.kind)
+                )
                 if !member.isThisDevice {
                     LabeledContent("Last seen", value: lastSeen(sync?.lastSeen ?? member.lastSeen))
-                    LabeledContent("Connection", value: MeshPresentation.connection(sync?.path ?? member.path).capitalizedFirst)
+                    LabeledContent(
+                        "Connection", value: MeshPresentation.connection(sync?.path ?? member.path).capitalizedFirst)
                     if let sync { LabeledContent("Sync", value: MeshPresentation.syncState(sync.state)) }
                 }
                 LabeledContent("History access", value: "All chats")

@@ -1,8 +1,9 @@
 // Checks ordinary-turn recovery admission, native worker retirement and stale callbacks without audio hardware or a network service.
 // Barrier-controlled in-memory workers stay alive until the fixture explicitly releases them.
 
-@testable import AstralDeep
 import XCTest
+
+@testable import AstralDeep
 
 nonisolated final class ResumeWorkerGate: @unchecked Sendable {
     private let lock = NSLock()

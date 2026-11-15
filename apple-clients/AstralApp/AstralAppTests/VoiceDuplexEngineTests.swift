@@ -2,8 +2,9 @@
 // The mixer must convert model speech to the same client format used by voice-processed capture.
 
 import AVFoundation
-@testable import AstralDeep
 import XCTest
+
+@testable import AstralDeep
 
 @MainActor
 final class VoiceDuplexEngineTests: XCTestCase {

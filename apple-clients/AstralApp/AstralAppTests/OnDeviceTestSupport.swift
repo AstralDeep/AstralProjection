@@ -3,9 +3,10 @@
 
 import AVFoundation
 import AstralCore
-@testable import AstralDeep
 import Foundation
 import XCTest
+
+@testable import AstralDeep
 
 final class ManualVoiceClock: VoiceClock, @unchecked Sendable {
     private let lock = NSLock()

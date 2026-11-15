@@ -2,10 +2,11 @@
 // It covers mesh creation, pairing with a roster consent, chat sync both ways, denial, refused actions and the issuer key cache.
 
 import AstralCore
-@testable import AstralDeep
 import AstralKernel
 import CryptoKit
 import XCTest
+
+@testable import AstralDeep
 
 nonisolated final class RecordingPresenter: ConsentPresenting, @unchecked Sendable {
     private let lock = NSLock()

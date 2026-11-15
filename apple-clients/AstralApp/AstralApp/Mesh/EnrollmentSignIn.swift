@@ -67,7 +67,8 @@ nonisolated struct EnrollmentSignIn: Sendable {
         #else
             let client = AstralConfig.macosClientId
         #endif
-        let authority = URL(string: AstralConfig.keycloakAuthority) ?? URL(string: AstralConfig.fallbackKeycloakAuthority)!
+        let authority =
+            URL(string: AstralConfig.keycloakAuthority) ?? URL(string: AstralConfig.fallbackKeycloakAuthority)!
         return OIDCConfig(
             authority: authority, clientId: client, redirectURI: AstralConfig.redirectURI, scope: "openid")
     }
@@ -163,7 +164,8 @@ final class SystemEnrollmentWebAuthenticator: NSObject, EnrollmentWebAuthenticat
     private func start(url: URL, callbackScheme: String) async throws -> URL {
         try await withCheckedThrowingContinuation(isolation: MainActor.shared) { continuation in
             MainActor.assumeIsolated {
-                let session = ASWebAuthenticationSession(url: url, callbackURLScheme: callbackScheme) { callback, error in
+                let session = ASWebAuthenticationSession(url: url, callbackURLScheme: callbackScheme) {
+                    callback, error in
                     if let callback {
                         continuation.resume(returning: callback)
                     } else if let error = error as? ASWebAuthenticationSessionError, error.code == .canceledLogin {

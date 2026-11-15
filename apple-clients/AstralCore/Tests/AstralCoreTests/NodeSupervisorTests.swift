@@ -55,8 +55,16 @@
             return process
         }
 
-        var count: Int { lock.lock(); defer { lock.unlock() }; return processes.count }
-        func process(_ index: Int) -> FakeNodeProcess { lock.lock(); defer { lock.unlock() }; return processes[index] }
+        var count: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return processes.count
+        }
+        func process(_ index: Int) -> FakeNodeProcess {
+            lock.lock()
+            defer { lock.unlock() }
+            return processes[index]
+        }
     }
 
     final class FakeProbe: NodeHealthProbe, @unchecked Sendable {
@@ -65,7 +73,11 @@
         var fallback = true
         private(set) var calls = 0
 
-        func script(_ values: [Bool]) { lock.lock(); answers = values; lock.unlock() }
+        func script(_ values: [Bool]) {
+            lock.lock()
+            answers = values
+            lock.unlock()
+        }
         func isHealthy(port: Int) async -> Bool {
             lock.withLock {
                 calls += 1
@@ -77,7 +89,11 @@
     final class FakeClock: @unchecked Sendable {
         private let lock = NSLock()
         private var slept: [Double] = []
-        var values: [Double] { lock.lock(); defer { lock.unlock() }; return slept }
+        var values: [Double] {
+            lock.lock()
+            defer { lock.unlock() }
+            return slept
+        }
         func sleep(_ seconds: Double) async throws {
             lock.withLock { slept.append(seconds) }
             try await Task.sleep(nanoseconds: 2_000_000)
@@ -88,8 +104,16 @@
     final class StateLog: @unchecked Sendable {
         private let lock = NSLock()
         private var items: [NodeSupervisorState] = []
-        func add(_ state: NodeSupervisorState) { lock.lock(); items.append(state); lock.unlock() }
-        var values: [NodeSupervisorState] { lock.lock(); defer { lock.unlock() }; return items }
+        func add(_ state: NodeSupervisorState) {
+            lock.lock()
+            items.append(state)
+            lock.unlock()
+        }
+        var values: [NodeSupervisorState] {
+            lock.lock()
+            defer { lock.unlock() }
+            return items
+        }
     }
 
     final class NodeSupervisorTests: XCTestCase {
@@ -120,7 +144,8 @@
         }
 
         func testStartsWaitsForHealthAndReportsRunning() async {
-            let launcher = FakeLauncher(), log = StateLog()
+            let launcher = FakeLauncher()
+            let log = StateLog()
             let supervisor = make(launcher: launcher, probe: FakeProbe(), clock: FakeClock(), log: log)
             await supervisor.start()
             await waitUntil { await supervisor.state == .running(pid: 2_000_000_000, port: 18_700) }
@@ -133,7 +158,10 @@
         }
 
         func testACrashRestartsWithDoublingDelays() async {
-            let launcher = FakeLauncher(), clock = FakeClock(), log = StateLog(), probe = FakeProbe()
+            let launcher = FakeLauncher()
+            let clock = FakeClock()
+            let log = StateLog()
+            let probe = FakeProbe()
             probe.fallback = false
             let supervisor = make(launcher: launcher, probe: probe, clock: clock, log: log)
             launcher.launched = { $0.crash(1) }
@@ -155,7 +183,9 @@
         }
 
         func testARunThatStaysHealthyResetsTheFailureCount() async {
-            let launcher = FakeLauncher(), clock = FakeClock(), log = StateLog()
+            let launcher = FakeLauncher()
+            let clock = FakeClock()
+            let log = StateLog()
             let supervisor = make(launcher: launcher, probe: FakeProbe(), clock: clock, log: log)
             await supervisor.start()
             await waitUntil { await supervisor.state == .running(pid: 2_000_000_000, port: 18_700) }
@@ -167,7 +197,9 @@
         }
 
         func testRepeatedFailuresGiveUp() async {
-            let launcher = FakeLauncher(), log = StateLog(), probe = FakeProbe()
+            let launcher = FakeLauncher()
+            let log = StateLog()
+            let probe = FakeProbe()
             probe.fallback = false
             let supervisor = make(launcher: launcher, probe: probe, clock: FakeClock(), log: log) {
                 $0.maximumConsecutiveFailures = 3
@@ -183,7 +215,9 @@
         func testALaunchFailureIsRetriedAndThenRuns() async {
             let launcher = FakeLauncher()
             launcher.failures = 2
-            let supervisor = make(launcher: launcher, probe: FakeProbe(), clock: FakeClock(), log: StateLog()) { $0.baseDelay = 0.001 }
+            let supervisor = make(launcher: launcher, probe: FakeProbe(), clock: FakeClock(), log: StateLog()) {
+                $0.baseDelay = 0.001
+            }
             await supervisor.start()
             await waitUntil { await supervisor.state == .running(pid: 2_000_000_000, port: 18_700) }
             XCTAssertEqual(launcher.count, 1)
@@ -191,9 +225,13 @@
         }
 
         func testAProcessThatNeverBecomesHealthyIsKilledAndRestarted() async {
-            let launcher = FakeLauncher(), probe = FakeProbe(), log = StateLog()
+            let launcher = FakeLauncher()
+            let probe = FakeProbe()
+            let log = StateLog()
             probe.fallback = false
-            let supervisor = make(launcher: launcher, probe: probe, clock: FakeClock(), log: log) { $0.baseDelay = 0.001 }
+            let supervisor = make(launcher: launcher, probe: probe, clock: FakeClock(), log: log) {
+                $0.baseDelay = 0.001
+            }
             await supervisor.start()
             await waitUntil { launcher.count >= 2 }
             await supervisor.stop()
@@ -202,7 +240,8 @@
         }
 
         func testARunningNodeThatStopsAnsweringIsRestarted() async {
-            let launcher = FakeLauncher(), probe = FakeProbe()
+            let launcher = FakeLauncher()
+            let probe = FakeProbe()
             probe.script([true, true, false, false, false])
             let supervisor = make(launcher: launcher, probe: probe, clock: FakeClock(), log: StateLog()) {
                 $0.baseDelay = 0.001
@@ -238,7 +277,9 @@
         func testAnAdoptedProcessIsSupervisedWithoutLaunching() async {
             let launcher = FakeLauncher()
             let adopted = FakeNodeProcess(pid: 2_000_004_242)
-            let supervisor = make(launcher: launcher, probe: FakeProbe(), clock: FakeClock(), log: StateLog()) { $0.baseDelay = 0.001 }
+            let supervisor = make(launcher: launcher, probe: FakeProbe(), clock: FakeClock(), log: StateLog()) {
+                $0.baseDelay = 0.001
+            }
             await supervisor.start(adopting: adopted)
             await waitUntil { await supervisor.state == .running(pid: 2_000_004_242, port: 18_700) }
             XCTAssertEqual(launcher.count, 0)
@@ -252,7 +293,8 @@
             let log = FileManager.default.temporaryDirectory.appendingPathComponent("launch-\(UUID().uuidString).log")
             let real = NodeLaunchSpec(
                 executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "echo started; sleep 60 & wait"],
-                environment: ["PATH": "/usr/bin:/bin"], workingDirectory: FileManager.default.temporaryDirectory, launchLog: log)
+                environment: ["PATH": "/usr/bin:/bin"], workingDirectory: FileManager.default.temporaryDirectory,
+                launchLog: log)
             let supervisor = NodeSupervisor(
                 spec: real, port: 1, launcher: launcher, probe: FakeProbe(), policy: NodeSupervisorPolicy())
             await supervisor.start()

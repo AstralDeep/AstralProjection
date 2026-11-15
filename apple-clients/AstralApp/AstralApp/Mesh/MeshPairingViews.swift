@@ -113,7 +113,9 @@ struct MeshInviteView: View {
             MeshQRCodeView(text: invitation.payload).frame(maxWidth: 240)
             Text(MeshPresentation.invitationCode(invitation.code))
                 .font(.system(size: 28, weight: .semibold, design: .monospaced))
-                .accessibilityLabel("Invitation code " + invitation.code.filter { $0 != "-" }.map(String.init).joined(separator: " "))
+                .accessibilityLabel(
+                    "Invitation code " + invitation.code.filter { $0 != "-" }.map(String.init).joined(separator: " ")
+                )
                 .accessibilityIdentifier("mesh.invite.code")
             MeshCountdownLabel(expiresAt: invitation.expiresAt)
             HStack(spacing: 12) {
@@ -143,7 +145,8 @@ struct MeshInviteView: View {
 
     private func comparison(_ request: MeshJoinRequest) -> some View {
         VStack(spacing: 18) {
-            Image(systemName: "checkmark.shield").font(.system(size: 44)).foregroundStyle(p.accent).accessibilityHidden(true)
+            Image(systemName: "checkmark.shield").font(.system(size: 44)).foregroundStyle(p.accent).accessibilityHidden(
+                true)
             Text("Check the codes match").font(ConsoleTypography.title2).accessibilityAddTraits(.isHeader)
             Text("\(request.deviceLabel) should show the same code.")
                 .font(ConsoleTypography.body).foregroundStyle(p.muted).multilineTextAlignment(.center)
@@ -240,8 +243,10 @@ struct MeshJoinStartView: View {
     var body: some View {
         VStack(spacing: 18) {
             Text("Join my mesh").font(ConsoleTypography.title2).accessibilityAddTraits(.isHeader)
-            Text("On a device that is already on your mesh, open Devices and choose Add Device. Then bring its invitation here.")
-                .font(ConsoleTypography.body).foregroundStyle(p.muted).multilineTextAlignment(.center)
+            Text(
+                "On a device that is already on your mesh, open Devices and choose Add Device. Then bring its invitation here."
+            )
+            .font(ConsoleTypography.body).foregroundStyle(p.muted).multilineTextAlignment(.center)
             #if os(iOS)
                 if MeshScanner.isAvailable {
                     Button {
@@ -314,7 +319,8 @@ struct MeshJoinStartView: View {
         ZStack {
             RoundedRectangle(cornerRadius: AstralRadius.lg).fill(dropTargeted ? p.accent.opacity(0.12) : p.surface)
             RoundedRectangle(cornerRadius: AstralRadius.lg)
-                .strokeBorder(dropTargeted ? p.accent : p.fieldBorder, style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                .strokeBorder(
+                    dropTargeted ? p.accent : p.fieldBorder, style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
             if payload.isEmpty {
                 VStack(spacing: 6) {
                     Image(systemName: "arrow.down.doc").font(.title2).accessibilityHidden(true)
@@ -364,7 +370,8 @@ struct MeshJoinAcceptedView: View {
         MeshExpiring(expiresAt: accepted.expiresAt) { expired in
             VStack(spacing: 18) {
                 if expired {
-                    Image(systemName: "timer").font(.system(size: 44)).foregroundStyle(p.warning).accessibilityHidden(true)
+                    Image(systemName: "timer").font(.system(size: 44)).foregroundStyle(p.warning).accessibilityHidden(
+                        true)
                     Text("The code ran out of time.").font(ConsoleTypography.title3)
                         .accessibilityIdentifier("mesh.join.error")
                     Button {

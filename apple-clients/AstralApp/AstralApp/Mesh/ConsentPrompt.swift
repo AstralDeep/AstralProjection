@@ -89,7 +89,9 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
     }
 
     static func isGrant(canonicalAction: Data) -> Bool {
-        guard let value = try? JSONSerialization.jsonObject(with: canonicalAction) as? [String: Any] else { return false }
+        guard let value = try? JSONSerialization.jsonObject(with: canonicalAction) as? [String: Any] else {
+            return false
+        }
         return value["kind"] as? String == "auth.grant"
     }
 

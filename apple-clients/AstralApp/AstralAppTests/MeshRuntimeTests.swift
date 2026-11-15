@@ -2,8 +2,9 @@
 // Each test drives kernel changes through the listener so the published state is checked the way the screens read it.
 
 import AstralCore
-@testable import AstralDeep
 import XCTest
+
+@testable import AstralDeep
 
 final class MeshRuntimeTests: XCTestCase {
     func testOpenLoadsStatusChatsAndStartsNetwork() async {

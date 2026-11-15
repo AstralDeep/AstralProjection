@@ -1,9 +1,10 @@
 // Checks bounded proposal metadata and captures without a model, tool runner, credentials or network.
 // The host returns an unexecuted proposal and the Kernel retains authorization and dispatch.
 
-@testable import AstralDeep
 import Foundation
 import XCTest
+
+@testable import AstralDeep
 
 final class OnDeviceToolProposalTests: XCTestCase {
     private var metadata: String {

@@ -59,10 +59,11 @@ struct MeshOnboardingView: View {
         if mesh.restoredInstall {
             Label(
                 "This device was restored from a backup. Recover your mesh with your words, join it again or create a new one.",
-                systemImage: "exclamationmark.triangle")
-                .font(ConsoleTypography.footnote)
-                .foregroundStyle(p.warning)
-                .accessibilityIdentifier("mesh.restored")
+                systemImage: "exclamationmark.triangle"
+            )
+            .font(ConsoleTypography.footnote)
+            .foregroundStyle(p.warning)
+            .accessibilityIdentifier("mesh.restored")
         }
         Button {
             Task { await mesh.createMesh() }
@@ -177,11 +178,13 @@ struct MeshJoinView: View {
 
     private func offerBody(_ offer: MeshPairingOffer) -> some View {
         VStack(spacing: 18) {
-            Text("On a device that is already on your mesh, open Devices, choose Add Device, then use the code from the new device. Scan this code or send it there.")
-                .font(ConsoleTypography.subheadline)
-                .foregroundStyle(p.muted)
-                .multilineTextAlignment(.center)
-                .accessibilityIdentifier("mesh.join.instructions")
+            Text(
+                "On a device that is already on your mesh, open Devices, choose Add Device, then use the code from the new device. Scan this code or send it there."
+            )
+            .font(ConsoleTypography.subheadline)
+            .foregroundStyle(p.muted)
+            .multilineTextAlignment(.center)
+            .accessibilityIdentifier("mesh.join.instructions")
             Text(MeshPresentation.groupedCode(offer.shortCode))
                 .font(.system(size: 40, weight: .semibold, design: .monospaced))
                 .minimumScaleFactor(0.5)
@@ -233,9 +236,11 @@ struct MeshRecoveryView: View {
                 Text("Write these 24 words down")
                     .font(ConsoleTypography.title2)
                     .accessibilityAddTraits(.isHeader)
-                Text("They are the only way to get your mesh back if you lose every device. Write them on paper. They are shown once and are not saved on this device.")
-                    .font(ConsoleTypography.footnote)
-                    .foregroundStyle(p.muted)
+                Text(
+                    "They are the only way to get your mesh back if you lose every device. Write them on paper. They are shown once and are not saved on this device."
+                )
+                .font(ConsoleTypography.footnote)
+                .foregroundStyle(p.muted)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 8)], alignment: .leading, spacing: 8) {
                     ForEach(Array(words.enumerated()), id: \.offset) { index, word in
                         Text("\(index + 1). \(word)")

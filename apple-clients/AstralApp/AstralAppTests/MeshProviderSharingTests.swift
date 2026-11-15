@@ -1,9 +1,10 @@
 // Verifies model-provider save receipts and recipient controls without exposing stored credentials.
 // Runtime writes use the same in-memory Kernel contract as the provider form.
 
-@testable import AstralDeep
 import AstralKernel
 import XCTest
+
+@testable import AstralDeep
 
 final class MeshProviderSharingTests: XCTestCase {
     func testProviderMetadataUsesNativeCustodyAndAudienceFacts() {

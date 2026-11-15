@@ -1,8 +1,9 @@
 // Exercises bounded local file imports and attachment drafts through the runtime that owns the chat composer.
 // It verifies attachment-only sends, per-chat drafts, refusals and the file bytes offered for an explicit save.
 
-@testable import AstralDeep
 import XCTest
+
+@testable import AstralDeep
 
 final class MeshAttachmentTests: XCTestCase {
     private func file(_ bytes: Data = Data("hello".utf8), name: String = "note.txt") throws -> URL {

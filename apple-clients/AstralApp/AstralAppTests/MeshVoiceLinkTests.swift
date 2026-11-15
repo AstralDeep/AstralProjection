@@ -2,8 +2,9 @@
 // It uses MeshRuntime over the in-memory kernel and a recording speech sink in place of the voice pipeline.
 
 import AstralCore
-@testable import AstralDeep
 import XCTest
+
+@testable import AstralDeep
 
 final class MeshVoiceLinkTests: XCTestCase {
     private func owner(_ text: String) -> OwnerVoiceTurn {

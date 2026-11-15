@@ -1,10 +1,11 @@
 // Reopens consistent snapshots of temporary real Kernels before and during ordinary turns.
 // Native recovery must preserve exact signed message and turn identity, answer once, and reject unproven queued input.
 
-@testable import AstralDeep
 import AstralKernel
 import SQLite3
 import XCTest
+
+@testable import AstralDeep
 
 nonisolated final class ResumeChangeRelay: MeshKernelListening, @unchecked Sendable {
     private let listener: any MeshKernelListening

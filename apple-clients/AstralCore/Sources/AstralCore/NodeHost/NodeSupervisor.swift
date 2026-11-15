@@ -262,8 +262,12 @@
             var argv: [UnsafeMutablePointer<CChar>?] = arguments.map { strdup($0) } + [nil]
             var envp: [UnsafeMutablePointer<CChar>?] = environment.map { strdup($0) } + [nil]
             defer {
-                argv.forEach { free($0) }
-                envp.forEach { free($0) }
+                for argument in argv {
+                    free(argument)
+                }
+                for variable in envp {
+                    free(variable)
+                }
             }
             var pid: pid_t = 0
             let status = posix_spawn(&pid, spec.executable.path, &actions, &attributes, argv, envp)
@@ -283,7 +287,8 @@
                 var status: Int32 = 0
                 var result = waitpid(pid, &status, 0)
                 while result == -1 && errno == EINTR { result = waitpid(pid, &status, 0) }
-                let code: Int32 = result == pid ? (status & 0x7f == 0 ? (status >> 8) & 0xff : 128 + (status & 0x7f)) : -1
+                let code: Int32 =
+                    result == pid ? (status & 0x7f == 0 ? (status >> 8) & 0xff : 128 + (status & 0x7f)) : -1
                 exit.complete(code)
             }
         }
@@ -340,7 +345,9 @@
             let pending = waiters
             waiters = []
             lock.unlock()
-            pending.forEach { $0(value) }
+            for waiter in pending {
+                waiter(value)
+            }
         }
 
         func wait() async -> Int32 {

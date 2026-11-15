@@ -2,8 +2,9 @@
 // Covers turn flow, integrity labels, the absence of any approval path, interruption records and acknowledgement rules.
 
 import AVFoundation
-@testable import AstralDeep
 import XCTest
+
+@testable import AstralDeep
 
 @MainActor
 final class OnDeviceVoicePipelineTests: XCTestCase {

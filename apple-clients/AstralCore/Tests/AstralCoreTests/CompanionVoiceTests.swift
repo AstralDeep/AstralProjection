@@ -1,9 +1,10 @@
 // Verifies the bounded ephemeral voice packets exchanged by the paired Watch and phone.
 // Transport identity comes from WatchConnectivity; packet metadata never grants approval authority.
 
-@testable import AstralCore
 import Foundation
 import XCTest
+
+@testable import AstralCore
 
 final class CompanionVoiceTests: XCTestCase {
     private let session = UUID()

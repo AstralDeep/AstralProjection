@@ -23,7 +23,8 @@
                 root: root, available: available,
                 issuer: config.authority.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/")),
                 clientId: config.clientId, meshLabel: (Host.current().localizedName ?? "Mac") + " node",
-                defaults: defaults, defaultPackURL: bundle.object(forInfoDictionaryKey: "ASTRALNodePackURL") as? String ?? "",
+                defaults: defaults,
+                defaultPackURL: bundle.object(forInfoDictionaryKey: "ASTRALNodePackURL") as? String ?? "",
                 pinnedDescriptorSha256: bundle.object(forInfoDictionaryKey: "ASTRALNodePackSHA256") as? String)
             controller = NodeHostController(environment: environment)
             let target = controller

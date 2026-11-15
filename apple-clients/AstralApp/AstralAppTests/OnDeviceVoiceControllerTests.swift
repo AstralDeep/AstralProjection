@@ -2,9 +2,10 @@
 // Conversation dispatch stays behind an explicitly injected kernel link.
 
 import AstralCore
-@testable import AstralDeep
 import CryptoKit
 import XCTest
+
+@testable import AstralDeep
 
 @MainActor
 final class OnDeviceVoiceControllerTests: XCTestCase {

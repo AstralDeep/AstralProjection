@@ -40,8 +40,14 @@ nonisolated struct VoiceSentenceSplitter {
                 while end < buffer.endIndex, "\"')]”’.!?".contains(buffer[end]) {
                     end = buffer.index(after: end)
                 }
-                guard end < buffer.endIndex, buffer[end].isWhitespace else { index = end; continue }
-                if character == ".", isAbbreviation(before: index) { index = end; continue }
+                guard end < buffer.endIndex, buffer[end].isWhitespace else {
+                    index = end
+                    continue
+                }
+                if character == ".", isAbbreviation(before: index) {
+                    index = end
+                    continue
+                }
                 return end
             }
             index = buffer.index(after: index)
