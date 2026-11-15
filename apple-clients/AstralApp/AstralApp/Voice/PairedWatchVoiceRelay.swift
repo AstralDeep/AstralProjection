@@ -122,6 +122,8 @@ final class PairedWatchVoiceRelay {
                     self.admissionDeadline?.cancel()
                     self.admissionDeadline = nil
                     self.start(packet, activation: activation, context: context)
+                } catch MeshKernelError.meshKeyBindingUnavailable {
+                    self.rejectCandidate(packet.session, reason: "phone_mesh_binding_unavailable")
                 } catch {
                     self.rejectCandidate(packet.session, reason: "phone_owner_unavailable")
                 }

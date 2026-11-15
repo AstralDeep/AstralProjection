@@ -90,7 +90,7 @@ final class MeshProviderSharingTests: XCTestCase {
         defer { h.cleanUp() }
         await h.runtime.open()
         let peer = MeshMember(
-            memberId: "peer", label: "Phone", kind: .pocket, isThisDevice: false, attested: true, lastSeen: nil,
+            memberId: "peer", label: "Phone", kind: .pocket, isThisDevice: false, lastSeen: nil,
             path: .none)
         h.kernel.setMembers(h.runtime.members + [peer])
         _ = await h.runtime.saveProvider(

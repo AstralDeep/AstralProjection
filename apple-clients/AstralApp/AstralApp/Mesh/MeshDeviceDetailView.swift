@@ -1,4 +1,4 @@
-// The detail screen for one mesh device: its kind, connection and last contact, a verify prompt when sign-in is missing, a request to that device and its removal.
+// The detail screen for one mesh device: its kind, connection and last contact, a request to that device and its removal.
 // It reads the live roster so it follows changes and leaves the screen when the device is removed.
 
 import SwiftUI
@@ -42,14 +42,13 @@ struct MeshDeviceDetailView: View {
                     Text(member.label).font(ConsoleTypography.title3)
                     Text(MeshPresentation.deviceStatus(member, sync: sync))
                         .font(ConsoleTypography.subheadline)
-                        .foregroundStyle(member.attested ? p.muted : p.warning)
+                        .foregroundStyle(p.muted)
                         .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity)
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("mesh.device.header")
             }
-            if !member.attested { verification(member) }
             Section("Details") {
                 LabeledContent("Name") {
                     HStack {
@@ -64,11 +63,8 @@ struct MeshDeviceDetailView: View {
                 }
                 LabeledContent("Added", value: MeshPresentation.added(member.addedAt))
                     .accessibilityIdentifier("mesh.device.added")
-                LabeledContent(
-                    "Verification",
-                    value: MeshPresentation.verificationAge(member.attested ? member.attestedAt ?? member.addedAt : nil)
-                )
-                .accessibilityIdentifier("mesh.device.verified")
+                LabeledContent("Membership", value: "Signed device key")
+                    .accessibilityIdentifier("mesh.device.membership")
                 LabeledContent(
                     "Kind",
                     value: member.isThisDevice
@@ -116,23 +112,6 @@ struct MeshDeviceDetailView: View {
         } message: {
             Text("This name shows on every device.")
         }
-    }
-
-    @ViewBuilder
-    private func verification(_ member: MeshMember) -> some View {
-        Section {
-            if member.isThisDevice {
-                MeshVerifyButton()
-            } else {
-                Text("Open AstralDeep on \(member.label) and choose Verify under Devices.")
-                    .font(ConsoleTypography.subheadline)
-            }
-        } header: {
-            Text("Needs sign-in")
-        } footer: {
-            Text("Signing in proves this device belongs to you. Until then it cannot be fully trusted.")
-        }
-        .accessibilityIdentifier("mesh.device.verification")
     }
 
     private func lastSeen(_ date: Date?) -> String {

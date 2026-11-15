@@ -2036,6 +2036,8 @@ final class WatchModel {
 
     private static func pairedVoiceMessage(_ reason: String) -> String {
         switch reason {
+        case "phone_mesh_binding_unavailable":
+            return "Watch voice is unavailable until mesh-key binding is supported."
         case "phone_model_required": return "Download the voice model in AstralDeep on your iPhone."
         case "phone_owner_unavailable", "phone_context_unavailable":
             return "Open your mesh on the paired iPhone using the same account."

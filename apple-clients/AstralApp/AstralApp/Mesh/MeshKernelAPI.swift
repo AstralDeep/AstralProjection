@@ -8,6 +8,7 @@ nonisolated enum MeshKernelError: Error, Equatable, Sendable {
     case unavailable(String)
     case refused(String)
     case notFound
+    case meshKeyBindingUnavailable
     case consentDenied
     case stopped
     case storage(String)
@@ -16,6 +17,7 @@ nonisolated enum MeshKernelError: Error, Equatable, Sendable {
         switch self {
         case .unavailable(let reason): return reason
         case .refused(let reason): return reason
+        case .meshKeyBindingUnavailable: return "Watch voice is unavailable until mesh-key binding is supported."
         case .notFound: return "That item is no longer on this device."
         case .consentDenied: return "The approval was denied."
         case .stopped: return "The mesh is stopped."
@@ -36,27 +38,17 @@ nonisolated struct MeshStatus: Equatable, Sendable {
     var hasMesh: Bool
     var meshId: String?
     var deviceId: String?
-    var attested: Bool
+    var recoveryPending: Bool = false
     var stopped: Bool
     var hardwareBacked: Bool
     var stopLevel: UInt64 = 0
 
     static let empty = MeshStatus(
-        hasMesh: false, meshId: nil, deviceId: nil, attested: false, stopped: false, hardwareBacked: false)
-}
-
-nonisolated struct MeshVerifiedIdentity: Equatable, Sendable {
-    let issuer: String
-    let subject: String
+        hasMesh: false, meshId: nil, deviceId: nil, stopped: false, hardwareBacked: false)
 }
 
 nonisolated struct MeshVerifiedPrincipal: Equatable, Sendable {
     let meshId: String
-    let identities: [MeshVerifiedIdentity]
-}
-
-nonisolated struct MeshAttestationRequest: Equatable, Sendable {
-    let nonce: String
 }
 
 nonisolated struct MeshRecoveryKit: Equatable, Sendable {
@@ -132,11 +124,9 @@ nonisolated struct MeshMember: Identifiable, Equatable, Sendable {
     let label: String
     let kind: MeshDeviceKind
     let isThisDevice: Bool
-    let attested: Bool
     let lastSeen: Date?
     let path: MeshPath
     var addedAt: Date?
-    var attestedAt: Date?
     var id: String { memberId }
 }
 
@@ -546,8 +536,8 @@ nonisolated protocol MeshKernel: Sendable {
     func meshPrincipal() throws -> MeshVerifiedPrincipal
     func setWakeRoute(expectedMeshId: String, expectedDeviceId: String, route: MeshWakeRoute?) async throws
     func wakeRoutes() async throws -> [MeshDeviceWakeRoute]
-    func beginMeshCreation() throws -> MeshAttestationRequest
-    func completeMeshCreation(idToken: String) throws -> MeshRecoveryKit
+    func createMesh() throws -> MeshRecoveryKit
+    func confirmMeshRecovery() throws
     func recoverWithWords(words: String, backupPath: String?) throws -> MeshRecovery
     func createInvitation() async throws -> MeshInvitation
     func acceptInvitation(payload: String) async throws -> MeshInvitationAccepted
@@ -562,8 +552,6 @@ nonisolated protocol MeshKernel: Sendable {
     func removeDevice(memberId: String) throws
     func raiseStop() throws
     func resumeStop() throws
-    func beginAttestation() throws -> MeshAttestationRequest
-    func reattest(idToken: String) throws
     func exportBackup(path: String) throws
 
     func listChats() throws -> [MeshChatSummary]

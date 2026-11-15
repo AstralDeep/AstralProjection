@@ -27,7 +27,7 @@ final class MeshMailboxTests: XCTestCase {
         XCTAssertEqual(h.runtime.phase, .ready)
         XCTAssertEqual(h.runtime.mailboxAddress, "node-key-1")
         XCTAssertEqual(h.box.openedConfigs.map(\.mailbox), [nil, "node-key-1"])
-        XCTAssertEqual(h.defaults.string(forKey: "astral.mesh.mailbox"), "node-key-1")
+        XCTAssertEqual(h.defaults.string(forKey: "astral.mesh.v2.mailbox"), "node-key-1")
     }
 
     func testANewRuntimeReadsTheSavedAddressAtItsNextOpen() async {
@@ -46,7 +46,7 @@ final class MeshMailboxTests: XCTestCase {
         let problem = await h.runtime.saveMailbox("   ")
         XCTAssertNil(problem)
         XCTAssertNil(h.runtime.mailboxAddress)
-        XCTAssertNil(h.defaults.string(forKey: "astral.mesh.mailbox"))
+        XCTAssertNil(h.defaults.string(forKey: "astral.mesh.v2.mailbox"))
         XCTAssertEqual(h.box.openedConfigs.map(\.mailbox), [nil, "node-key-1", nil])
     }
 
@@ -81,7 +81,7 @@ final class MeshMailboxTests: XCTestCase {
         await again.runtime.open()
         XCTAssertEqual(again.runtime.phase, .ready)
         XCTAssertNil(again.runtime.mailboxAddress)
-        XCTAssertNil(again.defaults.string(forKey: "astral.mesh.mailbox"))
+        XCTAssertNil(again.defaults.string(forKey: "astral.mesh.v2.mailbox"))
         XCTAssertEqual(again.box.openedConfigs.map(\.mailbox), ["bad", nil])
         XCTAssertEqual(again.runtime.notice, "That mailbox address was not accepted. It was removed.")
     }

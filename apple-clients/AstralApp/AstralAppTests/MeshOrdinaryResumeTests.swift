@@ -116,12 +116,13 @@ final class MeshOrdinaryResumeTests: XCTestCase {
             installMarker: try keys.installMarker(), restoredInstall: false)
         let waiting = ResumeModelGate()
         let original = try await RealMeshKernel.open(
-            config: config, issuers: [TestTokenIssuer.config], network: KernelNetworking.loopback,
+            config: config, network: KernelNetworking.loopback,
             signer: MeshHostSigner(keys: keys, presenter: RecordingPresenter()), model: waiting,
             tools: DeviceLocalTools(), listener: ChangeLog())
         _ = try await Task.detached {
-            let request = try original.beginMeshCreation()
-            return try original.completeMeshCreation(idToken: TestTokenIssuer.token(nonce: request.nonce))
+            let kit = try original.createMesh()
+            try original.confirmMeshRecovery()
+            return kit
         }.value
         let chat = try original.createChat(title: "Interrupted request")
         let message = try original.sendMessage(chatId: chat, text: "Answer this once", continues: nil)
@@ -147,12 +148,12 @@ final class MeshOrdinaryResumeTests: XCTestCase {
         let runtime = MeshRuntime(
             makeKernel: { config, signer, model, tools, listener in
                 try await RealMeshKernel.open(
-                    config: config, issuers: [TestTokenIssuer.config], network: KernelNetworking.loopback,
+                    config: config, network: KernelNetworking.loopback,
                     signer: signer, model: model, tools: tools, listener: ResumeChangeRelay(listener, changes: changes))
             },
             makeKeys: { keys }, consent: ConsentCoordinator(), onDeviceModel: answering, tools: DeviceLocalTools(),
             dataDirectory: restored, deviceLabel: "Mac", deviceKind: .desktop,
-            enrollment: { TestTokenIssuer.token(nonce: $0) }, defaults: defaults)
+            defaults: defaults)
         await runtime.open()
         let resumed = await eventually { answering.requests.count == 1 }
         XCTAssertTrue(resumed, "Opening the existing store must resume its local ordinary turn")
@@ -183,12 +184,13 @@ final class MeshOrdinaryResumeTests: XCTestCase {
             operationsSecret: try keys.operationsSecret(), wrapSecret: try keys.wrapSecret(),
             installMarker: try keys.installMarker(), restoredInstall: false)
         let original = try await RealMeshKernel.open(
-            config: config, issuers: [TestTokenIssuer.config], network: KernelNetworking.loopback,
+            config: config, network: KernelNetworking.loopback,
             signer: MeshHostSigner(keys: keys, presenter: RecordingPresenter()), model: FakeOnDeviceModel(),
             tools: DeviceLocalTools(), listener: ChangeLog())
         _ = try await Task.detached {
-            let request = try original.beginMeshCreation()
-            return try original.completeMeshCreation(idToken: TestTokenIssuer.token(nonce: request.nonce))
+            let kit = try original.createMesh()
+            try original.confirmMeshRecovery()
+            return kit
         }.value
         let chat = try original.createChat(title: "Accepted before crash")
         let message = try original.sendMessage(
@@ -201,12 +203,12 @@ final class MeshOrdinaryResumeTests: XCTestCase {
         let runtime = MeshRuntime(
             makeKernel: { config, signer, model, tools, listener in
                 try await RealMeshKernel.open(
-                    config: config, issuers: [TestTokenIssuer.config], network: KernelNetworking.loopback,
+                    config: config, network: KernelNetworking.loopback,
                     signer: signer, model: model, tools: tools, listener: ResumeChangeRelay(listener, changes: changes))
             },
             makeKeys: { keys }, consent: ConsentCoordinator(), onDeviceModel: answering, tools: DeviceLocalTools(),
             dataDirectory: restored, deviceLabel: "Mac", deviceKind: .desktop,
-            enrollment: { TestTokenIssuer.token(nonce: $0) }, defaults: defaults)
+            defaults: defaults)
         await runtime.open()
         let resumed = await eventually { answering.requests.count == 1 }
         XCTAssertTrue(resumed, "The native proof must recover this device's accepted ordinary message")
@@ -240,12 +242,13 @@ final class MeshOrdinaryResumeTests: XCTestCase {
             operationsSecret: try keys.operationsSecret(), wrapSecret: try keys.wrapSecret(),
             installMarker: try keys.installMarker(), restoredInstall: false)
         let original = try await RealMeshKernel.open(
-            config: config, issuers: [TestTokenIssuer.config], network: KernelNetworking.loopback,
+            config: config, network: KernelNetworking.loopback,
             signer: MeshHostSigner(keys: keys, presenter: RecordingPresenter()), model: FakeOnDeviceModel(),
             tools: DeviceLocalTools(), listener: ChangeLog())
         _ = try await Task.detached {
-            let request = try original.beginMeshCreation()
-            return try original.completeMeshCreation(idToken: TestTokenIssuer.token(nonce: request.nonce))
+            let kit = try original.createMesh()
+            try original.confirmMeshRecovery()
+            return kit
         }.value
         let chat = try original.createChat(title: "Stop before entry")
         await original.stopNetwork()
@@ -254,12 +257,12 @@ final class MeshOrdinaryResumeTests: XCTestCase {
             MeshRuntime(
                 makeKernel: { config, signer, model, tools, listener in
                     try await RealMeshKernel.open(
-                        config: config, issuers: [TestTokenIssuer.config], network: KernelNetworking.loopback,
+                        config: config, network: KernelNetworking.loopback,
                         signer: signer, model: model, tools: tools, listener: listener)
                 },
                 makeKeys: { keys }, consent: ConsentCoordinator(), onDeviceModel: answering, tools: DeviceLocalTools(),
                 dataDirectory: directory, deviceLabel: "Mac", deviceKind: .desktop,
-                enrollment: { TestTokenIssuer.token(nonce: $0) }, defaults: defaults, waitForTurnEntry: entry)
+                defaults: defaults, waitForTurnEntry: entry)
         }
         let gate = ResumeWorkerGate()
         defer { gate.release() }

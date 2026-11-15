@@ -16,10 +16,10 @@ final class MeshRequestTests: XCTestCase {
         await h.runtime.open()
         h.kernel.setMembers([
             MeshMember(
-                memberId: me, label: "Mac", kind: .desktop, isThisDevice: true, attested: true, lastSeen: nil,
+                memberId: me, label: "Mac", kind: .desktop, isThisDevice: true, lastSeen: nil,
                 path: .none),
             MeshMember(
-                memberId: phone, label: "Phone", kind: .pocket, isThisDevice: false, attested: true, lastSeen: nil,
+                memberId: phone, label: "Phone", kind: .pocket, isThisDevice: false, lastSeen: nil,
                 path: .direct),
         ])
         let chat = h.kernel.seedChat(
@@ -76,10 +76,10 @@ final class MeshRequestTests: XCTestCase {
         await h.runtime.open()
         h.kernel.setMembers([
             MeshMember(
-                memberId: me, label: "Mac", kind: .desktop, isThisDevice: true, attested: true, lastSeen: nil,
+                memberId: me, label: "Mac", kind: .desktop, isThisDevice: true, lastSeen: nil,
                 path: .none),
             MeshMember(
-                memberId: phone, label: "Phone", kind: .pocket, isThisDevice: false, attested: true, lastSeen: nil,
+                memberId: phone, label: "Phone", kind: .pocket, isThisDevice: false, lastSeen: nil,
                 path: .direct),
         ])
         await h.runtime.refreshAll()
@@ -111,7 +111,7 @@ final class MeshRequestTests: XCTestCase {
         defer { h.cleanUp() }
         let gone = MeshMember(
             memberId: "sha256:" + String(repeating: "9", count: 64), label: "Gone", kind: .node, isThisDevice: false,
-            attested: false, lastSeen: nil, path: .none)
+            lastSeen: nil, path: .none)
         let sent = await h.runtime.sendRequest("hello", to: gone)
         XCTAssertFalse(sent)
         XCTAssertEqual(h.runtime.notice, "That device is not in your mesh.")

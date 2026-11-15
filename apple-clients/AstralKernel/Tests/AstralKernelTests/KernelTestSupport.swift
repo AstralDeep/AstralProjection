@@ -1,4 +1,4 @@
-// Test doubles for the kernel wrapper: a software host signer, a test token issuer with its key set, and polling and configuration helpers.
+// Test doubles for the kernel wrapper: a software host signer, polling and configuration helpers.
 // Nothing here touches the network, the Keychain or the Secure Enclave.
 import CryptoKit
 import Foundation
@@ -32,45 +32,6 @@ final class SoftwareHostSigner: HostSigner, @unchecked Sendable {
     func hardwareBacked() -> Bool { false }
 }
 
-enum TestIssuer {
-    static let issuer = "https://auth.example.test/realms/astral"
-    static let client = "astral-desktop"
-    private static let key = P256.Signing.PrivateKey()
-
-    static var config: IssuerConfig {
-        let point = key.publicKey.x963Representation
-        let jwks: [String: Any] = [
-            "keys": [
-                [
-                    "kid": "k1", "kty": "EC", "crv": "P-256", "x": b64(point[1..<33]), "y": b64(point[33..<65]),
-                ]
-            ]
-        ]
-        let data = try! JSONSerialization.data(withJSONObject: jwks, options: [.sortedKeys])
-        return IssuerConfig(issuer: issuer, clientId: client, jwksJson: String(decoding: data, as: UTF8.self))
-    }
-
-    static func token(nonce: String, subject: String) -> String {
-        let now = Int(Date().timeIntervalSince1970)
-        let header = b64(json(["alg": "ES256", "kid": "k1", "typ": "JWT"]))
-        let claims: [String: Any] = [
-            "iss": issuer, "aud": client, "sub": subject, "iat": now, "exp": now + 300, "nonce": nonce,
-        ]
-        let signingInput = header + "." + b64(json(claims))
-        let signature = try! key.signature(for: Data(signingInput.utf8)).rawRepresentation
-        return signingInput + "." + b64(signature)
-    }
-
-    private static func json(_ value: [String: Any]) -> Data {
-        try! JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
-    }
-
-    private static func b64(_ data: some DataProtocol) -> String {
-        Data(data).base64EncodedString().replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
-    }
-}
-
 struct TestDevice {
     let directory: URL
     let signer: SoftwareHostSigner
@@ -94,7 +55,7 @@ struct TestDevice {
     var config: KernelConfig {
         KernelConfig(
             dataDir: directory.path, operationsSecret: operations, wrapSecret: wrap, restoreMarker: marker,
-            deviceLabel: label, deviceKind: .desktop, issuers: [TestIssuer.config], network: KernelNetworking.loopback)
+            deviceLabel: label, deviceKind: .desktop, network: KernelNetworking.loopback)
     }
 
     func open(listener: KernelListener? = nil) throws -> KernelService {

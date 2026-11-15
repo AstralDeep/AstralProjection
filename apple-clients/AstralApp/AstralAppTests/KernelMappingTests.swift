@@ -10,18 +10,26 @@ import XCTest
 final class KernelMappingTests: XCTestCase {
     private let feed = "feed-a"
 
-    func testVerifiedPrincipalMappingPreservesExactNativeOwnerIdentities() {
-        let result = KernelMapping.principal(
-            AstralKernel.MeshPrincipal(
-                meshId: "mesh",
-                identities: [AttestedIdentity(issuer: "https://Issuer.example.test/realm", subject: "Exact-Subject")]))
+    func testPrincipalMappingPreservesMeshKeyIdentity() {
         XCTAssertEqual(
-            result,
-            MeshVerifiedPrincipal(
-                meshId: "mesh",
-                identities: [
-                    MeshVerifiedIdentity(issuer: "https://Issuer.example.test/realm", subject: "Exact-Subject")
-                ]))
+            KernelMapping.principal(AstralKernel.MeshPrincipal(meshId: "mesh")), MeshVerifiedPrincipal(meshId: "mesh"))
+    }
+
+    func testRecoveryApprovalBindsActionDomainAndExactMesh() throws {
+        let mesh = "sha256:" + String(repeating: "a", count: 64)
+        for (action, domain) in [
+            ("reveal_recovery", "astral.recovery.export/v2"), ("confirm_recovery", "astral.recovery.confirm/v2"),
+        ] {
+            let message = Data((domain + "\n" + mesh).utf8)
+            let native = AstralKernel.ConsentPrompt(
+                kind: .other, title: action, target: "", canonicalAction: Data(), canonicalArguments: Data(),
+                signingInput: message, digest: "", untrustedSources: [], labels: [], requiresBiometry: true)
+            let prompt = try KernelHostSigner.display(for: native, message: message)
+            XCTAssertTrue(prompt.requiresBiometry)
+            XCTAssertEqual(prompt.target, mesh)
+            XCTAssertTrue(prompt.isBound(to: message))
+            XCTAssertThrowsError(try KernelHostSigner.display(for: native, message: Data((domain + "\ninvalid").utf8)))
+        }
     }
 
     func testSteeringBoundsHaveActionableFailureText() {
@@ -158,18 +166,17 @@ final class KernelMappingTests: XCTestCase {
     func testStatusAllowanceAndProvidersMap() {
         let status = KernelMapping.status(
             AstralKernel.MeshStatus(
-                state: .enrolled, meshId: "m", deviceId: "d", feed: "f", marker: .matches, members: 2, unattested: true,
-                attestationDueS: nil, stop: 3, stopped: true, hardwareBacked: true, endpoint: .stopped,
+                state: .enrolled, meshId: "m", deviceId: "d", feed: "f", marker: .matches, members: 2,
+                recoveryPending: true, stop: 3, stopped: true, hardwareBacked: true, endpoint: .stopped,
                 pairingOpen: false))
         XCTAssertTrue(status.hasMesh)
-        XCTAssertFalse(status.attested)
+        XCTAssertTrue(status.recoveryPending)
         XCTAssertTrue(status.stopped)
         XCTAssertEqual(status.stopLevel, 3)
         let restored = KernelMapping.status(
             AstralKernel.MeshStatus(
                 state: .restored, meshId: "m", deviceId: "d", feed: "f", marker: .mismatch, members: 2,
-                unattested: false,
-                attestationDueS: nil, stop: 0, stopped: false, hardwareBacked: false, endpoint: .stopped,
+                recoveryPending: false, stop: 0, stopped: false, hardwareBacked: false, endpoint: .stopped,
                 pairingOpen: false))
         XCTAssertFalse(restored.hasMesh)
 
@@ -333,7 +340,7 @@ final class KernelMappingTests: XCTestCase {
                 kind: kind, title: title, target: "x", canonicalAction: Data(), canonicalArguments: Data(),
                 signingInput: input, digest: "d", untrustedSources: [], labels: [], requiresBiometry: true)
         }
-        let input = Data("astral.roster/v1\n{}".utf8)
+        let input = Data("astral.roster/v2\n{}".utf8)
         XCTAssertThrowsError(
             try KernelHostSigner.display(for: prompt(kind: .rosterAdd, input: input), message: Data("other".utf8)))
         XCTAssertThrowsError(try KernelHostSigner.display(for: prompt(kind: .other, input: input), message: input))
@@ -368,19 +375,19 @@ final class KernelMappingTests: XCTestCase {
         }
         let key = String(repeating: "A", count: 43)
         let stop =
-            #"{"author":"\#(id("2"))","body":{"counter":2},"clock":{"ms":1,"n":0},"follows":["\#(id("3"))"],"mesh":"\#(id("1"))","type":"stop","v":1}"#
-        let stopPrompt = try AstralDeep.ConsentPrompt.roster(signingInput: Data(("astral.roster/v1\n" + stop).utf8))
+            #"{"author":"\#(id("2"))","body":{"counter":2},"clock":{"ms":1,"n":0},"follows":["\#(id("3"))"],"mesh":"\#(id("1"))","type":"stop","v":2}"#
+        let stopPrompt = try AstralDeep.ConsentPrompt.roster(signingInput: Data(("astral.roster/v2\n" + stop).utf8))
         XCTAssertEqual(stopPrompt.effect, "roster.stop")
         XCTAssertEqual(stopPrompt.actionTitle, "Stop the mesh")
         let resume = stop.replacingOccurrences(of: #""type":"stop""#, with: #""type":"resume""#)
-        let resumePrompt = try AstralDeep.ConsentPrompt.roster(signingInput: Data(("astral.roster/v1\n" + resume).utf8))
+        let resumePrompt = try AstralDeep.ConsentPrompt.roster(signingInput: Data(("astral.roster/v2\n" + resume).utf8))
         XCTAssertEqual(resumePrompt.effect, "roster.resume")
         XCTAssertEqual(resumePrompt.actionTitle, "Resume the mesh")
         XCTAssertEqual(resumePrompt.target, "Resume counter 2")
         XCTAssertTrue(resumePrompt.requiresBiometry)
         let zero = stop.replacingOccurrences(of: #""counter":2"#, with: #""counter":0"#)
         XCTAssertThrowsError(
-            try AstralDeep.ConsentPrompt.roster(signingInput: Data(("astral.roster/v1\n" + zero).utf8)))
+            try AstralDeep.ConsentPrompt.roster(signingInput: Data(("astral.roster/v2\n" + zero).utf8)))
         _ = key
 
         let action = Data(
@@ -436,7 +443,7 @@ final class KernelMappingTests: XCTestCase {
             (action, action, input(kind: "action")),
             (action, action, input(digest: id("b"))),
             (action, action, input(device: "device")),
-            (action, action, input(context: "astral.roster/v1")),
+            (action, action, input(context: "astral.roster/v2")),
             (
                 Data(#"{"agent":"kernel","grant":"\#(id("a"))","kind":"auth.grant","scope":"mesh_read"}"#.utf8), action,
                 good

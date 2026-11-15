@@ -25,13 +25,6 @@ nonisolated final class KernelBox: @unchecked Sendable {
     }
 }
 
-nonisolated final class TokenBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var nonces: [String] = []
-    var seen: [String] { lock.withLock { nonces } }
-    func record(_ nonce: String) { lock.withLock { nonces.append(nonce) } }
-}
-
 @MainActor
 final class RecordingSpeechSink: MeshSpeechSink {
     var deltas: [String] = []
@@ -51,21 +44,20 @@ final class RecordingSpeechSink: MeshSpeechSink {
 struct MeshRuntimeHarness {
     let runtime: MeshRuntime
     let box: KernelBox
-    let tokens: TokenBox
     let defaults: UserDefaults
     let suite: String
 
     var kernel: InMemoryMeshKernel { box.kernel! }
 
     init(
-        hasMesh: Bool = true, factoryError: MeshKernelError? = nil, mailbox: String? = nil, rejectMailbox: Bool = false,
-        onDeviceAvailable: Bool = false, enrollment: (@Sendable (String) async throws -> String)? = nil
+        hasMesh: Bool = true, recoveryPending: Bool = false, factoryError: MeshKernelError? = nil,
+        mailbox: String? = nil, rejectMailbox: Bool = false,
+        onDeviceAvailable: Bool = false
     ) {
         let box = KernelBox()
-        let tokens = TokenBox()
         let suite = "mesh.runtime.tests." + UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!
-        if let mailbox { defaults.set(mailbox, forKey: "astral.mesh.mailbox") }
+        if let mailbox { defaults.set(mailbox, forKey: "astral.mesh.v2.mailbox") }
         box.rejectMailbox = rejectMailbox
         let factory: MeshKernelFactory = { config, _, _, _, listener in
             if let factoryError { throw factoryError }
@@ -73,15 +65,10 @@ struct MeshRuntimeHarness {
             if box.rejectMailbox, config.mailbox != nil {
                 throw MeshKernelError.refused(KernelMapping.failureText(code: "config.mailbox"))
             }
-            let kernel = InMemoryMeshKernel(listener: listener, hasMesh: hasMesh)
+            let kernel = InMemoryMeshKernel(listener: listener, hasMesh: hasMesh, recoveryPending: recoveryPending)
             box.kernel = kernel
             return kernel
         }
-        let signIn: @Sendable (String) async throws -> String =
-            enrollment ?? { nonce in
-                tokens.record(nonce)
-                return "id-token"
-            }
         runtime = MeshRuntime(
             makeKernel: factory,
             makeKeys: {
@@ -90,9 +77,8 @@ struct MeshRuntimeHarness {
             },
             consent: ConsentCoordinator(), onDeviceModel: FakeOnDeviceModel(available: onDeviceAvailable),
             tools: DeviceLocalTools(), dataDirectory: FileManager.default.temporaryDirectory,
-            deviceLabel: "Test Mac", deviceKind: .desktop, enrollment: signIn, defaults: defaults)
+            deviceLabel: "Test Mac", deviceKind: .desktop, defaults: defaults)
         self.box = box
-        self.tokens = tokens
         self.defaults = defaults
         self.suite = suite
     }

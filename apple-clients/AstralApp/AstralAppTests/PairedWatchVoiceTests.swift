@@ -18,6 +18,30 @@ final class PairedWatchVoiceTests: XCTestCase {
         HostedVoiceRequestRecorder.reset()
     }
 
+    func testMeshKeyBindingRefusalReachesWatchWithoutInvokingVoice() async throws {
+        let channel = PhoneCompanionChannel()
+        let controller = OnDeviceVoiceController(
+            store: nil,
+            requestPermission: {
+                XCTFail("Unsupported binding cannot request the microphone")
+                return false
+            })
+        let relay = PairedWatchVoiceRelay(controller: controller, channel: channel)
+        relay.bind(prepare: { _ in throw MeshKernelError.meshKeyBindingUnavailable }, isCurrent: { _ in false })
+        let owner = CompanionVoiceOwner(issuer: "https://issuer.example", subject: "owner")!
+        let packet = try CompanionVoicePacket(
+            kind: .start, session: UUID(), sequence: 0, microseconds: 0,
+            payload: CompanionVoiceActivation(owner: owner, mode: .conversation).encoded())
+        let failed = expectation(description: "unsupported mesh-key binding")
+        channel.observe(.failure, failed)
+        try await channel.onPacket?(packet)
+        await fulfillment(of: [failed], timeout: 3)
+        XCTAssertEqual(
+            channel.sent.first(where: { $0.kind == .failure })?.payload, Data("phone_mesh_binding_unavailable".utf8))
+        XCTAssertFalse(controller.isRunning)
+        relay.unbind()
+    }
+
     func testWrongOwnerStartCannotInterruptAnAdmittedSession() async throws {
         let h = try await PhoneCompanionHarness.installed()
         defer { h.close() }

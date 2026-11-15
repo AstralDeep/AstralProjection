@@ -14,11 +14,11 @@ final class MeshDeviceUXTests: XCTestCase {
         return calendar
     }
 
-    private func member(attested: Bool = true, this: Bool = false, seen: Date? = nil, path: MeshPath = .none)
+    private func member(this: Bool = false, seen: Date? = nil, path: MeshPath = .none)
         -> MeshMember
     {
         MeshMember(
-            memberId: "sha256:m", label: "Phone", kind: .pocket, isThisDevice: this, attested: attested, lastSeen: seen,
+            memberId: "sha256:m", label: "Phone", kind: .pocket, isThisDevice: this, lastSeen: seen,
             path: path)
     }
 
@@ -59,45 +59,15 @@ final class MeshDeviceUXTests: XCTestCase {
         XCTAssertEqual(MeshPresentation.deviceStatus(member(), sync: nil, now: now), "Not seen yet")
     }
 
-    func testUnverifiedDevicesNeedSignInAndThisDeviceReadsVerified() {
-        XCTAssertEqual(MeshPresentation.deviceStatus(member(attested: false), sync: nil), "Needs sign-in to verify")
-        XCTAssertEqual(
-            MeshPresentation.deviceStatus(member(attested: false, this: true), sync: nil), "Needs sign-in to verify")
-        XCTAssertEqual(MeshPresentation.deviceStatus(member(this: true), sync: nil), "Verified")
+    func testDeviceMembershipDescribesTheSignedDeviceWithoutPersonVerification() {
+        XCTAssertEqual(MeshPresentation.deviceStatus(member(this: true), sync: nil), "This device · signed mesh member")
+        XCTAssertEqual(MeshPresentation.deviceStatus(member(), sync: nil), "Not seen yet")
     }
 
     func testComparisonCodeIsGroupedInFoursAndOddCodesAreKeptWhole() {
         XCTAssertEqual(MeshPresentation.codeGroups("76076454"), ["7607", "6454"])
         XCTAssertEqual(MeshPresentation.codeGroups("7607 6454"), ["7607", "6454"])
         XCTAssertEqual(MeshPresentation.codeGroups("123"), ["123"])
-    }
-
-    func testVerifyingSignsInWithTheAttestationNonceAndMarksThisDeviceVerified() async {
-        let h = MeshRuntimeHarness()
-        defer { h.cleanUp() }
-        await h.runtime.open()
-        h.kernel.setMembers([
-            MeshMember(
-                memberId: "sha256:" + String(repeating: "b", count: 64), label: "Mac", kind: .desktop,
-                isThisDevice: true, attested: false, lastSeen: nil, path: .none)
-        ])
-        await h.runtime.verifyIdentity()
-        XCTAssertEqual(h.tokens.seen, ["nonce-2"])
-        XCTAssertTrue(h.kernel.calls.contains(.init(name: "reattest", detail: "id-token")))
-        XCTAssertEqual(h.runtime.verification, .idle)
-        let attested = await eventually { h.runtime.members.first?.attested == true }
-        XCTAssertTrue(attested)
-    }
-
-    func testCancelledVerificationReportsWhyAndNeverAttests() async {
-        let h = MeshRuntimeHarness(enrollment: { _ in throw EnrollmentSignInError.cancelled })
-        defer { h.cleanUp() }
-        await h.runtime.open()
-        await h.runtime.verifyIdentity()
-        XCTAssertEqual(h.runtime.verification, .failed("Sign-in was cancelled."))
-        XCTAssertFalse(h.kernel.calls.contains { $0.name == "reattest" })
-        h.runtime.dismissVerificationFailure()
-        XCTAssertEqual(h.runtime.verification, .idle)
     }
 
     func testProviderFailureWithAnAvailableOnDeviceModelStaysAnError() async {

@@ -35,7 +35,7 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
     }
 
     static func open(
-        config: MeshKernelConfig, issuers: [IssuerConfig], network: NetworkConfig, signer: any AstralHostSigning,
+        config: MeshKernelConfig, network: NetworkConfig, signer: any AstralHostSigning,
         model: any AstralOnDeviceModel, tools: any MeshLocalTools, listener: any MeshKernelListening,
         peerTools: [MeshPeerTool] = [], now: @escaping @Sendable () -> Date = { Date() }
     ) async throws -> RealMeshKernel {
@@ -44,7 +44,7 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
         let native = KernelConfig(
             dataDir: config.dataDirectory.path, operationsSecret: config.operationsSecret,
             wrapSecret: config.wrapSecret, restoreMarker: config.installMarker, deviceLabel: config.deviceLabel,
-            deviceKind: kind(config.deviceKind), issuers: issuers, network: network)
+            deviceKind: kind(config.deviceKind), network: network)
         do {
             let kernel = try Kernel.open(
                 config: native, signer: KernelHostSigner(signer), model: KernelOnDeviceModel(model),
@@ -120,16 +120,14 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
         }
     }
 
-    func beginMeshCreation() throws -> MeshAttestationRequest {
-        try mapped { MeshAttestationRequest(nonce: try kernel.beginMeshCreation().nonce) }
-    }
-
-    func completeMeshCreation(idToken: String) throws -> MeshRecoveryKit {
+    func createMesh() throws -> MeshRecoveryKit {
         try mapped {
-            let kit = try kernel.completeMeshCreation(idToken: idToken)
+            let kit = try kernel.createMesh()
             return MeshRecoveryKit(words: kit.words.split(separator: " ").map(String.init))
         }
     }
+
+    func confirmMeshRecovery() throws { try mapped { try kernel.confirmMeshRecovery() } }
 
     func recoverWithWords(words: String, backupPath: String?) throws -> MeshRecovery {
         try mapped {
@@ -191,12 +189,6 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
     func raiseStop() throws { try mapped { _ = try kernel.raiseStop() } }
 
     func resumeStop() throws { try mapped { _ = try kernel.resumeStop() } }
-
-    func beginAttestation() throws -> MeshAttestationRequest {
-        try mapped { MeshAttestationRequest(nonce: try kernel.beginAttestation().nonce) }
-    }
-
-    func reattest(idToken: String) throws { try mapped { try kernel.reattest(idToken: idToken) } }
 
     func exportBackup(path: String) throws { try mapped { _ = try kernel.exportBackup(path: path) } }
 

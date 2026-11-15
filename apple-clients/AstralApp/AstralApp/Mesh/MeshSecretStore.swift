@@ -16,7 +16,7 @@ nonisolated protocol MeshSecretStore: Sendable {
 }
 
 nonisolated final class MeshKeychainStore: MeshSecretStore, @unchecked Sendable {
-    static var defaultService: String { KeychainServices.name("mesh-device") }
+    static var defaultService: String { KeychainServices.name("mesh-device-v2") }
 
     private let service: String
 

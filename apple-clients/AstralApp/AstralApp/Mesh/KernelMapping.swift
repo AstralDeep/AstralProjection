@@ -13,7 +13,7 @@ nonisolated enum KernelMapping {
         let enrolled = value.state == .enrolled
         return MeshStatus(
             hasMesh: enrolled, meshId: value.meshId, deviceId: value.deviceId.isEmpty ? nil : value.deviceId,
-            attested: !value.unattested, stopped: value.stopped, hardwareBacked: value.hardwareBacked,
+            recoveryPending: value.recoveryPending, stopped: value.stopped, hardwareBacked: value.hardwareBacked,
             stopLevel: value.stop)
     }
 
@@ -41,10 +41,9 @@ nonisolated enum KernelMapping {
             let peer = peers.first { $0.deviceId == member.deviceId }
             return MeshMember(
                 memberId: member.deviceId, label: member.label, kind: deviceKind(member.kind),
-                isThisDevice: member.isLocal, attested: !member.unattested,
+                isThisDevice: member.isLocal,
                 lastSeen: peer?.lastSeenMs.map { date(ms: $0) }, path: peer.map { path($0.path) } ?? .none,
-                addedAt: member.addedAtS > 0 ? Date(timeIntervalSince1970: Double(member.addedAtS)) : nil,
-                attestedAt: member.attestedAtS.map { Date(timeIntervalSince1970: Double($0)) })
+                addedAt: member.addedAtS > 0 ? Date(timeIntervalSince1970: Double(member.addedAtS)) : nil)
         }
     }
 
@@ -129,9 +128,7 @@ nonisolated enum KernelMapping {
     }
 
     static func principal(_ info: AstralKernel.MeshPrincipal) -> MeshVerifiedPrincipal {
-        MeshVerifiedPrincipal(
-            meshId: info.meshId,
-            identities: info.identities.map { MeshVerifiedIdentity(issuer: $0.issuer, subject: $0.subject) })
+        MeshVerifiedPrincipal(meshId: info.meshId)
     }
 
     static func provider(_ info: ModelProviderInfo, lowestOrder: UInt32) -> MeshModelProvider {
@@ -346,13 +343,8 @@ nonisolated enum KernelMapping {
         ("gate.", "A safety check refused this step."),
         ("consent.declined", MeshKernelError.consentDenied.message),
         ("signer.denied", MeshKernelError.consentDenied.message),
-        (
-            "config.no_issuer",
-            "The sign-in service could not be reached when the app started. Open the app again with a connection."
-        ),
         ("mesh.already_enrolled", "This device already belongs to a mesh."),
         ("mesh.not_enrolled", "This device has no mesh yet."),
-        ("attestation.", "The sign-in could not be verified for this mesh."),
         ("pairing.expired", "The code ran out of time."),
         ("pairing.cancelled", "The invitation was cancelled."),
         ("pairing.used", "That code was already used."),

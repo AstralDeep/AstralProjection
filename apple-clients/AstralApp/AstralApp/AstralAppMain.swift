@@ -49,6 +49,11 @@ struct AstralApp: App {
                 _modeStore = State(initialValue: fixture.mode)
                 _mesh = State(initialValue: fixture.runtime)
             } else {
+                if FirstLoginUITestFixture.requestedScenario() != nil {
+                    let mode = AppModeStore()
+                    mode.choose(.node)
+                    _modeStore = State(initialValue: mode)
+                }
                 _mesh = State(initialValue: MeshRuntimeBuilder.live(consent: coordinator))
             }
         #else

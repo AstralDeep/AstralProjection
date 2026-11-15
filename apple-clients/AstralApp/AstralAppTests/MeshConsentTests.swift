@@ -1,11 +1,14 @@
 // Verifies canonical consent binding, roster signing, authentication policy, queue lifecycle and the signer's guards.
 // Authentication is stubbed, so no biometric prompt appears and nothing here depends on the device.
 
+import AstralKernel
 import CryptoKit
 import LocalAuthentication
 import XCTest
 
 @testable import AstralDeep
+
+private typealias ConsentPrompt = AstralDeep.ConsentPrompt
 
 private nonisolated struct StubAuthenticator: ConsentAuthenticating {
     let succeeds: Bool
@@ -147,18 +150,40 @@ private nonisolated enum BoundConsentFixture {
         let body =
             kind == "remove"
             ? #"{"cutoff":{},"device":""# + device + #""}"#
-            : #"{"attestation":null,"device":{"cert":""# + base64(64)
+            : #"{"device":{"cert":""# + base64(64)
                 + #"","identity":""# + base64(65, point: true) + #"","kind":"pocket","label":"Phone","ops":""#
                 + base64(32) + #"","presence":""# + base64(65, point: true) + #"","wrap":""# + base64(32) + #""}}"#
         return Data(
-            ("astral.roster/v1\n" + #"{"author":""# + device + #"","body":"# + body
+            ("astral.roster/v2\n" + #"{"author":""# + device + #"","body":"# + body
                 + #","clock":{"ms":5,"n":0},"follows":[""# + mesh + #""],"mesh":""# + mesh
-                + #"","type":""# + kind + #"","v":1}"#).utf8)
+                + #"","type":""# + kind + #"","v":2}"#).utf8)
+    }
+
+    static let genesisJSON =
+        #"{"author":"sha256:3e12e6c5cc474af72a790b85bc913f15c4a6d50f6f2f60b134e4f39cdcaac43c","body":{"device":{"cert":"XDr9mmu91zSdmXMMGj6X9S8Zc1YWkdExf9BOO4kTNechkih9rSjUKTdT0yd3ppJptJgjlYqrUIFQf_9F2lOfvQ","identity":"BGu-ySJRD-eaPX1InaWwz-PrJKahD2fZmFCTjRDoLxjVkTumbkShewtnlcP_aL0xvDp1CuLZeHYtLWU7JXyDaVU","kind":"desktop","label":"local-v2/alice","ops":"98dbF54AHip3sZoiSvNc6YZDqglrC4XbULQOJNYyqHQ","presence":"BCp9Kf0eZjRdqdF0vzbv833DVCUwjrnRdn6MDc_QCVtwigBiz78fP24SXkgK0azaXzJa3bZkoAjPetPi-nr2grs","wrap":"Lr3sh9YQxdPoDLFDrP-X8kwUbsi2vcAAYjIOlbprDnk"},"epoch":{"group":"personal","recovery_wrap":{"ct":"VPChNAryixWqVOXq9J03EXnEQU_i2ercKcD5aQMv8EumlJSetx5dHgQ4Y8-XbKIP","epk":"kPK_aqTGub9LjrZjCtbIEPR154xjoZUpIXaXKLMpewE","nonce":"UY19FElY0sA2TIc1VJslCWErWAc53q2o"},"wraps":[{"device":"sha256:3e12e6c5cc474af72a790b85bc913f15c4a6d50f6f2f60b134e4f39cdcaac43c","wrap":{"ct":"3yadmSlN-fxT7p20hlIyclm9Z3zaYUutpaOriPBS4NAyO4lmB6nspxBgsTSeMbr3","epk":"9FjpKfWJW3imPOVwlLOOoMaj1DzFgNFRhgmJaAsxvi0","nonce":"trwZIhwjQuI2tRdz_5CzgVLFEdMAGqej"}}]},"recovery":{"sign":"014cllX1QBYdHgnT2N3B9xMkNJJxROWx5_XjqUFqM84","wrap":"cXeOzTwc3KomB8shsFwfmR8h92w6LG2p_f8nKAQpUWo"}},"clock":{"ms":1794441600000,"n":0},"follows":[],"mesh":null,"type":"genesis","v":2}"#
+    static let genesis = Data(("astral.roster/v2\n" + genesisJSON).utf8)
+
+    static func mutateGenesis(_ path: [String], value: Any?) throws -> Data {
+        var entry = try JSONSerialization.jsonObject(with: Data(genesisJSON.utf8)) as! [String: Any]
+        func mutate(_ object: [String: Any], path: ArraySlice<String>) -> [String: Any] {
+            var result = object
+            let key = path.first!
+            if path.count == 1 {
+                result[key] = value
+            } else {
+                result[key] = mutate(result[key] as! [String: Any], path: path.dropFirst())
+            }
+            return result
+        }
+        entry = mutate(entry, path: path[...])
+        let encoded = try JSONSerialization.data(
+            withJSONObject: entry, options: [.sortedKeys, .withoutEscapingSlashes])
+        return Data("astral.roster/v2\n".utf8) + (try KernelCanonicalJSON.canonicalize(encoded))
     }
 
     private static func base64(_ count: Int, point: Bool = false) -> String {
-        var data = Data(repeating: 1, count: count)
-        if point { data[0] = 4 }
+        if point { return "BGu-ySJRD-eaPX1InaWwz-PrJKahD2fZmFCTjRDoLxjVkTumbkShewtnlcP_aL0xvDp1CuLZeHYtLWU7JXyDaVU" }
+        let data = Data(repeating: 1, count: count)
         return data.base64EncodedString().replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
     }
@@ -253,6 +278,151 @@ final class ConsentPromptBindingTests: XCTestCase {
         XCTAssertFalse(prompt.isBound(to: Data(prompt.digest.utf8)))
     }
 
+    func testRealV2GenesisVectorBindsItsCompleteSigningInput() throws {
+        let input = BoundConsentFixture.genesis
+        let prompt = try ConsentPrompt.roster(signingInput: input)
+        XCTAssertEqual(prompt.effect, "roster.genesis")
+        XCTAssertEqual(
+            prompt.target, "local-v2/alice (sha256:3e12e6c5cc474af72a790b85bc913f15c4a6d50f6f2f60b134e4f39cdcaac43c)")
+        XCTAssertTrue(prompt.requiresBiometry)
+        XCTAssertTrue(prompt.isBound(to: input))
+        XCTAssertFalse(
+            prompt.isBound(to: try BoundConsentFixture.mutateGenesis(["clock", "ms"], value: 1_794_441_600_001)))
+        let native = AstralKernel.ConsentPrompt(
+            kind: .other, title: "create_mesh", target: "untrusted display",
+            canonicalAction: Data(), canonicalArguments: Data(), signingInput: input, digest: "ignored",
+            untrustedSources: [], labels: [], requiresBiometry: true)
+        XCTAssertEqual(try KernelHostSigner.display(for: native, message: input), prompt)
+    }
+
+    func testGenesisRejectsNullMissingAndExtraFieldsAtEveryObject() throws {
+        let fields: [([String], [String])] = [
+            ([], ["v", "type", "mesh", "author", "follows", "clock", "body"]),
+            (["clock"], ["ms", "n"]),
+            (["body"], ["device", "epoch", "recovery"]),
+            (["body", "device"], ["identity", "presence", "ops", "wrap", "cert", "kind", "label"]),
+            (["body", "epoch"], ["group", "recovery_wrap", "wraps"]),
+            (["body", "epoch", "recovery_wrap"], ["ct", "epk", "nonce"]),
+            (["body", "recovery"], ["sign", "wrap"]),
+        ]
+        for (path, keys) in fields {
+            for key in keys {
+                XCTAssertThrowsError(
+                    try ConsentPrompt.roster(signingInput: BoundConsentFixture.mutateGenesis(path + [key], value: nil)),
+                    "missing " + (path + [key]).joined(separator: "."))
+                if path + [key] != ["mesh"] {
+                    XCTAssertThrowsError(
+                        try ConsentPrompt.roster(
+                            signingInput: BoundConsentFixture.mutateGenesis(path + [key], value: NSNull())),
+                        "null " + (path + [key]).joined(separator: "."))
+                }
+            }
+            XCTAssertThrowsError(
+                try ConsentPrompt.roster(
+                    signingInput: BoundConsentFixture.mutateGenesis(path + ["extra"], value: true)),
+                path.joined(separator: "."))
+        }
+    }
+
+    func testGenesisRejectsMalformedKeysKindsVersionsAndDomains() throws {
+        let paths = [
+            ["body", "device", "identity"], ["body", "device", "presence"], ["body", "device", "ops"],
+            ["body", "device", "wrap"], ["body", "device", "cert"], ["body", "recovery", "sign"],
+            ["body", "recovery", "wrap"], ["body", "epoch", "recovery_wrap", "ct"],
+            ["body", "epoch", "recovery_wrap", "epk"], ["body", "epoch", "recovery_wrap", "nonce"],
+        ]
+        let entry = try JSONSerialization.jsonObject(with: Data(BoundConsentFixture.genesisJSON.utf8)) as! [String: Any]
+        for path in paths {
+            let original = path.reduce(entry as Any) { ($0 as! [String: Any])[$1]! } as! String
+            XCTAssertThrowsError(
+                try ConsentPrompt.roster(signingInput: BoundConsentFixture.mutateGenesis(path, value: original + "=")),
+                path.joined(separator: "."))
+            for value: Any in [true, 1, [], [:], "", "AA", "not+url/base64=", String(repeating: "A", count: 128)] {
+                XCTAssertThrowsError(
+                    try ConsentPrompt.roster(signingInput: BoundConsentFixture.mutateGenesis(path, value: value)),
+                    path.joined(separator: "."))
+            }
+        }
+        let invalidPoint = Data([4] + Array(repeating: UInt8(0), count: 64)).base64EncodedString().replacingOccurrences(
+            of: "+", with: "-"
+        ).replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        for key in ["identity", "presence"] {
+            XCTAssertThrowsError(
+                try ConsentPrompt.roster(
+                    signingInput: BoundConsentFixture.mutateGenesis(["body", "device", key], value: invalidPoint)))
+        }
+        let invalid: [([String], Any)] = [
+            (["v"], 1), (["v"], "2"), (["body", "issuers"], []),
+            (["author"], BoundConsentFixture.device), (["mesh"], BoundConsentFixture.mesh),
+            (["follows"], [BoundConsentFixture.mesh]), (["body", "device", "kind"], "unknown"),
+            (["body", "device", "label"], ""), (["body", "device", "label"], String(repeating: "x", count: 65)),
+            (["body", "epoch", "group"], "phi"), (["body", "epoch", "wraps"], []),
+            (["body", "epoch", "wraps"], [:]),
+        ]
+        for (path, value) in invalid {
+            XCTAssertThrowsError(
+                try ConsentPrompt.roster(signingInput: BoundConsentFixture.mutateGenesis(path, value: value)),
+                path.joined(separator: "."))
+        }
+        let input = String(decoding: BoundConsentFixture.genesis, as: UTF8.self)
+        for domain in ["astral.roster/v1", "astral.consent/v1", "astral.roster/v2x"] {
+            XCTAssertThrowsError(
+                try ConsentPrompt.roster(
+                    signingInput: Data(input.replacingOccurrences(of: "astral.roster/v2", with: domain).utf8)))
+        }
+    }
+
+    func testGenesisRejectsMalformedAndDuplicateRecipientWraps() throws {
+        let entry = try JSONSerialization.jsonObject(with: Data(BoundConsentFixture.genesisJSON.utf8)) as! [String: Any]
+        let body = entry["body"] as! [String: Any]
+        let epoch = body["epoch"] as! [String: Any]
+        let recipient = (epoch["wraps"] as! [[String: Any]])[0]
+        let wrap = recipient["wrap"] as! [String: Any]
+        var invalid: [[String: Any]] = [
+            ["device": "invalid", "wrap": wrap], ["wrap": wrap], ["device": recipient["device"]!],
+            ["device": recipient["device"]!, "wrap": wrap, "extra": true],
+        ]
+        for field in ["ct", "epk", "nonce"] {
+            for value: Any? in [nil, NSNull(), "AA", (wrap[field] as! String) + "="] {
+                var malformed = wrap
+                malformed[field] = value
+                invalid.append(["device": recipient["device"]!, "wrap": malformed])
+            }
+        }
+        var extra = wrap
+        extra["extra"] = true
+        invalid.append(["device": recipient["device"]!, "wrap": extra])
+        for value: Any in invalid + [["device": recipient["device"]!, "wrap": NSNull()]] {
+            XCTAssertThrowsError(
+                try ConsentPrompt.roster(
+                    signingInput: BoundConsentFixture.mutateGenesis(["body", "epoch", "wraps"], value: [value])))
+        }
+        XCTAssertThrowsError(
+            try ConsentPrompt.roster(
+                signingInput: BoundConsentFixture.mutateGenesis(
+                    ["body", "epoch", "wraps"], value: [recipient, recipient])))
+    }
+
+    func testMalformedGenesisNeverReachesBiometricPresenter() throws {
+        let suite = "consent.genesis." + UUID().uuidString
+        defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let presenter = RecordingPresenter()
+        let signer = KernelHostSigner(
+            MeshHostSigner(
+                keys: try DeviceKeys(
+                    store: MeshMemorySecretStore(), defaults: UserDefaults(suiteName: suite)!, preferHardware: false),
+                presenter: presenter))
+        for path in [["body", "device", "presence"], ["body", "epoch"], ["body", "recovery"]] {
+            let input = try BoundConsentFixture.mutateGenesis(path, value: NSNull())
+            let native = AstralKernel.ConsentPrompt(
+                kind: .other, title: "create_mesh", target: "ignored",
+                canonicalAction: Data(), canonicalArguments: Data(), signingInput: input, digest: "ignored",
+                untrustedSources: [], labels: [], requiresBiometry: true)
+            XCTAssertThrowsError(try signer.presenceSign(prompt: native, message: input))
+        }
+        XCTAssertTrue(presenter.prompts.isEmpty)
+    }
+
     func testRosterAddAndRemoveBindFullInputAndRequireBiometry() throws {
         for kind in ["add", "remove"] {
             let message = BoundConsentFixture.roster(kind)
@@ -273,11 +443,11 @@ final class ConsentPromptBindingTests: XCTestCase {
     func testRosterAddRejectsMalformedDeviceRecord() {
         let original = String(decoding: BoundConsentFixture.roster("add"), as: UTF8.self)
         for text in [
-            original.replacingOccurrences(of: #""attestation":null"#, with: #""attestation":true"#),
+            original.replacingOccurrences(of: #""device":{"cert":""#, with: #""attestation":null,"device":{"cert":""#),
             original.replacingOccurrences(of: #""label":"Phone""#, with: #""label":"""#),
             original.replacingOccurrences(of: #""kind":"pocket""#, with: #""kind":"unknown""#),
             original.replacingOccurrences(of: #""identity":""#, with: #""extra":1,"identity":""#),
-            original.replacingOccurrences(of: #""identity":"BA"#, with: #""identity":"AA"#),
+            original.replacingOccurrences(of: #""identity":"B"#, with: #""identity":"A"#),
             original.replacingOccurrences(of: #""cert":""#, with: #""cert":"="#),
         ] {
             XCTAssertThrowsError(try ConsentPrompt.roster(signingInput: Data(text.utf8)), text)
@@ -287,14 +457,16 @@ final class ConsentPromptBindingTests: XCTestCase {
     func testRosterRejectsWrongContextUnsupportedKindAndMalformedBody() {
         let original = String(decoding: BoundConsentFixture.roster(), as: UTF8.self)
         for text in [
-            original.replacingOccurrences(of: "astral.roster/v1", with: "astral.consent/v1"),
+            original.replacingOccurrences(of: "astral.roster/v2", with: "astral.consent/v1"),
             original.replacingOccurrences(of: #""type":"remove""#, with: #""type":"unknown""#),
             original.replacingOccurrences(of: #""type":"remove""#, with: #""type":"rotate""#),
             original.replacingOccurrences(
                 of: #""author":""# + BoundConsentFixture.device, with: #""author":"recovery"#),
             original.replacingOccurrences(of: #""cutoff":{}"#, with: #""cutoff":[]"#),
             original.replacingOccurrences(of: #""type":"remove""#, with: #""sig":"ignored","type":"remove""#),
-            original.replacingOccurrences(of: #""v":1"#, with: #""v":1,"v":1"#),
+            original.replacingOccurrences(of: #""v":2"#, with: #""v":2,"v":2"#),
+            original.replacingOccurrences(of: #""v":2"#, with: #""v":1"#),
+            original.replacingOccurrences(of: "astral.roster/v2", with: "astral.roster/v1"),
             original + " ",
         ] {
             XCTAssertThrowsError(try ConsentPrompt.roster(signingInput: Data(text.utf8)), text)

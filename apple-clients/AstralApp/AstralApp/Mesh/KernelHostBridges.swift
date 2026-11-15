@@ -42,6 +42,8 @@ nonisolated final class KernelHostSigner: AstralKernel.HostSigner, @unchecked Se
         case .other where prompt.title == "create_mesh":
             built = try ConsentPrompt.roster(signingInput: message)
             guard built.effect == "roster.genesis" else { throw ConsentPromptError.invalidInput }
+        case .other where prompt.title == "reveal_recovery" || prompt.title == "confirm_recovery":
+            built = try ConsentPrompt.recovery(action: prompt.title, signingInput: message)
         case .toolEffect:
             if prompt.title == "run.takeover" {
                 built = try ConsentPrompt.takeover(canonicalAction: prompt.canonicalAction, signingInput: message)

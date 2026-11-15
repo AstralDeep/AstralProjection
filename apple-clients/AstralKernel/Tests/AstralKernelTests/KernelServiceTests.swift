@@ -1,4 +1,4 @@
-// Exercises the kernel through the Swift wrapper: opening with host custody, creating a mesh with a test issuer, reopening, refusal of wrong custody, header signing and the change stream.
+// Exercises the kernel through the Swift wrapper: opening with host custody, creating an accountless mesh, reopening, refusal of wrong custody, header signing and the change stream.
 // Every test runs on loopback with relays disabled so it never needs a network.
 import XCTest
 
@@ -28,13 +28,10 @@ final class KernelServiceTests: XCTestCase {
         let device = try TestDevice(label: "mac", in: self, marker: 2)
         let service = try device.open()
         var iterator = service.changes().makeAsyncIterator()
-        let request = try service.kernel.beginMeshCreation()
-        XCTAssertEqual(request.nonce.count, 64)
-        XCTAssertEqual(request.issuer, TestIssuer.issuer)
+        let kit = try service.kernel.createMesh()
         let first = await iterator.next()
         XCTAssertEqual(first, .enrollment(state: .creating))
-        let kit = try service.kernel.completeMeshCreation(
-            idToken: TestIssuer.token(nonce: request.nonce, subject: "user-1"))
+        try service.kernel.confirmMeshRecovery()
         XCTAssertEqual(kit.words.split(separator: " ").count, 24)
         XCTAssertEqual(kit.restoreMarker, device.marker)
         let chat = try service.kernel.createChat(title: "plan")
@@ -50,7 +47,7 @@ final class KernelServiceTests: XCTestCase {
         XCTAssertEqual(status.state, .enrolled)
         XCTAssertEqual(status.marker, .matches)
         XCTAssertEqual(try again.kernel.listChats().count, 1)
-        XCTAssertThrowsError(try again.kernel.beginMeshCreation()) { error in
+        XCTAssertThrowsError(try again.kernel.createMesh()) { error in
             guard case KernelError.State = error else { return XCTFail("unexpected error \(error)") }
         }
     }
@@ -58,9 +55,8 @@ final class KernelServiceTests: XCTestCase {
     func testReopenWithADifferentOperationsKeyOrMissingMarkerIsRefused() async throws {
         let device = try TestDevice(label: "mac", in: self, marker: 3)
         let service = try device.open()
-        let request = try service.kernel.beginMeshCreation()
-        _ = try service.kernel.completeMeshCreation(
-            idToken: TestIssuer.token(nonce: request.nonce, subject: "user-1"))
+        _ = try service.kernel.createMesh()
+        try service.kernel.confirmMeshRecovery()
 
         var wrongKey = device.config
         wrongKey.operationsSecret = try newOperationsSecret()
@@ -76,14 +72,22 @@ final class KernelServiceTests: XCTestCase {
         }
     }
 
-    func testCreationRefusesATokenBoundToAnotherNonce() throws {
+    func testPendingRecoverySurvivesReopenAndDenialDoesNotConfirm() async throws {
         let device = try TestDevice(label: "mac", in: self, marker: 4)
         let service = try device.open()
-        XCTAssertThrowsError(try service.kernel.completeMeshCreation(idToken: "x.y.z"))
-        _ = try service.kernel.beginMeshCreation()
-        XCTAssertThrowsError(
-            try service.kernel.completeMeshCreation(
-                idToken: TestIssuer.token(nonce: String(repeating: "0", count: 64), subject: "user-1")))
+        let kit = try service.kernel.createMesh()
+        let reopened = try device.open()
+        let pending = await reopened.kernel.meshStatus()
+        XCTAssertTrue(pending.recoveryPending)
+        device.signer.allowPresence = false
+        XCTAssertThrowsError(try reopened.kernel.createMesh())
+        XCTAssertThrowsError(try reopened.kernel.confirmMeshRecovery())
+        device.signer.allowPresence = true
+        XCTAssertEqual(try reopened.kernel.createMesh(), kit)
+        try reopened.kernel.confirmMeshRecovery()
+        let confirmed = await reopened.kernel.meshStatus()
+        XCTAssertFalse(confirmed.recoveryPending)
+        XCTAssertEqual(try reopened.kernel.meshPrincipal().meshId, kit.meshId)
     }
 
     func testSignVerifyRoundTripAndTamperRefusal() throws {
@@ -106,9 +110,8 @@ final class KernelServiceTests: XCTestCase {
     func testEndpointStartsAndReportsStateChanges() async throws {
         let device = try TestDevice(label: "mac", in: self, marker: 5)
         let service = try device.open()
-        let request = try service.kernel.beginMeshCreation()
-        _ = try service.kernel.completeMeshCreation(
-            idToken: TestIssuer.token(nonce: request.nonce, subject: "user-1"))
+        _ = try service.kernel.createMesh()
+        try service.kernel.confirmMeshRecovery()
         var iterator = service.changes().makeAsyncIterator()
         let nodeId = try await service.kernel.startNetwork()
         XCTAssertFalse(nodeId.isEmpty)

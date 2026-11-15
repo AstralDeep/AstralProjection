@@ -67,12 +67,13 @@ final class MeshStoredSurfaceTests: XCTestCase {
         let config = KernelConfig(
             dataDir: directory.path, operationsSecret: try keys.operationsSecret(), wrapSecret: try keys.wrapSecret(),
             restoreMarker: try keys.installMarker(), deviceLabel: "Surface importer", deviceKind: .desktop,
-            issuers: [TestTokenIssuer.config], network: KernelNetworking.loopback)
+            network: KernelNetworking.loopback)
         let signer = KernelHostSigner(MeshHostSigner(keys: keys, presenter: RecordingPresenter()))
         let kernel = try Kernel.open(config: config, signer: signer)
         _ = try await Task.detached {
-            let request = try kernel.beginMeshCreation()
-            return try kernel.completeMeshCreation(idToken: TestTokenIssuer.token(nonce: request.nonce))
+            let kit = try kernel.createMesh()
+            try kernel.confirmMeshRecovery()
+            return kit
         }.value
         let snapshot = try MeshStoredSurfaceFixture.load()
         let chat = try kernel.createChat(title: "Outside page")

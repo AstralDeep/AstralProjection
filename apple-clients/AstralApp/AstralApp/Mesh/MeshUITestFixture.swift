@@ -8,6 +8,8 @@
     enum MeshUITestFixture {
         enum Scenario: String {
             case onboarding
+            case firstLaunch
+            case legacyLogin
             case shell
             case attachments
             case storedSurface
@@ -40,9 +42,10 @@
         ) -> (mode: AppModeStore, runtime: MeshRuntime) {
             let suite = "MeshUITest." + UUID().uuidString
             let defaults = UserDefaults(suiteName: suite)!
+            if scenario == .legacyLogin { defaults.set("node", forKey: "astral.app-mode.v1") }
             let mode = AppModeStore(defaults: defaults)
-            mode.choose(.mesh)
-            let hasMesh = scenario != .onboarding
+            if scenario != .firstLaunch && scenario != .legacyLogin { mode.choose(.mesh) }
+            let hasMesh = scenario != .onboarding && scenario != .firstLaunch && scenario != .legacyLogin
             let factory: MeshKernelFactory = { _, signer, _, _, listener in
                 let kernel = InMemoryMeshKernel(listener: listener, hasMesh: hasMesh)
                 kernel.actionSigner = { pending in
@@ -76,7 +79,7 @@
                 consent: consent, onDeviceModel: FoundationModelsOnDeviceModel(), tools: DeviceLocalTools(),
                 dataDirectory: FileManager.default.temporaryDirectory, deviceLabel: "Preview Mac",
                 deviceKind: .desktop,
-                enrollment: { _ in "fixture-id-token" }, defaults: defaults)
+                defaults: defaults)
             return (mode, runtime)
         }
 
@@ -85,11 +88,11 @@
             kernel.setMembers([
                 MeshMember(
                     memberId: "sha256:" + String(repeating: "b", count: 64), label: "Preview Mac", kind: .desktop,
-                    isThisDevice: true, attested: true, lastSeen: nil, path: .none,
-                    addedAt: now.addingTimeInterval(-86_400 * 30), attestedAt: now.addingTimeInterval(-86_400 * 3)),
+                    isThisDevice: true, lastSeen: nil, path: .none,
+                    addedAt: now.addingTimeInterval(-86_400 * 30)),
                 MeshMember(
                     memberId: "sha256:" + String(repeating: "c", count: 64), label: "Sam's iPhone", kind: .pocket,
-                    isThisDevice: false, attested: false, lastSeen: now.addingTimeInterval(-1_800), path: .relay,
+                    isThisDevice: false, lastSeen: now.addingTimeInterval(-1_800), path: .relay,
                     addedAt: now.addingTimeInterval(-86_400 * 12)),
             ])
             kernel.setSync(

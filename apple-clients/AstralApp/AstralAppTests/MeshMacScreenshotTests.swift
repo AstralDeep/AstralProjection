@@ -218,7 +218,7 @@
         func testProviderAudienceRendersItsFutureDeviceScopeAndExplicitSelections() async throws {
             let model = AppModel()
             let member = MeshMember(
-                memberId: "mac", label: "My Mac", kind: .desktop, isThisDevice: true, attested: true, lastSeen: nil,
+                memberId: "mac", label: "My Mac", kind: .desktop, isThisDevice: true, lastSeen: nil,
                 path: .none)
             for recipients: [String]? in [nil, [member.memberId, "removed-device"]] {
                 let mount = SurfaceMount(

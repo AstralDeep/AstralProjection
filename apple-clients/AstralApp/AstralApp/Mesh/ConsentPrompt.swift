@@ -133,32 +133,21 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
     }
 
     static func roster(signingInput: Data) throws -> ConsentPrompt {
-        let data = try payload(signingInput, context: "astral.roster/v1")
+        let data = try payload(signingInput, context: "astral.roster/v2")
         let entry = try object(data, fields: ["v", "type", "mesh", "author", "follows", "clock", "body"])
         if entry["type"] as? String == "genesis" { return try genesis(data, entry: entry, signingInput: signingInput) }
         let header = try JSONDecoder().decode(RosterHeader.self, from: data)
         try checkClock(entry["clock"], value: header.clock)
-        guard header.v == 1, isID(header.mesh), isID(header.author), !header.follows.isEmpty,
+        guard header.v == 2, isID(header.mesh), isID(header.author), !header.follows.isEmpty,
             header.follows == Array(Set(header.follows)).sorted(), header.follows.allSatisfy(isID),
             let body = entry["body"] as? [String: Any]
         else { throw ConsentPromptError.invalidInput }
         let target: String
         switch header.type {
         case "add":
-            guard Set(body.keys) == ["device", "attestation"],
-                body["attestation"] is NSNull || body["attestation"] is [String: Any],
-                let record = body["device"] as? [String: Any],
-                Set(record.keys) == ["identity", "presence", "ops", "wrap", "kind", "label", "cert"],
-                let kind = record["kind"] as? String, ["desktop", "pocket", "satellite", "node"].contains(kind),
-                let label = record["label"] as? String, (1...64).contains(label.unicodeScalars.count)
-            else { throw ConsentPromptError.invalidInput }
-            let identity = try keyBytes(record["identity"], count: 65)
-            let presence = try keyBytes(record["presence"], count: 65)
-            guard identity.first == 4, presence.first == 4 else { throw ConsentPromptError.invalidInput }
-            _ = try keyBytes(record["ops"], count: 32)
-            _ = try keyBytes(record["wrap"], count: 32)
-            _ = try keyBytes(record["cert"], count: 64)
-            target = label + " (" + hashID(identity) + ")"
+            guard Set(body.keys) == ["device"] else { throw ConsentPromptError.invalidInput }
+            let device = try deviceRecord(body["device"])
+            target = device.label + " (" + hashID(device.identity) + ")"
         case "remove":
             guard Set(body.keys) == ["device", "cutoff"] else { throw ConsentPromptError.invalidInput }
             let removal = try JSONDecoder().decode(Removal.self, from: data)
@@ -198,18 +187,43 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
     private static func genesis(_ data: Data, entry: [String: Any], signingInput: Data) throws -> ConsentPrompt {
         let header = try JSONDecoder().decode(GenesisHeader.self, from: data)
         try checkClock(entry["clock"], value: header.clock)
-        guard header.v == 1, entry["mesh"] is NSNull, header.follows.isEmpty, isID(header.author),
-            let body = entry["body"] as? [String: Any], Set(body.keys) == ["device", "epoch", "issuers", "recovery"],
-            let record = body["device"] as? [String: Any],
-            Set(record.keys) == ["identity", "presence", "ops", "wrap", "kind", "label", "cert"],
-            let label = record["label"] as? String, (1...64).contains(label.unicodeScalars.count),
-            let issuers = body["issuers"] as? [Any], !issuers.isEmpty
+        guard header.v == 2, entry["mesh"] is NSNull, header.follows.isEmpty, isID(header.author),
+            let body = entry["body"] as? [String: Any], Set(body.keys) == ["device", "epoch", "recovery"],
+            let recovery = body["recovery"] as? [String: Any], Set(recovery.keys) == ["sign", "wrap"]
         else { throw ConsentPromptError.invalidInput }
-        let identity = try keyBytes(record["identity"], count: 65)
-        guard identity.first == 4, hashID(identity) == header.author else { throw ConsentPromptError.invalidInput }
+        let device = try deviceRecord(body["device"])
+        guard hashID(device.identity) == header.author else { throw ConsentPromptError.invalidInput }
+        try genesisEpoch(body["epoch"])
+        _ = try keyBytes(recovery["sign"], count: 32)
+        _ = try keyBytes(recovery["wrap"], count: 32)
         var prompt = ConsentPrompt(
-            actionTitle: "Create your mesh", effect: "roster.genesis", target: label + " (" + header.author + ")",
+            actionTitle: "Create your mesh", effect: "roster.genesis",
+            target: device.label + " (" + header.author + ")",
             arguments: String(decoding: data, as: UTF8.self), digest: hashID(data), requiresBiometry: true)
+        prompt.signingInputHash = hash(signingInput)
+        return prompt
+    }
+
+    static func recovery(action: String, signingInput: Data) throws -> ConsentPrompt {
+        let domain: String
+        let title: String
+        switch action {
+        case "reveal_recovery":
+            domain = "astral.recovery.export/v2\n"
+            title = "Show your recovery words"
+        case "confirm_recovery":
+            domain = "astral.recovery.confirm/v2\n"
+            title = "Confirm your recovery words are saved"
+        default: throw ConsentPromptError.invalidInput
+        }
+        guard let input = String(data: signingInput, encoding: .utf8), input.hasPrefix(domain) else {
+            throw ConsentPromptError.invalidInput
+        }
+        let mesh = String(input.dropFirst(domain.count))
+        guard isID(mesh) else { throw ConsentPromptError.invalidInput }
+        var prompt = ConsentPrompt(
+            actionTitle: title, effect: action, target: mesh, arguments: "", digest: hashID(signingInput),
+            requiresBiometry: true)
         prompt.signingInputHash = hash(signingInput)
         return prompt
     }
@@ -243,6 +257,45 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
         guard let clock = object as? [String: Any], Set(clock.keys) == ["ms", "n"], value.ms >= 0, value.n >= 0 else {
             throw ConsentPromptError.invalidInput
         }
+    }
+
+    private static func deviceRecord(_ value: Any?) throws -> (identity: Data, label: String) {
+        guard let record = value as? [String: Any],
+            Set(record.keys) == ["identity", "presence", "ops", "wrap", "kind", "label", "cert"],
+            let kind = record["kind"] as? String, ["desktop", "pocket", "satellite", "node"].contains(kind),
+            let label = record["label"] as? String, (1...64).contains(label.unicodeScalars.count)
+        else { throw ConsentPromptError.invalidInput }
+        let identity = try keyBytes(record["identity"], count: 65)
+        let presence = try keyBytes(record["presence"], count: 65)
+        _ = try P256.Signing.PublicKey(x963Representation: identity)
+        _ = try P256.Signing.PublicKey(x963Representation: presence)
+        _ = try keyBytes(record["ops"], count: 32)
+        _ = try keyBytes(record["wrap"], count: 32)
+        _ = try keyBytes(record["cert"], count: 64)
+        return (identity, label)
+    }
+
+    private static func genesisEpoch(_ value: Any?) throws {
+        guard let epoch = value as? [String: Any], Set(epoch.keys) == ["group", "recovery_wrap", "wraps"],
+            epoch["group"] as? String == "personal", let wraps = epoch["wraps"] as? [[String: Any]], !wraps.isEmpty
+        else { throw ConsentPromptError.invalidInput }
+        var devices: Set<String> = []
+        for recipient in wraps {
+            guard Set(recipient.keys) == ["device", "wrap"], let device = recipient["device"] as? String,
+                isID(device), devices.insert(device).inserted
+            else { throw ConsentPromptError.invalidInput }
+            try sealed(recipient["wrap"])
+        }
+        try sealed(epoch["recovery_wrap"])
+    }
+
+    private static func sealed(_ value: Any?) throws {
+        guard let wrap = value as? [String: Any], Set(wrap.keys) == ["ct", "epk", "nonce"] else {
+            throw ConsentPromptError.invalidInput
+        }
+        _ = try keyBytes(wrap["epk"], count: 32)
+        _ = try keyBytes(wrap["nonce"], count: 24)
+        _ = try keyBytes(wrap["ct"], count: 48)
     }
 
     private static func keyBytes(_ value: Any?, count: Int) throws -> Data {

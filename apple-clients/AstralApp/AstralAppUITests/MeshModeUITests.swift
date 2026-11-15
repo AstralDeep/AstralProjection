@@ -24,6 +24,20 @@ final class MeshModeUITests: XCTestCase {
 
     private func element(_ id: String) -> XCUIElement { app.descendants(matching: .any)[id] }
 
+    func testFirstLaunchShowsCreateAndJoinBeforeAnyServerLogin() {
+        launch("firstLaunch")
+        XCTAssertTrue(element("mesh.create").waitForExistence(timeout: 10))
+        XCTAssertTrue(element("mesh.join").exists)
+        XCTAssertFalse(app.webViews.firstMatch.exists)
+    }
+
+    func testLegacyServerLoginPreferenceOpensMeshChoices() {
+        launch("legacyLogin")
+        XCTAssertTrue(element("mesh.create").waitForExistence(timeout: 10))
+        XCTAssertTrue(element("mesh.join").exists)
+        XCTAssertFalse(app.webViews.firstMatch.exists)
+    }
+
     func testAttachmentOnlyMessageShowsItsFileAndTheComposerCanAddAnother() {
         launch("attachments")
         let chat = app.staticTexts["Shared files"].firstMatch

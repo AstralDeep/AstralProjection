@@ -3,10 +3,11 @@
 
 import AVFoundation
 import AstralCore
-@testable import AstralWatch
 import Foundation
 import SwiftUI
 import XCTest
+
+@testable import AstralWatch
 
 @MainActor
 final class VoiceContract065Tests: XCTestCase {
@@ -89,6 +90,18 @@ final class VoiceContract065Tests: XCTestCase {
         model.handleVoiceScenePhase(.active)
         await drain()
         XCTAssertEqual(bridge.activations.count, 1)
+    }
+
+    func testMeshKeyBindingFailureExplainsUnavailableWatchVoice() async throws {
+        let model = WatchModel()
+        let bridge = ContractWatchBridge()
+        model.voiceBridge = bridge
+        model.bindConversationAccount(try XCTUnwrap(.init(issuer: "https://issuer.example", subject: "owner")))
+        model.performPrimaryVoiceAction()
+        await drain()
+        bridge.stateChanged?(.failed("phone_mesh_binding_unavailable"))
+        XCTAssertEqual(model.voiceReason, "phone_mesh_binding_unavailable")
+        XCTAssertEqual(model.voiceMessage, "Watch voice is unavailable until mesh-key binding is supported.")
     }
 
     func testAccountChangeRetiresPairedAudioAndReplayText() async throws {
@@ -221,6 +234,7 @@ private final class ContractWatchBridge: WatchVoiceBridgeControlling {
     var companionActive = false
     var companionConversation: CompanionVoiceConversation? = .init(chatId: "phone-chat", title: "Phone conversation")
     var activations: [CompanionVoiceActivation] = []
+    var stateChanged: (@MainActor (WatchVoiceBridgeState) -> Void)?
     var transcript: (@MainActor (String, Bool) -> Void)?
     func requestMicrophonePermission() async -> WatchVoicePermission { microphonePermission }
     func startCompanion(
@@ -229,6 +243,7 @@ private final class ContractWatchBridge: WatchVoiceBridgeControlling {
         onTranscript: @escaping @MainActor (String, Bool) -> Void,
         onSpeaking: @escaping @MainActor (Bool) -> Void
     ) async throws {
+        stateChanged = onState
         activations.append(activation)
         companionActive = true
         transcript = onTranscript

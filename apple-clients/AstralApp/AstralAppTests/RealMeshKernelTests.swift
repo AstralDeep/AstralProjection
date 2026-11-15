@@ -27,36 +27,6 @@ nonisolated final class ChangeLog: MeshKernelListening, @unchecked Sendable {
     func onChange(_ change: MeshKernelChange) { lock.withLock { values.append(change) } }
 }
 
-nonisolated enum TestTokenIssuer {
-    static let issuer = "https://auth.example.test/realms/astral"
-    static let client = "astral-desktop"
-    private static let key = P256.Signing.PrivateKey()
-
-    static var config: IssuerConfig {
-        let point = key.publicKey.x963Representation
-        let jwks: [String: Any] = [
-            "keys": [["kid": "k1", "kty": "EC", "crv": "P-256", "x": b64(point[1..<33]), "y": b64(point[33..<65])]]
-        ]
-        let data = try! JSONSerialization.data(withJSONObject: jwks, options: [.sortedKeys])
-        return IssuerConfig(issuer: issuer, clientId: client, jwksJson: String(decoding: data, as: UTF8.self))
-    }
-
-    static func token(nonce: String) -> String {
-        let now = Int(Date().timeIntervalSince1970)
-        let header = b64(try! JSONSerialization.data(withJSONObject: ["alg": "ES256", "kid": "k1", "typ": "JWT"]))
-        let claims: [String: Any] = [
-            "iss": issuer, "aud": client, "sub": "user-1", "iat": now, "exp": now + 300, "nonce": nonce,
-        ]
-        let input = header + "." + b64(try! JSONSerialization.data(withJSONObject: claims))
-        return input + "." + b64(try! key.signature(for: Data(input.utf8)).rawRepresentation)
-    }
-
-    private static func b64(_ data: some DataProtocol) -> String {
-        Data(data).base64EncodedString().replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
-    }
-}
-
 final class RealMeshKernelTests: XCTestCase {
     private struct Device {
         let kernel: RealMeshKernel
@@ -67,7 +37,7 @@ final class RealMeshKernelTests: XCTestCase {
     }
 
     private func open(
-        _ label: String, kind: MeshDeviceKind = .desktop, issuers: [IssuerConfig]? = nil,
+        _ label: String, kind: MeshDeviceKind = .desktop,
         peerTools: [MeshPeerTool] = [], mailbox: String? = nil, reusing: Device? = nil
     ) async throws -> Device {
         let directory: URL
@@ -94,7 +64,7 @@ final class RealMeshKernelTests: XCTestCase {
         var network = KernelNetworking.loopback
         network.mailbox = mailbox
         let kernel = try await RealMeshKernel.open(
-            config: config, issuers: issuers ?? [TestTokenIssuer.config], network: network,
+            config: config, network: network,
             signer: MeshHostSigner(keys: keys, presenter: presenter), model: FakeOnDeviceModel(),
             tools: DeviceLocalTools(), listener: changes, peerTools: peerTools)
         return Device(kernel: kernel, presenter: presenter, changes: changes, directory: directory, keys: keys)
@@ -103,8 +73,9 @@ final class RealMeshKernelTests: XCTestCase {
     private func createMesh(_ device: Device) async throws -> MeshRecoveryKit {
         let kernel = device.kernel
         return try await Task.detached {
-            let request = try kernel.beginMeshCreation()
-            return try kernel.completeMeshCreation(idToken: TestTokenIssuer.token(nonce: request.nonce))
+            let kit = try kernel.createMesh()
+            try kernel.confirmMeshRecovery()
+            return kit
         }.value
     }
 
@@ -127,7 +98,7 @@ final class RealMeshKernelTests: XCTestCase {
         XCTAssertEqual(kit.words.count, 24)
         let status = try await mac.kernel.meshStatus()
         XCTAssertTrue(status.hasMesh)
-        XCTAssertTrue(status.attested)
+        XCTAssertFalse(status.recoveryPending)
         XCTAssertFalse(status.stopped)
         let members = try await mac.kernel.roster()
         XCTAssertEqual(members.map(\.label), ["Test Mac"])
@@ -137,24 +108,40 @@ final class RealMeshKernelTests: XCTestCase {
         await mac.kernel.stopNetwork()
     }
 
-    func testCreationWithoutAnIssuerOrWithTheWrongNonceIsRefusedInPlainWords() async throws {
-        let none = try await open("No issuer", issuers: [])
-        XCTAssertThrowsError(try none.kernel.beginMeshCreation()) { error in
-            guard case MeshKernelError.refused(let text) = error else { return XCTFail("\(error)") }
-            XCTAssertTrue(text.contains("sign-in service"))
-        }
+    func testLocalCreationDenialDoesNotCreateMembership() async throws {
         let mac = try await open("Mac")
-        let kernel = mac.kernel
-        let outcome = await Task.detached { () -> Error? in
-            do {
-                _ = try kernel.beginMeshCreation()
-                _ = try kernel.completeMeshCreation(idToken: TestTokenIssuer.token(nonce: "00"))
-                return nil
-            } catch { return error }
-        }.value
-        XCTAssertNotNil(outcome)
+        mac.presenter.approve = false
+        do {
+            _ = try await createMesh(mac)
+            XCTFail("Denied approval cannot create a mesh")
+        } catch {}
         let status = try await mac.kernel.meshStatus()
         XCTAssertFalse(status.hasMesh)
+        XCTAssertFalse(status.recoveryPending)
+    }
+
+    func testPendingRecoveryReopensAndRequiresApprovalUntilConfirmed() async throws {
+        let device = try await open("Mac")
+        let kernel = device.kernel
+        let kit = try await Task.detached { try kernel.createMesh() }.value
+        let pending = try await kernel.meshStatus()
+        XCTAssertTrue(pending.recoveryPending)
+        await kernel.stopNetwork()
+        let reopened = try await open("Mac", reusing: device)
+        reopened.presenter.approve = false
+        let current = reopened.kernel
+        do {
+            _ = try await Task.detached { try current.createMesh() }.value
+            XCTFail("Recovery reveal requires approval")
+        } catch {}
+        reopened.presenter.approve = true
+        let revealed = try await Task.detached { try current.createMesh() }.value
+        XCTAssertEqual(revealed, kit)
+        try await Task.detached { try current.confirmMeshRecovery() }.value
+        let confirmed = try await current.meshStatus()
+        XCTAssertFalse(confirmed.recoveryPending)
+        XCTAssertEqual(try current.meshPrincipal().meshId, confirmed.meshId)
+        await current.stopNetwork()
     }
 
     func testPairingAsksForAConsentAndSyncsChatsBothWays() async throws {
@@ -616,28 +603,4 @@ final class RealMeshKernelTests: XCTestCase {
         await mac.kernel.stopNetwork()
     }
 
-    func testIssuerKeysAreFetchedCachedAndUsedWhenTheNetworkFails() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("issuer-" + UUID().uuidString)
-        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        let keys = Data(TestTokenIssuer.config.jwksJson.utf8)
-        let online = MeshIssuerSource(
-            issuer: "https://id.example.test/realms/a", clientId: "astral-desktop",
-            keysURL: URL(string: "https://id.example.test/realms/a/protocol/openid-connect/certs")!
-        ) { _ in keys }
-        let first = await online.issuers(cacheIn: directory)
-        XCTAssertEqual(first.map(\.issuer), ["https://id.example.test/realms/a"])
-        let offline = MeshIssuerSource(
-            issuer: online.issuer, clientId: online.clientId, keysURL: online.keysURL
-        ) { _ in throw URLError(.notConnectedToInternet) }
-        let cached = await offline.issuers(cacheIn: directory)
-        XCTAssertEqual(cached.first?.jwksJson, first.first?.jwksJson)
-        let garbage = MeshIssuerSource(issuer: online.issuer, clientId: online.clientId, keysURL: online.keysURL) { _ in
-            Data("{}".utf8)
-        }
-        let kept = await garbage.issuers(cacheIn: directory)
-        XCTAssertEqual(kept.first?.jwksJson, first.first?.jwksJson)
-        let empty = FileManager.default.temporaryDirectory.appendingPathComponent("issuer-" + UUID().uuidString)
-        let none = await offline.issuers(cacheIn: empty)
-        XCTAssertTrue(none.isEmpty)
-    }
 }

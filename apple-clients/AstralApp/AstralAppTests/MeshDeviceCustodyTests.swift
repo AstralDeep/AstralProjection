@@ -1,5 +1,6 @@
 // Verifies device-only operations and wrapping key custody, persistence, and fail-closed recovery using isolated stores.
 
+import AstralCore
 import AstralKernel
 import CryptoKit
 import XCTest
@@ -59,6 +60,32 @@ final class MeshDeviceCustodyTests: XCTestCase {
     private func base64URL(_ value: Data) -> String {
         value.base64EncodedString().replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+    }
+
+    @MainActor
+    func testV2NamespacePreservesLegacyDirectoryKeysAndMarkers() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let legacy = root.appendingPathComponent("mesh", isDirectory: true)
+        try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
+        let contents = Data("legacy encrypted state".utf8)
+        let file = legacy.appendingPathComponent("store")
+        try contents.write(to: file)
+        let defaults = defaults()
+        let legacyService = KeychainServices.name("mesh-device")
+        defaults.set("legacy-marker", forKey: legacyService + ".install-id")
+        defaults.set(true, forKey: legacyService + ".restore-pending")
+        let store = MeshMemorySecretStore()
+        let keys = try DeviceKeys(service: legacyService, store: store, defaults: defaults, preferHardware: false)
+        let operations = try keys.operationsSecret()
+        let marker = try keys.installMarker()
+        let current = MeshRuntimeBuilder.dataDirectory(in: root)
+        XCTAssertEqual(current.lastPathComponent, "mesh-v2")
+        XCTAssertEqual(try Data(contentsOf: file), contents)
+        XCTAssertEqual(try keys.operationsSecret(), operations)
+        XCTAssertEqual(try keys.installMarker(), marker)
+        XCTAssertNotEqual(MeshKeychainStore.defaultService, legacyService)
+        XCTAssertTrue(defaults.bool(forKey: legacyService + ".restore-pending"))
     }
 
     func testInitializationPersistsBothCurve25519Secrets() throws {

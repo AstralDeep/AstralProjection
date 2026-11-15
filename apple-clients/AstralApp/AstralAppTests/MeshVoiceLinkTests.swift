@@ -48,73 +48,18 @@ final class MeshVoiceLinkTests: XCTestCase {
         try XCTUnwrap(CompanionVoiceOwner(issuer: "https://issuer.example.test", subject: subject))
     }
 
-    private func principal(_ h: MeshRuntimeHarness, owner: CompanionVoiceOwner) throws -> MeshVerifiedPrincipal {
-        MeshVerifiedPrincipal(
-            meshId: try XCTUnwrap(h.runtime.status.meshId),
-            identities: [MeshVerifiedIdentity(issuer: owner.issuer, subject: owner.subject)])
-    }
-
-    func testWatchPreparationUsesTheNativePrincipalAndPinsTheCurrentConversation() async throws {
+    func testAccountlessMeshCannotStartIssuerBoundWatchVoice() async throws {
         let h = MeshRuntimeHarness()
         defer { h.cleanUp() }
         await h.runtime.open()
-        let owner = try watchOwner()
-        h.kernel.setMeshPrincipal(try principal(h, owner: owner))
-        let created = await h.runtime.newChat(title: "Pinned Watch chat")
-        let chat = try XCTUnwrap(created)
-        let context = try await h.runtime.prepareWatchVoice(owner: owner)
-        XCTAssertEqual(context.owner, owner)
-        XCTAssertEqual(context.chatId, chat)
-        XCTAssertEqual(context.title, "Pinned Watch chat")
-        let current = await h.runtime.watchVoiceContextCurrent(context)
-        XCTAssertTrue(current)
-        _ = await h.runtime.newChat(title: "Different chat")
-        let changed = await h.runtime.watchVoiceContextCurrent(context)
-        XCTAssertFalse(changed)
-    }
-
-    func testWatchPreparationFailsClosedWithoutVerifiedMatchingPrincipal() async throws {
-        let h = MeshRuntimeHarness()
-        defer { h.cleanUp() }
-        await h.runtime.open()
-        let owner = try watchOwner()
+        h.kernel.setMeshPrincipal(MeshVerifiedPrincipal(meshId: h.runtime.status.meshId!))
         do {
-            _ = try await h.runtime.prepareWatchVoice(owner: owner)
-            XCTFail("No profile or account cache can stand in for the native principal")
-        } catch {}
-        h.kernel.setMeshPrincipal(try principal(h, owner: watchOwner("different-owner")))
-        do {
-            _ = try await h.runtime.prepareWatchVoice(owner: owner)
-            XCTFail("A different verified owner cannot start this Watch session")
-        } catch {}
+            _ = try await h.runtime.prepareWatchVoice(owner: watchOwner())
+            XCTFail("Watch needs a mesh-key binding")
+        } catch {
+            XCTAssertTrue(MeshRuntime.describe(error).contains("mesh-key binding"))
+        }
         XCTAssertFalse(h.kernel.calls.contains { $0.name == "createChat" || $0.name == "sendMessage" })
-    }
-
-    func testWatchContextRechecksOwnerStopAndRetiredMeshSession() async throws {
-        let h = MeshRuntimeHarness()
-        defer { h.cleanUp() }
-        await h.runtime.open()
-        let owner = try watchOwner()
-        let verified = try principal(h, owner: owner)
-        h.kernel.setMeshPrincipal(verified)
-        let context = try await h.runtime.prepareWatchVoice(owner: owner)
-        h.kernel.setMeshPrincipal(try principal(h, owner: watchOwner("different-owner")))
-        let wrongOwner = await h.runtime.watchVoiceContextCurrent(context)
-        XCTAssertFalse(wrongOwner)
-        h.kernel.setMeshPrincipal(verified)
-        h.kernel.principalGate = { throw MeshKernelError.storage("Principal unavailable") }
-        let unavailable = await h.runtime.watchVoiceContextCurrent(context)
-        XCTAssertFalse(unavailable)
-        h.kernel.principalGate = {}
-        try h.kernel.raiseStop()
-        let stopped = await h.runtime.watchVoiceContextCurrent(context)
-        XCTAssertFalse(stopped)
-        await h.runtime.close()
-        await h.runtime.open()
-        h.kernel.setMeshPrincipal(try principal(h, owner: owner))
-        _ = await h.runtime.newChat(title: "Pinned Watch chat")
-        let retired = await h.runtime.watchVoiceContextCurrent(context)
-        XCTAssertFalse(retired)
     }
 
     func testPreparationFromSettingsKeepsTheExplicitlySelectedConversation() async throws {

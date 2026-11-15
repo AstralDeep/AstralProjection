@@ -156,7 +156,7 @@
                     ? "This node belongs to a different account." : "The node refused the request."
             } catch NodePairingError.meshUnavailable(let code) {
                 notice = "The node cannot join a mesh yet (\(code))."
-            } catch EnrollmentSignInError.cancelled {
+            } catch NodeHostSignInError.cancelled {
                 notice = nil
             } catch {
                 notice = "Pairing did not start."

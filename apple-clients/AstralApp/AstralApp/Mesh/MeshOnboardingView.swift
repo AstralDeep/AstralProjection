@@ -68,7 +68,7 @@ struct MeshOnboardingView: View {
         Button {
             Task { await mesh.createMesh() }
         } label: {
-            Text("Create a Mesh").frame(maxWidth: .infinity)
+            Text(mesh.status.recoveryPending ? "Resume recovery" : "Create a Mesh").frame(maxWidth: .infinity)
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.large)
@@ -107,7 +107,7 @@ struct MeshOnboardingView: View {
 
     private var busy: Bool {
         switch mesh.creation {
-        case .signingIn, .finishing: return true
+        case .finishing: return true
         default: return mesh.join == .starting
         }
     }
@@ -115,9 +115,6 @@ struct MeshOnboardingView: View {
     @ViewBuilder
     private var progress: some View {
         switch mesh.creation {
-        case .signingIn:
-            ProgressView("Signing in")
-                .accessibilityIdentifier("mesh.create.progress")
         case .finishing:
             ProgressView("Creating your mesh")
                 .accessibilityIdentifier("mesh.create.progress")
@@ -237,7 +234,7 @@ struct MeshRecoveryView: View {
                     .font(ConsoleTypography.title2)
                     .accessibilityAddTraits(.isHeader)
                 Text(
-                    "They are the only way to get your mesh back if you lose every device. Write them on paper. They are shown once and are not saved on this device."
+                    "They are the only way to get your mesh back if you lose every device. Write them on paper. They stay encrypted on this device until you confirm you have saved them."
                 )
                 .font(ConsoleTypography.footnote)
                 .foregroundStyle(p.muted)
@@ -269,15 +266,23 @@ struct MeshRecoveryView: View {
                             .accessibilityIdentifier("mesh.recovery.mismatch")
                     }
                 }
+                if let notice = mesh.notice {
+                    Text(notice).font(ConsoleTypography.footnote).foregroundStyle(p.error)
+                        .accessibilityIdentifier("mesh.recovery.error")
+                }
                 Button {
-                    mismatch = !mesh.confirmRecoveryWritten(answers: answers)
+                    mismatch = !MeshRecoveryConfirmation.verify(words: words, answers: answers)
+                    if !mismatch { Task { _ = await mesh.confirmRecoveryWritten(answers: answers) } }
                 } label: {
                     Text("Continue").frame(maxWidth: .infinity).padding(.vertical, 6)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .keyboardShortcut(.defaultAction)
-                .disabled(!written || answers.contains { $0.trimmingCharacters(in: .whitespaces).isEmpty })
+                .disabled(
+                    mesh.confirmingRecovery || !written
+                        || answers.contains { $0.trimmingCharacters(in: .whitespaces).isEmpty }
+                )
                 .accessibilityIdentifier("mesh.recovery.continue")
             }
             .frame(maxWidth: 520)

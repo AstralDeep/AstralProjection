@@ -205,7 +205,6 @@ nonisolated struct MeshTurnState: Equatable, Sendable {
 
 nonisolated enum MeshCreationState: Equatable, Sendable {
     case idle
-    case signingIn
     case finishing
     case recovery([String])
     case failed(String)
@@ -243,12 +242,6 @@ nonisolated enum MeshJoinState: Equatable, Sendable {
     case offered(MeshPairingOffer)
     case accepted(MeshInvitationAccepted)
     case joined
-    case failed(String)
-}
-
-nonisolated enum MeshVerificationState: Equatable, Sendable {
-    case idle
-    case signingIn
     case failed(String)
 }
 
@@ -411,12 +404,12 @@ final class MeshRuntime {
     private(set) var mailboxAddress: String?
     private(set) var chatRequests: [MeshRequest] = []
     private(set) var requestsForMe: [MeshRequest] = []
+    private(set) var confirmingRecovery = false
     private(set) var creation = MeshCreationState.idle
     private(set) var join = MeshJoinState.idle
     private(set) var restore = MeshRestoreState.idle
     private(set) var addDevice = MeshAddDeviceState.idle
     private(set) var invite = MeshInviteState.idle
-    private(set) var verification = MeshVerificationState.idle
     private(set) var acknowledgedOutcomes: Set<String> = []
     private(set) var spoken: [VoiceSpokenRecord] = []
     private(set) var restoredInstall = false
@@ -449,13 +442,12 @@ final class MeshRuntime {
     @ObservationIgnored private let dataDirectory: URL
     @ObservationIgnored private let deviceLabel: String
     @ObservationIgnored private let deviceKind: MeshDeviceKind
-    @ObservationIgnored private let enrollment: @Sendable (String) async throws -> String
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let now: @Sendable () -> Date
     @ObservationIgnored private let waitForTurnEntry: @Sendable () async -> Void
 
-    private static let acknowledgedKey = "astral.mesh.acknowledged-outcomes"
-    private static let mailboxKey = "astral.mesh.mailbox"
+    private static let acknowledgedKey = "astral.mesh.v2.acknowledged-outcomes"
+    private static let mailboxKey = "astral.mesh.v2.mailbox"
 
     init(
         makeKernel: @escaping MeshKernelFactory,
@@ -466,7 +458,6 @@ final class MeshRuntime {
         dataDirectory: URL,
         deviceLabel: String,
         deviceKind: MeshDeviceKind,
-        enrollment: @escaping @Sendable (String) async throws -> String,
         defaults: UserDefaults = .standard,
         now: @escaping @Sendable () -> Date = { Date() },
         waitForTurnEntry: @escaping @Sendable () async -> Void = {}
@@ -479,7 +470,6 @@ final class MeshRuntime {
         self.dataDirectory = dataDirectory
         self.deviceLabel = deviceLabel
         self.deviceKind = deviceKind
-        self.enrollment = enrollment
         self.defaults = defaults
         self.now = now
         self.waitForTurnEntry = waitForTurnEntry
@@ -502,7 +492,7 @@ final class MeshRuntime {
 
     var voiceChatId: String? { voiceSessionChatId ?? speakingChatId }
     var isReady: Bool { phase == .ready }
-    var hasMesh: Bool { status.hasMesh }
+    var hasMesh: Bool { status.hasMesh && !status.recoveryPending }
     var currentTurn: MeshTurnState? { currentChatId.flatMap { turns[$0] } }
     var onDeviceModelAvailable: Bool { onDeviceModel.available() }
     var kernelVersion: String? { kernel?.version() }
@@ -649,6 +639,7 @@ final class MeshRuntime {
         kernel = nil
         phase = .closed
         status = .empty
+        creation = .idle
         chats = []
         currentChat = nil
         currentChatId = nil
@@ -699,7 +690,7 @@ final class MeshRuntime {
     func refreshAll() async {
         let session = wakeSession
         await refreshStatus()
-        guard status.hasMesh else { return }
+        guard hasMesh else { return }
         await refreshRoster()
         await refreshChats()
         await refreshRequests()
@@ -887,29 +878,45 @@ final class MeshRuntime {
     }
 
     func createMesh() async {
-        guard kernel != nil, creation == .idle || isFailedCreation else { return }
-        creation = .signingIn
+        guard isReady, kernel != nil, creation == .idle || isFailedCreation else { return }
+        let session = wakeSession
+        notice = nil
+        creation = .finishing
         do {
-            let request = try await call { try $0.beginMeshCreation() }
-            let token = try await enrollment(request.nonce)
-            creation = .finishing
-            let kit = try await call { try $0.completeMeshCreation(idToken: token) }
+            let kit = try await call { try $0.createMesh() }
+            guard isReady, wakeSession == session else { return }
             keys?.acknowledgeRestore()
             restoredInstall = false
             creation = .recovery(kit.words)
             await refreshStatus()
             await refreshRoster()
         } catch {
+            guard isReady, wakeSession == session else { return }
             creation = .failed(Self.describe(error))
         }
     }
 
-    func confirmRecoveryWritten(answers: [String]) -> Bool {
-        guard case .recovery(let words) = creation, MeshRecoveryConfirmation.verify(words: words, answers: answers)
+    func confirmRecoveryWritten(answers: [String]) async -> Bool {
+        guard !confirmingRecovery, case .recovery(let words) = creation,
+            MeshRecoveryConfirmation.verify(words: words, answers: answers)
         else { return false }
-        creation = .idle
-        Task { await refreshAll() }
-        return true
+        confirmingRecovery = true
+        notice = nil
+        defer { confirmingRecovery = false }
+        let session = wakeSession
+        do {
+            try await call { try $0.confirmMeshRecovery() }
+            guard isReady, wakeSession == session else { return false }
+            await refreshStatus()
+            guard hasMesh else { return false }
+            creation = .idle
+            await refreshAll()
+            return true
+        } catch {
+            guard isReady, wakeSession == session else { return false }
+            notice = Self.describe(error)
+            return false
+        }
     }
 
     func dismissCreationFailure() {
@@ -1056,23 +1063,6 @@ final class MeshRuntime {
 
     func resetAddDevice() { addDevice = .idle }
 
-    func verifyIdentity() async {
-        guard kernel != nil, verification != .signingIn else { return }
-        verification = .signingIn
-        do {
-            let request = try await call { try $0.beginAttestation() }
-            let token = try await enrollment(request.nonce)
-            try await call { try $0.reattest(idToken: token) }
-            verification = .idle
-            await refreshStatus()
-            await refreshRoster()
-        } catch {
-            verification = .failed(Self.describe(error))
-        }
-    }
-
-    func dismissVerificationFailure() { verification = .idle }
-
     func removeDevice(_ member: MeshMember) async {
         guard !member.isThisDevice else { return }
         await perform { try $0.removeDevice(memberId: member.memberId) }
@@ -1111,6 +1101,7 @@ final class MeshRuntime {
     }
 
     func newChat(title: String = "New chat") async -> String? {
+        guard hasMesh else { return nil }
         guard let id = await attempt({ try $0.createChat(title: title) }) else { return nil }
         await refreshChats()
         await openChat(id)
@@ -1411,115 +1402,20 @@ final class MeshRuntime {
         await perform { try $0.exportBackup(path: url.path) }
     }
 
-    func prepareMeshPush(owner: ConversationAccount) async -> MeshPushContext? {
-        guard isReady, status.hasMesh, let kernel else { return nil }
-        let session = wakeSession
-        let gate = wakeSessionGate
-        do {
-            let context = try await Task.detached(priority: .userInitiated) {
-                let live = try await kernel.meshStatus()
-                guard gate.current, live.hasMesh, !live.stopped, let mesh = live.meshId, let device = live.deviceId
-                else {
-                    throw MeshKernelError.unavailable("Mesh background updates are unavailable.")
-                }
-                let principal = try kernel.meshPrincipal()
-                guard principal.meshId == mesh,
-                    principal.identities.contains(where: {
-                        $0.issuer == owner.issuer && $0.subject == owner.subject
-                    })
-                else { throw MeshKernelError.refused("The mesh account does not match.") }
-                return MeshPushContext(owner: owner, meshId: mesh, deviceId: device, meshSession: session)
-            }.value
-            guard isReady, wakeSession == session, status.meshId == context.meshId, status.deviceId == context.deviceId
-            else { return nil }
-            return context
-        } catch { return nil }
-    }
+    func prepareMeshPush(owner: ConversationAccount) async -> MeshPushContext? { nil }
 
-    func meshPushContextCurrent(_ context: MeshPushContext) async -> Bool {
-        guard isReady, wakeSession == context.meshSession else { return false }
-        let current = await prepareMeshPush(owner: context.owner)
-        return isReady && wakeSession == context.meshSession && current == context
-    }
+    func meshPushContextCurrent(_ context: MeshPushContext) async -> Bool { false }
 
-    func publishMeshWakeRoute(_ context: MeshPushContext, route: MeshWakeRoute?) async -> Bool {
-        guard isReady, wakeSession == context.meshSession, let kernel else { return false }
-        let gate = wakeSessionGate
-        do {
-            let live = try await Task.detached(priority: .userInitiated) {
-                let live = try await kernel.meshStatus()
-                guard gate.current, live.hasMesh, live.meshId == context.meshId, live.deviceId == context.deviceId
-                else {
-                    throw MeshKernelError.refused("The mesh wake target changed.")
-                }
-                if route != nil {
-                    guard !live.stopped else { throw MeshKernelError.stopped }
-                    let principal = try kernel.meshPrincipal()
-                    guard principal.meshId == context.meshId,
-                        principal.identities.contains(where: {
-                            $0.issuer == context.owner.issuer && $0.subject == context.owner.subject
-                        })
-                    else { throw MeshKernelError.refused("The mesh account does not match.") }
-                }
-                guard gate.current else { throw MeshKernelError.unavailable("The mesh session changed.") }
-                try await kernel.setWakeRoute(
-                    expectedMeshId: context.meshId, expectedDeviceId: context.deviceId, route: route)
-                return try await kernel.meshStatus()
-            }.value
-            guard isReady, wakeSession == context.meshSession, live.hasMesh,
-                live.meshId == context.meshId, live.deviceId == context.deviceId,
-                route == nil || !live.stopped
-            else { return false }
-            return true
-        } catch { return false }
-    }
+    func publishMeshWakeRoute(_ context: MeshPushContext, route: MeshWakeRoute?) async -> Bool { false }
 
     func prepareWatchVoice(owner: CompanionVoiceOwner) async throws -> PairedWatchVoiceContext {
-        let principal = try await watchPrincipal(owner: owner)
-        let scope = try await prepareVoiceSession()
-        let current = try await watchPrincipal(owner: owner)
-        guard wakeSession == scope.session, isReady, current.meshId == principal.meshId,
-            currentChatId == scope.chatId, voiceSessionChatId == scope.chatId, let chat = currentChat,
-            chat.chatId == scope.chatId
-        else { throw MeshKernelError.unavailable("The mesh conversation changed before Watch voice started.") }
-        return PairedWatchVoiceContext(
-            owner: owner, chatId: scope.chatId, title: chat.title, meshSession: scope.session)
+        throw MeshKernelError.meshKeyBindingUnavailable
     }
 
-    func watchVoiceContextCurrent(_ context: PairedWatchVoiceContext) async -> Bool {
-        guard isReady, wakeSession == context.meshSession, currentChatId == context.chatId,
-            voiceSessionChatId == context.chatId
-        else { return false }
-        guard (try? await watchPrincipal(owner: context.owner)) != nil else { return false }
-        return isReady && wakeSession == context.meshSession && currentChatId == context.chatId
-            && voiceSessionChatId == context.chatId
-    }
-
-    private func watchPrincipal(owner: CompanionVoiceOwner) async throws -> MeshVerifiedPrincipal {
-        guard isReady, status.hasMesh else {
-            throw MeshKernelError.unavailable("Open your mesh on iPhone before starting Watch voice.")
-        }
-        let session = wakeSession
-        let principal = try await call { kernel in
-            let live = try await kernel.meshStatus()
-            guard live.hasMesh else {
-                throw MeshKernelError.unavailable("Open your mesh on iPhone before starting Watch voice.")
-            }
-            guard !live.stopped else { throw MeshKernelError.stopped }
-            let principal = try kernel.meshPrincipal()
-            guard principal.meshId == live.meshId,
-                principal.identities.contains(where: { $0.issuer == owner.issuer && $0.subject == owner.subject })
-            else { throw MeshKernelError.refused("Use the same account on Watch and iPhone for this mesh.") }
-            return principal
-        }
-        guard isReady, wakeSession == session, status.meshId == principal.meshId else {
-            throw MeshKernelError.unavailable("The mesh session changed before Watch voice started.")
-        }
-        return principal
-    }
+    func watchVoiceContextCurrent(_ context: PairedWatchVoiceContext) async -> Bool { false }
 
     func prepareVoiceSession() async throws -> MeshVoiceScope {
-        guard isReady, status.hasMesh else {
+        guard isReady, hasMesh else {
             throw MeshKernelError.unavailable("Open your mesh before starting voice.")
         }
         guard !status.stopped else { throw MeshKernelError.stopped }
@@ -1932,12 +1828,6 @@ final class MeshRuntime {
             case .consentDenied: return MeshKernelError.consentDenied.message
             case .digestMismatch: return "The approval did not match the request, so nothing was signed."
             case .calledOnMainThread: return "The approval could not be shown."
-            }
-        }
-        if let enrollment = error as? EnrollmentSignInError {
-            switch enrollment {
-            case .cancelled: return "Sign-in was cancelled."
-            default: return "Sign-in could not be completed."
             }
         }
         return "Something went wrong. Try again."

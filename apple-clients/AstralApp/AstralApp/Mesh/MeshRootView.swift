@@ -101,13 +101,7 @@ struct MeshShell: View {
                 mesh.attachVoice(model.onDeviceVoice)
                 #if os(iOS)
                     let runtime = mesh
-                    model.meshPush.bind(
-                        prepare: { [weak runtime] owner in await runtime?.prepareMeshPush(owner: owner) },
-                        isCurrent: { [weak runtime] context in await runtime?.meshPushContextCurrent(context) ?? false
-                        },
-                        publish: { [weak runtime] context, route in
-                            await runtime?.publishMeshWakeRoute(context, route: route) ?? false
-                        })
+                    model.meshPush.unbind()
                     model.watchVoice.bind(
                         prepare: { [weak runtime] owner in
                             guard let runtime else {
@@ -121,16 +115,7 @@ struct MeshShell: View {
                         })
                 #endif
             }
-            .onChange(of: mesh.status) { _, _ in
-                #if os(iOS)
-                    model.meshPush.authenticationChanged()
-                #endif
-            }
-            .onChange(of: mesh.meshAuthorityRevision) { _, _ in
-                #if os(iOS)
-                    model.meshPush.authenticationChanged()
-                #endif
-            }
+
             .onDisappear {
                 #if os(iOS)
                     model.meshPush.unbind()

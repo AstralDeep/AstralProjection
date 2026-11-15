@@ -79,14 +79,15 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     }
 
     init(
-        listener: any MeshKernelListening, hasMesh: Bool = false, hardwareBacked: Bool = true,
+        listener: any MeshKernelListening, hasMesh: Bool = false, recoveryPending: Bool = false,
+        hardwareBacked: Bool = true,
         clock: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.listener = listener
         self.clock = clock
         status = MeshStatus(
-            hasMesh: hasMesh, meshId: hasMesh ? "sha256:" + String(repeating: "a", count: 64) : nil,
-            deviceId: hasMesh ? "sha256:" + String(repeating: "b", count: 64) : nil, attested: hasMesh,
+            hasMesh: hasMesh && !recoveryPending, meshId: hasMesh ? "sha256:" + String(repeating: "a", count: 64) : nil,
+            deviceId: hasMesh ? "sha256:" + String(repeating: "b", count: 64) : nil, recoveryPending: recoveryPending,
             stopped: false, hardwareBacked: hardwareBacked)
         allowanceValue = MeshAllowance(
             share: .solo, periodEndsAt: nil, lines: [], modelTokensRemaining: nil, modelTokensLimit: nil, blocked: nil)
@@ -149,23 +150,33 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         }
     }
 
-    func beginMeshCreation() throws -> MeshAttestationRequest {
-        try record("beginMeshCreation")
-        return MeshAttestationRequest(nonce: "nonce-1")
-    }
-
-    func completeMeshCreation(idToken: String) throws -> MeshRecoveryKit {
-        try record("completeMeshCreation", idToken)
-        guard !idToken.isEmpty else { throw MeshKernelError.refused("attestation.missing") }
-        lock.withLock {
+    func createMesh() throws -> MeshRecoveryKit {
+        try record("createMesh")
+        try consentGate()
+        try lock.withLock {
+            guard !status.hasMesh || status.recoveryPending else {
+                throw MeshKernelError.refused("This device already belongs to a mesh.")
+            }
             status = MeshStatus(
-                hasMesh: true, meshId: "sha256:" + String(repeating: "a", count: 64),
-                deviceId: "sha256:" + String(repeating: "b", count: 64), attested: true, stopped: false,
+                hasMesh: false, meshId: "sha256:" + String(repeating: "a", count: 64),
+                deviceId: "sha256:" + String(repeating: "b", count: 64), recoveryPending: true, stopped: false,
                 hardwareBacked: status.hardwareBacked)
+            principalValue = MeshVerifiedPrincipal(meshId: status.meshId!)
             members = [Self.thisDevice(status: status)]
         }
         listener.onChange(.rosterChanged)
         return MeshRecoveryKit(words: recoveryWords)
+    }
+
+    func confirmMeshRecovery() throws {
+        try record("confirmMeshRecovery")
+        try consentGate()
+        try lock.withLock {
+            guard status.meshId != nil else { throw MeshKernelError.refused("This device has no mesh yet.") }
+            status.hasMesh = true
+            status.recoveryPending = false
+        }
+        listener.onChange(.rosterChanged)
     }
 
     func recoverWithWords(words: String, backupPath: String?) throws -> MeshRecovery {
@@ -186,13 +197,13 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         let deviceId = "sha256:" + String(repeating: "e", count: 64)
         lock.withLock {
             status = MeshStatus(
-                hasMesh: true, meshId: meshId, deviceId: deviceId, attested: true, stopped: false,
+                hasMesh: true, meshId: meshId, deviceId: deviceId, stopped: false,
                 hardwareBacked: status.hardwareBacked)
             members = [
                 Self.thisDevice(status: status),
                 MeshMember(
                     memberId: "sha256:" + String(repeating: "c", count: 64), label: "Old phone", kind: .pocket,
-                    isThisDevice: false, attested: true, lastSeen: nil, path: .none),
+                    isThisDevice: false, lastSeen: nil, path: .none),
             ]
         }
         listener.onChange(.rosterChanged)
@@ -226,7 +237,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
             members.append(
                 MeshMember(
                     memberId: "sha256:" + String(repeating: "c", count: 64), label: previewResult.deviceLabel,
-                    kind: previewResult.deviceKind, isThisDevice: false, attested: false, lastSeen: clock(),
+                    kind: previewResult.deviceKind, isThisDevice: false, lastSeen: clock(),
                     path: .direct, addedAt: clock()))
         }
         listener.onChange(.rosterChanged)
@@ -245,8 +256,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
                 guard member.memberId == memberId else { return member }
                 return MeshMember(
                     memberId: member.memberId, label: trimmed, kind: member.kind, isThisDevice: member.isThisDevice,
-                    attested: member.attested, lastSeen: member.lastSeen, path: member.path, addedAt: member.addedAt,
-                    attestedAt: member.attestedAt)
+                    lastSeen: member.lastSeen, path: member.path, addedAt: member.addedAt)
             }
         }
         listener.onChange(.rosterChanged)
@@ -280,7 +290,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
             members.append(
                 MeshMember(
                     memberId: "sha256:" + String(repeating: "c", count: 64), label: previewResult.deviceLabel,
-                    kind: previewResult.deviceKind, isThisDevice: false, attested: false, lastSeen: clock(),
+                    kind: previewResult.deviceKind, isThisDevice: false, lastSeen: clock(),
                     path: .direct))
         }
         listener.onChange(.rosterChanged)
@@ -290,7 +300,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         lock.withLock {
             status = MeshStatus(
                 hasMesh: true, meshId: "sha256:" + String(repeating: "a", count: 64),
-                deviceId: "sha256:" + String(repeating: "d", count: 64), attested: false, stopped: false,
+                deviceId: "sha256:" + String(repeating: "d", count: 64), stopped: false,
                 hardwareBacked: status.hardwareBacked)
             members = [Self.thisDevice(status: status)]
         }
@@ -322,26 +332,6 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         lock.withLock { status.stopped = false }
         listener.onChange(.rosterChanged)
         listener.onChange(.allowanceChanged)
-    }
-
-    func beginAttestation() throws -> MeshAttestationRequest {
-        try record("beginAttestation")
-        return MeshAttestationRequest(nonce: "nonce-2")
-    }
-
-    func reattest(idToken: String) throws {
-        try record("reattest", idToken)
-        lock.withLock {
-            status.attested = true
-            members = members.map {
-                $0.isThisDevice
-                    ? MeshMember(
-                        memberId: $0.memberId, label: $0.label, kind: $0.kind, isThisDevice: true, attested: true,
-                        lastSeen: $0.lastSeen, path: $0.path)
-                    : $0
-            }
-        }
-        listener.onChange(.rosterChanged)
     }
 
     func exportBackup(path: String) throws { try record("exportBackup", path) }
@@ -1092,6 +1082,6 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     private static func thisDevice(status: MeshStatus) -> MeshMember {
         MeshMember(
             memberId: status.deviceId ?? "", label: "This device", kind: .desktop, isThisDevice: true,
-            attested: status.attested, lastSeen: nil, path: .none)
+            lastSeen: nil, path: .none)
     }
 }

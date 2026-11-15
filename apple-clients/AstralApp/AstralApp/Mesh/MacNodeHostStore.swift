@@ -17,7 +17,7 @@
             defaults: UserDefaults = .standard, available: Bool = MacNodeHostStore.defaultAvailability(),
             root: URL = MacNodeHostStore.defaultRoot()
         ) {
-            let config = EnrollmentSignIn.defaultConfig()
+            let config = NodeHostSignIn.defaultConfig()
             let bundle = Bundle.main
             let environment = NodeHostEnvironment(
                 root: root, available: available,
@@ -50,8 +50,8 @@
         }
 
         static func ownerToken() async throws -> String {
-            let web = await MainActor.run { SystemEnrollmentWebAuthenticator() }
-            return try await EnrollmentSignIn(web: web).signIn(nonce: PKCE.makeVerifier())
+            let web = await MainActor.run { SystemNodeHostWebAuthenticator() }
+            return try await NodeHostSignIn(web: web).signIn(nonce: PKCE.makeVerifier())
         }
     }
 #endif

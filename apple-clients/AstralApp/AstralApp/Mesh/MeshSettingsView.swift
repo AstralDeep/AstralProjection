@@ -72,16 +72,8 @@ struct MeshSettingsView: View {
             }
             #if os(iOS)
                 Section("Background updates") {
-                    Text(model.meshPush.status)
+                    Text("Background updates are unavailable until mesh-key binding is supported.")
                         .accessibilityIdentifier("mesh.settings.push.status")
-                    if model.meshPush.isConfigured && !model.signedIn {
-                        Button("Sign in for background updates") { model.signIn() }
-                            .accessibilityIdentifier("mesh.settings.push.sign-in")
-                    } else if model.meshPush.isConfigured {
-                        Button("Retry registration") { model.meshPush.retry() }
-                            .accessibilityIdentifier("mesh.settings.push.retry")
-                    }
-                    if let error = model.signInError { Text(error).foregroundStyle(.red) }
                 }
             #endif
             Section("Network") {
@@ -109,7 +101,7 @@ struct MeshSettingsView: View {
                     }
                 }
                 LabeledContent("Keys", value: mesh.status.hardwareBacked ? "In secure hardware" : "In the Keychain")
-                LabeledContent("Identity", value: mesh.status.attested ? "Verified" : "Not verified")
+                LabeledContent("Membership", value: "Signed device key")
                 NavigationLink {
                     MeshRecoveryInfoView()
                 } label: {

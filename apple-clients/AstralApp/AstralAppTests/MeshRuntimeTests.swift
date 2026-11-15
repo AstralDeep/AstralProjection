@@ -40,7 +40,7 @@ final class MeshRuntimeTests: XCTestCase {
             },
             consent: ConsentCoordinator(), onDeviceModel: FakeOnDeviceModel(), tools: DeviceLocalTools(),
             dataDirectory: FileManager.default.temporaryDirectory, deviceLabel: "Mac", deviceKind: .desktop,
-            enrollment: { _ in "" }, defaults: defaults)
+            defaults: defaults)
         await runtime.open()
         guard case .failed(let message) = runtime.phase else { return XCTFail("expected failure") }
         XCTAssertTrue(message.contains("mesh runtime"))
@@ -56,30 +56,81 @@ final class MeshRuntimeTests: XCTestCase {
         XCTAssertEqual(h.runtime.phase, .ready)
     }
 
-    func testCreateMeshSignsInWithKernelNonceAndShowsRecoveryWords() async {
+    func testCreateMeshUsesLocalKernelAndShowsRecoveryBeforeActivation() async {
         let h = MeshRuntimeHarness(hasMesh: false)
         defer { h.cleanUp() }
         await h.runtime.open()
         XCTAssertFalse(h.runtime.hasMesh)
         await h.runtime.createMesh()
-        XCTAssertEqual(h.tokens.seen, ["nonce-1"])
-        XCTAssertEqual(h.kernel.calls.map(\.name).filter { $0.hasSuffix("MeshCreation") }.count, 2)
-        XCTAssertTrue(h.kernel.calls.contains(.init(name: "completeMeshCreation", detail: "id-token")))
+        XCTAssertEqual(h.kernel.calls.filter { $0.name == "createMesh" }.count, 1)
+        XCTAssertFalse(h.kernel.calls.contains { $0.name == "completeMeshCreation" })
         guard case .recovery(let words) = h.runtime.creation else { return XCTFail("expected recovery words") }
         XCTAssertEqual(words.count, 24)
-        XCTAssertTrue(h.runtime.hasMesh)
+        XCTAssertFalse(h.runtime.hasMesh)
     }
 
-    func testCreateMeshStopsWhenSignInFails() async {
-        let h = MeshRuntimeHarness(hasMesh: false, enrollment: { _ in throw EnrollmentSignInError.cancelled })
+    func testCreateMeshDenialLeavesNoMeshOrRecoveryWords() async {
+        let h = MeshRuntimeHarness(hasMesh: false)
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        h.kernel.consentGate = { throw MeshKernelError.consentDenied }
+        await h.runtime.createMesh()
+        XCTAssertEqual(h.runtime.creation, .failed("The approval was denied."))
+        XCTAssertFalse(h.runtime.hasMesh)
+        XCTAssertFalse(h.runtime.status.hasMesh)
+    }
+
+    func testRecoveryConfirmationFailureKeepsWordsAndActivationBlocked() async {
+        let h = MeshRuntimeHarness(hasMesh: false)
         defer { h.cleanUp() }
         await h.runtime.open()
         await h.runtime.createMesh()
-        XCTAssertEqual(h.runtime.creation, .failed("Sign-in was cancelled."))
-        XCTAssertFalse(h.kernel.calls.contains { $0.name == "completeMeshCreation" })
+        h.kernel.failure = .storage("Write failed")
+        let confirmed = await h.runtime.confirmRecoveryWritten(answers: ["word7", "word18"])
+        XCTAssertFalse(confirmed)
+        guard case .recovery = h.runtime.creation else { return XCTFail("Keep recovery available for retry") }
         XCTAssertFalse(h.runtime.hasMesh)
-        h.runtime.dismissCreationFailure()
+        XCTAssertEqual(h.runtime.notice, "Write failed")
+        h.kernel.failure = nil
+        let retried = await h.runtime.confirmRecoveryWritten(answers: ["word7", "word18"])
+        XCTAssertTrue(retried)
+        XCTAssertTrue(h.runtime.hasMesh)
+    }
+
+    func testPendingRecoveryReopensWithoutExposingWordsUntilApproval() async {
+        let h = MeshRuntimeHarness(hasMesh: true, recoveryPending: true)
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        XCTAssertFalse(h.runtime.hasMesh)
         XCTAssertEqual(h.runtime.creation, .idle)
+        await h.runtime.createMesh()
+        guard case .recovery(let words) = h.runtime.creation else { return XCTFail("Resume pending words") }
+        XCTAssertEqual(words, h.kernel.recoveryWords)
+        XCTAssertFalse(h.runtime.hasMesh)
+        let confirmed = await h.runtime.confirmRecoveryWritten(answers: ["word7", "word18"])
+        XCTAssertTrue(confirmed)
+        XCTAssertTrue(h.runtime.hasMesh)
+    }
+
+    func testConfirmedLocalMeshConfiguresModelsAndChatsWithoutAServerSession() async {
+        let h = MeshRuntimeHarness(hasMesh: false)
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        await h.runtime.createMesh()
+        let pendingChat = await h.runtime.newChat()
+        XCTAssertNil(pendingChat)
+        let confirmed = await h.runtime.confirmRecoveryWritten(answers: ["word7", "word18"])
+        XCTAssertTrue(confirmed)
+        let error = await h.runtime.saveProvider(
+            baseURL: "https://model.example/v1", model: "local-test", key: "test-key")
+        XCTAssertNil(error)
+        XCTAssertEqual(h.runtime.providers.first?.model, "local-test")
+        let chat = await h.runtime.newChat(title: "My mesh")
+        XCTAssertNotNil(chat)
+        let sent = await h.runtime.send("Hello")
+        XCTAssertTrue(sent)
+        await h.runtime.settle()
+        XCTAssertEqual(h.runtime.displayRows.last?.turn.text, "Hello there")
     }
 
     func testRecoveryConfirmationNeedsTheRightWords() async {
@@ -87,10 +138,13 @@ final class MeshRuntimeTests: XCTestCase {
         defer { h.cleanUp() }
         await h.runtime.open()
         await h.runtime.createMesh()
-        XCTAssertFalse(h.runtime.confirmRecoveryWritten(answers: ["word7", "nope"]))
-        XCTAssertFalse(h.runtime.confirmRecoveryWritten(answers: ["word7"]))
+        let wrong = await h.runtime.confirmRecoveryWritten(answers: ["word7", "nope"])
+        XCTAssertFalse(wrong)
+        let incomplete = await h.runtime.confirmRecoveryWritten(answers: ["word7"])
+        XCTAssertFalse(incomplete)
         guard case .recovery = h.runtime.creation else { return XCTFail("words must stay until confirmed") }
-        XCTAssertTrue(h.runtime.confirmRecoveryWritten(answers: [" WORD7 ", "word18"]))
+        let confirmed = await h.runtime.confirmRecoveryWritten(answers: [" WORD7 ", "word18"])
+        XCTAssertTrue(confirmed)
         XCTAssertEqual(h.runtime.creation, .idle)
     }
 
@@ -420,10 +474,10 @@ final class MeshRuntimeTests: XCTestCase {
                 modelTokensRemaining: 10, modelTokensLimit: 100, blocked: .soloNeedsConsent))
         h.kernel.setMembers([
             MeshMember(
-                memberId: "me", label: "This", kind: .desktop, isThisDevice: true, attested: true, lastSeen: nil,
+                memberId: "me", label: "This", kind: .desktop, isThisDevice: true, lastSeen: nil,
                 path: .none),
             MeshMember(
-                memberId: "ph", label: "Phone", kind: .pocket, isThisDevice: false, attested: false,
+                memberId: "ph", label: "Phone", kind: .pocket, isThisDevice: false,
                 lastSeen: Date(timeIntervalSince1970: 100), path: .relay),
         ])
         h.kernel.setSync(
@@ -458,7 +512,7 @@ final class MeshRuntimeTests: XCTestCase {
         XCTAssertTrue(h.runtime.outcomeNeedsAttention(outcome))
         await h.runtime.resolveUnknown(outcome, choice: .leaveAsUnknown)
         XCTAssertFalse(h.runtime.outcomeNeedsAttention(outcome))
-        XCTAssertEqual(h.defaults.stringArray(forKey: "astral.mesh.acknowledged-outcomes"), ["s1"])
+        XCTAssertEqual(h.defaults.stringArray(forKey: "astral.mesh.v2.acknowledged-outcomes"), ["s1"])
         let before = h.kernel.calls.filter { $0.name == "runMessage" }.count
         let other = MeshUnknownOutcome(stepId: "s2", tool: "delete_file", summary: "")
         await h.runtime.resolveUnknown(other, choice: .checkFirst)
@@ -715,7 +769,7 @@ final class MeshRuntimeTests: XCTestCase {
         let existing = await h.runtime.newChat(title: "Existing")!
         let phone = MeshMember(
             memberId: "phone", label: "Phone", kind: .pocket, isThisDevice: false,
-            attested: true, lastSeen: nil, path: .none)
+            lastSeen: nil, path: .none)
         h.kernel.setMembers(h.runtime.members + [phone])
         let sent = await h.runtime.sendRequest("A separate request", to: phone, in: nil)
         XCTAssertTrue(sent)

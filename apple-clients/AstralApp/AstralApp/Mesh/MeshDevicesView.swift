@@ -31,7 +31,6 @@ struct MeshDevicesView: View {
                 ForEach(thisDevice) { member in
                     NavigationLink(value: member.memberId) { MeshDeviceRow(member: member, sync: sync(of: member)) }
                         .accessibilityIdentifier("mesh.member.\(member.memberId.suffix(8))")
-                    if !member.attested { MeshVerifyButton() }
                 }
             }
             Section {
@@ -151,48 +150,14 @@ struct MeshDeviceRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(member.label).font(ConsoleTypography.headline)
                 HStack(spacing: 4) {
-                    if !member.attested {
-                        Image(systemName: "exclamationmark.circle.fill").accessibilityHidden(true)
-                    }
                     Text(MeshPresentation.deviceStatus(member, sync: sync))
                 }
                 .font(ConsoleTypography.subheadline)
-                .foregroundStyle(member.attested ? p.muted : p.warning)
+                .foregroundStyle(p.muted)
             }
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
-    }
-}
-
-struct MeshVerifyButton: View {
-    @Environment(MeshRuntime.self) private var mesh
-    @Environment(ThemeStore.self) private var theme
-    private var p: AstralPalette { theme.palette }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Button {
-                Task { await mesh.verifyIdentity() }
-            } label: {
-                if mesh.verification == .signingIn {
-                    Label {
-                        Text("Signing in")
-                    } icon: {
-                        ProgressView().controlSize(.small)
-                    }
-                } else {
-                    Label("Verify", systemImage: "checkmark.shield")
-                }
-            }
-            .disabled(mesh.verification == .signingIn)
-            .accessibilityHint("Signs in to confirm this device belongs to you")
-            .accessibilityIdentifier("mesh.devices.verify")
-            if case .failed(let message) = mesh.verification {
-                Text(message).font(ConsoleTypography.footnote).foregroundStyle(p.error)
-                    .accessibilityIdentifier("mesh.devices.verify.error")
-            }
-        }
     }
 }
 

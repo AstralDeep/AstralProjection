@@ -200,13 +200,28 @@ final class MeshChatMappingTests: XCTestCase {
     }
 
     @MainActor
+    func testLegacyServerModeOpensMeshOnboardingWithoutDeletingServerState() {
+        let suite = "mesh.legacy-mode." + UUID().uuidString
+        defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.set("node", forKey: "astral.app-mode.v1")
+        defaults.set("https://node.example", forKey: "serverBase")
+        let mode = AppModeStore(defaults: defaults)
+        XCTAssertTrue(mode.usesMesh)
+        XCTAssertEqual(defaults.string(forKey: "astral.app-mode.v1"), "node")
+        XCTAssertEqual(defaults.string(forKey: "serverBase"), "https://node.example")
+        mode.choose(.node)
+        XCTAssertFalse(AppModeStore(defaults: defaults).usesMesh)
+    }
+
+    @MainActor
     func testAppModeStorePersistsTheChoice() {
         let suite = "mesh.mode." + UUID().uuidString
         defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
         let defaults = UserDefaults(suiteName: suite)!
         let store = AppModeStore(defaults: defaults)
         XCTAssertNil(store.mode)
-        XCTAssertFalse(store.usesMesh)
+        XCTAssertTrue(store.usesMesh)
         store.choose(.mesh)
         XCTAssertTrue(AppModeStore(defaults: defaults).usesMesh)
         store.choose(.node)
@@ -222,6 +237,5 @@ final class MeshChatMappingTests: XCTestCase {
     func testRuntimeErrorsAreDescribedWithoutLeakingInternals() {
         XCTAssertEqual(MeshRuntime.describe(MeshKernelError.notFound), "That item is no longer on this device.")
         XCTAssertEqual(MeshRuntime.describe(CocoaError(.fileReadUnknown)), "Something went wrong. Try again.")
-        XCTAssertEqual(MeshRuntime.describe(EnrollmentSignInError.nonceMismatch), "Sign-in could not be completed.")
     }
 }

@@ -61,8 +61,7 @@ nonisolated enum MeshPresentation {
     static func deviceStatus(
         _ member: MeshMember, sync: MeshDeviceSync?, now: Date = Date(), calendar: Calendar = .current
     ) -> String {
-        if member.isThisDevice { return member.attested ? "Verified" : "Needs sign-in to verify" }
-        if !member.attested { return "Needs sign-in to verify" }
+        if member.isThisDevice { return "This device · signed mesh member" }
         let seen = sync?.lastSeen ?? member.lastSeen
         let path = sync?.path ?? member.path
         switch sync?.state {

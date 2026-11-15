@@ -1,5 +1,5 @@
 // Pairs two real kernels on loopback through the pairing offer, preview and approval calls and checks that chats sync both ways and that a denied presence prompt blocks the approval.
-// The first kernel creates the mesh with a test issuer, so no identity provider or network is involved.
+// The first kernel creates the mesh with local device approval, so no identity provider or network is involved.
 import XCTest
 
 @testable import AstralKernel
@@ -7,9 +7,8 @@ import XCTest
 final class KernelPairingTests: XCTestCase {
     private func enrolled(_ device: TestDevice) throws -> KernelService {
         let service = try device.open()
-        let request = try service.kernel.beginMeshCreation()
-        _ = try service.kernel.completeMeshCreation(
-            idToken: TestIssuer.token(nonce: request.nonce, subject: "user-1"))
+        _ = try service.kernel.createMesh()
+        try service.kernel.confirmMeshRecovery()
         return service
     }
 
@@ -46,7 +45,9 @@ final class KernelPairingTests: XCTestCase {
         }
         XCTAssertEqual(messageIds(a, chat), messageIds(b, chat))
         let fromPhone = try b.kernel.createChat(title: "from phone")
-        try await until("the mac to list the phone chat") { try a.kernel.listChats().contains { $0.chatId == fromPhone } }
+        try await until("the mac to list the phone chat") {
+            try a.kernel.listChats().contains { $0.chatId == fromPhone }
+        }
         let peers = try await a.kernel.syncState()
         XCTAssertEqual(peers.map(\.label), ["phone"])
         await a.kernel.stopNetwork()
