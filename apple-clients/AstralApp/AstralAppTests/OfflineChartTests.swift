@@ -3,14 +3,81 @@
 // inert.
 
 import AstralCore
+@testable import AstralDeep
 import SwiftUI
 import WebKit
 import XCTest
 
-@testable import AstralDeep
-
 @MainActor
 final class OfflineChartTests: XCTestCase {
+    func testCaptureReadinessWaitsForTheCurrentResizeAndRejectsStaleCompletion() throws {
+        var readiness = OfflineChartRenderReadiness()
+        let first = UUID()
+        readiness.begin(generation: first)
+        readiness.navigationDidFinish(for: first)
+        XCTAssertFalse(readiness.isReady(for: first))
+        guard case .start(let firstEpoch) = try XCTUnwrap(readiness.beginResize(for: first)) else {
+            return XCTFail("Initial chart resize should start")
+        }
+        let resize = try XCTUnwrap(readiness.beginResize(for: first))
+        XCTAssertFalse(readiness.isReady(for: first))
+        guard case .queued = resize else { return XCTFail("Concurrent resize should queue") }
+        XCTAssertEqual(readiness.resizeDidFinish(for: first, epoch: firstEpoch, succeeded: true), .startQueued)
+        let nextResize = try XCTUnwrap(readiness.beginResize(for: first))
+        guard case .start(let nextEpoch) = nextResize else { return XCTFail("Queued resize should start") }
+        XCTAssertEqual(readiness.resizeDidFinish(for: first, epoch: nextEpoch, succeeded: true), .ready)
+        XCTAssertTrue(readiness.isReady(for: first))
+        XCTAssertTrue(readiness.beginCapture(for: first))
+        XCTAssertFalse(readiness.beginCapture(for: first))
+        XCTAssertFalse(readiness.captureRequestDidFinish(for: first))
+        XCTAssertTrue(readiness.captureInProgress)
+        XCTAssertFalse(readiness.captureJavaScriptDidFinish(for: first))
+        XCTAssertFalse(readiness.captureInProgress)
+        XCTAssertTrue(readiness.beginCapture(for: first))
+        readiness.failCapture(for: first)
+        XCTAssertFalse(readiness.canStartCapture(for: first))
+        XCTAssertTrue(readiness.captureInProgress)
+        guard case .queued = try XCTUnwrap(readiness.beginResize(for: first)) else {
+            return XCTFail("Resize must wait for the timed-out JavaScript export")
+        }
+        XCTAssertFalse(readiness.captureRequestDidFinish(for: first))
+        XCTAssertTrue(readiness.captureInProgress)
+        XCTAssertTrue(readiness.captureJavaScriptDidFinish(for: first))
+        XCTAssertFalse(readiness.captureInProgress)
+        XCTAssertFalse(readiness.resizeQueued)
+        guard case .start(let recoveryEpoch) = try XCTUnwrap(readiness.beginResize(for: first)) else {
+            return XCTFail("A failed capture must not block visual resize")
+        }
+        XCTAssertEqual(readiness.resizeDidFinish(for: first, epoch: recoveryEpoch, succeeded: true), .ready)
+        XCTAssertFalse(readiness.canStartCapture(for: first))
+
+        let second = UUID()
+        readiness.begin(generation: second)
+        readiness.navigationDidFinish(for: second)
+        guard case .start(let secondEpoch) = try XCTUnwrap(readiness.beginResize(for: second)) else {
+            return XCTFail("New generation resize should start independently")
+        }
+        XCTAssertEqual(readiness.resizeDidFinish(for: first, epoch: nextEpoch, succeeded: true), .stale)
+        XCTAssertEqual(readiness.activeResizeEpoch, secondEpoch)
+        XCTAssertFalse(readiness.isReady(for: second))
+        XCTAssertEqual(readiness.resizeDidFinish(for: second, epoch: secondEpoch, succeeded: true), .ready)
+        XCTAssertTrue(readiness.isReady(for: second))
+        XCTAssertTrue(readiness.beginCapture(for: second))
+        guard case .queued = try XCTUnwrap(readiness.beginResize(for: second)) else {
+            return XCTFail("Resize should queue behind the active capture")
+        }
+        XCTAssertFalse(readiness.captureRequestDidFinish(for: first))
+        XCTAssertFalse(readiness.captureJavaScriptDidFinish(for: first))
+        XCTAssertTrue(readiness.captureInProgress)
+        XCTAssertFalse(readiness.captureRequestDidFinish(for: second))
+        XCTAssertTrue(readiness.captureJavaScriptDidFinish(for: second))
+        XCTAssertFalse(readiness.captureInProgress)
+        guard case .start(let queuedEpoch) = try XCTUnwrap(readiness.beginResize(for: second)) else {
+            return XCTFail("Queued resize should start after both capture completions")
+        }
+        XCTAssertEqual(readiness.resizeDidFinish(for: second, epoch: queuedEpoch, succeeded: true), .ready)
+    }
+
     private func component(_ json: String) throws -> AstralComponent {
         try XCTUnwrap(AstralComponent(json: JSONValue.parse(Data(json.utf8))))
     }
@@ -173,6 +240,9 @@ final class OfflineChartTests: XCTestCase {
             view, component: try component(#"{"type":"bar_chart","labels":["B"],"datasets":[{"data":[3]}]}"#),
             viewportWidth: 1440)
         _ = try await waitForState(view, expected: "ready")
+        for _ in 0..<100 where !coordinator.readyForCapture {
+            try await Task.sleep(for: .milliseconds(50))
+        }
         XCTAssertTrue(coordinator.readyForCapture)
     }
 

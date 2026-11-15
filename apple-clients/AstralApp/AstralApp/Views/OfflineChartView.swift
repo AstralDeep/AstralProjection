@@ -5,6 +5,122 @@ import AstralCore
 import SwiftUI
 import WebKit
 
+struct OfflineChartRenderReadiness {
+    enum ResizeRequest {
+        case start(Int)
+        case queued
+    }
+
+    enum ResizeCompletion: Equatable {
+        case stale
+        case ready
+        case startQueued
+        case failed
+    }
+
+    private(set) var generation: UUID?
+    private(set) var navigationGeneration: UUID?
+    private(set) var resizeEpoch = 0
+    private(set) var completedResizeEpoch: Int?
+    private(set) var activeResizeEpoch: Int?
+    private(set) var resizeQueued = false
+    private(set) var captureInProgress = false
+    private(set) var captureFailed = false
+    private(set) var captureRequestFinished = false
+    private(set) var captureJavaScriptFinished = false
+
+    mutating func begin(generation: UUID) {
+        self.generation = generation
+        navigationGeneration = nil
+        resizeEpoch = 0
+        completedResizeEpoch = nil
+        activeResizeEpoch = nil
+        resizeQueued = false
+        captureInProgress = false
+        captureFailed = false
+        captureRequestFinished = false
+        captureJavaScriptFinished = false
+    }
+
+    mutating func navigationDidFinish(for generation: UUID) {
+        guard self.generation == generation else { return }
+        navigationGeneration = generation
+    }
+
+    mutating func beginResize(for generation: UUID) -> ResizeRequest? {
+        guard self.generation == generation, navigationGeneration == generation else { return nil }
+        resizeEpoch += 1
+        completedResizeEpoch = nil
+        guard activeResizeEpoch == nil, !captureInProgress else {
+            resizeQueued = true
+            return .queued
+        }
+        activeResizeEpoch = resizeEpoch
+        return .start(resizeEpoch)
+    }
+
+    mutating func resizeDidFinish(for generation: UUID, epoch: Int, succeeded: Bool) -> ResizeCompletion {
+        guard self.generation == generation, navigationGeneration == generation,
+            activeResizeEpoch == epoch
+        else { return .stale }
+        activeResizeEpoch = nil
+        guard succeeded else {
+            resizeQueued = false
+            return .failed
+        }
+        guard !resizeQueued else {
+            resizeQueued = false
+            return .startQueued
+        }
+        completedResizeEpoch = epoch
+        return .ready
+    }
+
+    func isReady(for generation: UUID) -> Bool {
+        self.generation == generation && navigationGeneration == generation
+            && completedResizeEpoch == resizeEpoch
+    }
+
+    func canStartCapture(for generation: UUID) -> Bool {
+        isReady(for: generation) && !captureInProgress && !captureFailed
+    }
+
+    mutating func beginCapture(for generation: UUID) -> Bool {
+        guard canStartCapture(for: generation) else { return false }
+        captureInProgress = true
+        captureRequestFinished = false
+        captureJavaScriptFinished = false
+        return true
+    }
+
+    mutating func captureRequestDidFinish(for generation: UUID) -> Bool {
+        guard self.generation == generation, captureInProgress else { return false }
+        captureRequestFinished = true
+        return finishCaptureIfComplete(for: generation)
+    }
+
+    mutating func captureJavaScriptDidFinish(for generation: UUID) -> Bool {
+        guard self.generation == generation, captureInProgress else { return false }
+        captureJavaScriptFinished = true
+        return finishCaptureIfComplete(for: generation)
+    }
+
+    mutating func failCapture(for generation: UUID) {
+        guard self.generation == generation else { return }
+        captureFailed = true
+    }
+
+    private mutating func finishCaptureIfComplete(for generation: UUID) -> Bool {
+        guard self.generation == generation, captureInProgress,
+            captureRequestFinished, captureJavaScriptFinished
+        else { return false }
+        captureInProgress = false
+        guard resizeQueued, activeResizeEpoch == nil else { return false }
+        resizeQueued = false
+        return true
+    }
+}
+
 private struct AstralViewportWidthKey: EnvironmentKey {
     static let defaultValue: CGFloat = 1024
 }
@@ -95,8 +211,12 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
     private var captureNode: CanvasCaptureNode?
     private var captureLease = UUID()
     private var currentNavigation: WKNavigation?
-    private var loadedGeneration: UUID?
-    var readyForCapture: Bool { loadedGeneration == generation && !hasShownFailure }
+    private var renderReadiness = OfflineChartRenderReadiness()
+    private var lastResizeSize: CGSize?
+    private var lastResizeHeight: Double?
+    var readyForCapture: Bool {
+        renderReadiness.isReady(for: generation) && !hasShownFailure && !renderReadiness.captureFailed
+    }
 
     static func webView() -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -149,15 +269,19 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
             }
         }
         guard document != next else {
-            resize(webView)
+            if lastResizeSize != webView.bounds.size || lastResizeHeight != preferredHeight {
+                resize(webView)
+            }
             return
         }
         document = next
         hasShownFailure = false
         let current = UUID()
         generation = current
+        renderReadiness.begin(generation: current)
+        lastResizeSize = nil
+        lastResizeHeight = nil
         currentNavigation = nil
-        loadedGeneration = nil
         webView.navigationDelegate = self
         webView.uiDelegate = self
         WKContentRuleListStore.default().compileContentRuleList(
@@ -195,8 +319,8 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
 
     private func close(_ webView: WKWebView) {
         generation = UUID()
+        renderReadiness.begin(generation: generation)
         currentNavigation = nil
-        loadedGeneration = nil
         captureRegistry = nil
         captureNode = nil
         document = nil
@@ -212,7 +336,6 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
     private func showFailure(_ webView: WKWebView) {
         guard !hasShownFailure else { return }
         hasShownFailure = true
-        loadedGeneration = nil
         mayLoadDocument = true
         webView.loadHTMLString(
             OfflineChartDocument.failure(appearance: appearance), baseURL: nil)
@@ -230,14 +353,18 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         if let currentNavigation, currentNavigation === navigation {
-            loadedGeneration = generation
+            renderReadiness.navigationDidFinish(for: generation)
             resize(webView)
         }
     }
 
     private func resize(_ webView: WKWebView) {
-        guard readyForCapture else { return }
         let current = generation
+        guard !hasShownFailure, let request = renderReadiness.beginResize(for: current)
+        else { return }
+        lastResizeSize = webView.bounds.size
+        lastResizeHeight = preferredHeight
+        guard case .start(let epoch) = request else { return }
         webView.callAsyncJavaScript(
             """
             window.astralChartHeight = preferredHeight;
@@ -256,46 +383,82 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
             throw new Error('Chart resize unavailable');
             """, arguments: ["preferredHeight": preferredHeight], in: nil, in: .page
         ) { [weak self, weak webView] result in
-            guard let self, let webView, self.generation == current else { return }
-            if case .failure = result { self.showFailure(webView) }
+            guard let self, let webView else { return }
+            switch result {
+            case .success:
+                switch self.renderReadiness.resizeDidFinish(for: current, epoch: epoch, succeeded: true) {
+                case .stale:
+                    return
+                case .startQueued:
+                    self.resize(webView)
+                case .ready:
+                    return
+                case .failed:
+                    self.showFailure(webView)
+                }
+            case .failure:
+                let completion = self.renderReadiness.resizeDidFinish(
+                    for: current, epoch: epoch, succeeded: false)
+                guard completion != .stale else { return }
+                self.showFailure(webView)
+            }
         }
     }
 
     func capturePixels(_ webView: WKWebView) async throws -> Data {
         try Task.checkCancellation()
         let current = generation
-        guard readyForCapture else { throw CanvasCaptureError.unavailable }
+        guard readyForCapture, renderReadiness.beginCapture(for: generation),
+            let resizeEpoch = renderReadiness.completedResizeEpoch
+        else { throw CanvasCaptureError.unavailable }
+        defer {
+            if generation == current, renderReadiness.captureRequestDidFinish(for: current) {
+                resize(webView)
+            }
+        }
         let request = CanvasChartPixelRequest()
-        let encoded = try await withTaskCancellationHandler(
-            operation: {
-                try await withCheckedThrowingContinuation { continuation in
-                    request.begin(continuation)
-                    webView.callAsyncJavaScript(
-                        """
-                        if(document.documentElement.dataset.chartState!=='ready'||typeof Plotly==='undefined')throw new Error('Unavailable');
-                        const chart=document.getElementById('chart');
-                        if(!chart||!chart._fullLayout)throw new Error('Unavailable');
-                        const r=chart.getBoundingClientRect(), w=Math.round(r.width), h=Math.round(r.height);
-                        if(w<1||h<1||!Number.isFinite(w)||!Number.isFinite(h))throw new Error('Unavailable');
-                        const png=await Plotly.toImage(chart,{format:'png',width:w,height:h,scale:Math.min(2,4096/Math.max(w,h))});
-                        if(typeof png!=='string'||png.length>8*1024*1024||!png.startsWith('data:image/png;base64,'))throw new Error('Unavailable');
-                        return png;
-                        """, arguments: [:], in: nil, in: .page
-                    ) { result in
-                        switch result {
-                        case .success(let value):
-                            if let encoded = value as? String {
-                                request.finish(.success(encoded))
-                            } else {
+        let encoded: String
+        do {
+            encoded = try await withTaskCancellationHandler(
+                operation: {
+                    try await withCheckedThrowingContinuation { continuation in
+                        request.begin(continuation)
+                        webView.callAsyncJavaScript(
+                            """
+                            if(document.documentElement.dataset.chartState!=='ready'||typeof Plotly==='undefined')throw new Error('Unavailable');
+                            const chart=document.getElementById('chart');
+                            if(!chart||!chart._fullLayout)throw new Error('Unavailable');
+                            const r=chart.getBoundingClientRect(), w=Math.round(r.width), h=Math.round(r.height);
+                            if(w<1||h<1||!Number.isFinite(w)||!Number.isFinite(h))throw new Error('Unavailable');
+                            const png=await Plotly.toImage(chart,{format:'png',width:w,height:h,scale:Math.min(2,4096/Math.max(w,h))});
+                            if(typeof png!=='string'||png.length>8*1024*1024||!png.startsWith('data:image/png;base64,'))throw new Error('Unavailable');
+                            return png;
+                            """, arguments: [:], in: nil, in: .page
+                        ) { [weak self, weak webView] result in
+                            switch result {
+                            case .success(let value):
+                                if let encoded = value as? String {
+                                    request.finish(.success(encoded))
+                                } else {
+                                    request.finish(.failure(CanvasCaptureError.unavailable))
+                                }
+                            case .failure:
                                 request.finish(.failure(CanvasCaptureError.unavailable))
                             }
-                        case .failure: request.finish(.failure(CanvasCaptureError.unavailable))
+                            guard let self else { return }
+                            if self.renderReadiness.captureJavaScriptDidFinish(for: current), let webView {
+                                self.resize(webView)
+                            }
                         }
                     }
-                }
-            }, onCancel: { Task { @MainActor in request.finish(.failure(CancellationError())) } })
+                }, onCancel: { Task { @MainActor in request.finish(.failure(CancellationError())) } })
+        } catch {
+            renderReadiness.failCapture(for: current)
+            throw error
+        }
         try Task.checkCancellation()
-        guard generation == current, loadedGeneration == current,
+        guard generation == current, readyForCapture,
+            renderReadiness.completedResizeEpoch == resizeEpoch,
             encoded.hasPrefix("data:image/png;base64,"), encoded.utf8.count <= 8 * 1024 * 1024,
             let pixels = Data(base64Encoded: String(encoded.dropFirst(22))),
             !pixels.isEmpty, pixels.count <= CanvasCaptureRegistry.maximumPixelBytes
