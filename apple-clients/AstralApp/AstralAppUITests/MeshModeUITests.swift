@@ -152,7 +152,8 @@ final class MeshModeUITests: XCTestCase {
         attach("mesh-permissions-granted")
         goBack()
         let mailbox = element("mesh.settings.mailbox")
-        for _ in 0..<4 where !mailbox.exists || !mailbox.isHittable { app.swipeUp() }
+        for _ in 0..<4 where !mailbox.exists || !mailbox.isHittable { app.swipeDown() }
+        for _ in 0..<6 where !mailbox.exists || !mailbox.isHittable { app.swipeUp() }
         XCTAssertTrue(mailbox.waitForExistence(timeout: 5))
         XCTAssertTrue(mailbox.isHittable)
         mailbox.tap()
