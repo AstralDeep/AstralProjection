@@ -2,6 +2,7 @@
 // They let pipeline, barge-in and fast-path logic run deterministically with no microphone, speaker or system model.
 
 import AVFoundation
+import AstralCore
 @testable import AstralDeep
 import Foundation
 import XCTest
@@ -77,6 +78,42 @@ final class FakeKernelLink: VoiceKernelLink {
     func record(spoken record: VoiceSpokenRecord) { spoken.append(record) }
 }
 
+nonisolated enum FakeOnDeviceResponses {
+    static func response(_ response: OnDeviceResponse, to request: OnDeviceRequest) -> OnDeviceResponse {
+        guard case .text(let text) = response, let schema = request.schemaJSON,
+            let value = try? JSONDecoder().decode(JSONValue.self, from: Data(schema.utf8)),
+            let outer = value.objectValue,
+            Set(outer.keys) == ["type", "properties", "required", "additionalProperties"],
+            outer["type"] == .string("object"), outer["additionalProperties"] == .bool(false),
+            required(outer["required"], is: ["text", "calls"]), let properties = outer["properties"]?.objectValue,
+            Set(properties.keys) == ["text", "calls"], let textSchema = properties["text"]?.objectValue,
+            Set(textSchema.keys) == ["type"], textSchema["type"] == .string("string"),
+            let calls = properties["calls"]?.objectValue,
+            Set(calls.keys) == ["type", "minItems", "maxItems", "items"],
+            calls["type"] == .string("array"), calls["minItems"] == .number(0), calls["maxItems"] == .number(64),
+            let item = calls["items"]?.objectValue,
+            Set(item.keys) == ["type", "properties", "required", "additionalProperties"],
+            item["type"] == .string("object"),
+            item["additionalProperties"] == .bool(false), required(item["required"], is: ["tool", "arguments_json"]),
+            let fields = item["properties"]?.objectValue, Set(fields.keys) == ["tool", "arguments_json"],
+            let tool = fields["tool"]?.objectValue, Set(tool.keys) == ["type", "enum"],
+            tool["type"] == .string("string"),
+            let names = tool["enum"]?.arrayValue, !names.isEmpty,
+            names.allSatisfy({ $0.stringValue.map { !$0.isEmpty } == true }),
+            let arguments = fields["arguments_json"]?.objectValue, Set(arguments.keys) == ["type"],
+            arguments["type"] == .string("string")
+        else { return response }
+        let answer = JSONValue.object(["text": .string(text), "calls": .array([])])
+        guard let data = try? JSONEncoder().encode(answer) else { return .failed(.generationFailed) }
+        return .json(String(decoding: data, as: UTF8.self))
+    }
+
+    private static func required(_ value: JSONValue?, is expected: Set<String>) -> Bool {
+        guard let values = value?.arrayValue, values.count == expected.count else { return false }
+        return Set(values.compactMap(\.stringValue)) == expected
+    }
+}
+
 final class FakeOnDeviceModel: AstralOnDeviceModel, @unchecked Sendable {
     enum Mode {
         case respond(OnDeviceResponse)
@@ -106,7 +143,7 @@ final class FakeOnDeviceModel: AstralOnDeviceModel, @unchecked Sendable {
         }
         switch current {
         case .respond(let response):
-            return response
+            return FakeOnDeviceResponses.response(response, to: request)
         case .hang:
             while !Task.isCancelled { try? await Task.sleep(for: .milliseconds(5)) }
             lock.withLock { cancellations += 1 }

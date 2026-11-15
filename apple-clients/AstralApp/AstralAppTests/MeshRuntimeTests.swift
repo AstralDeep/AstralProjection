@@ -229,6 +229,21 @@ final class MeshRuntimeTests: XCTestCase {
         XCTAssertEqual(h.runtime.chats.first?.queuedCount, 1)
     }
 
+    func testAProviderExceptionCannotBecomeSuccessFromLocalModelAvailability() async {
+        let h = MeshRuntimeHarness(onDeviceAvailable: true)
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        _ = await h.runtime.newChat()
+        let failure = KernelMapping.failureText(code: "provider.unreachable")
+        h.kernel.turnError = .refused(failure)
+        let accepted = await h.runtime.send("hello")
+        XCTAssertTrue(accepted)
+        await h.runtime.settle()
+        XCTAssertEqual(h.runtime.currentTurn?.answeredOnDevice, false)
+        XCTAssertEqual(h.runtime.currentTurn?.failure, failure)
+        XCTAssertEqual(h.runtime.currentTurn?.running, false)
+    }
+
     func testEmptyAndFailedSendsAreNotAccepted() async {
         let h = MeshRuntimeHarness()
         defer { h.cleanUp() }
@@ -441,11 +456,11 @@ final class MeshRuntimeTests: XCTestCase {
         await h.runtime.resolveUnknown(outcome, choice: .leaveAsUnknown)
         XCTAssertFalse(h.runtime.outcomeNeedsAttention(outcome))
         XCTAssertEqual(h.defaults.stringArray(forKey: "astral.mesh.acknowledged-outcomes"), ["s1"])
-        let before = h.kernel.calls.filter { $0.name == "runTurn" }.count
+        let before = h.kernel.calls.filter { $0.name == "runMessage" }.count
         let other = MeshUnknownOutcome(stepId: "s2", tool: "delete_file", summary: "")
         await h.runtime.resolveUnknown(other, choice: .checkFirst)
         await h.runtime.settle()
-        XCTAssertEqual(h.kernel.calls.filter { $0.name == "runTurn" }.count, before + 1)
+        XCTAssertEqual(h.kernel.calls.filter { $0.name == "runMessage" }.count, before + 1)
         XCTAssertTrue(
             h.kernel.calls.contains { $0.name == "sendMessage" && $0.detail.contains("check whether delete_file") })
     }
@@ -476,7 +491,7 @@ final class MeshRuntimeTests: XCTestCase {
         h.runtime.closeChat()
         await h.runtime.openChat(chat)
         XCTAssertEqual(h.runtime.currentTurn?.turnId, "unfinished")
-        XCTAssertFalse(h.kernel.calls.contains { $0.name == "runTurn" || $0.name == "interrupt" })
+        XCTAssertFalse(h.kernel.calls.contains { $0.name == "runMessage" || $0.name == "interruptTurn" })
     }
 
     func testACompletedLogTurnClearsRestoredActivity() async {
@@ -490,7 +505,7 @@ final class MeshRuntimeTests: XCTestCase {
         h.kernel.setChatStatus(chatId: chat, .idle)
         await h.runtime.settle()
         XCTAssertEqual(h.runtime.currentTurn?.running, false)
-        XCTAssertFalse(h.kernel.calls.contains { $0.name == "runTurn" })
+        XCTAssertFalse(h.kernel.calls.contains { $0.name == "runMessage" })
     }
 
     func testAnUnknownOutcomeReplacesRestoredRunningActivityWithoutRestarting() async {
@@ -507,7 +522,7 @@ final class MeshRuntimeTests: XCTestCase {
         XCTAssertEqual(h.runtime.currentTurn?.running, false)
         XCTAssertEqual(h.runtime.currentTurn?.restored, false)
         XCTAssertEqual(h.runtime.currentTurn?.unknown, [outcome])
-        XCTAssertFalse(h.kernel.calls.contains { $0.name == "runTurn" || $0.name == "interrupt" })
+        XCTAssertFalse(h.kernel.calls.contains { $0.name == "runMessage" || $0.name == "interruptTurn" })
     }
 
     func testACompletedAnswerClearsItsNetworkWaitNotice() async {
@@ -582,7 +597,7 @@ final class MeshRuntimeTests: XCTestCase {
         XCTAssertEqual(h.runtime.currentTurn?.streamingText, "Partial answer")
         XCTAssertEqual(h.runtime.currentTurn?.notice, "Waiting to reconnect")
         XCTAssertEqual(h.runtime.currentTurn?.restored, false)
-        XCTAssertEqual(h.kernel.calls.filter { $0.name == "runTurn" }.count, 1)
+        XCTAssertEqual(h.kernel.calls.filter { $0.name == "runMessage" }.count, 1)
     }
 
     func testAFailedTurnClearsItsNetworkWaitNotice() async {
@@ -608,17 +623,138 @@ final class MeshRuntimeTests: XCTestCase {
         XCTAssertEqual(h.runtime.currentTurn?.running, true)
         await h.runtime.interrupt()
         await h.runtime.interrupt()
-        XCTAssertEqual(h.kernel.calls.filter { $0.name == "interrupt" }.count, 1)
-        XCTAssertEqual(h.kernel.calls.last { $0.name == "interrupt" }?.detail, chat)
+        XCTAssertEqual(h.runtime.currentTurn?.interrupted, false)
+        XCTAssertEqual(h.runtime.currentTurn?.stopRequested, true)
+        XCTAssertEqual(h.kernel.calls.filter { $0.name == "interruptTurn" }.count, 1)
+        XCTAssertTrue(h.kernel.calls.last { $0.name == "interruptTurn" }?.detail.hasPrefix(chat + "/") == true)
     }
 
-    func testSteerGoesToTheKernel() async {
+    func testARefusedInterruptCannotMarkAPeerTurnAsStopped() async {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        let chat = h.kernel.seedChat(title: "Peer turn", messages: [])
+        h.kernel.setChatStatus(chatId: chat, .running(turnId: "peer-turn"))
+        h.kernel.interruptGate = { throw MeshKernelError.notFound }
+        await h.runtime.openChat(chat)
+        await h.runtime.interrupt()
+        XCTAssertEqual(h.runtime.currentTurn?.interrupted, false)
+        XCTAssertEqual(h.runtime.currentTurn?.running, true)
+        XCTAssertEqual(h.runtime.currentTurn?.restored, true)
+        XCTAssertEqual(h.runtime.notice, MeshKernelError.notFound.message)
+    }
+
+    func testNormalCompletionDoesNotBecomeStoppedFromControlAcknowledgement() async {
+        for acknowledged in [false, true] {
+            let h = MeshRuntimeHarness()
+            defer { h.cleanUp() }
+            await h.runtime.open()
+            _ = await h.runtime.newChat()
+            let gate = ResumeWorkerGate()
+            defer { gate.release() }
+            h.kernel.turnGate = { await gate.wait() }
+            h.kernel.interruptAcknowledged = acknowledged
+            _ = await h.runtime.send("Finish normally")
+            let entered = await eventually { gate.entered == 1 }
+            XCTAssertTrue(entered)
+            let stopping = Task { await h.runtime.interrupt() }
+            let attempted = await eventually { h.kernel.calls.contains { $0.name == "interruptMessage" } }
+            XCTAssertTrue(attempted)
+            gate.release()
+            await stopping.value
+            await h.runtime.settle()
+            XCTAssertEqual(h.runtime.currentTurn?.running, false)
+            XCTAssertEqual(h.runtime.currentTurn?.interrupted, false)
+            XCTAssertEqual(h.runtime.currentChat?.messages.filter { $0.author == .assistant }.count, 1)
+        }
+    }
+
+    func testAnActualNativeInterruptionRemainsStopped() async {
         let h = MeshRuntimeHarness()
         defer { h.cleanUp() }
         await h.runtime.open()
         _ = await h.runtime.newChat()
-        await h.runtime.steer("shorter please")
-        XCTAssertTrue(h.kernel.calls.contains(.init(name: "steer", detail: "shorter please")))
+        let gate = ResumeWorkerGate()
+        defer { gate.release() }
+        h.kernel.turnGate = { await gate.wait() }
+        h.kernel.turnScript = [.started, .interrupted]
+        _ = await h.runtime.send("Stop this")
+        let entered = await eventually { gate.entered == 1 }
+        XCTAssertTrue(entered)
+        let stopping = Task { await h.runtime.interrupt() }
+        let attempted = await eventually { h.kernel.calls.contains { $0.name == "interruptMessage" } }
+        XCTAssertTrue(attempted)
+        gate.release()
+        await stopping.value
+        await h.runtime.settle()
+        XCTAssertEqual(h.runtime.currentTurn?.running, false)
+        XCTAssertEqual(h.runtime.currentTurn?.interrupted, true)
+        XCTAssertTrue(h.runtime.currentChat?.messages.filter { $0.author == .assistant }.isEmpty == true)
+    }
+
+    func testAnUnprovenPeerTurnCannotAcceptOrDiscardSteering() async {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        let chat = h.kernel.seedChat(title: "Peer", messages: [])
+        h.kernel.setChatStatus(chatId: chat, .running(turnId: "peer-turn"))
+        await h.runtime.openChat(chat)
+        let accepted = await h.runtime.steer("Keep this follow-up")
+        XCTAssertFalse(accepted)
+        XCTAssertFalse(h.kernel.calls.contains { $0.name.hasPrefix("steer") })
+        XCTAssertNotNil(h.runtime.notice)
+    }
+
+    func testExplicitNewRequestChatDoesNotReuseTheSelectedConversation() async throws {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        let existing = await h.runtime.newChat(title: "Existing")!
+        let phone = MeshMember(
+            memberId: "phone", label: "Phone", kind: .pocket, isThisDevice: false,
+            attested: true, lastSeen: nil, path: .none)
+        h.kernel.setMembers(h.runtime.members + [phone])
+        let sent = await h.runtime.sendRequest("A separate request", to: phone, in: nil)
+        XCTAssertTrue(sent)
+        XCTAssertEqual(h.runtime.chats.count, 2)
+        XCTAssertTrue(try h.kernel.chatRequests(chatId: existing).isEmpty)
+        guard let created = h.runtime.chats.first(where: { $0.chatId != existing })?.chatId else {
+            return XCTFail("Explicit New chat must create a separate destination")
+        }
+        XCTAssertEqual(try h.kernel.chatRequests(chatId: created).map(\.text), ["A separate request"])
+        let contextual = await h.runtime.sendRequest("Use the current conversation", to: phone)
+        XCTAssertTrue(contextual)
+        XCTAssertEqual(try h.kernel.chatRequests(chatId: existing).map(\.text), ["Use the current conversation"])
+        XCTAssertEqual(h.runtime.chats.count, 2)
+    }
+
+    func testSteerUsesTheOwnedMessageAndAcknowledgesOnlyNativeAcceptance() async {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        let chat = await h.runtime.newChat()!
+        let gate = ResumeWorkerGate()
+        defer { gate.release() }
+        h.kernel.turnGate = { await gate.wait() }
+        _ = await h.runtime.send("Original question")
+        let entered = await eventually { gate.entered == 1 }
+        XCTAssertTrue(entered)
+        let message = h.runtime.currentChat?.messages.first?.eventId ?? ""
+        let accepted = await h.runtime.steer("shorter please")
+        XCTAssertTrue(accepted)
+        XCTAssertTrue(
+            h.kernel.calls.contains(.init(name: "steerMessage", detail: chat + "/" + message + ":shorter please")))
+        XCTAssertFalse(h.kernel.calls.contains { $0.name == "steer" })
+        h.kernel.steerAcknowledged = false
+        let rejected = await h.runtime.steer("Keep this text")
+        XCTAssertFalse(rejected)
+        XCTAssertNotNil(h.runtime.notice)
+        h.kernel.steerGate = { throw MeshKernelError.refused("Follow-up rejected") }
+        let failed = await h.runtime.steer("Keep this too")
+        XCTAssertFalse(failed)
+        XCTAssertEqual(h.runtime.notice, "Follow-up rejected")
+        gate.release()
+        await h.runtime.settle()
     }
 
     func testCloseStopsTheNetworkAndClearsState() async {

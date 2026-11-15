@@ -16,7 +16,8 @@ nonisolated enum MeshPresentation {
         switch summary {
         case .alone: return "This is your only device. Nothing to sync."
         case .synced: return "Synced with your other devices."
-        case .waiting(let device, let since): return "Waiting for \(device). " + lastSeen(since, now: now) + "."
+        case .waiting(let device, let since):
+            return "Waiting to sync with \(device). " + lastSeen(since, now: now) + "."
         case .unknown: return "Sync state is not known yet."
         }
     }
@@ -222,7 +223,7 @@ nonisolated enum MeshPresentation {
         switch state {
         case .pending: return "Waiting for the device"
         case .claimed: return "Being answered"
-        case .answered: return "Answered"
+        case .answered: return "Answer started"
         case .refused: return "Refused"
         case .cancelled: return "Cancelled"
         }

@@ -45,6 +45,16 @@ nonisolated struct MeshStatus: Equatable, Sendable {
         hasMesh: false, meshId: nil, deviceId: nil, attested: false, stopped: false, hardwareBacked: false)
 }
 
+nonisolated struct MeshVerifiedIdentity: Equatable, Sendable {
+    let issuer: String
+    let subject: String
+}
+
+nonisolated struct MeshVerifiedPrincipal: Equatable, Sendable {
+    let meshId: String
+    let identities: [MeshVerifiedIdentity]
+}
+
 nonisolated struct MeshAttestationRequest: Equatable, Sendable {
     let nonce: String
 }
@@ -313,6 +323,8 @@ nonisolated struct MeshModelProvider: Identifiable, Equatable, Sendable {
     let model: String
     let hasKey: Bool
     let isDefault: Bool
+    var recipients: [String]? = nil
+    var availableOnDevice = false
     var id: String { providerId }
 }
 
@@ -367,6 +379,7 @@ nonisolated struct MeshModelProviderConfig: Equatable, Sendable {
     let baseURL: String
     let model: String
     let apiKey: String
+    var recipients: [String]? = nil
 }
 
 nonisolated enum MeshTurnEvent: Equatable, Sendable {
@@ -513,6 +526,16 @@ nonisolated protocol MeshKernelListening: Sendable {
     func onChange(_ change: MeshKernelChange)
 }
 
+nonisolated struct MeshResumeTarget: Hashable, Sendable {
+    let chatId: String
+    let turnId: String
+}
+
+nonisolated struct MeshPendingMessage: Hashable, Sendable {
+    let chatId: String
+    let messageId: String
+}
+
 nonisolated protocol MeshKernel: Sendable {
     func startNetwork() async throws
     func stopNetwork() async
@@ -520,6 +543,9 @@ nonisolated protocol MeshKernel: Sendable {
     func version() -> String
 
     func meshStatus() async throws -> MeshStatus
+    func meshPrincipal() throws -> MeshVerifiedPrincipal
+    func setWakeRoute(expectedMeshId: String, expectedDeviceId: String, route: MeshWakeRoute?) async throws
+    func wakeRoutes() async throws -> [MeshDeviceWakeRoute]
     func beginMeshCreation() throws -> MeshAttestationRequest
     func completeMeshCreation(idToken: String) throws -> MeshRecoveryKit
     func recoverWithWords(words: String, backupPath: String?) throws -> MeshRecovery
@@ -551,6 +577,18 @@ nonisolated protocol MeshKernel: Sendable {
     func act(surfaceId: String, componentId: String, capability: String, args: [String: JSONValue]) async throws
         -> MeshActResult
 
+    func pendingOrdinaryMessages() async throws -> [MeshPendingMessage]
+    func resumePendingMessage(chatId: String, messageId: String) async throws
+    func cancelPendingMessage(chatId: String, messageId: String) async throws
+    func ordinaryResumeTargets() async throws -> [MeshResumeTarget]
+    func resumeTurn(chatId: String, turnId: String) async throws
+    func steerTurn(chatId: String, turnId: String, text: String) throws -> Bool
+    func steerMessage(chatId: String, messageId: String, text: String) throws -> Bool
+    func steerRequest(requestId: String, text: String) throws -> Bool
+    func runMessage(chatId: String, messageId: String) async throws
+    func interruptTurn(chatId: String, turnId: String) throws -> Bool
+    func interruptMessage(chatId: String, messageId: String) throws -> Bool
+    func interruptRequest(requestId: String) throws -> Bool
     func runTurn(chatId: String) async throws
     func steer(chatId: String, text: String) throws
     func interrupt(chatId: String) throws
@@ -574,6 +612,7 @@ nonisolated protocol MeshKernel: Sendable {
     func recordSpoken(chatId: String, kind: VoiceSpokenKind, text: String) throws
 
     func setModelProvider(_ config: MeshModelProviderConfig) throws
+    func setModelProviderRecipients(name: String, recipients: [String]?) throws -> MeshModelProvider
     func modelProviders() throws -> [MeshModelProvider]
     func setRemoteMCPServer(_ config: MeshRemoteMCPConfig) throws
     func remoteMCPServers() throws -> [MeshRemoteMCPServer]

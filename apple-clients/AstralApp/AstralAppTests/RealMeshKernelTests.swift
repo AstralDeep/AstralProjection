@@ -3,6 +3,7 @@
 
 @testable import AstralDeep
 import AstralKernel
+import AstralCore
 import CryptoKit
 import XCTest
 
@@ -547,6 +548,35 @@ final class RealMeshKernelTests: XCTestCase {
         await mac.kernel.stopNetwork()
     }
 
+    func testWakeRouteCrossesRealBindingsWithExactTargetsAndStoppedWithdrawal() async throws {
+        let mac = try await open("Wake Mac")
+        _ = try await createMesh(mac)
+        let status = try await mac.kernel.meshStatus()
+        let mesh = try XCTUnwrap(status.meshId)
+        let device = try XCTUnwrap(status.deviceId)
+        let route = MeshWakeRoute(
+            publisher: "astral", capability: "opaque_wake_capability==",
+            expiresAtMS: Int64(Date().timeIntervalSince1970 * 1000) + 60_000)
+        try await mac.kernel.setWakeRoute(expectedMeshId: mesh, expectedDeviceId: device, route: route)
+        let listed = try await mac.kernel.wakeRoutes()
+        XCTAssertEqual(listed, [MeshDeviceWakeRoute(meshId: mesh, deviceId: device, route: route)])
+        XCTAssertFalse(String(describing: listed).contains(route.capability))
+        do {
+            try await mac.kernel.setWakeRoute(expectedMeshId: mesh, expectedDeviceId: "different-device", route: nil)
+            XCTFail("A different target accepted a withdrawal")
+        } catch {}
+        try await Task.detached { try mac.kernel.raiseStop() }.value
+        do {
+            _ = try await mac.kernel.wakeRoutes()
+            XCTFail("Stopped routes remained usable")
+        } catch { XCTAssertEqual(error as? MeshKernelError, .stopped) }
+        try await mac.kernel.setWakeRoute(expectedMeshId: mesh, expectedDeviceId: device, route: nil)
+        try await Task.detached { try mac.kernel.resumeStop() }.value
+        let cleared = try await mac.kernel.wakeRoutes()
+        XCTAssertTrue(cleared.isEmpty)
+        await mac.kernel.stopNetwork()
+    }
+
     func testProviderSettingsAreSealedAndListedWithoutSecrets() async throws {
         let mac = try await open("Mac")
         _ = try await createMesh(mac)
@@ -556,6 +586,21 @@ final class RealMeshKernelTests: XCTestCase {
         XCTAssertEqual(providers.map(\.model), ["model-a"])
         XCTAssertEqual(providers.first?.baseURL, "https://api.example.test/v1")
         XCTAssertTrue(providers.first?.isDefault ?? false)
+        let provider = try XCTUnwrap(providers.first)
+        XCTAssertTrue(provider.hasKey)
+        XCTAssertTrue(provider.availableOnDevice)
+        XCTAssertNil(provider.recipients)
+        let status = try await mac.kernel.meshStatus()
+        let device = try XCTUnwrap(status.deviceId)
+        let selected = try mac.kernel.setModelProviderRecipients(name: provider.providerId, recipients: [device])
+        XCTAssertEqual(selected.recipients, [device])
+        XCTAssertTrue(selected.hasKey)
+        XCTAssertTrue(selected.availableOnDevice)
+        XCTAssertThrowsError(
+            try mac.kernel.setModelProviderRecipients(name: provider.providerId, recipients: ["not-a-member"]))
+        let all = try mac.kernel.setModelProviderRecipients(name: provider.providerId, recipients: nil)
+        XCTAssertNil(all.recipients)
+        XCTAssertTrue(all.hasKey)
         XCTAssertFalse(String(describing: providers).contains("sk-test-key"))
         XCTAssertThrowsError(
             try mac.kernel.setModelProvider(MeshModelProviderConfig(baseURL: "not a url", model: "m", apiKey: "k")))

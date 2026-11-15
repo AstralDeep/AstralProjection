@@ -183,7 +183,9 @@ final class MeshChatMappingTests: XCTestCase {
         XCTAssertTrue(MeshPresentation.lastSeen(now.addingTimeInterval(-600), now: now).hasPrefix("Last seen"))
         XCTAssertEqual(MeshPresentation.syncLine(.synced), "Synced with your other devices.")
         XCTAssertEqual(MeshPresentation.syncLine(.alone), "This is your only device. Nothing to sync.")
-        XCTAssertTrue(MeshPresentation.syncLine(.waiting(device: "Sam's iPhone", since: nil)).hasPrefix("Waiting for Sam's iPhone."))
+        XCTAssertTrue(
+            MeshPresentation.syncLine(.waiting(device: "Sam's iPhone", since: nil)).hasPrefix(
+                "Waiting to sync with Sam's iPhone."))
         XCTAssertEqual(MeshPresentation.groupedCode("12345678"), "1234 5678")
         XCTAssertEqual(MeshPresentation.groupedCode("123"), "123")
         for refusal in [MeshAllowance.Refusal.periodExhausted, .effectClassExhausted, .modelSpendExhausted, .soloNeedsConsent, .stale, .stopped, .notAMember] {

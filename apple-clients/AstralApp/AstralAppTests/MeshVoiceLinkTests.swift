@@ -2,11 +2,118 @@
 // It uses MeshRuntime over the in-memory kernel and a recording speech sink in place of the voice pipeline.
 
 @testable import AstralDeep
+import AstralCore
 import XCTest
 
 final class MeshVoiceLinkTests: XCTestCase {
     private func owner(_ text: String) -> OwnerVoiceTurn {
         OwnerVoiceTurn.make(text: text, source: .deviceMicrophone, trigger: .ownerGesture, riskyActionPending: false)!
+    }
+
+    func testAPairedWatchTranscriptUsesOnlyItsPreparedMeshScope() async throws {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        let scope = try await h.runtime.prepareVoiceSession()
+        let turn = try XCTUnwrap(
+            OwnerVoiceTurn.make(
+                text: "A live Watch question", source: .pairedWatchMicrophone, trigger: .ownerGesture,
+                riskyActionPending: false))
+        await h.runtime.submitVoice(turn, scope: scope)
+        await h.runtime.settle()
+        XCTAssertEqual(h.kernel.calls.filter { $0.name == "sendMessage" }.count, 1)
+        XCTAssertEqual(h.runtime.currentChatId, scope.chatId)
+    }
+
+    func testAnUnscopedOrRetiredWatchTranscriptCannotSend() async throws {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        let scope = try await h.runtime.prepareVoiceSession()
+        let turn = try XCTUnwrap(
+            OwnerVoiceTurn.make(
+                text: "A stale Watch question", source: .pairedWatchMicrophone, trigger: .ownerGesture,
+                riskyActionPending: false))
+        await h.runtime.submitVoice(turn)
+        XCTAssertFalse(h.kernel.calls.contains { $0.name == "sendMessage" })
+        await h.runtime.close()
+        await h.runtime.open()
+        _ = await h.runtime.newChat()
+        await h.runtime.submitVoice(turn, scope: scope)
+        XCTAssertFalse(h.kernel.calls.contains { $0.name == "sendMessage" })
+    }
+
+    private func watchOwner(_ subject: String = "watch-owner") throws -> CompanionVoiceOwner {
+        try XCTUnwrap(CompanionVoiceOwner(issuer: "https://issuer.example.test", subject: subject))
+    }
+
+    private func principal(_ h: MeshRuntimeHarness, owner: CompanionVoiceOwner) throws -> MeshVerifiedPrincipal {
+        MeshVerifiedPrincipal(
+            meshId: try XCTUnwrap(h.runtime.status.meshId),
+            identities: [MeshVerifiedIdentity(issuer: owner.issuer, subject: owner.subject)])
+    }
+
+    func testWatchPreparationUsesTheNativePrincipalAndPinsTheCurrentConversation() async throws {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        let owner = try watchOwner()
+        h.kernel.setMeshPrincipal(try principal(h, owner: owner))
+        let created = await h.runtime.newChat(title: "Pinned Watch chat")
+        let chat = try XCTUnwrap(created)
+        let context = try await h.runtime.prepareWatchVoice(owner: owner)
+        XCTAssertEqual(context.owner, owner)
+        XCTAssertEqual(context.chatId, chat)
+        XCTAssertEqual(context.title, "Pinned Watch chat")
+        let current = await h.runtime.watchVoiceContextCurrent(context)
+        XCTAssertTrue(current)
+        _ = await h.runtime.newChat(title: "Different chat")
+        let changed = await h.runtime.watchVoiceContextCurrent(context)
+        XCTAssertFalse(changed)
+    }
+
+    func testWatchPreparationFailsClosedWithoutVerifiedMatchingPrincipal() async throws {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        let owner = try watchOwner()
+        do {
+            _ = try await h.runtime.prepareWatchVoice(owner: owner)
+            XCTFail("No profile or account cache can stand in for the native principal")
+        } catch {}
+        h.kernel.setMeshPrincipal(try principal(h, owner: watchOwner("different-owner")))
+        do {
+            _ = try await h.runtime.prepareWatchVoice(owner: owner)
+            XCTFail("A different verified owner cannot start this Watch session")
+        } catch {}
+        XCTAssertFalse(h.kernel.calls.contains { $0.name == "createChat" || $0.name == "sendMessage" })
+    }
+
+    func testWatchContextRechecksOwnerStopAndRetiredMeshSession() async throws {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        let owner = try watchOwner()
+        let verified = try principal(h, owner: owner)
+        h.kernel.setMeshPrincipal(verified)
+        let context = try await h.runtime.prepareWatchVoice(owner: owner)
+        h.kernel.setMeshPrincipal(try principal(h, owner: watchOwner("different-owner")))
+        let wrongOwner = await h.runtime.watchVoiceContextCurrent(context)
+        XCTAssertFalse(wrongOwner)
+        h.kernel.setMeshPrincipal(verified)
+        h.kernel.principalGate = { throw MeshKernelError.storage("Principal unavailable") }
+        let unavailable = await h.runtime.watchVoiceContextCurrent(context)
+        XCTAssertFalse(unavailable)
+        h.kernel.principalGate = {}
+        try h.kernel.raiseStop()
+        let stopped = await h.runtime.watchVoiceContextCurrent(context)
+        XCTAssertFalse(stopped)
+        await h.runtime.close()
+        await h.runtime.open()
+        h.kernel.setMeshPrincipal(try principal(h, owner: owner))
+        _ = await h.runtime.newChat(title: "Pinned Watch chat")
+        let retired = await h.runtime.watchVoiceContextCurrent(context)
+        XCTAssertFalse(retired)
     }
 
     func testPreparationFromSettingsKeepsTheExplicitlySelectedConversation() async throws {
@@ -81,12 +188,12 @@ final class MeshVoiceLinkTests: XCTestCase {
         _ = await h.runtime.newChat()
         let link = MeshVoiceLink(runtime: h.runtime)
         link.submit(turn: owner("what is on my calendar"))
-        let ran = await eventually { h.kernel.calls.contains { $0.name == "runTurn" } }
+        let ran = await eventually { h.kernel.calls.contains { $0.name == "runMessage" } }
         XCTAssertTrue(ran)
         await h.runtime.settle()
         XCTAssertTrue(
             h.kernel.calls.contains { $0.name == "sendMessage" && $0.detail.hasPrefix("what is on my calendar|") })
-        XCTAssertEqual(h.kernel.calls.filter { $0.name == "runTurn" }.count, 1)
+        XCTAssertEqual(h.kernel.calls.filter { $0.name == "runMessage" }.count, 1)
         XCTAssertEqual(sink.deltas, ["Hello", " there"])
         XCTAssertEqual(sink.finished, 1)
     }
@@ -149,11 +256,11 @@ final class MeshVoiceLinkTests: XCTestCase {
         await h.runtime.submitVoice(owner("do it"))
         await h.runtime.settle()
         await h.runtime.cancelVoiceTool(id: "unsafe")
-        XCTAssertFalse(h.kernel.calls.contains { $0.name == "interrupt" })
+        XCTAssertFalse(h.kernel.calls.contains { $0.name == "interruptTurn" })
         await h.runtime.cancelVoiceTool(id: "safe")
-        XCTAssertEqual(h.kernel.calls.last { $0.name == "interrupt" }?.detail, chat)
+        XCTAssertTrue(h.kernel.calls.last { $0.name == "interruptTurn" }?.detail.hasPrefix(chat + "/") == true)
         await h.runtime.interruptVoice()
-        XCTAssertEqual(h.kernel.calls.filter { $0.name == "interrupt" }.count, 1)
+        XCTAssertEqual(h.kernel.calls.filter { $0.name == "interruptTurn" }.count, 1)
     }
 
     func testSpokenTextIsRecordedForTheChatItWasSpokenIn() async {

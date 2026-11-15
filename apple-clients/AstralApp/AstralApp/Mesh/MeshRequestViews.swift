@@ -64,7 +64,7 @@ struct MeshRequestRow: View {
     private var stateColor: Color {
         switch request.state {
         case .pending, .claimed: return p.warning
-        case .answered: return p.success
+        case .answered: return p.muted
         case .refused: return p.error
         case .cancelled: return p.muted
         }

@@ -131,6 +131,26 @@
             XCTAssertFalse(text.contains("Working"), text)
         }
 
+        func testAnAcceptedStopRendersStoppingUntilNativeOutcomeArrives() async throws {
+            let h = MeshRuntimeHarness()
+            defer { h.cleanUp() }
+            await h.runtime.open()
+            _ = await h.runtime.newChat()
+            h.kernel.turnScript = [.started]
+            _ = await h.runtime.send("Long answer")
+            await h.runtime.settle()
+            await h.runtime.interrupt()
+            let (window, view) = activityWindow(h.runtime)
+            defer { window.close() }
+            var text = ""
+            let visible = await eventually {
+                text = (try? self.statusText(in: view)) ?? ""
+                return text.contains("Stopping")
+            }
+            XCTAssertTrue(visible, text)
+            XCTAssertFalse(text.contains("Stopped"), text)
+        }
+
         func testAnIncompleteAnswerKeepsItsWarningAfterTheTurnFinishes() async throws {
             let h = MeshRuntimeHarness()
             defer { h.cleanUp() }
@@ -171,6 +191,47 @@
             await shell("runs") { _ in .runs }
             await shell("settings") { _ in .settings }
             await shell("chat") { .chat($0.chats.first?.chatId ?? "") }
+        }
+
+        func testProviderSharingScreens() async throws {
+            let rig = Rig(.shell)
+            await rig.runtime.open()
+            _ = await rig.runtime.saveProvider(
+                baseURL: "https://provider.example.test/v1", model: "Example model", key: "fixture-key")
+            let provider = try XCTUnwrap(rig.runtime.providers.first)
+            await capture(
+                "mac-provider-all", rig.host(NavigationStack { MeshModelProviderView() }, width: 1000, height: 1000),
+                width: 1000, height: 1000)
+            var selected = provider
+            selected.recipients = rig.runtime.members.map(\.memberId).sorted()
+            await capture(
+                "mac-provider-selected",
+                rig.host(NavigationStack { MeshProviderSharingView(provider: selected) }, width: 1000, height: 820),
+                width: 1000, height: 820)
+            await rig.runtime.close()
+        }
+
+        func testProviderAudienceRendersItsFutureDeviceScopeAndExplicitSelections() async throws {
+            let model = AppModel()
+            let member = MeshMember(
+                memberId: "mac", label: "My Mac", kind: .desktop, isThisDevice: true, attested: true, lastSeen: nil,
+                path: .none)
+            for recipients: [String]? in [nil, [member.memberId, "removed-device"]] {
+                let mount = SurfaceMount(
+                    VStack(alignment: .leading) {
+                        MeshProviderRecipientsPicker(recipients: .constant(recipients), members: [member])
+                    }.padding(24),
+                    model: model, size: CGSize(width: 700, height: 240))
+                defer { mount.window.close() }
+                var text = ""
+                let visible = await eventually {
+                    text = (try? mount.text()) ?? ""
+                    if recipients == nil { return text.contains("Includes devices you add later") }
+                    return text.contains("My Mac") && text.contains("Unavailable device")
+                }
+                XCTAssertTrue(visible, text)
+                if recipients != nil { XCTAssertFalse(text.contains("Includes devices you add later"), text) }
+            }
         }
 
         func testAttachmentOnlyChatScreen() async {

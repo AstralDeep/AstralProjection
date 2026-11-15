@@ -94,7 +94,7 @@ final class MeshDeviceUXTests: XCTestCase {
         XCTAssertEqual(h.runtime.verification, .idle)
     }
 
-    func testProviderFailureWithNoCloudModelBecomesAnOnDeviceNotice() async {
+    func testProviderFailureWithAnAvailableOnDeviceModelStaysAnError() async {
         let h = MeshRuntimeHarness(onDeviceAvailable: true)
         defer { h.cleanUp() }
         await h.runtime.open()
@@ -105,8 +105,23 @@ final class MeshDeviceUXTests: XCTestCase {
         ]
         _ = await h.runtime.send("hello")
         await h.runtime.settle()
-        XCTAssertEqual(h.runtime.currentTurn?.answeredOnDevice, true)
-        XCTAssertNil(h.runtime.currentTurn?.failure)
+        XCTAssertEqual(h.runtime.currentTurn?.answeredOnDevice, false)
+        XCTAssertEqual(h.runtime.currentTurn?.failure, KernelMapping.failureText(code: "provider.unreachable"))
+    }
+
+    func testAFailedLocalFallbackKeepsItsFailureAndNeverClaimsAnAnswer() async {
+        let h = MeshRuntimeHarness(onDeviceAvailable: true)
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        _ = await h.runtime.newChat()
+        let failure = KernelMapping.failureText(code: "provider.unreachable")
+        h.kernel.turnScript = [.started, .notice("This turn is using on-device."), .failed(failure)]
+        _ = await h.runtime.send("hello")
+        await h.runtime.settle()
+        XCTAssertEqual(h.runtime.currentTurn?.answeredOnDevice, false)
+        XCTAssertEqual(h.runtime.currentTurn?.failure, failure)
+        XCTAssertNil(h.runtime.currentTurn?.notice)
+        XCTAssertEqual(h.runtime.currentTurn?.running, false)
     }
 
     func testProviderFailureWithoutAnOnDeviceModelStaysAnError() async {

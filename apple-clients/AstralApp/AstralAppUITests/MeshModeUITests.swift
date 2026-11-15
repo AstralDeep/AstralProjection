@@ -268,7 +268,7 @@ final class MeshModeUITests: XCTestCase {
         launch("shell")
         selectTab("Devices")
         XCTAssertTrue(element("mesh.strip.sync").waitForExistence(timeout: 10))
-        XCTAssertTrue((element("mesh.strip.sync").label).contains("Waiting for Sam's iPhone"))
+        XCTAssertTrue((element("mesh.strip.sync").label).contains("Waiting to sync with Sam's iPhone"))
         selectTab("Chats")
         XCTAssertTrue(element("mesh.consent.review").waitForExistence(timeout: 5))
         XCTAssertTrue(element("mesh.consent.deny").exists)

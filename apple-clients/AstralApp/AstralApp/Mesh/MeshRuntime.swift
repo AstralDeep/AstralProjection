@@ -17,28 +17,159 @@ protocol MeshSpeechSink: AnyObject {
 
 extension OnDeviceVoiceController: MeshSpeechSink {}
 
-nonisolated final class MeshChangeRelay: MeshKernelListening, @unchecked Sendable {
+nonisolated final class MeshSessionListener: MeshKernelListening, @unchecked Sendable {
+    private let session: UUID
+    private let relay: MeshChangeRelay
+
+    init(session: UUID, relay: MeshChangeRelay) {
+        self.session = session
+        self.relay = relay
+    }
+
+    func onChange(_ change: MeshKernelChange) { relay.onChange(change, session: session) }
+}
+
+nonisolated final class MeshChangeRelay: @unchecked Sendable {
     private let lock = NSLock()
-    private var continuation: AsyncStream<MeshKernelChange>.Continuation?
+    private var continuation: AsyncStream<(UUID, MeshKernelChange)>.Continuation?
     private var queued = 0
-    let stream: AsyncStream<MeshKernelChange>
+    let stream: AsyncStream<(UUID, MeshKernelChange)>
 
     init() {
-        var captured: AsyncStream<MeshKernelChange>.Continuation?
+        var captured: AsyncStream<(UUID, MeshKernelChange)>.Continuation?
         stream = AsyncStream(bufferingPolicy: .unbounded) { captured = $0 }
         continuation = captured
     }
 
     var pending: Int { lock.withLock { queued } }
 
-    func onChange(_ change: MeshKernelChange) {
+    func onChange(_ change: MeshKernelChange, session: UUID) {
         lock.withLock { queued += 1 }
-        continuation?.yield(change)
+        continuation?.yield((session, change))
     }
 
     func handled() { lock.withLock { queued -= 1 } }
 
     func finish() { continuation?.finish() }
+}
+
+nonisolated final class MeshTurnLifetime: @unchecked Sendable {
+    private let lock = NSLock()
+    private var retired = false
+    private var completed = false
+    private var interrupted = false
+    private var entered = false
+    private var cancelledPending = false
+    private var cancellationError: Error?
+
+    func enter() -> Bool {
+        lock.withLock {
+            guard !retired else { return false }
+            entered = true
+            return true
+        }
+    }
+    func retire() { lock.withLock { retired = true } }
+    func finish() { lock.withLock { completed = true } }
+    func acknowledgeInterrupt() { lock.withLock { interrupted = true } }
+    var finished: Bool { lock.withLock { completed } }
+    var retiring: Bool { lock.withLock { retired } }
+    func acknowledgePendingCancellation() { lock.withLock { cancelledPending = true } }
+    func rejectPendingCancellation(_ error: Error) { lock.withLock { cancellationError = error } }
+    var interruptionAccepted: Bool { lock.withLock { interrupted || cancelledPending } }
+    var retirementFailure: Error? {
+        lock.withLock { !entered && !interrupted && !cancelledPending ? cancellationError : nil }
+    }
+}
+
+nonisolated final class MeshTurnWork: @unchecked Sendable {
+    let id: UUID
+    let task: Task<Result<MeshActResult?, Error>, Never>
+    private let lifetime: MeshTurnLifetime
+    private let kernel: any MeshKernel
+    private let chatId: String
+    private let lock = NSLock()
+    private var retirement: Task<Void, Never>?
+    private let waitForRetry: @Sendable (Duration) async -> Void
+    private let interruptOperation: (@Sendable (any MeshKernel, String) throws -> Bool)?
+    private let steerOperation: (@Sendable (any MeshKernel, String, String) throws -> Bool)?
+    private let cancelPendingOperation: (@Sendable (any MeshKernel, String) async throws -> Void)?
+
+    init(
+        id: UUID, kernel: any MeshKernel, chatId: String,
+        waitForEntry: @escaping @Sendable () async -> Void = {},
+        waitForRetry: @escaping @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) },
+        interrupt: (@Sendable (any MeshKernel, String) throws -> Bool)? = nil,
+        steer: (@Sendable (any MeshKernel, String, String) throws -> Bool)? = nil,
+        cancelPending: (@Sendable (any MeshKernel, String) async throws -> Void)? = nil,
+        operation: @escaping @Sendable (any MeshKernel) async throws -> MeshActResult?
+    ) {
+        self.id = id
+        self.kernel = kernel
+        self.chatId = chatId
+        self.waitForRetry = waitForRetry
+        interruptOperation = interrupt
+        steerOperation = steer
+        cancelPendingOperation = cancelPending
+        let lifetime = MeshTurnLifetime()
+        self.lifetime = lifetime
+        task = Task.detached(priority: .userInitiated) {
+            defer { lifetime.finish() }
+            await waitForEntry()
+            guard lifetime.enter() else { return .success(nil) }
+            do { return .success(try await operation(kernel)) } catch { return .failure(error) }
+        }
+    }
+
+    func steer(_ text: String) throws -> Bool {
+        guard !lifetime.retiring, !lifetime.finished, let steerOperation else { return false }
+        return try steerOperation(kernel, chatId, text)
+    }
+
+    var retiring: Bool { lifetime.retiring }
+    var interruptionAccepted: Bool { lifetime.interruptionAccepted }
+    var retirementFailure: Error? { lifetime.retirementFailure }
+
+    func retire(explicitStop: Bool = false) -> Task<Void, Never> {
+        lifetime.retire()
+        return lock.withLock {
+            if let retirement { return retirement }
+            let lifetime = lifetime
+            let kernel = kernel
+            let chatId = chatId
+            let worker = task
+            let waitForRetry = waitForRetry
+            let interruptOperation = interruptOperation
+            let cancelPending = explicitStop ? cancelPendingOperation : nil
+            let retirement = Task.detached {
+                let cancellation = cancelPending.map { operation in
+                    Task.detached {
+                        do {
+                            try await operation(kernel, chatId)
+                            lifetime.acknowledgePendingCancellation()
+                        } catch {
+                            lifetime.rejectPendingCancellation(error)
+                        }
+                    }
+                }
+                if let interruptOperation {
+                    var delay = 20
+                    while !lifetime.finished {
+                        if (try? interruptOperation(kernel, chatId)) == true {
+                            lifetime.acknowledgeInterrupt()
+                            break
+                        }
+                        await waitForRetry(.milliseconds(delay))
+                        delay = min(delay * 2, 250)
+                    }
+                }
+                _ = await worker.value
+                await cancellation?.value
+            }
+            self.retirement = retirement
+            return retirement
+        }
+    }
 }
 
 nonisolated struct MeshToolActivity: Identifiable, Equatable, Sendable {
@@ -62,6 +193,7 @@ nonisolated struct MeshTurnState: Equatable, Sendable {
     var failure: String?
     var answeredOnDevice = false
     var interrupted = false
+    var stopRequested = false
 }
 
 nonisolated enum MeshCreationState: Equatable, Sendable {
@@ -163,6 +295,9 @@ nonisolated enum MeshProviderInputError: Error, Equatable, Sendable {
     case insecureURL
     case missingModel
     case missingKey
+    case missingRecipients
+    case saving
+    case failed(String)
 
     var message: String {
         switch self {
@@ -170,12 +305,15 @@ nonisolated enum MeshProviderInputError: Error, Equatable, Sendable {
         case .insecureURL: return "Use an https address. Plain http is allowed only for this device."
         case .missingModel: return "Enter a model name."
         case .missingKey: return "Enter the API key."
+        case .missingRecipients: return "Select at least one device."
+        case .saving: return "Wait for the current provider save to finish."
+        case .failed(let message): return message
         }
     }
 }
 
 nonisolated enum MeshProviderInput {
-    static func validate(baseURL: String, model: String, key: String) -> Result<
+    static func validate(baseURL: String, model: String, key: String, recipients: [String]? = nil) -> Result<
         MeshModelProviderConfig, MeshProviderInputError
     > {
         let base = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -188,7 +326,8 @@ nonisolated enum MeshProviderInput {
         guard scheme == "https" || loopback else { return .failure(.insecureURL) }
         guard !name.isEmpty else { return .failure(.missingModel) }
         guard !secret.isEmpty else { return .failure(.missingKey) }
-        return .success(MeshModelProviderConfig(baseURL: base, model: name, apiKey: secret))
+        guard recipients?.isEmpty != true else { return .failure(.missingRecipients) }
+        return .success(MeshModelProviderConfig(baseURL: base, model: name, apiKey: secret, recipients: recipients))
     }
 }
 
@@ -239,6 +378,7 @@ final class MeshRuntime {
 
     private(set) var phase: Phase = .closed
     private(set) var status = MeshStatus.empty
+    private(set) var meshAuthorityRevision = UUID()
     private(set) var members: [MeshMember] = []
     private(set) var sync = MeshSyncState.empty
     private(set) var chats: [MeshChatSummary] = []
@@ -253,6 +393,7 @@ final class MeshRuntime {
     private(set) var pendingConsents: [MeshPendingConsent] = []
     private(set) var allowance: MeshAllowance?
     private(set) var providers: [MeshModelProvider] = []
+    private(set) var savingProvider = false
     private(set) var runs: [MeshRun] = []
     private(set) var proposals: [MeshProposal] = []
     private(set) var toolEntries: [MeshToolEntry] = []
@@ -282,7 +423,12 @@ final class MeshRuntime {
     @ObservationIgnored private var wakeDataRevision = UUID()
     @ObservationIgnored private let relay = MeshChangeRelay()
     @ObservationIgnored nonisolated(unsafe) private var consumer: Task<Void, Never>?
-    @ObservationIgnored private var turnTasks: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored nonisolated(unsafe) private var turnTasks: [String: MeshTurnWork] = [:]
+    @ObservationIgnored private var turnReservations: [String: UUID] = [:]
+    @ObservationIgnored private var supersededTurns: [String: Set<String>] = [:]
+    @ObservationIgnored private var recoveryScan: UUID?
+    @ObservationIgnored private var closing = false
+    @ObservationIgnored private var closeWaiters: [CheckedContinuation<Void, Never>] = []
     @ObservationIgnored private(set) var speakingChatId: String?
     @ObservationIgnored private var voiceSessionChatId: String?
     @ObservationIgnored private var lastOpenedChatId: String?
@@ -298,6 +444,7 @@ final class MeshRuntime {
     @ObservationIgnored private let enrollment: @Sendable (String) async throws -> String
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let now: @Sendable () -> Date
+    @ObservationIgnored private let waitForTurnEntry: @Sendable () async -> Void
 
     private static let acknowledgedKey = "astral.mesh.acknowledged-outcomes"
     private static let mailboxKey = "astral.mesh.mailbox"
@@ -313,7 +460,8 @@ final class MeshRuntime {
         deviceKind: MeshDeviceKind,
         enrollment: @escaping @Sendable (String) async throws -> String,
         defaults: UserDefaults = .standard,
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        waitForTurnEntry: @escaping @Sendable () async -> Void = {}
     ) {
         self.makeKernel = makeKernel
         self.makeKeys = makeKeys
@@ -326,12 +474,13 @@ final class MeshRuntime {
         self.enrollment = enrollment
         self.defaults = defaults
         self.now = now
+        self.waitForTurnEntry = waitForTurnEntry
         acknowledgedOutcomes = Set(defaults.stringArray(forKey: Self.acknowledgedKey) ?? [])
         mailboxAddress = defaults.string(forKey: Self.mailboxKey)
         let relay = relay
         consumer = Task { [weak self] in
-            for await change in relay.stream {
-                await self?.handle(change)
+            for await (session, change) in relay.stream {
+                await self?.handle(change, session: session)
                 relay.handled()
             }
         }
@@ -340,6 +489,7 @@ final class MeshRuntime {
     deinit {
         consumer?.cancel()
         relay.finish()
+        for work in turnTasks.values { _ = work.retire() }
     }
 
     var voiceChatId: String? { voiceSessionChatId ?? speakingChatId }
@@ -373,9 +523,14 @@ final class MeshRuntime {
     }
 
     func open() async {
-        if case .opening = phase { return }
-        if phase == .ready { return }
+        if phase == .opening || closing { return }
+        if phase == .ready {
+            await refreshAll()
+            return
+        }
         phase = .opening
+        wakeSession = UUID()
+        let session = wakeSession
         do {
             let makeKeys = makeKeys
             let keys = try await Task.detached { try makeKeys() }.value
@@ -390,8 +545,12 @@ final class MeshRuntime {
             let factory = makeKernel
             let model = onDeviceModel
             let tools = tools
-            let listener = relay
+            let listener = MeshSessionListener(session: session, relay: relay)
             let opened = try await Task.detached { try await factory(config, signer, model, tools, listener) }.value
+            guard wakeSession == session, phase == .opening else {
+                await opened.stopNetwork()
+                return
+            }
             kernel = opened
             phase = .ready
             do {
@@ -400,8 +559,13 @@ final class MeshRuntime {
             } catch {
                 networkNotice = Self.describe(error)
             }
+            guard wakeSession == session, isReady else {
+                await opened.stopNetwork()
+                return
+            }
             await refreshAll()
         } catch {
+            guard wakeSession == session else { return }
             var diagnosticCode = (error as NSError).code
             if case MeshSecretStoreError.keychain(let status) = error { diagnosticCode = Int(status) }
             Logger(subsystem: "com.personalailabs.astraldeep.mesh", category: "runtime").error(
@@ -445,9 +609,24 @@ final class MeshRuntime {
     }
 
     func close() async {
+        if closing {
+            await withCheckedContinuation { closeWaiters.append($0) }
+            return
+        }
+        closing = true
+        defer {
+            closing = false
+            let waiters = closeWaiters
+            closeWaiters = []
+            for waiter in waiters { waiter.resume() }
+        }
+        phase = .closed
         wakeSession = UUID()
-        for task in turnTasks.values { task.cancel() }
+        let retiring = Array(turnTasks.values).map { $0.retire() }
+        for task in retiring { await task.value }
         turnTasks = [:]
+        turnReservations = [:]
+        supersededTurns = [:]
         if let kernel { await Task.detached { await kernel.stopNetwork() }.value }
         kernel = nil
         phase = .closed
@@ -476,7 +655,7 @@ final class MeshRuntime {
 
     func settle() async {
         while relay.pending > 0 || !turnTasks.isEmpty {
-            for task in Array(turnTasks.values) { await task.value }
+            for work in Array(turnTasks.values) { _ = await work.task.value }
             await Task.yield()
         }
     }
@@ -500,6 +679,7 @@ final class MeshRuntime {
     }
 
     func refreshAll() async {
+        let session = wakeSession
         await refreshStatus()
         guard status.hasMesh else { return }
         await refreshRoster()
@@ -515,6 +695,7 @@ final class MeshRuntime {
         await refreshTools()
         await refreshMailbox()
         if let id = currentChatId { await reloadChat(id) }
+        await recoverOrdinaryTurns(expectedSession: session)
     }
 
     func refreshStatus() async {
@@ -573,7 +754,11 @@ final class MeshRuntime {
         return members.first { $0.memberId == memberId }?.label ?? "Another device"
     }
 
-    func sendRequest(_ text: String, to member: MeshMember, in chatId: String? = nil) async -> Bool {
+    func sendRequest(_ text: String, to member: MeshMember) async -> Bool {
+        await sendRequest(text, to: member, in: currentChatId)
+    }
+
+    func sendRequest(_ text: String, to member: MeshMember, in chatId: String?) async -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !member.isThisDevice else { return false }
         if status.stopped {
@@ -581,7 +766,7 @@ final class MeshRuntime {
             return false
         }
         let chat: String
-        if let chatId = chatId ?? currentChatId {
+        if let chatId {
             chat = chatId
         } else if let created = await attempt({ [title = Self.title(from: trimmed)] in try $0.createChat(title: title) }) {
             chat = created
@@ -589,7 +774,10 @@ final class MeshRuntime {
             return false
         }
         let memberId = member.memberId
-        guard await attempt({ try $0.sendRequest(chatId: chat, text: trimmed, toMember: memberId) }) != nil else {
+        guard
+            await attempt(allowRetired: true, { try $0.sendRequest(chatId: chat, text: trimmed, toMember: memberId) })
+                != nil
+        else {
             return false
         }
         await refreshChats()
@@ -599,11 +787,15 @@ final class MeshRuntime {
 
     func answer(_ request: MeshRequest) async {
         let id = request.requestId
-        guard turns[request.chatId]?.running != true else {
+        guard turnReservations[request.chatId] == nil, turns[request.chatId]?.running != true else {
             notice = "This chat is already answering. Try again when it finishes."
             return
         }
-        startTurn(chatId: request.chatId, announcesFailure: true) { try await $0.answerRequest(requestId: id) }
+        startTurn(
+            chatId: request.chatId, announcesFailure: true,
+            interrupt: { kernel, _ in try kernel.interruptRequest(requestId: id) },
+            steer: { kernel, _, text in try kernel.steerRequest(requestId: id, text: text) }
+        ) { try await $0.answerRequest(requestId: id) }
         await Task.yield()
         await refreshRequests()
         if request.chatId == currentChatId { await reloadChat(request.chatId) }
@@ -989,27 +1181,50 @@ final class MeshRuntime {
         } else {
             return false
         }
+        guard let reservation = reserveTurn(chatId: chatId) else { return false }
+        let session = wakeSession
+        defer { releaseReservation(chatId: chatId, id: reservation) }
         let attachments = attachmentDrafts[chatId, default: []].map(\.id)
         let continues = displayHead
-        guard let eventId = await attempt({ kernel in
+        guard
+            let eventId = await attempt(
+                allowRetired: true,
+                { kernel in
             if attachments.isEmpty { return try kernel.sendMessage(chatId: chatId, text: trimmed, continues: continues) }
             return try kernel.sendMessage(chatId: chatId, text: trimmed, continues: continues, attachments: attachments)
         })
         else { return false }
+        guard isReady, wakeSession == session else { return true }
         attachmentDrafts[chatId] = nil
         selectedHead = eventId
         headPinned = false
         await reloadChat(chatId)
         if speaking { speakingChatId = chatId }
-        startTurn(chatId: chatId)
+        startTurn(
+            chatId: chatId, reservation: reservation,
+            interrupt: { kernel, chat in try kernel.interruptMessage(chatId: chat, messageId: eventId) },
+            steer: { kernel, chat, text in try kernel.steerMessage(chatId: chat, messageId: eventId, text: text) },
+            cancelPending: { kernel, chat in try await kernel.cancelPendingMessage(chatId: chat, messageId: eventId) }
+        ) { try await $0.runMessage(chatId: chatId, messageId: eventId) }
         return true
     }
 
-    func steer(_ text: String) async {
-        guard let chatId = currentChatId else { return }
+    func steer(_ text: String) async -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        await perform { try $0.steer(chatId: chatId, text: trimmed) }
+        guard !trimmed.isEmpty else { return false }
+        guard isReady, !status.stopped, let chatId = currentChatId, let work = turnTasks[chatId], !work.retiring else {
+            notice = "That turn did not accept the follow-up."
+            return false
+        }
+        let session = wakeSession
+        do {
+            let accepted = try await Task.detached { try work.steer(trimmed) }.value
+            if !accepted, wakeSession == session { notice = "That turn did not accept the follow-up." }
+            return accepted
+        } catch {
+            if wakeSession == session { notice = Self.describe(error) }
+            return false
+        }
     }
 
     func interrupt() async {
@@ -1018,9 +1233,36 @@ final class MeshRuntime {
     }
 
     func interrupt(chatId: String) async {
-        guard turns[chatId]?.running == true, turns[chatId]?.interrupted != true else { return }
-        turns[chatId]?.interrupted = true
-        await perform { try $0.interrupt(chatId: chatId) }
+        guard isReady, turns[chatId]?.running == true, turns[chatId]?.interrupted != true,
+            turns[chatId]?.stopRequested != true
+        else { return }
+        let session = wakeSession
+        if let work = turnTasks[chatId] {
+            turns[chatId]?.stopRequested = true
+            await work.retire(explicitStop: true).value
+            guard wakeSession == session, isReady,
+                turnReservations[chatId] == nil || turnReservations[chatId] == work.id,
+                turns[chatId]?.restored != true
+            else { return }
+            turns[chatId]?.running = false
+            turns[chatId]?.stopRequested = false
+            turns[chatId]?.notice = nil
+            turns[chatId]?.awaitingConsent = nil
+            if let error = work.retirementFailure {
+                notice = Self.describe(error)
+                turns[chatId]?.failure = Self.describe(error)
+            }
+        } else {
+            guard let turnId = turns[chatId]?.turnId, !turnId.isEmpty else { return }
+            guard let acknowledged = await attempt({ try $0.interruptTurn(chatId: chatId, turnId: turnId) }),
+                wakeSession == session, turns[chatId]?.turnId == turnId
+            else { return }
+            if acknowledged {
+                turns[chatId]?.stopRequested = true
+            } else {
+                notice = "That turn could not be stopped."
+            }
+        }
     }
 
     func review(_ request: MeshPendingConsent) async {
@@ -1051,24 +1293,63 @@ final class MeshRuntime {
     }
 
     func act(surfaceId: String, componentId: String, capability: String, args: [String: JSONValue] = [:]) async {
-        let result = await attempt {
+        let chatId = currentChatId ?? "surface:" + surfaceId
+        guard let reservation = reserveTurn(chatId: chatId), let kernel else { return }
+        let session = wakeSession
+        let work = launchWork(chatId: chatId, id: reservation, kernel: kernel, announcesFailure: true) {
             try await $0.act(surfaceId: surfaceId, componentId: componentId, capability: capability, args: args)
         }
-        guard let result else { return }
-        if result.refused {
-            notice = KernelMapping.failureText(code: result.code ?? result.status, fallback: "That action did not run.")
+        let result = await work.task.value
+        guard isReady, wakeSession == session else { return }
+        if case .success(let value) = result, let value, value.refused {
+            notice = KernelMapping.failureText(code: value.code ?? value.status, fallback: "That action did not run.")
         }
-        if let chatId = currentChatId { await reloadChat(chatId) }
+        if currentChatId == chatId { await reloadChat(chatId) }
     }
 
-    func saveProvider(baseURL: String, model: String, key: String) async -> MeshProviderInputError? {
-        switch MeshProviderInput.validate(baseURL: baseURL, model: model, key: key) {
+    func saveProvider(baseURL: String, model: String, key: String, recipients: [String]? = nil) async
+        -> MeshProviderInputError?
+    {
+        guard !savingProvider else { return .saving }
+        switch MeshProviderInput.validate(baseURL: baseURL, model: model, key: key, recipients: recipients) {
         case .failure(let error):
             return error
         case .success(let config):
-            await perform { try $0.setModelProvider(config) }
+            savingProvider = true
+            defer { savingProvider = false }
+            let session = wakeSession
+            do {
+                try await call { try $0.setModelProvider(config) }
+                guard isReady, wakeSession == session else {
+                    return .failed("The mesh session changed while saving the provider.")
+                }
+                await refreshProviders()
+                return nil
+            } catch {
+                return .failed(Self.describe(error))
+            }
+        }
+    }
+
+    func setProviderRecipients(_ provider: MeshModelProvider, recipients: [String]?) async -> Result<
+        MeshModelProvider, MeshProviderInputError
+    > {
+        guard !savingProvider else { return .failure(.saving) }
+        guard recipients?.isEmpty != true else { return .failure(.missingRecipients) }
+        savingProvider = true
+        defer { savingProvider = false }
+        let session = wakeSession
+        do {
+            let updated = try await call {
+                try $0.setModelProviderRecipients(name: provider.providerId, recipients: recipients)
+            }
+            guard isReady, wakeSession == session else {
+                return .failure(.failed("The mesh session changed while saving provider sharing."))
+            }
             await refreshProviders()
-            return nil
+            return .success(updated)
+        } catch {
+            return .failure(.failed(Self.describe(error)))
         }
     }
 
@@ -1100,6 +1381,108 @@ final class MeshRuntime {
         await perform { try $0.exportBackup(path: url.path) }
     }
 
+    func prepareMeshPush(owner: ConversationAccount) async -> MeshPushContext? {
+        guard isReady, status.hasMesh, let kernel else { return nil }
+        let session = wakeSession
+        do {
+            let context = try await Task.detached(priority: .userInitiated) {
+                let live = try await kernel.meshStatus()
+                guard live.hasMesh, !live.stopped, let mesh = live.meshId, let device = live.deviceId else {
+                    throw MeshKernelError.unavailable("Mesh background updates are unavailable.")
+                }
+                let principal = try kernel.meshPrincipal()
+                guard principal.meshId == mesh,
+                    principal.identities.contains(where: {
+                        $0.issuer == owner.issuer && $0.subject == owner.subject
+                    })
+                else { throw MeshKernelError.refused("The mesh account does not match.") }
+                return MeshPushContext(owner: owner, meshId: mesh, deviceId: device, meshSession: session)
+            }.value
+            guard isReady, wakeSession == session, status.meshId == context.meshId, status.deviceId == context.deviceId
+            else { return nil }
+            return context
+        } catch { return nil }
+    }
+
+    func meshPushContextCurrent(_ context: MeshPushContext) async -> Bool {
+        guard isReady, wakeSession == context.meshSession else { return false }
+        let current = await prepareMeshPush(owner: context.owner)
+        return isReady && wakeSession == context.meshSession && current == context
+    }
+
+    func publishMeshWakeRoute(_ context: MeshPushContext, route: MeshWakeRoute?) async -> Bool {
+        guard isReady, wakeSession == context.meshSession, let kernel else { return false }
+        do {
+            let live = try await Task.detached(priority: .userInitiated) {
+                let live = try await kernel.meshStatus()
+                guard live.hasMesh, live.meshId == context.meshId, live.deviceId == context.deviceId else {
+                    throw MeshKernelError.refused("The mesh wake target changed.")
+                }
+                if route != nil {
+                    guard !live.stopped else { throw MeshKernelError.stopped }
+                    let principal = try kernel.meshPrincipal()
+                    guard principal.meshId == context.meshId,
+                        principal.identities.contains(where: {
+                            $0.issuer == context.owner.issuer && $0.subject == context.owner.subject
+                        })
+                    else { throw MeshKernelError.refused("The mesh account does not match.") }
+                }
+                try await kernel.setWakeRoute(
+                    expectedMeshId: context.meshId, expectedDeviceId: context.deviceId, route: route)
+                return try await kernel.meshStatus()
+            }.value
+            guard isReady, wakeSession == context.meshSession, live.hasMesh,
+                live.meshId == context.meshId, live.deviceId == context.deviceId,
+                route == nil || !live.stopped
+            else { return false }
+            return true
+        } catch { return false }
+    }
+
+    func prepareWatchVoice(owner: CompanionVoiceOwner) async throws -> PairedWatchVoiceContext {
+        let principal = try await watchPrincipal(owner: owner)
+        let scope = try await prepareVoiceSession()
+        let current = try await watchPrincipal(owner: owner)
+        guard wakeSession == scope.session, isReady, current.meshId == principal.meshId,
+            currentChatId == scope.chatId, voiceSessionChatId == scope.chatId, let chat = currentChat,
+            chat.chatId == scope.chatId
+        else { throw MeshKernelError.unavailable("The mesh conversation changed before Watch voice started.") }
+        return PairedWatchVoiceContext(
+            owner: owner, chatId: scope.chatId, title: chat.title, meshSession: scope.session)
+    }
+
+    func watchVoiceContextCurrent(_ context: PairedWatchVoiceContext) async -> Bool {
+        guard isReady, wakeSession == context.meshSession, currentChatId == context.chatId,
+            voiceSessionChatId == context.chatId
+        else { return false }
+        guard (try? await watchPrincipal(owner: context.owner)) != nil else { return false }
+        return isReady && wakeSession == context.meshSession && currentChatId == context.chatId
+            && voiceSessionChatId == context.chatId
+    }
+
+    private func watchPrincipal(owner: CompanionVoiceOwner) async throws -> MeshVerifiedPrincipal {
+        guard isReady, status.hasMesh else {
+            throw MeshKernelError.unavailable("Open your mesh on iPhone before starting Watch voice.")
+        }
+        let session = wakeSession
+        let principal = try await call { kernel in
+            let live = try await kernel.meshStatus()
+            guard live.hasMesh else {
+                throw MeshKernelError.unavailable("Open your mesh on iPhone before starting Watch voice.")
+            }
+            guard !live.stopped else { throw MeshKernelError.stopped }
+            let principal = try kernel.meshPrincipal()
+            guard principal.meshId == live.meshId,
+                principal.identities.contains(where: { $0.issuer == owner.issuer && $0.subject == owner.subject })
+            else { throw MeshKernelError.refused("Use the same account on Watch and iPhone for this mesh.") }
+            return principal
+        }
+        guard isReady, wakeSession == session, status.meshId == principal.meshId else {
+            throw MeshKernelError.unavailable("The mesh session changed before Watch voice started.")
+        }
+        return principal
+    }
+
     func prepareVoiceSession() async throws -> MeshVoiceScope {
         guard isReady, status.hasMesh else { throw MeshKernelError.unavailable("Open your mesh before starting voice.") }
         guard !status.stopped else { throw MeshKernelError.stopped }
@@ -1126,8 +1509,12 @@ final class MeshRuntime {
                 return
             }
         }
-        guard turn.integrity == .owner, turn.source == .deviceMicrophone else {
-            notice = "A spoken transcript from a file or call is not treated as your message."
+        if turn.source == .pairedWatchMicrophone, scope == nil {
+            notice = "Watch voice needs a current mesh conversation."
+            return
+        }
+        guard turn.integrity == .owner, turn.source == .deviceMicrophone || turn.source == .pairedWatchMicrophone else {
+            notice = "A transcript without a live owner microphone session is not treated as your message."
             return
         }
         _ = await send(turn.text, speaking: true)
@@ -1188,34 +1575,121 @@ final class MeshRuntime {
         return false
     }
 
+    private func reserveTurn(chatId: String, quietly: Bool = false) -> UUID? {
+        guard isReady, kernel != nil else { return nil }
+        guard turnReservations[chatId] == nil else {
+            if !quietly { notice = "This chat is already answering. Try again when it finishes." }
+            return nil
+        }
+        let id = UUID()
+        turnReservations[chatId] = id
+        return id
+    }
+
+    private func releaseReservation(chatId: String, id: UUID) {
+        if turnReservations[chatId] == id, turnTasks[chatId] == nil { turnReservations[chatId] = nil }
+    }
+
     private func startTurn(
-        chatId: String, announcesFailure: Bool = false, run: (@Sendable (any MeshKernel) async throws -> Void)? = nil
+        chatId: String, reservation: UUID? = nil, turnId: String = "", announcesFailure: Bool = false,
+        interrupt: (@Sendable (any MeshKernel, String) throws -> Bool)? = nil,
+        steer: (@Sendable (any MeshKernel, String, String) throws -> Bool)? = nil,
+        cancelPending: (@Sendable (any MeshKernel, String) async throws -> Void)? = nil,
+        run: @escaping @Sendable (any MeshKernel) async throws -> Void
     ) {
-        turns[chatId] = MeshTurnState(turnId: "", running: true)
-        turnTasks[chatId]?.cancel()
-        turnTasks[chatId] = Task { [weak self] in
-            guard let self else { return }
-            do {
-                try await self.call { kernel in
-                    if let run { try await run(kernel) } else { try await kernel.runTurn(chatId: chatId) }
-                }
-            } catch {
-                if announcesFailure { self.notice = Self.describe(error) }
-                if self.turns[chatId]?.interrupted != true, var state = self.turns[chatId] {
+        guard let id = reservation ?? reserveTurn(chatId: chatId), turnReservations[chatId] == id,
+            turnTasks[chatId] == nil, let kernel, isReady
+        else { return }
+        supersedeTurn(chatId: chatId, next: turnId)
+        turns[chatId] = MeshTurnState(turnId: turnId, running: true)
+        _ = launchWork(
+            chatId: chatId, id: id, kernel: kernel, announcesFailure: announcesFailure, interrupt: interrupt,
+            steer: steer, cancelPending: cancelPending
+        ) { kernel in
+            try await run(kernel)
+            return nil
+        }
+    }
+
+    private func launchWork(
+        chatId: String, id: UUID, kernel: any MeshKernel, announcesFailure: Bool,
+        interrupt: (@Sendable (any MeshKernel, String) throws -> Bool)? = nil,
+        steer: (@Sendable (any MeshKernel, String, String) throws -> Bool)? = nil,
+        cancelPending: (@Sendable (any MeshKernel, String) async throws -> Void)? = nil,
+        operation: @escaping @Sendable (any MeshKernel) async throws -> MeshActResult?
+    ) -> MeshTurnWork {
+        let session = wakeSession
+        let work = MeshTurnWork(
+            id: id, kernel: kernel, chatId: chatId, waitForEntry: waitForTurnEntry,
+            interrupt: interrupt, steer: steer, cancelPending: cancelPending, operation: operation)
+        turnTasks[chatId] = work
+        let worker = work.task
+        Task { [weak self] in
+            let result = await worker.value
+            if work.retiring { await work.retire().value }
+            guard let self, self.wakeSession == session, self.turnTasks[chatId]?.id == id else { return }
+            self.turnTasks[chatId] = nil
+            self.turnReservations[chatId] = nil
+            if case .failure(let error) = result {
+                if announcesFailure, !work.interruptionAccepted { self.notice = Self.describe(error) }
+                if !work.interruptionAccepted, self.turns[chatId]?.interrupted != true, var state = self.turns[chatId] {
                     self.record(failure: Self.describe(error), in: &state)
                     self.turns[chatId] = state
                 }
                 self.turns[chatId]?.running = false
+                self.turns[chatId]?.stopRequested = false
+            } else if case .success(let action) = result, action != nil || work.retiring {
+                self.turns[chatId]?.running = false
+                self.turns[chatId]?.stopRequested = false
             }
-            self.turnTasks[chatId] = nil
+        }
+        return work
+    }
+
+    private func recoverOrdinaryTurns(expectedSession: UUID? = nil) async {
+        guard expectedSession == nil || expectedSession == wakeSession,
+            isReady, status.hasMesh, !status.stopped, recoveryScan != wakeSession
+        else { return }
+        let session = wakeSession
+        recoveryScan = session
+        defer { if recoveryScan == session { recoveryScan = nil } }
+        let targets = (try? await call({ try await $0.ordinaryResumeTargets() })) ?? []
+        guard isReady, wakeSession == session else { return }
+        for target in targets {
+            guard let id = reserveTurn(chatId: target.chatId, quietly: true) else { continue }
+            startTurn(
+                chatId: target.chatId, reservation: id, turnId: target.turnId,
+                interrupt: { kernel, chat in try kernel.interruptTurn(chatId: chat, turnId: target.turnId) },
+                steer: { kernel, chat, text in try kernel.steerTurn(chatId: chat, turnId: target.turnId, text: text) }
+            ) {
+                try await $0.resumeTurn(chatId: target.chatId, turnId: target.turnId)
+            }
+        }
+        let pending = (try? await call({ try await $0.pendingOrdinaryMessages() })) ?? []
+        guard isReady, wakeSession == session else { return }
+        for message in pending {
+            guard let id = reserveTurn(chatId: message.chatId, quietly: true) else { continue }
+            startTurn(
+                chatId: message.chatId, reservation: id,
+                interrupt: { kernel, chat in try kernel.interruptMessage(chatId: chat, messageId: message.messageId) },
+                steer: { kernel, chat, text in
+                    try kernel.steerMessage(chatId: chat, messageId: message.messageId, text: text)
+                },
+                cancelPending: { kernel, chat in
+                    try await kernel.cancelPendingMessage(chatId: chat, messageId: message.messageId)
+                }
+            ) {
+                try await $0.resumePendingMessage(chatId: message.chatId, messageId: message.messageId)
+            }
         }
     }
 
     private func reloadChat(_ chatId: String) async {
+        let session = wakeSession
         guard let view = await attempt({ try $0.chat(chatId: chatId) }) else { return }
-        guard currentChatId == chatId else { return }
+        guard wakeSession == session, currentChatId == chatId else { return }
         await resolveHandles(in: view)
-        guard currentChatId == chatId else { return }
+        guard wakeSession == session, currentChatId == chatId else { return }
         currentChat = view
         if let index = chats.firstIndex(where: { $0.chatId == chatId }) {
             chats[index].queuedCount = view.messages.filter { $0.delivery == .queued }.count
@@ -1230,6 +1704,7 @@ final class MeshRuntime {
         switch view.status {
         case .running(let turnId):
             if turnTasks[chatId] == nil, turns[chatId]?.turnId != turnId {
+                supersedeTurn(chatId: chatId, next: turnId)
                 turns[chatId] = MeshTurnState(turnId: turnId, running: true, restored: true)
             }
         case .idle:
@@ -1249,33 +1724,39 @@ final class MeshRuntime {
     }
 
     private func resolveHandles(in view: MeshChatView) async {
+        let session = wakeSession
         let wanted = Set(view.rendered.flatMap(MeshRenderedMapper.handles(in:))).subtracting(resolvedHandles.keys)
         let chatId = view.chatId
         for handle in wanted.sorted() {
             if let value = try? await call({ try $0.resolveHandle(chatId: chatId, handle: handle) }) {
+                guard wakeSession == session, isReady else { return }
                 resolvedHandles[handle] = value
             }
         }
     }
 
-    private func handle(_ change: MeshKernelChange) async {
-        guard kernel != nil else { return }
+    private func handle(_ change: MeshKernelChange, session: UUID) async {
+        guard kernel != nil, wakeSession == session, isReady else { return }
         switch change {
         case .chatChanged(let chatId):
             await refreshChats()
             await refreshRequests()
             if let current = currentChatId, chatId == nil || chatId == current { await reloadChat(current) }
+            await recoverOrdinaryTurns(expectedSession: session)
         case .syncStateChanged:
             await refreshSync()
             await refreshMailbox()
+            await recoverOrdinaryTurns(expectedSession: session)
         case .consentRequested:
             await refreshConsents()
         case .rosterChanged:
             await refreshStatus()
             await refreshRoster()
+            if isReady, wakeSession == session { meshAuthorityRevision = UUID() }
             await refreshSync()
+            await recoverOrdinaryTurns(expectedSession: session)
         case .turnProgress(let progress):
-            await apply(progress)
+            await apply(progress, session: session)
         case .allowanceChanged:
             await refreshAllowance()
         case .runProgress:
@@ -1293,20 +1774,26 @@ final class MeshRuntime {
             default: break
             }
         }
+        guard wakeSession == session, isReady else { return }
         switch change {
         case .chatChanged, .rosterChanged, .allowanceChanged, .runProgress: wakeDataRevision = UUID()
         default: break
         }
     }
 
-    private func apply(_ progress: MeshTurnProgress) async {
+    private func apply(_ progress: MeshTurnProgress, session: UUID) async {
+        guard supersededTurns[progress.chatId]?.contains(progress.turnId) != true else { return }
         var state = turns[progress.chatId] ?? MeshTurnState(turnId: progress.turnId, running: true)
+        if !state.turnId.isEmpty, state.turnId != progress.turnId {
+            guard progress.event == .started, !state.running else { return }
+            supersedeTurn(chatId: progress.chatId, next: progress.turnId)
+        }
         state.turnId = progress.turnId
         state.restored = false
         let speaking = speakingChatId == progress.chatId
         switch progress.event {
         case .started:
-            state = MeshTurnState(turnId: progress.turnId, running: true)
+            state = MeshTurnState(turnId: progress.turnId, running: true, stopRequested: state.stopRequested)
         case .assistantDelta(let text):
             state.streamingText += text
             if speaking { speechSink?.answerDelta(text) }
@@ -1324,41 +1811,52 @@ final class MeshRuntime {
             if speaking { speechSink?.toolFinished(id: id) }
         case .awaitingConsent(let requestId):
             state.awaitingConsent = requestId
+            turns[progress.chatId] = state
             await refreshConsents()
+            guard turns[progress.chatId]?.turnId == progress.turnId else { return }
         case .outcomeUnknown(let outcome):
             if !state.unknown.contains(outcome) { state.unknown.append(outcome) }
         case .incomplete:
             state.completionWarning = "The answer may be incomplete."
         case .finished:
+            supersededTurns[progress.chatId, default: []].insert(progress.turnId)
             state.running = false
+            state.interrupted = false
+            state.stopRequested = false
             state.notice = nil
             state.awaitingConsent = nil
             turns[progress.chatId] = state
             if progress.chatId == currentChatId { await reloadChat(progress.chatId) }
+            guard wakeSession == session, isReady, turns[progress.chatId]?.turnId == progress.turnId else { return }
             state.streamingText = ""
             if speaking { speakingChatId = nil }
         case .interrupted:
+            supersededTurns[progress.chatId, default: []].insert(progress.turnId)
             state.running = false
+            state.stopRequested = false
             state.notice = nil
             state.interrupted = true
             state.awaitingConsent = nil
             if speaking { speakingChatId = nil }
         case .failed(let reason):
+            supersededTurns[progress.chatId, default: []].insert(progress.turnId)
             state.running = false
+            state.stopRequested = false
             state.notice = nil
             record(failure: reason, in: &state)
             if speaking { speakingChatId = nil }
         }
+        guard wakeSession == session, isReady else { return }
         turns[progress.chatId] = state
     }
 
     private func record(failure text: String, in state: inout MeshTurnState) {
-        if text == KernelMapping.failureText(code: "provider."), providers.isEmpty, onDeviceModelAvailable {
-            state.answeredOnDevice = true
-            state.failure = nil
-        } else {
-            state.failure = text
-        }
+        state.failure = text
+    }
+
+    private func supersedeTurn(chatId: String, next: String) {
+        guard let previous = turns[chatId]?.turnId, !previous.isEmpty, previous != next else { return }
+        supersededTurns[chatId, default: []].insert(previous)
     }
 
     private func call<T: Sendable>(_ work: @escaping @Sendable (any MeshKernel) async throws -> T) async throws -> T {
@@ -1366,10 +1864,16 @@ final class MeshRuntime {
         return try await Task.detached(priority: .userInitiated) { try await work(kernel) }.value
     }
 
-    private func attempt<T: Sendable>(_ work: @escaping @Sendable (any MeshKernel) async throws -> T) async -> T? {
+    private func attempt<T: Sendable>(
+        allowRetired: Bool = false, _ work: @escaping @Sendable (any MeshKernel) async throws -> T
+    ) async -> T? {
+        let session = wakeSession
         do {
-            return try await call(work)
+            let value = try await call(work)
+            guard allowRetired || (wakeSession == session && isReady) else { return nil }
+            return value
         } catch {
+            guard wakeSession == session, isReady else { return nil }
             notice = Self.describe(error)
             return nil
         }

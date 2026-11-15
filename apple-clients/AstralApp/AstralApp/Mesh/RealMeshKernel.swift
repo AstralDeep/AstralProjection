@@ -93,6 +93,33 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
 
     func meshStatus() async throws -> MeshStatus { KernelMapping.status(await kernel.meshStatus()) }
 
+    func meshPrincipal() throws -> MeshVerifiedPrincipal {
+        try mapped { KernelMapping.principal(try kernel.meshPrincipal()) }
+    }
+
+    func setWakeRoute(expectedMeshId: String, expectedDeviceId: String, route: MeshWakeRoute?) async throws {
+        try mapped {
+            try kernel.setWakeRoute(
+                expectedMeshId: expectedMeshId, expectedDeviceId: expectedDeviceId,
+                route: route.map {
+                    AstralKernel.WakeRoute(
+                        publisher: $0.publisher, capability: $0.capability, expiresAtMs: $0.expiresAtMS)
+                })
+        }
+    }
+
+    func wakeRoutes() async throws -> [MeshDeviceWakeRoute] {
+        try mapped {
+            try kernel.wakeRoutes().map { entry in
+                MeshDeviceWakeRoute(
+                    meshId: entry.meshId, deviceId: entry.deviceId,
+                    route: MeshWakeRoute(
+                        publisher: entry.route.publisher, capability: entry.route.capability,
+                        expiresAtMS: entry.route.expiresAtMs))
+            }
+        }
+    }
+
     func beginMeshCreation() throws -> MeshAttestationRequest {
         try mapped { MeshAttestationRequest(nonce: try kernel.beginMeshCreation().nonce) }
     }
@@ -257,6 +284,86 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
 
     func restoreMarker() -> Data? { kernel.restoreMarker() }
 
+    func pendingOrdinaryMessages() async throws -> [MeshPendingMessage] {
+        try mapped {
+            try kernel.pendingOrdinaryMessages().map { MeshPendingMessage(chatId: $0.chatId, messageId: $0.messageId) }
+        }
+    }
+
+    func resumePendingMessage(chatId: String, messageId: String) async throws {
+        do { _ = try await kernel.resumePendingMessage(chatId: chatId, messageId: messageId) } catch {
+            throw KernelMapping.error(error)
+        }
+    }
+
+    func cancelPendingMessage(chatId: String, messageId: String) async throws {
+        do { _ = try await kernel.cancelPendingMessage(chatId: chatId, messageId: messageId) } catch {
+            throw KernelMapping.error(error)
+        }
+    }
+
+    func ordinaryResumeTargets() async throws -> [MeshResumeTarget] {
+        let status = await kernel.meshStatus()
+        guard status.state == .enrolled, !status.stopped else { return [] }
+        let excluded = Set(try await runs().map(\.chatId)).union(kernel.unknownOutcomes().map(\.chatId))
+        return try mapped {
+            try kernel.listChats().compactMap { summary in
+                guard !excluded.contains(summary.chatId) else { return nil }
+                let view = try kernel.chat(chatId: summary.chatId).view
+                return Self.ordinaryResumeTarget(in: view, deviceId: status.deviceId, feed: status.feed)
+            }
+        }
+    }
+
+    static func ordinaryResumeTarget(in view: AstralKernel.ChatView, deviceId: String, feed: String)
+        -> MeshResumeTarget?
+    {
+        let open = view.turns.filter { $0.status == .running }
+        guard open.count == 1, let turn = open.first, turn.author == deviceId,
+            turn.feed == feed, let messageId = turn.message,
+            view.messages.contains(where: {
+                $0.id == messageId && $0.kind == "chat.user_message" && $0.role == .user && $0.author == deviceId
+            })
+        else { return nil }
+        return MeshResumeTarget(chatId: view.chatId, turnId: turn.id)
+    }
+
+    func resumeTurn(chatId: String, turnId: String) async throws {
+        do { _ = try await kernel.resumeTurn(chatId: chatId, turnId: turnId) } catch {
+            throw KernelMapping.error(error)
+        }
+    }
+
+    func steerTurn(chatId: String, turnId: String, text: String) throws -> Bool {
+        try mapped { try kernel.steerTurn(chatId: chatId, turnId: turnId, text: text) }
+    }
+
+    func steerMessage(chatId: String, messageId: String, text: String) throws -> Bool {
+        try mapped { try kernel.steerMessage(chatId: chatId, messageId: messageId, text: text) }
+    }
+
+    func steerRequest(requestId: String, text: String) throws -> Bool {
+        try mapped { try kernel.steerRequest(requestId: requestId, text: text) }
+    }
+
+    func runMessage(chatId: String, messageId: String) async throws {
+        do { _ = try await kernel.runMessage(chatId: chatId, messageId: messageId) } catch {
+            throw KernelMapping.error(error)
+        }
+    }
+
+    func interruptTurn(chatId: String, turnId: String) throws -> Bool {
+        try mapped { try kernel.interruptTurn(chatId: chatId, turnId: turnId) }
+    }
+
+    func interruptMessage(chatId: String, messageId: String) throws -> Bool {
+        try mapped { try kernel.interruptMessage(chatId: chatId, messageId: messageId) }
+    }
+
+    func interruptRequest(requestId: String) throws -> Bool {
+        try mapped { try kernel.interruptRequest(requestId: requestId) }
+    }
+
     func runTurn(chatId: String) async throws {
         do { _ = try await kernel.runTurn(chatId: chatId) } catch { throw KernelMapping.error(error) }
     }
@@ -363,6 +470,14 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
 
     func setModelProvider(_ config: MeshModelProviderConfig) throws {
         try mapped { try kernel.setModelProvider(config: try KernelMapping.providerConfig(config)) }
+    }
+
+    func setModelProviderRecipients(name: String, recipients: [String]?) throws -> MeshModelProvider {
+        try mapped {
+            let order = try kernel.modelProviders().map(\.fallbackOrder).min() ?? 0
+            return KernelMapping.provider(
+                try kernel.setModelProviderRecipients(name: name, recipients: recipients), lowestOrder: order)
+        }
     }
 
     func modelProviders() throws -> [MeshModelProvider] {

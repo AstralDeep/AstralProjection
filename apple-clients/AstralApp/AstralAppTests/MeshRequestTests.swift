@@ -178,7 +178,7 @@ final class MeshRequestTests: XCTestCase {
         XCTAssertEqual(MeshPresentation.requestRefusal(nil), "Refused")
         XCTAssertEqual(MeshPresentation.requestState(.pending), "Waiting for the device")
         XCTAssertEqual(MeshPresentation.requestState(.claimed), "Being answered")
-        XCTAssertEqual(MeshPresentation.requestState(.answered), "Answered")
+        XCTAssertEqual(MeshPresentation.requestState(.answered), "Answer started")
         XCTAssertEqual(MeshPresentation.requestState(.cancelled), "Cancelled")
     }
 

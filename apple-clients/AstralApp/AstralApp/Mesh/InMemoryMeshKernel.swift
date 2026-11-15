@@ -14,6 +14,8 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     private let listener: any MeshKernelListening
     private let clock: @Sendable () -> Date
     private var status: MeshStatus
+    private var principalValue: MeshVerifiedPrincipal?
+    private var wakeRouteValue: MeshWakeRoute?
     private var members: [MeshMember] = []
     private var chats: [String: StoredChat] = [:]
     private var order: [String] = []
@@ -25,6 +27,8 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     private var allowanceValue: MeshAllowance
     private var counter = 0
     private var log: [Call] = []
+    private var resumeTargets: Set<MeshResumeTarget> = []
+    private var pendingMessages: Set<MeshPendingMessage> = []
     private var offer: MeshPairingOffer?
     private var runsValue: [MeshRun] = []
     private var proposalsValue: [MeshProposal] = []
@@ -52,6 +56,17 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     var actionSigner: (@Sendable (MeshPendingConsent) throws -> Void)?
     var failure: MeshKernelError?
     var turnError: MeshKernelError?
+    var sendGate: @Sendable () -> Void = {}
+    var statusGate: @Sendable () async -> Void = {}
+    var pendingGate: @Sendable () async -> Void = {}
+    var principalGate: @Sendable () throws -> Void = {}
+    var wakeRouteGate: @Sendable () async throws -> Void = {}
+    var turnGate: @Sendable () async -> Void = {}
+    var interruptGate: @Sendable () throws -> Void = {}
+    var interruptAcknowledged = true
+    var providerSaveGate: @Sendable () -> Void = {}
+    var steerAcknowledged = true
+    var steerGate: @Sendable () throws -> Void = {}
     var previewResult = MeshPairingPreview(
         comparisonCode: "4821 9307", deviceLabel: "New phone", deviceKind: .pocket, fingerprint: "sha256:0a1b2c3d4e5f")
 
@@ -87,7 +102,51 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
 
     func meshStatus() async throws -> MeshStatus {
         try record("meshStatus")
-        return lock.withLock { status }
+        let value = lock.withLock { status }
+        await statusGate()
+        return value
+    }
+
+    func meshPrincipal() throws -> MeshVerifiedPrincipal {
+        try record("meshPrincipal")
+        try principalGate()
+        return try lock.withLock {
+            guard status.hasMesh, let principalValue else {
+                throw MeshKernelError.unavailable("The mesh principal is not available.")
+            }
+            return principalValue
+        }
+    }
+
+    func setMeshPrincipal(_ value: MeshVerifiedPrincipal?) { lock.withLock { principalValue = value } }
+
+    func setWakeRoute(expectedMeshId: String, expectedDeviceId: String, route: MeshWakeRoute?) async throws {
+        try record("setWakeRoute", expectedMeshId + "/" + expectedDeviceId)
+        try await wakeRouteGate()
+        try lock.withLock {
+            guard status.hasMesh, status.meshId == expectedMeshId, status.deviceId == expectedDeviceId else {
+                throw MeshKernelError.refused("wake.target_mismatch")
+            }
+            if route != nil, status.stopped { throw MeshKernelError.stopped }
+            if let route, !route.isValid(at: Int64(clock().timeIntervalSince1970 * 1000)) {
+                throw MeshKernelError.refused("wake.malformed")
+            }
+            wakeRouteValue = route
+        }
+    }
+
+    func wakeRoutes() async throws -> [MeshDeviceWakeRoute] {
+        try record("wakeRoutes")
+        return try lock.withLock {
+            guard status.hasMesh, let mesh = status.meshId, let device = status.deviceId else {
+                throw MeshKernelError.refused("mesh.not_enrolled")
+            }
+            guard !status.stopped else { throw MeshKernelError.stopped }
+            guard let route = wakeRouteValue, route.isValid(at: Int64(clock().timeIntervalSince1970 * 1000)) else {
+                return []
+            }
+            return [MeshDeviceWakeRoute(meshId: mesh, deviceId: device, route: route)]
+        }
     }
 
     func beginMeshCreation() throws -> MeshAttestationRequest {
@@ -372,6 +431,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
             chats[chatId] = chat
         }
         listener.onChange(.chatChanged(chatId: chatId))
+        sendGate()
         return id
     }
 
@@ -393,16 +453,114 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         return actResult
     }
 
+    func pendingOrdinaryMessages() async throws -> [MeshPendingMessage] {
+        try record("pendingOrdinaryMessages")
+        await pendingGate()
+        return lock.withLock {
+            guard status.hasMesh, !status.stopped else { return [] }
+            let excluded = Set(runsValue.map(\.chatId))
+            return pendingMessages.filter { target in
+                guard !excluded.contains(target.chatId), let chat = chats[target.chatId], chat.status == .idle else {
+                    return false
+                }
+                let queued = chat.messages.filter { $0.delivery == .queued }
+                return queued.count == 1 && queued[0].eventId == target.messageId && queued[0].author == .owner
+                    && chat.messages.last(where: { $0.author == .owner })?.eventId == target.messageId
+            }.sorted { ($0.chatId, $0.messageId) < ($1.chatId, $1.messageId) }
+        }
+    }
+
+    func resumePendingMessage(chatId: String, messageId: String) async throws {
+        try record("resumePendingMessage", chatId + "/" + messageId)
+        guard try await pendingOrdinaryMessages().contains(MeshPendingMessage(chatId: chatId, messageId: messageId))
+        else {
+            throw MeshKernelError.refused("That message cannot be resumed.")
+        }
+        let reply = nextId("event")
+        let turnId = "turn-" + reply
+        lock.withLock {
+            guard var chat = chats[chatId], let index = chat.messages.firstIndex(where: { $0.eventId == messageId })
+            else { return }
+            let message = chat.messages[index]
+            chat.messages[index] = MeshChatMessage(
+                eventId: message.eventId, parentId: message.parentId, author: message.author,
+                authorDevice: message.authorDevice,
+                text: message.text, createdAt: message.createdAt, delivery: .recorded, surfaceIds: message.surfaceIds,
+                attachments: message.attachments)
+            chat.status = .running(turnId: turnId)
+            chats[chatId] = chat
+            pendingMessages.remove(MeshPendingMessage(chatId: chatId, messageId: messageId))
+        }
+        await turnGate()
+        try driveTurn(chatId: chatId, turnId: turnId, reply: reply, events: turnScript)
+    }
+
+    func cancelPendingMessage(chatId: String, messageId: String) async throws {
+        try record("cancelPendingMessage", chatId + "/" + messageId)
+        let turnId = "turn-" + nextId("event")
+        try lock.withLock {
+            guard var chat = chats[chatId], chat.status == .idle,
+                let index = chat.messages.lastIndex(where: { $0.author == .owner }),
+                chat.messages[index].eventId == messageId, chat.messages[index].delivery == .queued
+            else { throw MeshKernelError.refused("That message could not be stopped.") }
+            let message = chat.messages[index]
+            chat.messages[index] = MeshChatMessage(
+                eventId: message.eventId, parentId: message.parentId, author: message.author,
+                authorDevice: message.authorDevice, text: message.text, createdAt: message.createdAt,
+                delivery: .recorded, surfaceIds: message.surfaceIds, attachments: message.attachments)
+            chats[chatId] = chat
+            pendingMessages.remove(MeshPendingMessage(chatId: chatId, messageId: messageId))
+        }
+        listener.onChange(.chatChanged(chatId: chatId))
+        listener.onChange(.turnProgress(MeshTurnProgress(chatId: chatId, turnId: turnId, event: .started)))
+        listener.onChange(.turnProgress(MeshTurnProgress(chatId: chatId, turnId: turnId, event: .interrupted)))
+    }
+
+    func ordinaryResumeTargets() async throws -> [MeshResumeTarget] {
+        try record("ordinaryResumeTargets")
+        return lock.withLock {
+            guard status.hasMesh, !status.stopped else { return [] }
+            let excluded = Set(runsValue.map(\.chatId))
+            return resumeTargets.filter { target in
+                !excluded.contains(target.chatId) && chats[target.chatId]?.status == .running(turnId: target.turnId)
+            }.sorted { ($0.chatId, $0.turnId) < ($1.chatId, $1.turnId) }
+        }
+    }
+
+    func resumeTurn(chatId: String, turnId: String) async throws {
+        try record("resumeTurn", chatId + "/" + turnId)
+        guard try await ordinaryResumeTargets().contains(MeshResumeTarget(chatId: chatId, turnId: turnId)) else {
+            throw MeshKernelError.refused("That turn cannot be resumed.")
+        }
+        await turnGate()
+        try driveTurn(
+            chatId: chatId, turnId: turnId, reply: nextId("event"), events: turnScript.filter { $0 != .started })
+    }
+
+    func runMessage(chatId: String, messageId: String) async throws {
+        try record("runMessage", chatId + "/" + messageId)
+        try await executeTurn(chatId: chatId, messageId: messageId)
+    }
+
     func runTurn(chatId: String) async throws {
         try record("runTurn", chatId)
+        try await executeTurn(chatId: chatId, messageId: nil)
+    }
+
+    private func executeTurn(chatId: String, messageId: String?) async throws {
         if let turnError { throw turnError }
-        let now = clock()
         let reply = nextId("event")
         let turnId = "turn-" + reply
         try lock.withLock {
             guard var chat = chats[chatId] else { throw MeshKernelError.notFound }
+            if let messageId {
+                guard let selected = chat.messages.first(where: { $0.eventId == messageId }),
+                    selected.author == .owner, selected.delivery == .queued,
+                    chat.messages.last(where: { $0.author == .owner })?.eventId == messageId
+                else { throw MeshKernelError.refused("That message cannot be started.") }
+            }
             chat.messages = chat.messages.map { message in
-                message.delivery == .queued
+                message.delivery == .queued && (messageId == nil || message.eventId == messageId)
                     ? MeshChatMessage(
                         eventId: message.eventId, parentId: message.parentId, author: message.author,
                         authorDevice: message.authorDevice, text: message.text, createdAt: message.createdAt,
@@ -411,7 +569,13 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
             chat.status = .running(turnId: turnId)
             chats[chatId] = chat
         }
-        for event in turnScript {
+        await turnGate()
+        try driveTurn(chatId: chatId, turnId: turnId, reply: reply, events: turnScript)
+    }
+
+    private func driveTurn(chatId: String, turnId: String, reply: String, events: [MeshTurnEvent]) throws {
+        let now = clock()
+        for event in events {
             if event == .finished {
                 lock.withLock {
                     guard var chat = chats[chatId] else { return }
@@ -430,7 +594,46 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     }
 
     func steer(chatId: String, text: String) throws { try record("steer", text) }
-    func interrupt(chatId: String) throws { try record("interrupt", chatId) }
+    func interrupt(chatId: String) throws {
+        try record("interrupt", chatId)
+        try interruptGate()
+    }
+
+    func steerTurn(chatId: String, turnId: String, text: String) throws -> Bool {
+        try record("steerTurn", chatId + "/" + turnId + ":" + text)
+        try steerGate()
+        return steerAcknowledged
+    }
+
+    func steerMessage(chatId: String, messageId: String, text: String) throws -> Bool {
+        try record("steerMessage", chatId + "/" + messageId + ":" + text)
+        try steerGate()
+        return steerAcknowledged
+    }
+
+    func steerRequest(requestId: String, text: String) throws -> Bool {
+        try record("steerRequest", requestId + ":" + text)
+        try steerGate()
+        return steerAcknowledged
+    }
+
+    func interruptTurn(chatId: String, turnId: String) throws -> Bool {
+        try record("interruptTurn", chatId + "/" + turnId)
+        try interruptGate()
+        return interruptAcknowledged
+    }
+
+    func interruptMessage(chatId: String, messageId: String) throws -> Bool {
+        try record("interruptMessage", chatId + "/" + messageId)
+        try interruptGate()
+        return interruptAcknowledged
+    }
+
+    func interruptRequest(requestId: String) throws -> Bool {
+        try record("interruptRequest", requestId)
+        try interruptGate()
+        return interruptAcknowledged
+    }
 
     func pendingConsents() throws -> [MeshPendingConsent] {
         try record("pendingConsents")
@@ -561,18 +764,38 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     func setModelProvider(_ config: MeshModelProviderConfig) throws {
         try record("setModelProvider", config.baseURL + " " + config.model)
         guard config.apiKey.isEmpty == false else { throw MeshKernelError.refused("provider.key_missing") }
+        providerSaveGate()
         lock.withLock {
             providers = [
                 MeshModelProvider(
                     providerId: "provider-1", baseURL: config.baseURL, model: config.model, hasKey: true,
-                    isDefault: true)
+                    isDefault: true, recipients: config.recipients,
+                    availableOnDevice: config.recipients?.contains(status.deviceId ?? "") ?? true)
             ]
+        }
+    }
+
+    func setModelProviderRecipients(name: String, recipients: [String]?) throws -> MeshModelProvider {
+        try record("setModelProviderRecipients", name)
+        providerSaveGate()
+        return try lock.withLock {
+            guard let index = providers.firstIndex(where: { $0.providerId == name }) else {
+                throw MeshKernelError.notFound
+            }
+            guard recipients?.isEmpty != true else { throw MeshKernelError.refused("Select at least one device.") }
+            let memberIds = Set(members.map(\.memberId))
+            guard recipients?.allSatisfy({ memberIds.contains($0) }) != false else {
+                throw MeshKernelError.refused("Refresh the device list and try again.")
+            }
+            providers[index].recipients = recipients?.sorted()
+            providers[index].availableOnDevice = recipients?.contains(status.deviceId ?? "") ?? true
+            return providers[index]
         }
     }
 
     func modelProviders() throws -> [MeshModelProvider] {
         try record("modelProviders")
-        return lock.withLock { providers }
+        return lock.withLock { providers.filter(\.availableOnDevice) }
     }
 
     func setRemoteMCPServer(_ config: MeshRemoteMCPConfig) throws {
@@ -793,6 +1016,19 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         }
         return id
     }
+
+    func seedPendingOrdinaryMessage(chatId: String, messageId: String) {
+        lock.withLock { _ = pendingMessages.insert(MeshPendingMessage(chatId: chatId, messageId: messageId)) }
+    }
+
+    func seedOrdinaryResume(chatId: String, turnId: String) {
+        lock.withLock {
+            resumeTargets.insert(MeshResumeTarget(chatId: chatId, turnId: turnId))
+            chats[chatId]?.status = .running(turnId: turnId)
+        }
+    }
+
+    func emit(_ change: MeshKernelChange) { listener.onChange(change) }
 
     func setChatStatus(chatId: String, _ value: MeshChatStatus) {
         lock.withLock { chats[chatId]?.status = value }

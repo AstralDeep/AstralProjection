@@ -1,5 +1,5 @@
 // Connects the on-device voice pipeline to MeshRuntime: a final owner transcript becomes a message and a turn, and spoken text flows back as the turn streams.
-// Transcripts that did not come from the device microphone in an owner-started session are refused, and nothing here can approve an action.
+// Transcripts require an owner-started live microphone source and a fixed mesh conversation; this link cannot approve an action.
 
 import Foundation
 

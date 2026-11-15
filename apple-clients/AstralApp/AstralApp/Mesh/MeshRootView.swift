@@ -14,9 +14,7 @@ struct MeshRootView: View {
     @Environment(ConsentCoordinator.self) private var consent
     @Environment(AppModel.self) private var model
     @Environment(ThemeStore.self) private var theme
-    #if os(iOS)
-        @Environment(\.scenePhase) private var scenePhase
-    #endif
+    @Environment(\.scenePhase) private var scenePhase
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
@@ -32,14 +30,13 @@ struct MeshRootView: View {
                 .consentSheet(consent)
             }
             .consentSheet(consent)
-            #if os(iOS)
-                .task(id: scenePhase) {
-                    guard scenePhase == .active, UIApplication.shared.isProtectedDataAvailable else { return }
-                    await mesh.open()
-                }
-            #else
-                .task { await mesh.open() }
-            #endif
+            .task(id: scenePhase) {
+                guard scenePhase == .active else { return }
+                #if os(iOS)
+                    guard UIApplication.shared.isProtectedDataAvailable else { return }
+                #endif
+                await mesh.open()
+            }
     }
 
     @ViewBuilder
@@ -102,8 +99,45 @@ struct MeshShell: View {
             }
             .task {
                 mesh.attachVoice(model.onDeviceVoice)
+                #if os(iOS)
+                    let runtime = mesh
+                    model.meshPush.bind(
+                        prepare: { [weak runtime] owner in await runtime?.prepareMeshPush(owner: owner) },
+                        isCurrent: { [weak runtime] context in await runtime?.meshPushContextCurrent(context) ?? false
+                        },
+                        publish: { [weak runtime] context, route in
+                            await runtime?.publishMeshWakeRoute(context, route: route) ?? false
+                        })
+                    model.watchVoice.bind(
+                        prepare: { [weak runtime] owner in
+                            guard let runtime else {
+                                throw MeshKernelError.unavailable("Open your mesh before starting Watch voice.")
+                            }
+                            return try await runtime.prepareWatchVoice(owner: owner)
+                        },
+                        isCurrent: { [weak runtime] context in
+                            guard let runtime else { return false }
+                            return await runtime.watchVoiceContextCurrent(context)
+                        })
+                #endif
             }
-            .onDisappear { mesh.detachVoice(model.onDeviceVoice) }
+            .onChange(of: mesh.status) { _, _ in
+                #if os(iOS)
+                    model.meshPush.authenticationChanged()
+                #endif
+            }
+            .onChange(of: mesh.meshAuthorityRevision) { _, _ in
+                #if os(iOS)
+                    model.meshPush.authenticationChanged()
+                #endif
+            }
+            .onDisappear {
+                #if os(iOS)
+                    model.meshPush.unbind()
+                    model.watchVoice.unbind()
+                #endif
+                mesh.detachVoice(model.onDeviceVoice)
+            }
     }
 
     #if os(macOS)

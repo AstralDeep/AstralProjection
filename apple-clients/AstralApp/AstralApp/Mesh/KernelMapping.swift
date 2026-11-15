@@ -125,10 +125,17 @@ nonisolated enum KernelMapping {
         }
     }
 
+    static func principal(_ info: AstralKernel.MeshPrincipal) -> MeshVerifiedPrincipal {
+        MeshVerifiedPrincipal(
+            meshId: info.meshId,
+            identities: info.identities.map { MeshVerifiedIdentity(issuer: $0.issuer, subject: $0.subject) })
+    }
+
     static func provider(_ info: ModelProviderInfo, lowestOrder: UInt32) -> MeshModelProvider {
         MeshModelProvider(
-            providerId: info.name, baseURL: info.baseUrl, model: info.models.first ?? "", hasKey: true,
-            isDefault: info.fallbackOrder == lowestOrder)
+            providerId: info.name, baseURL: info.baseUrl, model: info.models.first ?? "", hasKey: info.hasCredentials,
+            isDefault: info.fallbackOrder == lowestOrder, recipients: info.recipients,
+            availableOnDevice: info.availableOnDevice)
     }
 
     static func providerConfig(_ config: MeshModelProviderConfig) throws -> ModelProviderConfig {
@@ -141,7 +148,7 @@ nonisolated enum KernelMapping {
                 .prefix(64))
         return ModelProviderConfig(
             name: name, baseUrl: config.baseURL, models: [config.model], apiKeys: [config.apiKey],
-            fallbackOrder: 0, selfHosted: loopback, strictTools: false)
+            fallbackOrder: 0, selfHosted: loopback, strictTools: false, recipients: config.recipients)
     }
 
     static func run(_ info: RunInfo) -> MeshRun {
@@ -306,6 +313,10 @@ nonisolated enum KernelMapping {
         ("attachment.mime", "Choose a PDF, image, text, Markdown, CSV or JSON file."),
         ("attachment.", "The file could not be opened or attached."),
         ("turn.no_provider", "Add a model provider in Settings before asking for an answer."),
+        ("provider.changed", "This provider or its devices changed. Refresh and try again."),
+        ("provider.unavailable_on_device", "This device no longer has access to this provider."),
+        ("provider.not_found", "This provider is no longer available on this device."),
+        ("credential.bad_recipients", "Select one or more current mesh devices."),
         ("provider.", "The model provider could not be reached or refused the request."),
         ("tool.name_ambiguous", "Multiple sources offer this tool name. Rename or remove one before using it."),
         ("mcp.version", "This server must support MCP 2026-07-28."),
@@ -359,7 +370,9 @@ nonisolated enum KernelMapping {
         ("request.", "That request can no longer change."),
         ("custody.restore_needs_new_keys", "This install was restored from a backup. Join your mesh again to use it."),
         ("custody.", "This device's keys do not match its stored mesh."),
+        ("engine.steer_queue_full", "Too many follow-ups are waiting. Try again after the answer advances."),
         ("chat.empty_message", "Write a message first."),
+        ("chat.message_too_large", "Shorten this message and try again."),
         ("chat.unknown_turn", "That message is not part of this chat yet."),
         ("chat.", "That chat action was refused."),
         ("net.", "The network is not available."),

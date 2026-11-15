@@ -19,7 +19,7 @@ struct MeshChatRow: View {
             if chat.queuedCount > 0 || chat.branchCount > 0 {
                 HStack(spacing: 10) {
                     if chat.queuedCount > 0 {
-                        Label("\(chat.queuedCount) waiting to send", systemImage: "clock")
+                        Label("\(chat.queuedCount) queued", systemImage: "clock")
                             .accessibilityIdentifier("mesh.chat.queued.\(chat.chatId)")
                     }
                     if chat.branchCount > 0 {
@@ -212,6 +212,7 @@ struct MeshChatDetailView: View {
                         Image(systemName: "stop.circle.fill").font(.system(size: 28)).frame(width: 36, height: 36)
                     }
                     .buttonStyle(.plain)
+                    .disabled(mesh.currentTurn?.stopRequested == true)
                     .foregroundStyle(p.accent)
                     .help("Stop")
                     .accessibilityLabel("Stop")
@@ -269,7 +270,6 @@ struct MeshChatDetailView: View {
 
     private func steer(_ text: String) async -> Bool {
         await mesh.steer(text)
-        return true
     }
 }
 
@@ -295,7 +295,7 @@ struct MeshMessageRow: View {
             if let message = row.message {
                 ForEach(message.attachments) { attachment in MeshAttachmentView(attachment: attachment) }
                 if message.delivery == .queued {
-                    Label("Waiting to send", systemImage: "clock")
+                    Label("Queued for an answer", systemImage: "clock")
                         .font(ConsoleTypography.caption).foregroundStyle(p.muted)
                         .accessibilityIdentifier("mesh.message.queued")
                 }
@@ -372,7 +372,12 @@ struct MeshTurnActivityView: View {
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("mesh.tool.\(tool.id)")
                 }
-                if turn.restored {
+                if turn.stopRequested {
+                    StatusLine(text: "Stopping", showsActivity: true)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Stopping")
+                        .accessibilityIdentifier("mesh.turn.stopping")
+                } else if turn.restored {
                     StatusLine(text: "Awaiting answer", showsActivity: false)
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel("Awaiting answer")

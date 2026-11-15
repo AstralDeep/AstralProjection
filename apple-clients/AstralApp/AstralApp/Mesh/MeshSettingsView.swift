@@ -1,5 +1,5 @@
 // Settings for mesh mode: the model provider form, the allowance for this device, the mailbox address, tool permissions, the mesh identity and the switch back to a node.
-// The provider key is passed once to the kernel's sealed store and is never kept in this view's state after saving.
+// The provider key stays in its draft after a failed save and is cleared only after the Kernel confirms the sealed write.
 
 import SwiftUI
 
@@ -198,14 +198,11 @@ struct MeshRecoveryInfoView: View {
 struct MeshModelProviderView: View {
     @Environment(MeshRuntime.self) private var mesh
     @Environment(ThemeStore.self) private var theme
-    @State private var baseURL = ""
-    @State private var model = ""
-    @State private var key = ""
-    @State private var problem: MeshProviderInputError?
-    @State private var saved = false
+    @State private var editor = MeshProviderEditor()
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
+        @Bindable var editor = editor
         Form {
             Section("Configured") {
                 if mesh.providers.isEmpty {
@@ -214,46 +211,58 @@ struct MeshModelProviderView: View {
                         .accessibilityIdentifier("mesh.models.none")
                 }
                 ForEach(mesh.providers) { provider in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(provider.model).font(ConsoleTypography.headline)
-                        Text(provider.baseURL).font(ConsoleTypography.footnote).foregroundStyle(p.muted)
-                        Text(provider.hasKey ? "Key stored in sealed storage" : "No key")
+                    NavigationLink {
+                        MeshProviderSharingView(provider: provider)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(provider.model).font(ConsoleTypography.headline)
+                            Text(provider.baseURL).font(ConsoleTypography.footnote).foregroundStyle(p.muted)
+                            Text(provider.hasKey ? "Key stored in sealed storage" : "No key")
+                                .font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                            Text(
+                                provider.recipients == nil
+                                    ? "All devices, including future devices" : "Selected devices"
+                            )
                             .font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                        }
                     }
-                    .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("mesh.models.provider.\(provider.providerId)")
                 }
             }
             Section("OpenAI-compatible provider") {
-                TextField("Base URL", text: $baseURL)
+                TextField("Base URL", text: $editor.baseURL)
                     .autocorrectionDisabled()
                     #if os(iOS)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
                     #endif
                     .accessibilityIdentifier("mesh.models.url")
-                TextField("Model", text: $model)
+                TextField("Model", text: $editor.model)
                     .autocorrectionDisabled()
                     #if os(iOS)
                         .textInputAutocapitalization(.never)
                     #endif
                     .accessibilityIdentifier("mesh.models.model")
-                SecureField("API key", text: $key)
+                SecureField("API key", text: $editor.key)
                     .accessibilityIdentifier("mesh.models.key")
-                if let problem {
+            }
+            .disabled(editor.saving || mesh.savingProvider)
+            Section("Sharing") {
+                MeshProviderRecipientsPicker(recipients: $editor.recipients, members: mesh.members)
+            }
+            .disabled(editor.saving || mesh.savingProvider)
+            Section {
+                if let problem = editor.problem {
                     Text(problem.message).foregroundStyle(p.error).accessibilityIdentifier("mesh.models.error")
                 }
-                if saved {
+                if editor.saved {
                     Label("Saved", systemImage: "checkmark.circle.fill").foregroundStyle(p.success)
                         .accessibilityIdentifier("mesh.models.saved")
                 }
                 Button("Save") {
-                    Task {
-                        problem = await mesh.saveProvider(baseURL: baseURL, model: model, key: key)
-                        saved = problem == nil
-                        if problem == nil { key = "" }
-                    }
+                    Task { await editor.save(in: mesh) }
                 }
+                .disabled(editor.saving || mesh.savingProvider)
                 .accessibilityIdentifier("mesh.models.save")
             }
         }
@@ -262,6 +271,119 @@ struct MeshModelProviderView: View {
         .meshReadableWidth()
         .background(p.bg)
         .navigationTitle("Model provider")
+    }
+}
+
+struct MeshProviderRecipientsPicker: View {
+    @Binding var recipients: [String]?
+    let members: [MeshMember]
+
+    var body: some View {
+        Picker(
+            "Share with",
+            selection: Binding(
+                get: { recipients == nil },
+                set: { recipients = $0 ? nil : members.map(\.memberId).sorted() }
+            )
+        ) {
+            Text("All devices").tag(true)
+            Text("Selected devices").tag(false)
+        }
+        .accessibilityIdentifier("mesh.models.audience")
+        if recipients == nil {
+            Text("Includes devices you add later.").font(ConsoleTypography.footnote).foregroundStyle(.secondary)
+                .accessibilityIdentifier("mesh.models.audience.future")
+        } else {
+            ForEach(members) { member in
+                Toggle(member.label, isOn: selection(member.memberId))
+                    .accessibilityIdentifier("mesh.models.recipient.\(member.memberId)")
+            }
+            ForEach((recipients ?? []).filter { id in !members.contains { $0.memberId == id } }, id: \.self) { id in
+                Toggle(isOn: selection(id)) {
+                    VStack(alignment: .leading) {
+                        Text("Unavailable device")
+                        Text(id).font(ConsoleTypography.caption).textSelection(.enabled)
+                    }
+                }
+                .accessibilityIdentifier("mesh.models.recipient.\(id)")
+            }
+        }
+    }
+
+    private func selection(_ id: String) -> Binding<Bool> {
+        Binding(
+            get: { recipients?.contains(id) == true },
+            set: { selected in
+                guard var values = recipients else { return }
+                if selected {
+                    if !values.contains(id) { values.append(id) }
+                } else {
+                    values.removeAll { $0 == id }
+                }
+                recipients = values.sorted()
+            })
+    }
+}
+
+struct MeshProviderSharingView: View {
+    let provider: MeshModelProvider
+    @Environment(MeshRuntime.self) private var mesh
+    @Environment(ThemeStore.self) private var theme
+    @State private var recipients: [String]?
+    @State private var problem: MeshProviderInputError?
+    @State private var receipt: MeshModelProvider?
+
+    init(provider: MeshModelProvider) {
+        self.provider = provider
+        _recipients = State(initialValue: provider.recipients)
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("Model", value: provider.model)
+                Text(provider.baseURL).font(ConsoleTypography.footnote).textSelection(.enabled)
+                Text(provider.hasKey ? "Key stored in sealed storage" : "No key")
+            }
+            Section("Sharing") {
+                MeshProviderRecipientsPicker(recipients: $recipients, members: mesh.members)
+            }
+            .disabled(mesh.savingProvider || receipt?.availableOnDevice == false)
+            Section {
+                if let problem {
+                    Text(problem.message).foregroundStyle(theme.palette.error)
+                        .accessibilityIdentifier("mesh.models.sharing.error")
+                }
+                if let receipt, receipt.recipients == recipients {
+                    Label("Saved", systemImage: "checkmark.circle.fill").foregroundStyle(theme.palette.success)
+                        .accessibilityIdentifier("mesh.models.sharing.saved")
+                    if !receipt.availableOnDevice {
+                        Text("This device no longer has access to this provider.")
+                            .accessibilityIdentifier("mesh.models.sharing.unavailable")
+                    }
+                }
+                Button("Save") {
+                    Task {
+                        switch await mesh.setProviderRecipients(provider, recipients: recipients) {
+                        case .success(let updated):
+                            receipt = updated
+                            problem = nil
+                        case .failure(let error): problem = error
+                        }
+                    }
+                }
+                .disabled(
+                    mesh.savingProvider || receipt?.availableOnDevice == false
+                        || recipients == (receipt ?? provider).recipients
+                )
+                .accessibilityIdentifier("mesh.models.sharing.save")
+            }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .meshReadableWidth()
+        .background(theme.palette.bg)
+        .navigationTitle("Provider sharing")
     }
 }
 

@@ -9,6 +9,42 @@ import XCTest
 final class KernelMappingTests: XCTestCase {
     private let feed = "feed-a"
 
+    func testVerifiedPrincipalMappingPreservesExactNativeOwnerIdentities() {
+        let result = KernelMapping.principal(
+            AstralKernel.MeshPrincipal(
+                meshId: "mesh",
+                identities: [AttestedIdentity(issuer: "https://Issuer.example.test/realm", subject: "Exact-Subject")]))
+        XCTAssertEqual(
+            result,
+            MeshVerifiedPrincipal(
+                meshId: "mesh",
+                identities: [
+                    MeshVerifiedIdentity(issuer: "https://Issuer.example.test/realm", subject: "Exact-Subject")
+                ]))
+    }
+
+    func testSteeringBoundsHaveActionableFailureText() {
+        XCTAssertEqual(KernelMapping.failureText(code: "chat.empty_message"), "Write a message first.")
+        XCTAssertEqual(KernelMapping.failureText(code: "chat.message_too_large"), "Shorten this message and try again.")
+        XCTAssertEqual(
+            KernelMapping.failureText(code: "engine.steer_queue_full"),
+            "Too many follow-ups are waiting. Try again after the answer advances.")
+    }
+
+    func testProviderSharingDenialsDescribeTheRequiredAction() {
+        XCTAssertEqual(
+            KernelMapping.failureText(code: "provider.changed"),
+            "This provider or its devices changed. Refresh and try again.")
+        XCTAssertEqual(
+            KernelMapping.failureText(code: "provider.unavailable_on_device"),
+            "This device no longer has access to this provider.")
+        XCTAssertEqual(
+            KernelMapping.failureText(code: "provider.not_found"),
+            "This provider is no longer available on this device.")
+        XCTAssertEqual(
+            KernelMapping.failureText(code: "credential.bad_recipients"), "Select one or more current mesh devices.")
+    }
+
     private func message(
         _ id: String, _ role: AstralKernel.Role, text: String?, turn: String?, branch: String? = nil, ms: UInt64,
         status: AstralKernel.MessageStatus = .complete, kind: String? = nil
