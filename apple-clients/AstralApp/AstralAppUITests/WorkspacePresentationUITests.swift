@@ -222,7 +222,7 @@ final class WorkspacePresentationUITests: XCTestCase {
             XCTAssertTrue(submit.isEnabled)
             capture(app, name: "workspace-088-refine-edit-before-cancel")
             app.buttons["Cancel"].press()
-            XCTAssertFalse(app.staticTexts["Refine Result details"].exists)
+            XCTAssertTrue(app.staticTexts["Refine Result details"].waitForNonExistence(timeout: 3))
             XCTAssertEqual(composer.value as? String, "Draft to keep")
             XCTAssertTrue(app.staticTexts["Measurement pane is selected"].waitForExistence(timeout: 3))
             XCTAssertFalse(app.staticTexts["Overview pane is selected"].exists)
