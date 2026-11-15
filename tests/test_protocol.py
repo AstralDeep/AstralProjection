@@ -620,7 +620,7 @@ def test_runtime_manifests_bind_exact_owning_dependency_inventory() -> None:
             "cd62b676cf8fbe50647d7f3fd0e9dc565944fa9fc8ba43048e6b73a4e2feaab2"
         ),
         "windows-client/deployment/runtime-lock-contract.json": (
-            "b3ef5ea7cbeced022eb2ba244dc2b734e001b3f0e0f68091dcad503f66aff693"
+            "605f04579d6de8540cb51f08d2dd80c3809c9f61765c1162cb7116f4943df1a3"
         ),
         "android-client/buildscript-gradle.lockfile": (
             "9e0750c539a1715561bb7018f3f24010f2542a7400b953abc4958959c9616750"
