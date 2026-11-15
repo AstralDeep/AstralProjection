@@ -17,14 +17,19 @@ import SwiftUI
 @main
 struct AstralApp: App {
     @State private var model: AppModel
+    @State private var modeStore = AppModeStore()
+    @State private var consent: ConsentCoordinator
+    @State private var mesh: MeshRuntime
     #if os(macOS)
         @StateObject private var updates: UpdateCoordinator
+        @State private var nodeHost = MacNodeHostStore()
         @State private var updateRequirement: UpdateRequirement?
         private let lifecycle: MacAppLifecycle
     #endif
     @Environment(\.scenePhase) private var scenePhase
     #if os(iOS)
         @UIApplicationDelegateAdaptor(PushNotificationAppDelegate.self) private var pushAppDelegate
+        @State private var meshWake: MeshBackgroundWake?
     #endif
     private let unitTestHost =
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
@@ -36,6 +41,36 @@ struct AstralApp: App {
             let launchModel = AppModel()
         #endif
         _model = State(initialValue: launchModel)
+        let coordinator = ConsentCoordinator()
+        _consent = State(initialValue: coordinator)
+        #if DEBUG
+            if let scenario = MeshUITestFixture.requestedScenario() {
+                let fixture = MeshUITestFixture.install(scenario, consent: coordinator)
+                _modeStore = State(initialValue: fixture.mode)
+                _mesh = State(initialValue: fixture.runtime)
+            } else {
+                _mesh = State(initialValue: MeshRuntimeBuilder.live(consent: coordinator))
+            }
+        #else
+            _mesh = State(initialValue: MeshRuntimeBuilder.live(consent: coordinator))
+        #endif
+        #if os(iOS)
+            let wakeRuntime = _mesh.wrappedValue
+            let wakeMode = _modeStore.wrappedValue
+            let wake = MeshBackgroundWake(
+                authorized: { [weak wakeRuntime, weak wakeMode] in
+                    wakeMode?.usesMesh == true && wakeRuntime?.isReady == true
+                        && wakeRuntime?.hasMesh == true && UIApplication.shared.isProtectedDataAvailable
+                },
+                synchronize: { [weak wakeRuntime] in
+                    guard let wakeRuntime else { return false }
+                    return try await wakeRuntime.synchronizeAfterWake()
+                })
+            _meshWake = State(initialValue: wake)
+            if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+                MeshBackgroundWake.active = wake
+            }
+        #endif
         #if os(macOS)
             lifecycle = MacAppLifecycle(handlers: .live(launchModel))
             let busy: @MainActor () -> Bool = { [launchModel] in
@@ -51,6 +86,14 @@ struct AstralApp: App {
     }
 
     @ViewBuilder private var gatedRoot: some View {
+        if modeStore.usesMesh {
+            MeshRootView()
+        } else {
+            nodeRoot
+        }
+    }
+
+    @ViewBuilder private var nodeRoot: some View {
         #if os(macOS)
             if let updateRequirement {
                 UpdateRequiredView(requirement: updateRequirement, coordinator: updates)
@@ -66,6 +109,12 @@ struct AstralApp: App {
         WindowGroup("AstralDeep", id: "main") {
             gatedRoot
                 .environment(model)
+                .environment(modeStore)
+                .environment(consent)
+                .environment(mesh)
+                #if os(macOS)
+                    .environment(nodeHost)
+                #endif
                 .font(ConsoleTypography.body)
                 .environment(model.themeStore)
                 .tint(model.themeStore.palette.primary)
@@ -80,6 +129,7 @@ struct AstralApp: App {
                 )
                 .preferredColorScheme(model.themeStore.colorScheme)
                 .task {
+                    await model.onDeviceVoice.store?.attach()
                     #if DEBUG
                         if let scenario = FirstLoginUITestFixture.requestedScenario() {
                             FirstLoginUITestFixture.install(scenario, on: model)
@@ -92,7 +142,16 @@ struct AstralApp: App {
                             return
                         }
                     #endif
-                    if !unitTestHost { await model.bootstrap() }
+                    if !unitTestHost, !modeStore.usesMesh { await model.bootstrap() }
+                }
+                .onChange(of: modeStore.mode) { _, mode in
+                    #if os(iOS)
+                        if mode != .mesh { meshWake?.cancel() }
+                    #endif
+                    #if os(macOS)
+                        guard updateRequirement == nil else { return }
+                    #endif
+                    if mode == .node, !unitTestHost { Task { await model.bootstrap() } }
                 }
                 .onChange(of: scenePhase) { _, phase in
                     switch phase {

@@ -1,5 +1,5 @@
 """Tests for the webrender skeleton primitive (backend/webrender/renderer.py) and its
-ROTE adaptation (backend/rote/adapter.py): voice speaks the loading state,
+ROTE adaptation (rote/adapter.py): voice speaks the loading state,
 watch/mobile cap row count, browser/tv pass through.
 """
 

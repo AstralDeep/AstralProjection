@@ -1,5 +1,5 @@
 """Tests binding the per-client disposition matrix to the code that actually decides
-delivery (backend/rote/adapter.py, backend/webrender/chrome/menu_model.py): refuses
+delivery (rote/adapter.py, backend/webrender/chrome/menu_model.py): refuses
 any row with an unresolvable surface, action, or capability.
 """
 
@@ -8,6 +8,8 @@ from copy import deepcopy
 from pathlib import Path
 
 import pytest
+
+import rote
 
 from rote.adapter import ComponentAdapter
 from rote.capabilities import DeviceProfile, DeviceType
@@ -303,7 +305,8 @@ def test_every_drifting_or_unknown_row_is_refused(name):
 @pytest.mark.parametrize("client", CLIENTS)
 def test_declared_capabilities_are_the_ones_each_client_actually_advertises(client):
     profile = MATRIX["client_profiles"][client]
-    source = (ROOT / profile["registration_source"]).read_text(encoding="utf-8")
+    root = ROOT if (ROOT / profile["registration_source"]).exists() else Path(rote.__file__).parents[1]
+    source = (root / profile["registration_source"]).read_text(encoding="utf-8")
     family = MATRIX["capability_family"]
     present = sorted(name for name in family if '"%s"' % name in source)
     assert present == sorted(profile["advertised_088_capabilities"]), profile[

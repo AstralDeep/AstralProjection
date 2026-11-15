@@ -1,7 +1,7 @@
 # AstralDeep — native Apple clients (features 051 + 053 + 065)
 
-Three SDUI targets on one shared Swift package, with a pinned LiveKit RTC
-dependency for conversational media on iOS and macOS:
+Three SDUI targets share one Swift protocol package. Apple voice uses the
+downloaded on-device model; Watch capture and playback use the paired iPhone:
 
 ```text
 AstralCore/    # SPM package: protocol, dispositions + drift guard, WS client,
@@ -9,15 +9,15 @@ AstralCore/    # SPM package: protocol, dispositions + drift guard, WS client,
 AstralApp/     # iOS (twin of android-client) + macOS (twin of windows-client)
                # — ONE multiplatform target; also embeds the watch app
 AstralWatch/   # watchOS: QR sign-in (RFC 8628 via backend broker), bounded
-               # PCM voice bridge in/out, and server-synthesized speech
+               # ephemeral paired-phone PCM capture and playback
 ```
 
 The original feature-051, feature-053, and feature-065 design history remains
 attributable through [`provenance/extraction.json`](../provenance/extraction.json).
-The standalone contracts now live in this tree. Feature 065 pins
-`client-sdk-swift` 2.15.3 and every resolved transitive revision in the
-committed `Package.resolved`; watchOS uses the owned bounded PCM-over-WSS bridge
-rather than the LiveKit package.
+The standalone contracts now live in this tree. The former hosted Apple voice
+transports and LiveKit package dependency are retired. Devices advertise an empty
+server voice transport; the companion pipeline is documented in
+[On-device Apple voice](ONDEVICE-VOICE.md).
 
 The optional macOS **DirectDownload** variant adds an explicitly enabled local
 computer host while Store builds remain controllers. Build, permissions,
@@ -38,6 +38,46 @@ in [Computer tasks on macOS](MAC-COMPUTER-HOST.md).
 
 The client ids are defined once in `AstralCore/Sources/AstralCore/Configuration.swift`;
 the redirect scheme is mirrored in the app's `Info.plist` `CFBundleURLSchemes`.
+
+For a separate localtest install, use `Scripts/build_localtest.sh` with the
+existing Apple team id, derived-data directory and a new staging directory:
+
+```sh
+bash Scripts/build_localtest.sh macos "$APPLE_TEAM_ID" /tmp/astral-localtest /tmp/astral-localtest-mac
+bash Scripts/build_localtest.sh ios "$APPLE_TEAM_ID" /tmp/astral-localtest /tmp/astral-localtest-ios "$SIMULATOR_UDID"
+```
+
+The script builds `com.personalailabs.astraldeep.localtest` directly, checks its
+identity and the simulator's generated Keychain entitlement, and stages outside
+`/Applications`. Changing a copied Info.plist cannot generate the simulator's
+embedded Keychain identity. The iOS test copy omits the companion Watch app.
+Stop the existing localtest app and back up its data before installing; retain
+its team and bundle identity to preserve access to its saved keys. Complete any
+Keychain, sign-in or biometric prompt yourself.
+macOS uses an existing Apple Development signing identity (override with
+`ASTRAL_LOCALTEST_SIGN_IDENTITY`); ad-hoc signing is refused because its changing
+code hash makes each rebuild a different Keychain client. Keep the same signing
+channel and identity for subsequent builds. An identity transition may require
+one approval for each saved Keychain item; ordinary login does not change it.
+
+Localtest builds use Release optimization so on-device inference runs at its
+intended speed. Set `ASTRAL_LOCALTEST_CONFIGURATION=Debug` when debugging source;
+its voice latency does not qualify runtime performance. Set
+`ASTRAL_LOCALTEST_PACKAGES_DIRECTORY` to an existing Xcode package checkout cache
+to reuse the pinned dependencies during a build.
+
+Mesh background notifications accept only a content-free wake hint. An already
+open, enrolled mesh requests synchronization and reports new data only after a
+data change arrives. Locked, unopened or node-mode installs return no data;
+opening custody and signing in remain foreground actions. Work is cancelled
+after 20 seconds or when its lifecycle is retired. iOS scheduling is advisory,
+so opening the app remains the reliable way to resume synchronization.
+
+End-to-end APNs wake still requires a physical device, the matching topic and
+push entitlement, gateway credentials, and an owner-authenticated destination
+registered with the mesh device identifier. The older server notification flow
+registers its separate voice device identifier; it does not establish that mesh
+destination binding.
 
 ## The Xcode project is committed and canonical
 
@@ -211,7 +251,7 @@ caching to automate this development-only migration.
   (HTTPS to `sandbox.ai.uky.edu`) is fully ATS-compliant.
 - **Sandbox / entitlements**: the only entitlements file is
   `AstralApp/AstralApp-macOS.entitlements` (`app-sandbox`, `network.client`,
-  the `network.server` socket-bind capability required by LiveKit/WebRTC ICE,
+  the `network.server` socket-bind capability used by mesh peer networking,
   and audio input), wired via `CODE_SIGN_ENTITLEMENTS[sdk=macosx*]` on the
   **Release** config alongside `ENABLE_APP_SANDBOX[sdk=macosx*] = YES` and
   `ENABLE_HARDENED_RUNTIME[sdk=macosx*] = YES`. There is no iOS or watch
@@ -224,9 +264,11 @@ caching to automate this development-only migration.
 - **Encryption**: `ITSAppUsesNonExemptEncryption = false` in both Info.plists.
 - **Microphone disclosure**: both app Info.plists declare a narrowly worded
   `NSMicrophoneUsageDescription`. Capture starts only after the user activates
-  conversation mode and stops on end/background/ownership loss. ASR and TTS
-  run on the server; the apps do not use Apple's Speech framework or retain
-  microphone/generated audio.
+  conversation mode and stops on end/background/ownership loss. The iOS/macOS
+  chat microphone uses the downloaded MLX voice model; its size, installation,
+  conversation-link contract and qualification limits are documented in
+  [On-device Apple voice](ONDEVICE-VOICE.md). The Watch uses the paired phone
+  model and has no hosted or platform-speech fallback.
 - **BYO client-side agents (features 057/058) are AUTHOR-ONLY on these builds.**
   The App Sandbox forbids spawning arbitrary child processes / executing the
   packaged interpreter, so a Mac App Store build cannot *host* a user-authored

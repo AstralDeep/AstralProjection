@@ -23,6 +23,10 @@ private struct CompactCardContentKey: EnvironmentKey { static let defaultValue =
 
 private struct CompactChipKey: EnvironmentKey { static let defaultValue: Bool? = nil }
 
+private struct MeshActionKey: EnvironmentKey {
+    static let defaultValue: (@MainActor @Sendable (String, String, [String: JSONValue]) -> Void)? = nil
+}
+
 extension EnvironmentValues {
     var astralComponentActionOwner: AstralComponent? {
         get { self[ComponentActionOwnerKey.self] }
@@ -55,6 +59,10 @@ extension EnvironmentValues {
     var astralCompactChip: Bool? {
         get { self[CompactChipKey.self] }
         set { self[CompactChipKey.self] = newValue }
+    }
+    var astralMeshAction: (@MainActor @Sendable (String, String, [String: JSONValue]) -> Void)? {
+        get { self[MeshActionKey.self] }
+        set { self[MeshActionKey.self] = newValue }
     }
 }
 
@@ -90,6 +98,7 @@ struct ComponentView: View {
     @Environment(\.astralCompactSettings) private var compactSettings
     @Environment(\.astralCompactCardContent) private var compactCardContent
     @Environment(\.astralCompactChip) private var compactChip
+    @Environment(\.astralMeshAction) private var meshAction
     @State private var slotWidth: CGFloat = 0
 
     private var p: AstralPalette { theme.palette }
@@ -704,7 +713,11 @@ struct ComponentView: View {
         let button = Button {
             guard !chip.inert else { return }
             let payload = component.raw["payload"]?.objectValue ?? [:]
-            if action == "load_chat" {
+            if let meshAction, let capability = component.raw["capability"]?.stringValue,
+                let componentId = component.componentId
+            {
+                meshAction(componentId, capability, payload)
+            } else if action == "load_chat" {
                 navigate(payload)
             } else if action == "component_action" {
                 invoke(payload)
@@ -717,7 +730,8 @@ struct ComponentView: View {
             } else {
                 Text(label).fixedSize(horizontal: false, vertical: true)
                     .frame(
-                        maxWidth: variant == "primary" && !WorkspaceWelcome.isExample(component) ? .infinity : nil)
+                        maxWidth: variant == "primary" && !WorkspaceWelcome.isExample(component) && meshAction == nil
+                            ? .infinity : nil)
             }
         }
         .disabled(
@@ -736,6 +750,12 @@ struct ComponentView: View {
         #endif
         if WorkspaceWelcome.isExample(component) {
             accessibleButton.buttonStyle(WelcomeExampleButtonStyle(palette: p))
+        } else if meshAction != nil {
+            switch variant {
+            case "secondary", "ghost": accessibleButton.buttonStyle(.bordered)
+            case "danger": accessibleButton.buttonStyle(.borderedProminent).tint(p.error)
+            default: accessibleButton.buttonStyle(.borderedProminent)
+            }
         } else {
             accessibleButton.buttonStyle(
                 AstralButtonStyle(palette: p, variant: variant, chip: compactSettings ? compactChip : nil))
@@ -987,7 +1007,6 @@ struct ComponentView: View {
         VStack(alignment: .leading, spacing: 2) {
             markdown(component.fallbackText).foregroundStyle(p.text)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(component.type).font(ConsoleTypography.caption2).foregroundStyle(p.muted.opacity(0.7))
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2108,6 +2127,7 @@ struct InputComponent: View {
     @Environment(ThemeStore.self) var theme
     @Environment(AppModel.self) var model
     @Environment(\.astralCompactSettings) private var compactSettings
+    @Environment(\.astralMeshAction) private var meshAction
     @State private var value = ""
     @State private var editingOwner = UUID()
     @State private var initialValue = ""
@@ -2151,7 +2171,11 @@ struct InputComponent: View {
     private func submit() {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        if let action = component.raw["action"]?.stringValue {
+        if let meshAction, let capability = component.raw["capability"]?.stringValue,
+            let componentId = component.componentId
+        {
+            meshAction(componentId, capability, ["value": .string(trimmed)])
+        } else if let action = component.raw["action"]?.stringValue {
             model.emit(action, payload: ["value": .string(trimmed)])
         } else {
             model.emit("chat_message", payload: ["message": .string(trimmed)])

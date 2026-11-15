@@ -190,7 +190,10 @@ def test_complete_lock_is_exact_hashed_and_covers_direct_inputs():
     locked = _locked_packages()
     assert direct
     assert all(locked.get(name) == version for name, version in direct.items())
-    assert {"pyinstaller", "sigstore", "astralprims", "pefile", "pywin32-ctypes"} <= set(locked)
+    assert {"pyinstaller", "sigstore", "pefile", "pywin32-ctypes"} <= set(locked)
+    assert "astralprims @ ${ASTRAL_PRIMITIVES_WHEEL_URI}" in text
+    assert "astral-rote @ ${ASTRAL_ROTE_WHEEL_URI}" in text
+    assert "astralprims==0.4.0" not in text
     assert locked["lets-agent"] == "1.0.11"
     assert "lets-agent @ https://github.com/AstralDeep/LETS/releases/download/v1.0.11/" in text
     assert "c22dd4c55b1f8e62200455c370ea1b56fb2a96da7fbeae1406e3d0b1365f8c80" in text
@@ -534,3 +537,18 @@ def test_cli_reports_candidate_error_without_writing_output(
     )
     assert not output.exists()
     assert "windows candidate manifest failed: synthetic rejection" in capsys.readouterr().err
+
+
+
+def test_candidate_environment_records_both_local_presentation_versions():
+    packages = _tool_module().locked_packages(LOCK)
+    assert packages["astralprims"] == "0.13.0"
+    assert packages["astral-rote"] == "0.1.0"
+
+
+def test_duplicate_local_presentation_versions_fail_closed(tmp_path):
+    lock = tmp_path / "lock.txt"
+    lock.write_text("# local-presentation: astralprims==0.13.0\n# local-presentation: astralprims==0.13.0\n")
+    tool = _tool_module()
+    with pytest.raises(tool.CandidateManifestError, match="repeats"):
+        tool.locked_packages(lock)

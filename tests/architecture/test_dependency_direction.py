@@ -13,7 +13,6 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SOURCE_ROOTS = (
     REPOSITORY_ROOT / "src" / "astralprojection",
     REPOSITORY_ROOT / "backend" / "webrender",
-    REPOSITORY_ROOT / "backend" / "rote",
 )
 FORBIDDEN_IMPORT_ROOTS = {
     "agents",

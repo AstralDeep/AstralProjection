@@ -1,0 +1,315 @@
+// The root of mesh mode: opens the runtime, shows onboarding or the shell, and hosts the consent sheet and the voice model setup sheet.
+// The shell has chats, devices and settings, each under the honest sync strip and any approvals waiting on this device.
+
+import SwiftUI
+
+#if os(iOS)
+    import UIKit
+#endif
+
+struct MeshRootView: View {
+    var start: MeshDestination?
+    @Environment(MeshRuntime.self) private var mesh
+    @Environment(AppModeStore.self) private var modeStore
+    @Environment(ConsentCoordinator.self) private var consent
+    @Environment(AppModel.self) private var model
+    @Environment(ThemeStore.self) private var theme
+    @Environment(\.scenePhase) private var scenePhase
+    private var p: AstralPalette { theme.palette }
+
+    var body: some View {
+        content
+            .background(p.bg.ignoresSafeArea())
+            .sheet(
+                isPresented: Binding(
+                    get: { model.onDeviceVoice.showingSetup }, set: { model.onDeviceVoice.showingSetup = $0 })
+            ) {
+                VoiceModelSetupView(controller: model.onDeviceVoice) {
+                    Task { await model.onDeviceVoice.toggle() }
+                }
+                .consentSheet(consent)
+            }
+            .consentSheet(consent)
+            .task(id: scenePhase) {
+                guard scenePhase == .active else { return }
+                #if os(iOS)
+                    guard UIApplication.shared.isProtectedDataAvailable else { return }
+                #endif
+                await mesh.open()
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch mesh.phase {
+        case .closed, .opening:
+            ProgressView("Opening your mesh").accessibilityIdentifier("mesh.opening")
+        case .failed(let message):
+            VStack(spacing: 16) {
+                Text(message).multilineTextAlignment(.center).foregroundStyle(p.error)
+                    .accessibilityIdentifier("mesh.failed")
+                Button("Try again") { Task { await mesh.open() } }.accessibilityIdentifier("mesh.retry")
+                Button("Connect to a node") { modeStore.choose(.node) }.accessibilityIdentifier("mesh.node")
+            }
+            .padding(24)
+        case .ready:
+            if case .recovery(let words) = mesh.creation {
+                MeshRecoveryView(words: words)
+            } else if case .restored(let restored) = mesh.restore {
+                MeshRestoredView(restored: restored)
+            } else if !mesh.hasMesh {
+                MeshOnboardingView()
+            } else {
+                MeshShell(start: start)
+            }
+        }
+    }
+}
+
+enum MeshDestination: Hashable {
+    case chat(String)
+    case devices
+    case runs
+    case settings
+}
+
+struct MeshShell: View {
+    @Environment(MeshRuntime.self) private var mesh
+    @Environment(AppModel.self) private var model
+    @State private var destination: MeshDestination?
+    @State private var selectedChat: String?
+    @State private var selectedTab = 0
+
+    init(start: MeshDestination? = nil) {
+        #if DEBUG
+            _destination = State(initialValue: start ?? MeshUITestFixture.requestedDestination())
+        #else
+            _destination = State(initialValue: start)
+        #endif
+    }
+
+    var body: some View {
+        shell
+            .alert(
+                "Mesh", isPresented: Binding(get: { mesh.notice != nil }, set: { if !$0 { mesh.notice = nil } })
+            ) {
+                Button("OK") { mesh.notice = nil }
+            } message: {
+                Text(mesh.notice ?? "")
+            }
+            .task {
+                mesh.attachVoice(model.onDeviceVoice)
+                #if os(iOS)
+                    let runtime = mesh
+                    model.meshPush.bind(
+                        prepare: { [weak runtime] owner in await runtime?.prepareMeshPush(owner: owner) },
+                        isCurrent: { [weak runtime] context in await runtime?.meshPushContextCurrent(context) ?? false
+                        },
+                        publish: { [weak runtime] context, route in
+                            await runtime?.publishMeshWakeRoute(context, route: route) ?? false
+                        })
+                    model.watchVoice.bind(
+                        prepare: { [weak runtime] owner in
+                            guard let runtime else {
+                                throw MeshKernelError.unavailable("Open your mesh before starting Watch voice.")
+                            }
+                            return try await runtime.prepareWatchVoice(owner: owner)
+                        },
+                        isCurrent: { [weak runtime] context in
+                            guard let runtime else { return false }
+                            return await runtime.watchVoiceContextCurrent(context)
+                        })
+                #endif
+            }
+            .onChange(of: mesh.status) { _, _ in
+                #if os(iOS)
+                    model.meshPush.authenticationChanged()
+                #endif
+            }
+            .onChange(of: mesh.meshAuthorityRevision) { _, _ in
+                #if os(iOS)
+                    model.meshPush.authenticationChanged()
+                #endif
+            }
+            .onDisappear {
+                #if os(iOS)
+                    model.meshPush.unbind()
+                    model.watchVoice.unbind()
+                #endif
+                mesh.detachVoice(model.onDeviceVoice)
+            }
+    }
+
+    #if os(macOS)
+        private var shell: some View {
+            NavigationSplitView {
+                MeshSidebar(destination: $destination)
+                    .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 360)
+            } detail: {
+                VStack(spacing: 0) {
+                    MeshConsentCards()
+                    MeshSyncStrip(showsSync: false)
+                    detail
+                }
+            }
+            .font(ConsoleTypography.body)
+            .onChange(of: destination) { _, value in
+                if model.onDeviceVoice.isRunning || model.onDeviceVoice.isPreparing {
+                    if value != mesh.voiceChatId.map({ MeshDestination.chat($0) }) { model.onDeviceVoice.stop() }
+                }
+                Task {
+                    if case .chat(let id) = value { await mesh.openChat(id) } else { mesh.closeChat() }
+                }
+            }
+            .onChange(of: model.onDeviceVoice.isRunning) { _, active in
+                if active, let chatId = mesh.voiceChatId { destination = .chat(chatId) }
+            }
+            .onAppear {
+                if destination == nil { destination = .devices }
+                if case .chat(let id) = destination { Task { await mesh.openChat(id) } }
+            }
+        }
+
+        @ViewBuilder
+        private var detail: some View {
+            switch destination {
+            case .chat:
+                MeshChatDetailView()
+            case .devices:
+                NavigationStack { MeshDevicesView() }
+            case .runs:
+                NavigationStack { MeshRunsView() }
+            case .settings:
+                NavigationStack { MeshSettingsView() }
+            case nil:
+                ContentUnavailableView("Choose something", systemImage: "sidebar.left")
+            }
+        }
+    #else
+        private var shell: some View {
+            VStack(spacing: 0) {
+                MeshConsentCards()
+                TabView(selection: $selectedTab) {
+                    NavigationSplitView {
+                        MeshChatListView(selection: $selectedChat)
+                    } detail: {
+                        if selectedChat != nil {
+                            MeshChatDetailView()
+                        } else {
+                            ContentUnavailableView("Choose a chat", systemImage: "bubble.left.and.bubble.right")
+                        }
+                    }
+                    .tabItem { Label("Chats", systemImage: "bubble.left.and.bubble.right") }
+                    .tag(0)
+                    .accessibilityIdentifier("mesh.tab.chats")
+                    NavigationStack {
+                        VStack(spacing: 0) {
+                            MeshSyncStrip()
+                            MeshDevicesView()
+                        }
+                    }
+                    .tabItem { Label("Devices", systemImage: "laptopcomputer.and.iphone") }
+                    .tag(1)
+                    .accessibilityIdentifier("mesh.tab.devices")
+                    NavigationStack {
+                        VStack(spacing: 0) {
+                            MeshSyncStrip()
+                            MeshRunsView()
+                        }
+                    }
+                    .tabItem { Label("Runs", systemImage: "arrow.triangle.2.circlepath") }
+                    .tag(2)
+                    .accessibilityIdentifier("mesh.tab.runs")
+                    NavigationStack {
+                        VStack(spacing: 0) {
+                            MeshSyncStrip()
+                            MeshSettingsView()
+                        }
+                    }
+                    .tabItem { Label("Settings", systemImage: "gearshape") }
+                    .tag(3)
+                    .accessibilityIdentifier("mesh.tab.settings")
+                }
+            }
+            .onChange(of: selectedChat) { _, id in
+                if model.onDeviceVoice.isRunning || model.onDeviceVoice.isPreparing {
+                    if id != mesh.voiceChatId { model.onDeviceVoice.stop() }
+                }
+                Task {
+                    if let id { await mesh.openChat(id) } else { mesh.closeChat() }
+                }
+            }
+            .onChange(of: selectedTab) { _, tab in
+                if tab != 0 { model.onDeviceVoice.stop() }
+            }
+            .onChange(of: model.onDeviceVoice.isRunning) { _, active in
+                if active, let chatId = mesh.voiceChatId {
+                    selectedChat = chatId
+                    selectedTab = 0
+                }
+            }
+        }
+    #endif
+}
+
+#if os(macOS)
+    struct MeshSidebar: View {
+        @Binding var destination: MeshDestination?
+        @Environment(MeshRuntime.self) private var mesh
+        @Environment(ThemeStore.self) private var theme
+        private var p: AstralPalette { theme.palette }
+
+        var body: some View {
+            List(selection: $destination) {
+                Section {
+                    Label("Devices", systemImage: "laptopcomputer.and.iphone").tag(MeshDestination.devices)
+                        .accessibilityIdentifier("mesh.side.devices")
+                    Label("Runs", systemImage: "arrow.triangle.2.circlepath").tag(MeshDestination.runs)
+                        .accessibilityIdentifier("mesh.side.runs")
+                    Label("Settings", systemImage: "gearshape").tag(MeshDestination.settings)
+                        .accessibilityIdentifier("mesh.side.settings")
+                }
+                Section("Chats") {
+                    if mesh.chats.isEmpty {
+                        Text("No chats yet").foregroundStyle(p.muted).accessibilityIdentifier("mesh.chats.empty")
+                    }
+                    ForEach(mesh.chats) { chat in
+                        MeshChatRow(chat: chat).tag(MeshDestination.chat(chat.chatId))
+                    }
+                }
+            }
+            .listStyle(.sidebar)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                HStack(spacing: 8) {
+                    Circle().fill(syncColor).frame(width: 8, height: 8).accessibilityHidden(true)
+                    Text(MeshPresentation.syncLine(mesh.syncSummary))
+                        .font(ConsoleTypography.footnote).foregroundStyle(p.muted).lineLimit(2)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("mesh.strip.sync")
+            }
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        Task { destination = await mesh.newChat().map { .chat($0) } }
+                    } label: {
+                        Label("New Chat", systemImage: "square.and.pencil")
+                    }
+                    .keyboardShortcut("n", modifiers: .command)
+                    .help("New Chat")
+                    .accessibilityIdentifier("mesh.chats.new")
+                }
+            }
+        }
+
+        private var syncColor: Color {
+            switch mesh.syncSummary {
+            case .synced: return p.success
+            case .waiting: return p.warning
+            case .alone, .unknown: return p.muted
+            }
+        }
+    }
+#endif

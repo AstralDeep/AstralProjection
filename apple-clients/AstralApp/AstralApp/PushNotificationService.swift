@@ -47,6 +47,9 @@
     @MainActor
     final class PushNotificationService: NSObject, UNUserNotificationCenterDelegate {
         private var machine: PushDestinationMachine?
+        private var meshRegistrationDemand = false
+        private var meshToken: ((String) -> Void)?
+        private var meshRegistrationFailure: (() -> Void)?
         private let rest: PushRest
         private let tokenProvider: @Sendable () async -> String?
         private let identity: PushIdentity
@@ -76,7 +79,7 @@
             identity: PushIdentity, rest: PushRest, tokenProvider: @escaping @Sendable () async -> String?,
             incarnationProvider: @escaping @MainActor (String) -> String? = { _ in nil },
             system: PushNotificationSystem? = nil,
-            custody: any MeshKeyStorage = KeychainMeshKeyStorage(service: "com.personalailabs.astraldeep.push")
+            custody: any MeshKeyStorage = KeychainMeshKeyStorage(service: KeychainServices.name("push"))
         ) {
             self.identity = identity
             self.rest = rest
@@ -90,6 +93,15 @@
         }
 
         func start() { refreshAuthorization() }
+        func setMeshRegistrationListeners(token: @escaping (String) -> Void, failure: @escaping () -> Void) {
+            meshToken = token
+            meshRegistrationFailure = failure
+        }
+        func setMeshRegistrationDemand(_ enabled: Bool) {
+            guard meshRegistrationDemand != enabled else { return }
+            meshRegistrationDemand = enabled
+            if enabled { system.register() } else if machine == nil { system.unregister() }
+        }
         func setInAppPresent(_ listener: ((PushPayload) -> Void)?) { inAppPresent = listener }
         func setSourceOpen(_ listener: ((PushSource) -> Bool)?) { sourceOpen = listener }
 
@@ -136,7 +148,7 @@
             connection = nil
             sequence = 0
             epoch += 1
-            system.unregister()
+            if !meshRegistrationDemand { system.unregister() }
             system.removeAll()
         }
 
@@ -193,10 +205,13 @@
         }
 
         func handleRegisteredDeviceToken(_ deviceToken: Data) {
+            let token = deviceToken.map { String(format: "%02x", $0) }.joined()
+            if meshRegistrationDemand { meshToken?(token) }
             guard let machine else { return }
-            execute(machine.onDeviceToken(deviceToken.map { String(format: "%02x", $0) }.joined()))
+            execute(machine.onDeviceToken(token))
         }
         func handleRegistrationFailure() {
+            if meshRegistrationDemand { meshRegistrationFailure?() }
             if let machine { execute(machine.onTokenRequestFailed(transient: true, code: "registration_failed")) }
         }
 
@@ -544,6 +559,41 @@
 
     @MainActor
     final class PushNotificationAppDelegate: NSObject, UIApplicationDelegate {
+        func application(
+            _ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+            fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+        ) {
+            guard let wake = MeshBackgroundWake.active else {
+                completionHandler(.noData)
+                return
+            }
+            wake.receive(userInfo) { result in
+                switch result {
+                case .newData: completionHandler(.newData)
+                case .noData: completionHandler(.noData)
+                case .failed: completionHandler(.failed)
+                }
+            }
+        }
+
+        func applicationProtectedDataWillBecomeUnavailable(_ application: UIApplication) {
+            MeshBackgroundWake.active?.cancel()
+        }
+
+        func applicationWillTerminate(_ application: UIApplication) {
+            MeshBackgroundWake.active?.cancel()
+        }
+
+        func application(
+            _ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
+            completionHandler: @escaping () -> Void
+        ) {
+            if identifier == VoiceModelStore.backgroundIdentifier {
+                VoiceModelBackgroundEvents.store(completionHandler, for: identifier)
+            } else {
+                completionHandler()
+            }
+        }
         func application(
             _ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
         ) { PushNotificationService.active?.handleRegisteredDeviceToken(deviceToken) }

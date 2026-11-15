@@ -20,49 +20,24 @@ final class VoiceSessionController065Tests: XCTestCase {
     private let submission = "00000000-0000-4000-8000-000000000007"
     private let request = "00000000-0000-4000-8000-000000000008"
 
-    func testNewVoiceChatLoadsBeforeMediaAndReceivesCommittedTextAndCanvas() async throws {
+    func testAppModelDoesNotWireLegacyControllerToHostedChatOrMedia() async throws {
         let api = FakeVoiceAPI()
-        api.startOutcome = .started(restSession(synced: true), grant())
         let media = FakeVoiceMedia()
         let controller = makeController(api: api, media: media)
         let model = AppModel(tokenStore: InMemoryTokenStore(), voiceController: controller)
         defer { controller.close() }
         model.signedIn = true
         model.connected = true
-        model.currentConnectionVoiceSendOverride = { _ in }
-        var wires: [InboundFrame] = []
-        model.outboundTap = { if let value = InboundFrame.parse($0) { wires.append(value) } }
+        var wires: [String] = []
+        model.currentConnectionVoiceSendOverride = { wires.append($0) }
+        model.outboundTap = { wires.append($0) }
         XCTAssertTrue(model.beginConversationConnection(connection))
         install(controller, replaceSender: false)
         controller.updateVisibleChatLocally(nil)
-
-        await model.activateVoice()
-        XCTAssertEqual(wires.last?.payload["action"]?.stringValue, "new_chat")
+        await controller.activate()
+        XCTAssertTrue(wires.isEmpty)
         XCTAssertEqual(api.startCount, 0)
-        model.handleFrame(newVoiceChatFrame())
-        let load = try XCTUnwrap(wires.last)
-        XCTAssertEqual(load.payload["action"]?.stringValue, "load_chat")
-        XCTAssertEqual(load.payload["payload"]?["chat_id"]?.stringValue, chat)
-        let generation = try XCTUnwrap(load.payload["request_generation"]?.stringValue)
-        XCTAssertEqual(api.startCount, 0)
-        model.handleFrame(hydrationFrame(request: request))
-        XCTAssertEqual(api.startCount, 0)
-        model.handleFrame(hydrationFrame(request: generation))
-        for _ in 0..<10 { await Task.yield() }
-        XCTAssertEqual(api.startCount, 1)
-        XCTAssertTrue(controller.mediaConnected)
-
-        model.handleFrame(
-            frame(
-                """
-                {"type":"conversation_commit_ready","schema_version":1,
-                 "chat_id":"\(chat)","connection_generation":"\(connection)",
-                 "request_generation":"\(request)","render_revision":1}
-                """))
-        model.handleFrame(hydrationFrame(request: request, purpose: "commit", revision: 1))
-        XCTAssertEqual(model.turns.map(\.text), ["Rolled six dice: total 21"])
-        XCTAssertEqual(model.canvas.map(\.fallbackText), ["Dice total: 21"])
-        XCTAssertFalse(model.consoleDashboardVisible)
+        XCTAssertEqual(media.connectCount, 0)
     }
 
     func testExistingChatActivationRequiresMatchingHydrationBeforePermissionAndMedia() async throws {
@@ -427,43 +402,29 @@ final class VoiceSessionController065Tests: XCTestCase {
         XCTAssertEqual(controller.phase, "error")
     }
 
-    func testAppModelRoutesEveryVoiceWireOnCurrentConnectionWithoutQueueAlert() throws {
+    func testAppModelRejectsRetiredVoiceWireWithoutSendingOrChangingConversation() throws {
         let model = AppModel(tokenStore: InMemoryTokenStore())
         model.signedIn = true
         model.connected = true
         XCTAssertTrue(model.beginConversationConnection(connection))
-        var liveOnly: [String] = []
-        model.currentConnectionVoiceSendOverride = { liveOnly.append($0) }
-
+        var sent: [String] = []
+        model.currentConnectionVoiceSendOverride = { sent.append($0) }
+        model.consoleDashboardVisible = true
         let newChat = Outbound.correlatedVoiceNewChat(
             connectionGeneration: connection,
             submissionId: "00000000-0000-4000-8000-00000000000d",
             requestGeneration: "00000000-0000-4000-8000-00000000000e")
-        XCTAssertTrue(model.sendVoiceWire(newChat))
-
         let transcript = try XCTUnwrap(
             VoiceTranscript(frame: try XCTUnwrap(InboundFrame.parse(finalTranscript()))))
         let voiceChat = Outbound.voiceChatMessage(
             transcript: transcript, connectionGeneration: connection)
-        model.consoleDashboardVisible = true
-        XCTAssertTrue(model.sendVoiceWire(voiceChat))
-        XCTAssertFalse(model.consoleDashboardVisible)
-        XCTAssertTrue(model.workspaceStarted)
-        XCTAssertTrue(model.sendVoiceWire(voiceChat), "an exact controller retry remains live-only")
-
-        let playout =
-            """
-            {"type":"voice_playout_event","schema_version":"1","device_id":"\(device)","connection_generation":"\(connection)","session_id":"\(voiceSession)","generation":1,"media_grant_revision":2,"announcement_id":"00000000-0000-4000-8000-000000000009","announcement_sequence":1,"turn_id":"\(turn)","kind":"acknowledgement","quantum_role":"single","quantum_index":0,"phase":"started","client_sequence":0,"observed_at":"2099-07-31T12:00:00Z"}
-            """
-        XCTAssertTrue(model.sendVoiceWire(playout))
-
-        XCTAssertEqual(liveOnly.count, 4)
-        XCTAssertEqual(liveOnly.filter { $0 == voiceChat }.count, 2)
-        XCTAssertEqual(model.localOperationSubmissions.count, 1)
-        XCTAssertEqual(
-            model.transientTurns.filter { $0.id == "pending-voice-\(submission)" }.count,
-            1,
-            "controller retries must not duplicate the optimistic user turn")
+        XCTAssertFalse(model.sendVoiceWire(newChat))
+        XCTAssertFalse(model.sendVoiceWire(voiceChat))
+        XCTAssertFalse(model.sendVoiceWire(voiceChat))
+        XCTAssertTrue(sent.isEmpty)
+        XCTAssertTrue(model.localOperationSubmissions.isEmpty)
+        XCTAssertTrue(model.transientTurns.isEmpty)
+        XCTAssertTrue(model.consoleDashboardVisible)
         XCTAssertNil(model.errorBanner)
     }
 
@@ -1674,145 +1635,29 @@ final class VoiceSessionController065Tests: XCTestCase {
         controller.close()
     }
 
-    func testRESTActivationUsesBoundHeadersAndRejectsAdditiveGrantFields() async throws {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [StubVoiceURLProtocol.self]
-        let api = URLSessionAppleVoiceControlAPI(session: URLSession(configuration: configuration))
+    func testRetiredVoiceAPIRefusesWithoutHTTPOrGrantUse() async throws {
+        let api = RetiredAppleVoiceControlAPI()
         let control = try XCTUnwrap(VoiceControlBinding(frame: frame(binding())))
         let bound = AppleVoiceUIBinding(
             token: "access-token", serverBase: URL(string: "https://example.test/")!,
             deviceId: device, deviceKind: "ios", connectionGeneration: connection,
             control: control, visibleChatId: chat)
         StubVoiceURLProtocol.install(status: 201, data: Data(restStartResponse().utf8))
-
-        let first = await api.start(
+        let outcome = await api.start(
             binding: bound, activationId: "00000000-0000-4000-8000-00000000000f",
             capability: .init(
                 hasMicrophone: true, hasAudioOutput: true,
                 microphonePermission: "authorized", fullDuplex: true))
-        guard case .started(let session, let mediaGrant) = first else {
-            return XCTFail("strict canonical REST response should start")
-        }
-        XCTAssertEqual(session.sessionId, voiceSession)
-        XCTAssertEqual(mediaGrant.workerIdentity, "voice-worker-01")
-        let request = try XCTUnwrap(StubVoiceURLProtocol.lastRequest())
-        XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/voice/sessions")
-        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Astral-Device-Id"), device)
-        XCTAssertEqual(
-            request.value(forHTTPHeaderField: "X-Astral-Connection-Generation"), connection)
-        XCTAssertEqual(
-            request.value(forHTTPHeaderField: "X-Astral-Voice-Control-Binding"),
-            "synthetic-binding-value-000000000000")
-        XCTAssertEqual(request.cachePolicy, .reloadIgnoringLocalAndRemoteCacheData)
-
-        StubVoiceURLProtocol.install(
-            status: 201, data: Data(restStartResponse(extraGrantField: true).utf8))
-        let additive = await api.start(
-            binding: bound, activationId: "00000000-0000-4000-8000-00000000000f",
-            capability: .init(
-                hasMicrophone: true, hasAudioOutput: true,
-                microphonePermission: "authorized", fullDuplex: true))
-        guard case .failed = additive else {
-            return XCTFail("authority-sensitive REST grants must reject unknown fields")
-        }
-    }
-
-    func testMediaGrantRefreshReadsCurrentStateAndRetriesIdenticalCASAfterLostResponse() async throws {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [StubVoiceURLProtocol.self]
-        let api = URLSessionAppleVoiceControlAPI(session: URLSession(configuration: configuration))
-        let control = try XCTUnwrap(VoiceControlBinding(frame: frame(binding())))
-        let bound = AppleVoiceUIBinding(
-            token: "access-token", serverBase: URL(string: "https://example.test/")!,
-            deviceId: device, deviceKind: "ios", connectionGeneration: connection,
-            control: control, visibleChatId: chat)
-        let refreshId = "00000000-0000-4000-8000-00000000000f"
-        StubVoiceURLProtocol.install([
-            .http(status: 200, data: Data(credentialFreeState(revision: 2).utf8)),
-            .failure,
-            .http(
-                status: 200,
-                data: Data(refreshResponse(refreshId: refreshId, revision: 3).utf8)),
-        ])
-
-        let outcome = await api.refresh(
-            binding: bound, session: restSession(synced: true), refreshId: refreshId)
-        guard case .refreshed(let session, let mediaGrant) = outcome else {
-            return XCTFail("a replayed idempotent refresh should return the committed grant")
-        }
-        XCTAssertEqual(session.mediaGrantRevision, 3)
-        XCTAssertEqual(mediaGrant.mediaGrantRevision, 3)
-
-        let requests = StubVoiceURLProtocol.requests()
-        XCTAssertEqual(requests.map(\.httpMethod), ["GET", "POST", "POST"])
-        XCTAssertEqual(requests[0].url?.path, "/api/voice/sessions/\(voiceSession)/media-grants")
-        let requestBodies = StubVoiceURLProtocol.requestBodies()
-        XCTAssertNil(requestBodies[0])
-        XCTAssertEqual(requestBodies[1], requestBodies[2])
-        let postBody = try JSONValue.parse(XCTUnwrap(requestBodies[1]))
-        XCTAssertEqual(postBody["refresh_id"]?.stringValue, refreshId)
-        XCTAssertEqual(postBody["expected_media_grant_revision"]?.numberValue, 2)
-        XCTAssertEqual(
-            requests[2].value(forHTTPHeaderField: "X-Astral-Voice-Control-Binding"),
-            "synthetic-binding-value-000000000000")
-    }
-
-    func testMediaGrantRefreshPreservesTerminalSessionEndedCode() async throws {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [StubVoiceURLProtocol.self]
-        let api = URLSessionAppleVoiceControlAPI(session: URLSession(configuration: configuration))
-        let control = try XCTUnwrap(VoiceControlBinding(frame: frame(binding())))
-        let bound = AppleVoiceUIBinding(
-            token: "access-token", serverBase: URL(string: "https://example.test/")!,
-            deviceId: device, deviceKind: "ios", connectionGeneration: connection,
-            control: control, visibleChatId: chat)
-        StubVoiceURLProtocol.install(
-            status: 503,
-            data: Data(
-                """
-                {"type":"urn:astraldeep:voice:session_ended","title":"Voice request could not be completed","status":503,"code":"session_ended"}
-                """.utf8))
-
-        let outcome = await api.refresh(
-            binding: bound, session: restSession(synced: true),
-            refreshId: "00000000-0000-4000-8000-00000000000f")
-
-        guard case .failed(let reason, let message) = outcome else {
-            return XCTFail("a terminal media-grant response must remain terminal")
-        }
-        XCTAssertEqual(reason, "session_ended")
-        XCTAssertNil(message)
-        XCTAssertEqual(StubVoiceURLProtocol.requests().count, 1)
-        XCTAssertEqual(StubVoiceURLProtocol.lastRequest()?.httpMethod, "GET")
-    }
-
-    func testEndUsesOnlyTheBoundAuthoritativeSessionFence() async throws {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [StubVoiceURLProtocol.self]
-        let api = URLSessionAppleVoiceControlAPI(session: URLSession(configuration: configuration))
-        let control = try XCTUnwrap(VoiceControlBinding(frame: frame(binding())))
-        let bound = AppleVoiceUIBinding(
-            token: "access-token", serverBase: URL(string: "https://example.test/")!,
-            deviceId: device, deviceKind: "ios", connectionGeneration: connection,
-            control: control, visibleChatId: chat)
-        StubVoiceURLProtocol.install(status: 204, data: Data())
-
+        guard case .failed(let reason, _) = outcome else { return XCTFail("Retired media must not start") }
+        XCTAssertEqual(reason, "transport_retired")
+        let refresh = await api.refresh(
+            binding: bound, session: restSession(synced: true), refreshId: UUID().uuidString)
+        guard case .failed(let refreshReason, _) = refresh else { return XCTFail("Retired grants must not refresh") }
+        XCTAssertEqual(refreshReason, "transport_retired")
         let ended = await api.end(
-            binding: bound,
-            fence: AppleVoiceSessionFence(
-                sessionId: voiceSession, generation: 4, mediaGrantRevision: 7))
-
-        XCTAssertTrue(ended)
-        let request = try XCTUnwrap(StubVoiceURLProtocol.lastRequest())
-        XCTAssertEqual(request.httpMethod, "DELETE")
-        XCTAssertEqual(request.url?.path, "/api/voice/sessions/\(voiceSession)")
-        let query = try XCTUnwrap(URLComponents(url: XCTUnwrap(request.url), resolvingAgainstBaseURL: false))
-            .queryItems
-        XCTAssertEqual(query?.first { $0.name == "expected_generation" }?.value, "4")
-        XCTAssertEqual(query?.first { $0.name == "expected_media_grant_revision" }?.value, "7")
-        XCTAssertEqual(
-            request.value(forHTTPHeaderField: "X-Astral-Voice-Control-Binding"),
-            "synthetic-binding-value-000000000000")
+            binding: bound, fence: .init(sessionId: voiceSession, generation: 1, mediaGrantRevision: 2))
+        XCTAssertFalse(ended)
+        XCTAssertTrue(StubVoiceURLProtocol.requests().isEmpty)
     }
 
     func testCloseHardStopsLocalMediaAndBestEffortEndsBoundSession() async {
@@ -2037,8 +1882,8 @@ final class VoiceSessionController065Tests: XCTestCase {
             leaseExpiresAt: "2099-07-31T12:01:00Z")
     }
 
-    private func grant(sessionId: String? = nil, revision: Int = 2) -> AppleLiveKitGrant {
-        AppleLiveKitGrant(
+    private func grant(sessionId: String? = nil, revision: Int = 2) -> AppleVoiceRetiredGrant {
+        AppleVoiceRetiredGrant(
             grantId: "grant-01", sessionId: sessionId ?? voiceSession, generation: 1,
             mediaGrantRevision: revision, expiresAt: "2099-07-31T12:02:00Z",
             url: "wss://voice.example.test", joinToken: String(repeating: "a", count: 64),
@@ -2357,6 +2202,8 @@ final class FakeVoiceAPI: AppleVoiceControlAPI {
     var endFences: [AppleVoiceSessionFence] = []
     var lastEndFence: AppleVoiceSessionFence?
     var stopCount = 0
+    var capabilityCount = 0
+    var consentCount = 0
     var lastUpdate: [String: JSONValue]?
     var updates: [[String: JSONValue]] = []
     var updatedSession: AppleVoiceRestSession?
@@ -2421,7 +2268,8 @@ final class FakeVoiceAPI: AppleVoiceControlAPI {
     }
 
     func capabilityV2(binding: AppleVoiceUIBinding) async -> (status: Int, payload: JSONValue?) {
-        (capabilityV2Status, capabilityV2Payload)
+        capabilityCount += 1
+        return (capabilityV2Status, capabilityV2Payload)
     }
 
     func startLocal(
@@ -2472,7 +2320,10 @@ final class FakeVoiceAPI: AppleVoiceControlAPI {
     func consent(
         binding: AppleVoiceUIBinding, session: AppleVoiceRestSession,
         resultId: String, turnId: String
-    ) async -> Bool { true }
+    ) async -> Bool {
+        consentCount += 1
+        return true
+    }
     func end(binding: AppleVoiceUIBinding, fence: AppleVoiceSessionFence) async -> Bool {
         endCount += 1
         endFences.append(fence)
@@ -2493,7 +2344,7 @@ final class FakeVoiceMedia: AppleVoiceMediaClient {
     var holdNextConnect = false
     private var connectContinuation: CheckedContinuation<Void, Never>?
 
-    func connect(_ grant: AppleLiveKitGrant) async throws {
+    func connect(_ grant: AppleVoiceRetiredGrant) async throws {
         connectCount += 1
         if holdNextConnect {
             holdNextConnect = false

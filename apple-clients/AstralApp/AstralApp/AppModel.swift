@@ -262,10 +262,18 @@ final class AppModel: NSObject {
     let redirectURI = AstralConfig.redirectURI
     let voiceDeviceId: String
     @ObservationIgnored let voice: AppleVoiceSessionController
+    @ObservationIgnored let onDeviceVoice: OnDeviceVoiceController
+    #if os(iOS)
+        @ObservationIgnored let watchVoice: PairedWatchVoiceRelay
+        @ObservationIgnored let meshPush: MeshPushCoordinator
+    #endif
 
     var signedIn = false {
         didSet {
-            if oldValue && !signedIn { cancelChatDeletion() }
+            if oldValue && !signedIn {
+                cancelChatDeletion()
+                onDeviceVoice.disconnect()
+            }
             #if os(macOS)
                 if oldValue != signedIn {
                     syncMacNotificationBadge()
@@ -594,7 +602,7 @@ final class AppModel: NSObject {
     @ObservationIgnored private var bootstrapRun: BootstrapRun?
     @ObservationIgnored private var serverCustodyRequired = false
     @ObservationIgnored var serverSessionStorage: any MeshKeyStorage = KeychainMeshKeyStorage(
-        service: "com.personalailabs.astraldeep.server-session")
+        service: KeychainServices.name("server-session"))
     @ObservationIgnored var serverSessionTransport: @Sendable (URLRequest) async throws -> ServerSessionReply = {
         try await ServerSessionHTTP.request($0)
     }
@@ -735,6 +743,7 @@ final class AppModel: NSObject {
         defaults: UserDefaults = .standard,
         webSocket: WSClient? = nil,
         voiceController: AppleVoiceSessionController? = nil,
+        onDeviceVoiceController: OnDeviceVoiceController? = nil,
         credentialClock: @escaping @Sendable () -> Date = { Date() },
         computerHost: LocalComputerHost? = nil,
         processActivity: (any ProcessActivityScheduling)? = nil
@@ -746,6 +755,13 @@ final class AppModel: NSObject {
             macBrowser = MacBrowserDriver(host: host, defaults: defaults)
         #endif
         self.voice = voiceController ?? AppleVoiceSessionController()
+        let localVoice = onDeviceVoiceController ?? OnDeviceVoiceController()
+        self.onDeviceVoice = localVoice
+        #if os(iOS)
+            self.watchVoice = PairedWatchVoiceRelay(controller: localVoice, channel: WatchOverrideSync.shared)
+            self.meshPush = MeshPushCoordinator(
+                rest: AstralConfig.meshPushPublisherURL.flatMap { MeshPushRest(publisherURL: $0) })
+        #endif
         self.store = tokenStore
         if tokenStore is InMemoryTokenStore {
             meshKeyStorage = InMemoryMeshKeyStorage()
@@ -820,15 +836,16 @@ final class AppModel: NSObject {
             else { return nil }
             return CanvasCaptureScope(owner: self.downloadOwner, server: self.serverBase, chat: chat)
         }
-        voice.setFrameSender { [weak self] text in
-            self?.sendVoiceWire(text) ?? false
-        }
-        voice.setChatAdopter { [weak self] chatId in
-            self?.adoptChat(chatId)
-            return self?.refreshActiveChat()
-        }
         #if os(iOS)
             configurePushNotifications()
+            meshPush.configure(
+                credential: { [weak self] in
+                    guard let self, self.signedIn, let access = await self.freshAccessToken(),
+                        self.signedIn, self.tokens?.accessToken == access,
+                        let owner = self.tokens?.conversationAccount
+                    else { return nil }
+                    return MeshPushCredential(owner: owner, access: access)
+                }, requestToken: { [weak self] enabled in self?.pushNotifications?.setMeshRegistrationDemand(enabled) })
             WatchOverrideSync.shared.activate()
             if !storedBase.isEmpty { WatchOverrideSync.shared.push(serverBaseText) }
         #else
@@ -878,8 +895,12 @@ final class AppModel: NSObject {
                 }
                 return true
             }
+            service.setMeshRegistrationListeners(
+                token: { [weak self] in self?.meshPush.receivedToken($0) },
+                failure: { [weak self] in self?.meshPush.registrationFailed() })
             service.start()
             pushNotifications = service
+            meshPush.authenticationChanged()
             trackPushConnection()
         }
 
@@ -2316,6 +2337,7 @@ final class AppModel: NSObject {
         }
         signedIn = true
         #if os(iOS)
+            meshPush.authenticationChanged()
             if let access = tokens?.accessToken { pushNotifications?.ownerAuthenticated(access: access) }
             if pushNotifications?.shouldOfferPermissionRequest() == true {
                 pushNotifications?.requestAuthorizationIfNeeded()
@@ -2381,6 +2403,9 @@ final class AppModel: NSObject {
         screen = .chat
         store.wipe()
         tokens = nil
+        #if os(iOS)
+            meshPush.authenticationChanged()
+        #endif
         conversationAccount = nil
         signedIn = false
         connected = false
@@ -2487,7 +2512,7 @@ final class AppModel: NSObject {
         #endif
         descriptor.microphonePermission = AppleVoicePermission.status
         descriptor.fullDuplex = true
-        descriptor.voiceTransport = "livekit"
+        descriptor.voiceTransport = ""
         #if os(macOS)
             descriptor.reducedMotion =
                 NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -7086,55 +7111,13 @@ final class AppModel: NSObject {
     }
 
     @discardableResult
-    func sendVoiceWire(_ text: String) -> Bool {
-        guard signedIn, connected,
-            currentConnectionVoiceSendOverride != nil || ws != nil,
-            VoiceCurrentConnectionFrame(frameText: text) != nil,
-            let frame = InboundFrame.parse(text)
-        else { return false }
-        if frame.name == "ui_event", frame.payload["action"]?.stringValue == "chat_message",
-            let submission = frame.payload["submission_id"]?.stringValue,
-            let request = frame.payload["request_generation"]?.stringValue,
-            let identity = ClientOperationIdentity(
-                submissionId: submission, requestGeneration: request),
-            let chatId = frame.payload["session_id"]?.stringValue
-        {
-            if localOperationSubmissions[submission] == nil {
-                guard
-                    continuity.connectionGeneration == nil
-                        || openConversationRequest(
-                            chatId: chatId, requestGeneration: request, purpose: .commit)
-                else { return false }
-                beginLocalOperationSubmission(
-                    identity: identity, action: "chat_message", surface: "chat",
-                    chatId: chatId)
-                let message = frame.payload["payload"]?["message"]?.stringValue ?? ""
-                if continuity.connectionGeneration == nil {
-                    appendTurn(role: "user", text: message)
-                } else {
-                    transientTurns.append(
-                        ChatTurn(
-                            id: "pending-voice-\(submission)", role: "user",
-                            text: message))
-                }
-                turnActive = true
-                workspaceStarted = true
-                consoleDashboardVisible = false
-                pendingReplace = true
-                pendingCanvas = []
-                liveOpsThisTurn = false
-            }
-        }
-        outboundTap?(text)
-        if let override = currentConnectionVoiceSendOverride {
-            override(text)
-        } else if let ws {
-            Task { _ = await ws.sendCurrentConnectionVoice(text) }
-        }
-        return true
-    }
+    func sendVoiceWire(_ text: String) -> Bool { false }
 
     func activateVoice() async {
+        if onDeviceVoice.store?.state != .installed {
+            await onDeviceVoice.activate()
+            return
+        }
         #if os(macOS)
             if needsProjectSelection() {
                 requestProjectChoice { [weak self] in Task { await self?.activateVoice() } }
@@ -7142,7 +7125,7 @@ final class AppModel: NSObject {
             }
             guard await prepareProjectChat() else { return }
         #endif
-        await voice.activate()
+        await onDeviceVoice.activate()
     }
 
     func performVoiceControl(_ action: VoiceControlAction) async {
@@ -7150,16 +7133,22 @@ final class AppModel: NSObject {
             await activateVoice()
             return
         }
-        await voice.perform(action)
+        switch action {
+        case .end, .microphone: onDeviceVoice.stop()
+        case .stopSpeech, .muteSpeech: onDeviceVoice.stop()
+        default: break
+        }
     }
 
     func voiceSceneBecameActive() {
         #if os(iOS)
             pushSceneActive = true
+            meshPush.retry()
             pushNotifications?.sceneChanged(
                 active: true, connectionGeneration: connected ? continuity.connectionGeneration : nil)
         #endif
         voice.sceneBecameActive()
+        onDeviceVoice.resume()
         reportDeviceCapabilities()
     }
 
@@ -7170,11 +7159,18 @@ final class AppModel: NSObject {
                 active: false, connectionGeneration: connected ? continuity.connectionGeneration : nil)
         #endif
         voice.sceneBecameInactive()
+        onDeviceVoice.suspend()
     }
 
-    func voiceAudioSessionInterrupted() { voice.audioSessionInterrupted() }
+    func voiceAudioSessionInterrupted() {
+        voice.audioSessionInterrupted()
+        onDeviceVoice.interruptionBegan()
+    }
 
-    func voiceAudioSessionInterruptionEnded() { voice.audioSessionInterruptionEnded() }
+    func voiceAudioSessionInterruptionEnded() {
+        voice.audioSessionInterruptionEnded()
+        onDeviceVoice.interruptionEnded()
+    }
 
     func voiceAudioRouteChanged() {
         voice.audioRouteChanged()
@@ -7183,11 +7179,20 @@ final class AppModel: NSObject {
 
     func voiceAudioEngineConfigurationChanged() { voice.audioEngineConfigurationChanged() }
 
-    func voiceSessionLocked() { voice.sessionLocked() }
+    func voiceSessionLocked() {
+        voice.sessionLocked()
+        onDeviceVoice.sessionLocked()
+    }
 
-    func voiceSessionUnlocked() { voice.sessionUnlocked() }
+    func voiceSessionUnlocked() {
+        voice.sessionUnlocked()
+        onDeviceVoice.sessionUnlocked()
+    }
 
-    func voiceApplicationWillTerminate() { voice.close() }
+    func voiceApplicationWillTerminate() {
+        voice.close()
+        onDeviceVoice.disconnect()
+    }
 
     func refineComponent(_ componentId: String, instruction: String) {
         let trimmed = instruction.trimmingCharacters(in: .whitespacesAndNewlines)

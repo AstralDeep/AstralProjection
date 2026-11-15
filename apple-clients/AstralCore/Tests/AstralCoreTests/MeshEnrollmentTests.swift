@@ -4,6 +4,7 @@
 import CryptoKit
 import Security
 import XCTest
+
 @testable import AstralCore
 
 @MainActor final class MeshEnrollmentTests: XCTestCase {

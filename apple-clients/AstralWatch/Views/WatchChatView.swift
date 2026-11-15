@@ -67,7 +67,7 @@ struct WatchChatView: View {
                 .accessibilityIdentifier(WatchAccessibility060.replay.identifier)
                 .accessibilityLabel(WatchAccessibility060.replay.name)
                 .accessibilityValue(WatchAccessibility060.replay.state)
-                .disabled(model.voiceSession != nil)
+                .disabled(model.companionVoiceActive)
                 Spacer()
                 let stopAccessibility = WatchAccessibility060.stop(
                     isSpeaking: model.speaker.isSpeaking)
@@ -83,7 +83,6 @@ struct WatchChatView: View {
                 .accessibilityIdentifier(stopAccessibility.identifier)
                 .accessibilityLabel(stopAccessibility.name)
                 .accessibilityValue(stopAccessibility.state)
-                .disabled(model.voiceSession != nil)
             }
         }
         .onDisappear { model.speaker.stop() }
@@ -244,92 +243,32 @@ struct WatchChatView: View {
 
     @ViewBuilder
     private var voiceConversationControls: some View {
-        if model.voiceComposer == nil, model.voiceTerminalNotice == nil {
-            // Gate on composer presence, not a visible control
-            Button {
-            } label: {
-                Label("Start voice conversation", systemImage: "mic.fill")
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(model.theme.palette.primary)
-            .disabled(true)
-            .accessibilityIdentifier("voice.conversation.primary")
-            .accessibilityLabel("Start voice conversation")
-            .accessibilityValue("Checking voice availability")
-        } else if model.primaryVoiceControl == nil, model.voiceComposer != nil, model.showsVoiceStatus {
-            Text(model.voiceStatusLabel)
-                .font(ConsoleTypography.caption2)
-                .foregroundStyle(.secondary)
-                .accessibilityIdentifier("voice.conversation.state")
-                .accessibilityLabel("Voice conversation")
-                .accessibilityValue(model.voiceStatusLabel)
+        let active = model.companionVoiceActive
+        Button {
+            model.performPrimaryVoiceAction()
+        } label: {
+            Label(active ? "Stop voice" : "Start voice on iPhone", systemImage: active ? "stop.fill" : "mic.fill")
+                .lineLimit(2)
+                .frame(maxWidth: .infinity)
         }
-        if let primary = model.primaryVoiceControl {
-            Button {
-                model.performPrimaryVoiceAction()
-            } label: {
-                Label(primary.label, systemImage: voiceIcon(primary.icon))
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity)
+        .buttonStyle(.borderedProminent)
+        .tint(active ? model.theme.palette.warning : model.theme.palette.primary)
+        .accessibilityIdentifier("voice.conversation.primary")
+        .accessibilityLabel(active ? "Stop voice" : "Start voice on iPhone")
+        .accessibilityValue(model.voiceStatusLabel)
+        if active || model.voiceMessage != nil {
+            HStack(spacing: 4) {
+                if model.voiceActivationBusy { ProgressView().controlSize(.mini) }
+                Text(model.voiceStatusLabel).font(ConsoleTypography.caption2).foregroundStyle(.secondary)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(model.voiceState.active ? model.theme.palette.warning : model.theme.palette.primary)
-            .disabled(!primary.enabled || primary.busy || model.voiceActivationBusy)
-            .accessibilityIdentifier("voice.conversation.primary")
-            .accessibilityLabel(primary.label)
+            .accessibilityElement(children: .ignore)
+            .accessibilityIdentifier("voice.conversation.state")
+            .accessibilityLabel("Voice conversation")
             .accessibilityValue(model.voiceStatusLabel)
-
-            if model.voiceState.active || model.voiceState == .suspended {
-                HStack(spacing: 4) {
-                    ForEach(
-                        model.visibleVoiceControls.filter {
-                            [
-                                "voice_microphone_set", "voice_speech_stop",
-                                "voice_speech_mute_set", "voice_visible_chat_update",
-                                "voice_sensitive_recap_request",
-                            ].contains($0.action)
-                        },
-                        id: \.key
-                    ) { control in
-                        Button {
-                            model.performVoiceAction(control.action)
-                        } label: {
-                            Image(systemName: voiceIcon(control.icon))
-                        }
-                        .disabled(!control.enabled || control.busy)
-                        .accessibilityIdentifier("voice.conversation.\(control.key)")
-                        .accessibilityLabel(control.label)
-                        .accessibilityValue(control.pressed ? "On" : "Off")
-                    }
-                }
-            }
-
-            if model.showsVoiceStatus {
-                HStack(spacing: 4) {
-                    if [.connecting, .speechDetected, .transcribing, .processing, .reconnecting]
-                        .contains(model.voiceState)
-                    {
-                        ProgressView().controlSize(.mini)
-                    }
-                    Text(model.voiceStatusLabel)
-                        .font(ConsoleTypography.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                .accessibilityElement(children: .ignore)
-                .accessibilityIdentifier("voice.conversation.state")
-                .accessibilityLabel("Voice conversation")
-                .accessibilityValue(model.voiceStatusLabel)
-            }
-
-            if let partial = model.voicePartialTranscript, !partial.isEmpty {
-                Text(partial)
-                    .font(ConsoleTypography.caption2)
-                    .italic()
-                    .lineLimit(3)
-                    .accessibilityLabel("Voice transcript: \(partial)")
-            }
+        }
+        if let partial = model.voicePartialTranscript, !partial.isEmpty {
+            Text(partial).font(ConsoleTypography.caption2).italic().lineLimit(3)
+                .accessibilityLabel("Voice transcript: \(partial)")
         }
     }
 

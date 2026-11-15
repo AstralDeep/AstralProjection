@@ -1,4 +1,4 @@
-"""Tests binding the Work fixtures (backend/rote/work.py,
+"""Tests binding the Work fixtures (rote/work.py,
 src/astralprojection/chrome/work.py) to their shared builders: exact frame shapes,
 save-command bodies, recurring-work outcomes, and which surfaces are menu-reachable.
 """

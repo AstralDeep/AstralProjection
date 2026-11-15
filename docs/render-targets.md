@@ -18,7 +18,7 @@ each is registered and selected, what it produces, and which clients consume it.
   `1`, `true`, `yes` or `on`. With the flag on it uses the profile's
   `render_target` when that names a registered target, then `voice` for a
   profile whose `device_type` is `voice`, and otherwise `web`. The ROTE
-  `DeviceProfile` ([`capabilities.py`](../backend/rote/capabilities.py)) has no
+  `DeviceProfile` (`rote/capabilities.py` in `astral-rote`) has no
   `render_target` field, so only a caller-supplied object can name one.
 - The host (AstralDeep) calls `render_for_target(target_for_profile(profile), ...)`
   for non-canvas UI frames and streamed chunks and puts the result in the

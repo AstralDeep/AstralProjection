@@ -1,5 +1,5 @@
 """Tests confirming the welcome container's metadata survives real mobile HTML rendering
-(backend/rote/adapter.py, backend/webrender/renderer.py) with one escaped wrapper and
+(rote/adapter.py, backend/webrender/renderer.py) with one escaped wrapper and
 no event-dispatch attributes.
 """
 

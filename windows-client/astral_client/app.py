@@ -3388,7 +3388,7 @@ class MainWindow(QMainWindow):
             self._retire_work_read()
 
     def _request_work_continuity(self, payload: dict) -> bool:
-        from astralprojection.work_continuity import validate_continuity_payload
+        from rote.work_continuity import validate_continuity_payload
 
         dialog = self._surface_dialog
         current = (self.client, getattr(self.client, "connection_generation", None), self._resume_store.storage_key)

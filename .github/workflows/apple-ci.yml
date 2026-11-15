@@ -32,6 +32,7 @@ jobs:
     outputs:
       android: ${{ steps.classify.outputs.android }}
       apple: ${{ steps.classify.outputs.apple }}
+      kernel_commit: ${{ steps.kernel_pin.outputs.commit }}
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
@@ -45,6 +46,125 @@ jobs:
         run: >-
           python3 scripts/ci_lanes.py --base "$BASE_SHA" --head "$HEAD_SHA"
           --output build/ci/native-lanes.json --github-output "$GITHUB_OUTPUT"
+      - name: Resolve the immutable Kernel source pin
+        id: kernel_pin
+        run: |
+          python3 - <<'PIN'
+          import json, os, re
+          from pathlib import Path
+          commit = json.loads(Path("apple-clients/NodePack/pins.json").read_text())["kernel"]["commit"]
+          assert isinstance(commit, str) and re.fullmatch(r"[0-9a-f]{40}", commit)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"commit={commit}\n")
+          PIN
+
+  kernel-slices:
+    needs: [changes]
+    if: needs.changes.outputs.apple == 'true'
+    name: Build Kernel ${{ matrix.target }}
+    runs-on: macos-26
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-apple-darwin
+          - x86_64-apple-darwin
+          - aarch64-apple-ios
+          - aarch64-apple-ios-sim
+          - x86_64-apple-ios
+    steps:
+      - name: Check out candidate
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Check out pinned Kernel source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: AstralDeep/AstralKernel
+          ref: ${{ needs.changes.outputs.kernel_commit }}
+          path: build/kernel-source
+          persist-credentials: false
+      - name: Select exact Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          selected=""
+          for candidate in /Applications/Xcode_26.6.app /Applications/Xcode_26.6*.app /Applications/Xcode.app; do
+            [[ -d "$candidate" ]] || continue
+            if [[ "$("$candidate/Contents/Developer/usr/bin/xcodebuild" -version | sed -n '1p')" == "Xcode ${XCODE_VERSION}" ]] && \
+               [[ "$("$candidate/Contents/Developer/usr/bin/xcodebuild" -version | sed -n '2p')" == "Build version ${XCODE_BUILD}" ]]; then
+              selected="$candidate"
+              break
+            fi
+          done
+          [[ -n "$selected" ]] || { echo "Xcode ${XCODE_VERSION} (${XCODE_BUILD}) is required" >&2; exit 1; }
+          sudo xcode-select --switch "$selected/Contents/Developer"
+          [[ "$(xcodebuild -version | sed -n '1p')" == "Xcode ${XCODE_VERSION}" ]]
+          [[ "$(xcodebuild -version | sed -n '2p')" == "Build version ${XCODE_BUILD}" ]]
+      - name: Build one source-bound Apple library target
+        env:
+          TARGET: ${{ matrix.target }}
+          EXPECTED_KERNEL: ${{ needs.changes.outputs.kernel_commit }}
+        run: |
+          set -euo pipefail
+          test "$(git -C build/kernel-source rev-parse HEAD)" = "$EXPECTED_KERNEL"
+          bash build/kernel-source/scripts/build-apple-target.sh --target "$TARGET" --out "$PWD/build/kernel-slices/$TARGET"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kernel-slice-${{ matrix.target }}
+          path: build/kernel-slices/
+          if-no-files-found: error
+          retention-days: 1
+
+  kernel-apple:
+    needs: [changes, kernel-slices]
+    if: needs.changes.outputs.apple == 'true'
+    name: Assemble and verify Apple Kernel artifacts
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - name: Check out candidate
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Check out pinned Kernel source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: AstralDeep/AstralKernel
+          ref: ${{ needs.changes.outputs.kernel_commit }}
+          path: build/kernel-source
+          persist-credentials: false
+      - name: Select exact Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          selected=""
+          for candidate in /Applications/Xcode_26.6.app /Applications/Xcode_26.6*.app /Applications/Xcode.app; do
+            [[ -d "$candidate" ]] || continue
+            if [[ "$("$candidate/Contents/Developer/usr/bin/xcodebuild" -version | sed -n '1p')" == "Xcode ${XCODE_VERSION}" ]] && \
+               [[ "$("$candidate/Contents/Developer/usr/bin/xcodebuild" -version | sed -n '2p')" == "Build version ${XCODE_BUILD}" ]]; then
+              selected="$candidate"
+              break
+            fi
+          done
+          [[ -n "$selected" ]] || { echo "Xcode ${XCODE_VERSION} (${XCODE_BUILD}) is required" >&2; exit 1; }
+          sudo xcode-select --switch "$selected/Contents/Developer"
+          [[ "$(xcodebuild -version | sed -n '1p')" == "Xcode ${XCODE_VERSION}" ]]
+          [[ "$(xcodebuild -version | sed -n '2p')" == "Build version ${XCODE_BUILD}" ]]
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: kernel-slice-*
+          merge-multiple: true
+          path: build/kernel-slices
+      - name: Assemble the five verified slices and record consumer identity
+        run: |
+          set -euo pipefail
+          bash build/kernel-source/scripts/assemble-apple.sh --input "$PWD/build/kernel-slices" --out "$PWD/apple-clients/AstralKernel/Artifacts"
+          python3 scripts/ci_kernel_apple.py record --repo "$PWD" --kernel-source "$PWD/build/kernel-source" --artifacts "$PWD/apple-clients/AstralKernel/Artifacts"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: apple-kernel-artifacts
+          path: apple-clients/AstralKernel/Artifacts/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
 
   swift-lint:
     needs: [changes]
@@ -277,7 +397,7 @@ jobs:
           fi
 
   app-unit-tests:
-    needs: [changes]
+    needs: [changes, kernel-apple]
     if: needs.changes.outputs.apple == 'true'
     name: Required · ${{ matrix.name }} app continuity/unit coverage
     runs-on: macos-26
@@ -312,6 +432,13 @@ jobs:
           sudo xcode-select --switch "$selected/Contents/Developer"
           [[ "$(xcodebuild -version | sed -n '1p')" == "Xcode ${XCODE_VERSION}" ]]
           [[ "$(xcodebuild -version | sed -n '2p')" == "Build version ${XCODE_BUILD}" ]]
+      - name: Download the same-run Kernel artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: apple-kernel-artifacts
+          path: apple-clients/AstralKernel/Artifacts
+      - name: Verify Kernel source, toolchain and complete payloads
+        run: python3 scripts/ci_kernel_apple.py verify --repo "$PWD" --artifacts "$PWD/apple-clients/AstralKernel/Artifacts"
       - name: Require the supported iOS runtime
         if: matrix.slug == 'ios'
         shell: bash
@@ -424,7 +551,7 @@ jobs:
           fi
 
   swift-package-prewarm:
-    needs: [changes]
+    needs: [changes, kernel-apple]
     if: needs.changes.outputs.apple == 'true'
     name: Required · prewarm pinned app Swift packages
     runs-on: macos-26
@@ -449,6 +576,13 @@ jobs:
           sudo xcode-select --switch "$selected/Contents/Developer"
           [[ "$(xcodebuild -version | sed -n '1p')" == "Xcode ${XCODE_VERSION}" ]]
           [[ "$(xcodebuild -version | sed -n '2p')" == "Build version ${XCODE_BUILD}" ]]
+      - name: Download the same-run Kernel artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: apple-kernel-artifacts
+          path: apple-clients/AstralKernel/Artifacts
+      - name: Verify Kernel source, toolchain and complete payloads
+        run: python3 scripts/ci_kernel_apple.py verify --repo "$PWD" --artifacts "$PWD/apple-clients/AstralKernel/Artifacts"
       - name: Restore or save pinned Swift package clones
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -466,7 +600,7 @@ jobs:
             -skipPackageUpdates
 
   ios-ui-build:
-    needs: [changes, swift-package-prewarm]
+    needs: [changes, swift-package-prewarm, kernel-apple]
     if: needs.changes.outputs.apple == 'true'
     name: Required · build iOS UI test Products once
     runs-on: macos-26
@@ -491,6 +625,13 @@ jobs:
           sudo xcode-select --switch "$selected/Contents/Developer"
           [[ "$(xcodebuild -version | sed -n '1p')" == "Xcode ${XCODE_VERSION}" ]]
           [[ "$(xcodebuild -version | sed -n '2p')" == "Build version ${XCODE_BUILD}" ]]
+      - name: Download the same-run Kernel artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: apple-kernel-artifacts
+          path: apple-clients/AstralKernel/Artifacts
+      - name: Verify Kernel source, toolchain and complete payloads
+        run: python3 scripts/ci_kernel_apple.py verify --repo "$PWD" --artifacts "$PWD/apple-clients/AstralKernel/Artifacts"
       - name: Restore pinned Swift package clones
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -539,7 +680,7 @@ jobs:
           retention-days: 1
 
   first-login-ui:
-    needs: [changes, swift-package-prewarm, ios-ui-build]
+    needs: [changes, swift-package-prewarm, ios-ui-build, kernel-apple]
     if: needs.changes.outputs.apple == 'true'
     name: Required · ${{ matrix.name }} first-login and voice UI
     runs-on: macos-26
@@ -592,6 +733,13 @@ jobs:
           sudo xcode-select --switch "$selected/Contents/Developer"
           [[ "$(xcodebuild -version | sed -n '1p')" == "Xcode ${XCODE_VERSION}" ]]
           [[ "$(xcodebuild -version | sed -n '2p')" == "Build version ${XCODE_BUILD}" ]]
+      - name: Download the same-run Kernel artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: apple-kernel-artifacts
+          path: apple-clients/AstralKernel/Artifacts
+      - name: Verify Kernel source, toolchain and complete payloads
+        run: python3 scripts/ci_kernel_apple.py verify --repo "$PWD" --artifacts "$PWD/apple-clients/AstralKernel/Artifacts"
       - name: Restore pinned Swift package clones
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -770,7 +918,7 @@ jobs:
           fi
 
   watch-continuity:
-    needs: [changes]
+    needs: [changes, kernel-apple]
     if: needs.changes.outputs.apple == 'true'
     name: Required · watchOS 26.5 continuity coverage
     runs-on: macos-26
@@ -795,6 +943,13 @@ jobs:
           sudo xcode-select --switch "$selected/Contents/Developer"
           [[ "$(xcodebuild -version | sed -n '1p')" == "Xcode ${XCODE_VERSION}" ]]
           [[ "$(xcodebuild -version | sed -n '2p')" == "Build version ${XCODE_BUILD}" ]]
+      - name: Download the same-run Kernel artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: apple-kernel-artifacts
+          path: apple-clients/AstralKernel/Artifacts
+      - name: Verify Kernel source, toolchain and complete payloads
+        run: python3 scripts/ci_kernel_apple.py verify --repo "$PWD" --artifacts "$PWD/apple-clients/AstralKernel/Artifacts"
       - name: Provision a dedicated watchOS simulator
         id: watch_sim
         shell: bash
@@ -904,6 +1059,8 @@ jobs:
       - ios-ui-build
       - first-login-ui
       - watch-continuity
+      - kernel-slices
+      - kernel-apple
     steps:
       - name: Check out candidate for source-bound coverage union
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -912,7 +1069,7 @@ jobs:
         run: |
           [[ '${{ needs.changes.result }}' == 'success' ]]
           python3 scripts/ci_lanes.py --applicable '${{ needs.changes.outputs.apple }}' \
-            --results '${{ needs.swift-lint.result }}' '${{ needs.core-tests.result }}' '${{ needs.core-ios-tests.result }}' '${{ needs.app-unit-tests.result }}' '${{ needs.ios-ui-build.result }}' '${{ needs.first-login-ui.result }}' '${{ needs.watch-continuity.result }}' >> "$GITHUB_STEP_SUMMARY"
+            --results '${{ needs.swift-lint.result }}' '${{ needs.core-tests.result }}' '${{ needs.core-ios-tests.result }}' '${{ needs.app-unit-tests.result }}' '${{ needs.ios-ui-build.result }}' '${{ needs.first-login-ui.result }}' '${{ needs.watch-continuity.result }}' '${{ needs.kernel-slices.result }}' '${{ needs.kernel-apple.result }}' >> "$GITHUB_STEP_SUMMARY"
       # `needs.<matrix-job>.result` can report the result of only one matrix
       # child. Requiring one current-run artifact from every child prevents a
       # later successful sibling from hiding a failed platform.
@@ -1037,3 +1194,5 @@ jobs:
           [[ '${{ needs.ios-ui-build.result }}' == 'success' ]]
           [[ '${{ needs.first-login-ui.result }}' == 'success' ]]
           [[ '${{ needs.watch-continuity.result }}' == 'success' ]]
+          [[ '${{ needs.kernel-slices.result }}' == 'success' ]]
+          [[ '${{ needs.kernel-apple.result }}' == 'success' ]]

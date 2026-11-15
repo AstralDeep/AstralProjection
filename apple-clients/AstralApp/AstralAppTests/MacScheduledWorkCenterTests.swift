@@ -33,9 +33,17 @@
                         accessToken: "fixture." + PKCE.base64url(try claims.encoded()) + ".signature",
                         refreshToken: nil, expiresIn: 3600)))
             defaults.set("https://server.example.test", forKey: "serverBase")
-            let model = AppModel(tokenStore: tokenStore, defaults: defaults)
+            let peer = try WorkModelPeer()
+            peer.start()
+            addTeardownBlock { peer.stop() }
+            await fulfillment(of: [peer.ready], timeout: 10)
+            let port = try XCTUnwrap(peer.listener.port).rawValue
+            let socket = WSClient(url: URL(string: "ws://127.0.0.1:\(port)/ws")!)
+            let model = AppModel(tokenStore: tokenStore, defaults: defaults, webSocket: socket)
             await model.bootstrap()
-            model.connected = true
+            let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+            while !model.connected, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(5)) }
+            XCTAssertTrue(model.connected)
             return model
         }
 

@@ -18,6 +18,27 @@
             return event
         }
 
+        private func mouse(_ type: CGEventType, at point: CGPoint, button: CGMouseButton = .left) throws -> CGEvent {
+            let source = try XCTUnwrap(CGEventSource(stateID: .hidSystemState))
+            let event = try XCTUnwrap(
+                CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: point, mouseButton: button))
+            event.setIntegerValueField(.eventSourceUnixProcessID, value: 0)
+            event.setIntegerValueField(.eventSourceStateID, value: 1)
+            event.setIntegerValueField(.eventSourceUserData, value: 0)
+            return event
+        }
+
+        private func scroll() throws -> CGEvent {
+            let source = try XCTUnwrap(CGEventSource(stateID: .hidSystemState))
+            let event = try XCTUnwrap(
+                CGEvent(
+                    scrollWheelEvent2Source: source, units: .line, wheelCount: 1, wheel1: 2, wheel2: 0, wheel3: 0))
+            event.setIntegerValueField(.eventSourceUnixProcessID, value: 0)
+            event.setIntegerValueField(.eventSourceStateID, value: 1)
+            event.setIntegerValueField(.eventSourceUserData, value: 0)
+            return event
+        }
+
         func testRegisteredLocalHardwareProofIsFreshAndConsumedOnce() throws {
             let monitors = MacComputerTestMonitors()
             let input = MacComputerLocalInput(marker: 30, monitors: monitors)
@@ -79,17 +100,10 @@
                 let kinds: [CGEvent] = [
                     try event(),
                     try XCTUnwrap(
-                        CGEvent(
-                            mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: .zero,
-                            mouseButton: .left)),
+                        mouse(.leftMouseDown, at: .zero)),
                     try XCTUnwrap(
-                        CGEvent(
-                            mouseEventSource: nil, mouseType: .rightMouseDown, mouseCursorPosition: .zero,
-                            mouseButton: .right)),
-                    try XCTUnwrap(
-                        CGEvent(
-                            scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: 2, wheel2: 0,
-                            wheel3: 0)),
+                        mouse(.rightMouseDown, at: .zero, button: .right)),
+                    try scroll(),
                 ]
                 for kind in kinds {
                     let monitors = MacComputerTestMonitors()
@@ -97,7 +111,8 @@
                     let current = MacComputerTestFrontmost()
                     let monitor = MacComputerInputMonitor(
                         marker: 30, monitors: monitors, frontmost: { current.bundle },
-                        hostBundle: "com.personalailabs.astraldeep", schedule: scheduler.schedule)
+                        hostBundle: "com.personalailabs.astraldeep", pointerOverHost: { false },
+                        schedule: scheduler.schedule)
                     var takeovers = 0
                     XCTAssertTrue(monitor.start { takeovers += 1 })
                     monitors.emitGlobal(try XCTUnwrap(NSEvent(cgEvent: kind)))
@@ -115,9 +130,7 @@
                 try XCTUnwrap(
                     NSEvent(
                         cgEvent: XCTUnwrap(
-                            CGEvent(
-                                mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: CGPoint(x: x, y: y),
-                                mouseButton: .left))))
+                            mouse(.mouseMoved, at: CGPoint(x: x, y: y)))))
             }
             let monitors = MacComputerTestMonitors()
             let scheduler = MacComputerTestScheduler()
@@ -147,9 +160,7 @@
             scheduler.runAll()
             XCTAssertEqual(takeovers, 1)
             let marked = try XCTUnwrap(
-                CGEvent(
-                    mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: CGPoint(x: 900, y: 900),
-                    mouseButton: .left))
+                mouse(.mouseMoved, at: CGPoint(x: 900, y: 900)))
             marked.setIntegerValueField(.eventSourceUserData, value: 30)
             monitors.uptime = 11.05
             monitors.emitGlobal(try XCTUnwrap(NSEvent(cgEvent: marked)))
@@ -168,8 +179,7 @@
             XCTAssertTrue(monitor.start { takeovers += 1 })
             defer { monitor.stop() }
             let click = try XCTUnwrap(
-                CGEvent(
-                    mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: .zero, mouseButton: .left))
+                mouse(.leftMouseDown, at: .zero))
             monitors.emitGlobal(try XCTUnwrap(NSEvent(cgEvent: click)))
             for x in [0.0, 30, 60] {
                 monitors.uptime += 0.05
@@ -177,9 +187,7 @@
                     try XCTUnwrap(
                         NSEvent(
                             cgEvent: XCTUnwrap(
-                                CGEvent(
-                                    mouseEventSource: nil, mouseType: .mouseMoved,
-                                    mouseCursorPosition: CGPoint(x: x, y: 0), mouseButton: .left)))))
+                                mouse(.mouseMoved, at: CGPoint(x: x, y: 0))))))
             }
             scheduler.runAll()
             XCTAssertEqual(takeovers, 0)

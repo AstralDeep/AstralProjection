@@ -43,7 +43,6 @@ def test_native_failures_and_skips_do_not_authorize():
 def test_shared_changes_require_every_native_lane():
     for path in (
         "contracts/ui_protocol.json",
-        "backend/rote/adapter.py",
         "backend/webrender/chrome/menu_model.py",
         "backend/webrender/chrome/console_model.py",
         "tooling/python-ci/requirements.lock.txt",

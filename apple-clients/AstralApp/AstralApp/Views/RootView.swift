@@ -2,6 +2,7 @@
 // Shared identity and machine-local controls remain separate from generated workspace content.
 
 import AstralCore
+import AstralKernel
 import SwiftUI
 
 #if os(macOS)
@@ -17,6 +18,7 @@ struct RootView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var viewportWidth: CGFloat = 1024
+    @State private var voiceSetupStart: (@MainActor () -> Void)?
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
@@ -83,6 +85,30 @@ struct RootView: View {
         .background(p.bg.ignoresSafeArea())
         .background(viewportReporter)
         .onChange(of: reduceMotion) { _, _ in model.reportDeviceCapabilities() }
+        .sheet(
+            isPresented: Binding(
+                get: { model.onDeviceVoice.showingSetup },
+                set: { model.onDeviceVoice.showingSetup = $0 }),
+            onDismiss: {
+                let start = voiceSetupStart
+                voiceSetupStart = nil
+                start?()
+            },
+            content: {
+                VoiceModelSetupView(controller: model.onDeviceVoice) {
+                    let owner = model.downloadOwner
+                    let chat = model.activeChatId
+                    voiceSetupStart = { [model] in
+                        Task {
+                            guard model.signedIn, model.downloadOwner == owner, model.activeChatId == chat else {
+                                return
+                            }
+                            await model.activateVoice()
+                        }
+                    }
+                    model.onDeviceVoice.showingSetup = false
+                }
+            })
     }
 
     private var legacyShell: some View {
@@ -338,6 +364,8 @@ struct AstralTopBar: View {
             if !model.accountName.isEmpty {
                 Text(model.accountName)
             }
+            PersonalMeshModeButton()
+            Text("Kernel \(AstralKernelInfo.version)").accessibilityIdentifier("settings-kernel-version")
             Button(role: .destructive) {
                 Task { await model.signOut() }
             } label: {
@@ -499,6 +527,7 @@ struct BannerBar: View {
 struct SignInView: View {
     @Environment(AppModel.self) var model
     @Environment(ThemeStore.self) var theme
+    @Environment(AppModeStore.self) private var modeStore: AppModeStore?
 
     var body: some View {
         VStack(spacing: 28) {
@@ -518,6 +547,12 @@ struct SignInView: View {
             }
             .buttonStyle(.borderedProminent)
             .accessibilityLabel("Sign in with single sign-on")
+            if let modeStore {
+                Button("Use a personal mesh instead") { modeStore.choose(.mesh) }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(theme.palette.accent)
+                    .accessibilityIdentifier("signin.personal-mesh")
+            }
             if let error = model.signInError {
                 Text(error).font(ConsoleTypography.footnote).foregroundStyle(theme.palette.error)
                     .multilineTextAlignment(.center)

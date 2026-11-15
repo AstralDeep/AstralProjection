@@ -1,0 +1,7 @@
+{
+  "format": "astral.presentation-sources/v1",
+  "deep": {
+    "repository": "https://github.com/AstralDeep/AstralDeep.git",
+    "commit": "f8fd34175a67bddec91b39445567e73ffc50f5c7"
+  }
+}

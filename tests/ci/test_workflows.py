@@ -85,10 +85,10 @@ def _assert_core_trigger_and_python_coverage(text: str) -> None:
     assert "fetch-depth: 0" in python
     assert "mkdir -p build/074/coverage" in python
     assert (
-        "pytest -q -p no:cacheprovider "
-        "--cov=astralprojection --cov=rote --cov=webrender "
-        "--cov=scripts.merge_xccov_line_coverage --cov=scripts.build_offline_assets "
-        "--cov=scripts.build_native_export --cov=scripts.android_coverage --cov=scripts.native_xccov_domain --cov=scripts.collect_xccov_native_domain --cov=scripts.export_xccov_line_coverage --cov=scripts.check_changed_coverage --cov=scripts.ci_review_diagnostics --cov=scripts.ci_lanes --cov=scripts.ci_apple_ui_products --cov=scripts.ci_retry_diagnostics --cov=scripts.check_regression_effectiveness --cov=scripts.swift_inactive_input --cov-branch "
+        "pytest tests apple-clients/NodePack/tests -q -p no:cacheprovider "
+        "--cov=astralprojection --cov=webrender --cov=assemble_pack --cov=local_sources --cov=pack_manifest --cov=package_kernel_wheel --cov=pins --cov=astral_node_launch --cov=node_logging "
+        "--cov=scripts.install_presentation_components --cov=scripts.merge_xccov_line_coverage --cov=scripts.build_offline_assets "
+        "--cov=scripts.build_native_export --cov=scripts.android_coverage --cov=scripts.native_xccov_domain --cov=scripts.collect_xccov_native_domain --cov=scripts.export_xccov_line_coverage --cov=scripts.check_changed_coverage --cov=scripts.ci_review_diagnostics --cov=scripts.ci_lanes --cov=scripts.ci_apple_ui_products --cov=scripts.ci_kernel_apple --cov=scripts.ci_retry_diagnostics --cov=scripts.check_regression_effectiveness --cov=scripts.swift_inactive_input --cov-branch --cov-append "
         "--cov-report=xml:build/074/coverage/projection-python.xml"
     ) in python
     assert "run: python scripts/check_regression_effectiveness.py" in _step_block(
@@ -166,7 +166,7 @@ def test_public_offline_worker_has_measured_ci_and_real_browser_gates() -> None:
 _PWSH_EXIT_CHECK = "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"
 _WINDOWS_NATIVE_COMMANDS = ("python ", "dotnet ", "diff-cover ")
 _WINDOWS_RELEASE_INSTALL = (
-    "python -m pip install --require-hashes -r windows-client/requirements-release.lock.txt"
+    "uses: ./.github/actions/presentation"
 )
 _WINDOWS_TOOLING_INSTALL = (
     "python -m pip install --require-hashes -r tooling/python-ci/requirements.lock.txt"
@@ -480,7 +480,7 @@ def _assert_apple_platform_contract(apple: str) -> None:
     assert "-resolvePackageDependencies" in package_prewarm
     assert "-onlyUsePackageVersionsFromResolvedFile" in package_prewarm
     assert "-skipPackageUpdates" in package_prewarm
-    assert "needs: [changes, swift-package-prewarm, ios-ui-build]" in first_login
+    assert "needs: [changes, swift-package-prewarm, ios-ui-build, kernel-apple]" in first_login
     assert first_login.count(cache_action) == 1
     assert first_login.count(package_cache_key) == 1
     assert "fail-on-cache-miss: true" in first_login
@@ -703,7 +703,7 @@ def test_core_ci_runs_qualified_owner_gates() -> None:
 def test_python_ci_invokes_pytest_as_a_module_for_top_level_scripts() -> None:
     python = _job_block((ACTIVE / "ci.yml").read_text(encoding="utf-8"), "python")
 
-    assert "python -m pytest -q -p no:cacheprovider" in python
+    assert "python -m pytest tests apple-clients/NodePack/tests -q -p no:cacheprovider" in python
 
 
 def test_frozen_windows_smoke_retry_keeps_other_tests_single_run_and_fails_closed() -> None:
@@ -773,14 +773,14 @@ def test_python_owner_jobs_use_hash_locked_ci_dependencies_and_build_constraint(
     install = "python -m pip install --require-hashes -r tooling/python-ci/requirements.lock.txt"
     for job_id in ("python", "windows-tests", "windows-package"):
         job = _job_block(text, job_id)
-        assert install in job
+        assert install in job or "uses: ./.github/actions/presentation" in job
         assert "python -m pip install --no-deps --no-build-isolation ." in job
         assert ".[dev]" not in job
 
     python_job = _job_block(text, "python")
     build = "PIP_CONSTRAINT=tooling/python-ci/requirements.lock.txt python -m build --no-isolation"
     assert build in python_job
-    assert python_job.index(install) < python_job.index(build)
+    assert python_job.index("uses: ./.github/actions/presentation") < python_job.index(build)
     assert 'requires = ["setuptools==83.0.0"]' in (ROOT / "pyproject.toml").read_text(
         encoding="utf-8"
     )
@@ -1018,6 +1018,8 @@ def test_native_ci_is_active_and_uses_standalone_paths() -> None:
     }
     assert _job_ids(apple) == {
         "changes",
+        "kernel-slices",
+        "kernel-apple",
         "swift-lint",
         "core-tests",
         "core-ios-tests",
@@ -1863,7 +1865,7 @@ def test_ios_ui_build_transport_is_required_and_bound_to_the_current_run():
     consumer = _job_block(apple, "first-login-ui")
     aggregate = _job_block(apple, "apple-required")
     assert "--cov=scripts.ci_apple_ui_products" in _job_block((ACTIVE / "ci.yml").read_text(), "python")
-    assert "needs: [changes, swift-package-prewarm]" in producer
+    assert "needs: [changes, swift-package-prewarm, kernel-apple]" in producer
     assert "if: needs.changes.outputs.apple == 'true'" in producer
     assert "timeout-minutes: 20" in producer
     assert "-scheme AstralApp" in producer and "-only-testing:" not in producer

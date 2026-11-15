@@ -1,228 +1,223 @@
-// Tests for WatchVoiceBridge: the header-then-manifest ready handshake gating half-duplex playback, and
-// rejection of an unexpected ticket-bound worker before any audio plays.
+// Exercises paired phone packets through the real Watch bridge with scripted capture and actual-completion callbacks.
+// No HTTP client or platform microphone is used by these tests.
 
 import AstralCore
+@testable import AstralWatch
 import Foundation
 import XCTest
 
-@testable import AstralWatch
-
 @MainActor
 final class WatchVoiceBridge065Tests: XCTestCase {
-    private let sessionId = "00000000-0000-4000-8000-000000000101"
-    private let turnId = "00000000-0000-4000-8000-000000000102"
-    private let announcementId = "00000000-0000-4000-8000-000000000103"
-    private let worker = "voice-worker-bridge-01"
+    private let owner = CompanionVoiceOwner(issuer: "https://issuer.example", subject: "owner")!
 
-    func testReadyHandshakeUsesHeaderThenManifestGatesHalfDuplexPlayback() async throws {
+    func testReadyBindsPhoneConversationAndCaptureUsesOnlyPairedPackets() async throws {
+        let h = try await harness()
+        XCTAssertEqual(h.audio.prepared, [true])
+        XCTAssertEqual(h.bridge.companionConversation?.chatId, "phone-chat")
+        h.audio.capture?(Data(repeating: 7, count: 3_200))
+        await drain()
+        XCTAssertEqual(h.channel.sent.map(\.kind), [.start, .capture])
+        XCTAssertEqual(h.channel.sent.last?.payload.count, 3_200)
+        XCTAssertEqual(h.channel.sent.map(\.sequence), [0, 1])
+        h.bridge.disconnect(reason: "owner_stopped")
+        await drain()
+        XCTAssertEqual(h.channel.sent.last?.kind, .stop)
+        XCTAssertFalse(h.bridge.companionActive)
+    }
+
+    func testPlaybackAcknowledgesOnlyRealStartAndCompletedAudioThenResumesCapture() async throws {
+        let h = try await harness()
+        let speech = CompanionVoiceSpeech(id: UUID(), index: 0, text: "Answer", frames: 3)
+        try await h.deliver(.speechStart, speech.encoded())
+        try await h.deliver(.speechPCM, Data(repeating: 0, count: 6))
+        await drain()
+        XCTAssertEqual(h.audio.played.count, 1)
+        XCTAssertNil(h.audio.capture)
+        XCTAssertFalse(h.channel.sent.contains { $0.kind == .playbackStarted || $0.kind == .playbackFinished })
+        h.audio.started?()
+        await drain()
+        XCTAssertEqual(h.channel.sent.last?.kind, .playbackStarted)
+        XCTAssertFalse(h.channel.sent.contains { $0.kind == .playbackFinished })
+        h.audio.finished?()
+        await drain()
+        XCTAssertEqual(h.channel.sent.last?.kind, .playbackFinished)
+        XCTAssertEqual(h.channel.sent.last?.payload, Data(speech.id.uuidString.utf8))
+        XCTAssertNotNil(h.audio.capture)
+        h.audio.finished?()
+        await drain()
+        XCTAssertEqual(h.channel.sent.filter { $0.kind == .playbackFinished }.count, 1)
+        h.bridge.disconnect(reason: "test")
+    }
+
+    func testLateStopAndVolumeCannotChangeReplacementSpeech() async throws {
+        let h = try await harness()
+        let old = CompanionVoiceSpeech(id: UUID(), index: 0, text: "Old", frames: 1)
+        let next = CompanionVoiceSpeech(id: UUID(), index: 1, text: "Next", frames: 1)
+        try await h.deliver(.speechStart, old.encoded())
+        try await h.deliver(.speechPCM, Data([0, 0]))
+        let oldFinished = h.audio.finished
+        h.audio.started?()
+        oldFinished?()
+        await drain()
+        try await h.deliver(.speechStart, next.encoded())
+        try await h.deliver(.speechPCM, Data([0, 0]))
+        let stops = h.audio.playbackStops
+        try await h.deliver(.stopSpeech, Data(old.id.uuidString.utf8))
+        try await h.deliver(.volume, Data(old.id.uuidString.utf8) + Data([0]))
+        oldFinished?()
+        XCTAssertEqual(h.audio.playbackStops, stops)
+        XCTAssertEqual(h.audio.volumes.last, 1)
+        XCTAssertNil(h.audio.capture)
+        try await h.deliver(.volume, Data(next.id.uuidString.utf8) + Data([25]))
+        XCTAssertEqual(h.audio.volumes.last, 0.25)
+        h.bridge.interruptPlayback()
+        await drain()
+        XCTAssertEqual(h.channel.sent.last?.kind, .stopSpeech)
+        XCTAssertEqual(h.channel.sent.last?.payload, Data(next.id.uuidString.utf8))
+        XCTAssertNotNil(h.audio.capture)
+        h.bridge.disconnect(reason: "test")
+    }
+
+    func testWrongSessionIsRejectedButSequenceGapEndsCurrentSession() async throws {
+        let h = try await harness()
+        let foreign = try CompanionVoicePacket(kind: .stop, session: UUID(), sequence: 0, microseconds: 0)
+        do {
+            try await h.channel.onPacket?(foreign)
+            XCTFail("foreign session")
+        } catch {}
+        XCTAssertTrue(h.bridge.companionActive)
+        let gap = try CompanionVoicePacket(kind: .stop, session: h.session, sequence: 4, microseconds: 4)
+        do {
+            try await h.channel.onPacket?(gap)
+            XCTFail("sequence gap")
+        } catch {}
+        XCTAssertFalse(h.bridge.companionActive)
+        XCTAssertNil(h.audio.capture)
+    }
+
+    func testOverrunBackgroundDisconnectAndCaptureOverflowFailClosed() async throws {
+        let h = try await harness()
+        let speech = CompanionVoiceSpeech(id: UUID(), index: 0, text: "Answer", frames: 1)
+        try await h.deliver(.speechStart, speech.encoded())
+        do {
+            try await h.deliver(.speechPCM, Data(repeating: 0, count: 4))
+            XCTFail("overrun")
+        } catch {}
+        XCTAssertFalse(h.bridge.companionActive)
+        let other = try await harness()
+        other.audio.capture?(Data(repeating: 0, count: 12_802))
+        await drain()
+        XCTAssertEqual(other.bridge.state, .failed("audio_backpressure"))
+        let third = try await harness()
+        third.bridge.setForeground(false)
+        XCTAssertFalse(third.bridge.companionActive)
+        XCTAssertNil(third.audio.capture)
+        third.channel.onReachabilityChanged?(false)
+        XCTAssertFalse(third.bridge.companionActive)
+    }
+
+    func testPlaybackOnlyNeverRequestsMicrophoneAndPermissionDenialNeverStarts() async throws {
+        let h = try await harness(mode: .playback)
+        XCTAssertEqual(h.audio.permissionRequests, 0)
+        XCTAssertEqual(h.audio.prepared, [false])
+        XCTAssertNil(h.audio.capture)
+        h.bridge.interruptPlayback()
+        XCTAssertFalse(h.bridge.companionActive)
+        let channel = WatchCompanionTestChannel()
         let audio = MockWatchVoiceAudioIO()
-        let socket = MockWatchVoiceWebSocket(messages: [.string(try readyJSON())])
-        var request: URLRequest?
-        let bridge = WatchVoiceBridge(
-            audio: audio,
-            socketFactory: {
-                request = $0
-                return (nil, socket)
-            })
-        let grant = try XCTUnwrap(WatchVoiceBridgeGrant(json: grantJSON()))
-        var states: [WatchVoiceBridgeState] = []
-        var playout: [WatchVoicePlayoutPhase] = []
-
-        try await bridge.connect(
-            grant: grant,
-            onState: { states.append($0) },
-            onTranscript: { _ in XCTFail("No transcript expected") },
-            onPlayout: { playout.append($0.phase) })
-        bridge.setCaptureEnabled(true)
-
-        XCTAssertEqual(request?.value(forHTTPHeaderField: "Authorization"), "Bearer \(grant.ticket)")
-        XCTAssertNil(request?.url?.query)
-        XCTAssertEqual(states, [.connecting, .ready])
-        XCTAssertEqual(audio.startCaptureCount, 1)
-
-        socket.push(.string(try announcementJSON(worker: worker)))
-        socket.push(.data(assistantFrame(sequence: 10).encoded))
-        socket.push(.data(assistantFrame(sequence: 11).encoded))
-        try await Task.sleep(for: .milliseconds(60))
-
-        XCTAssertEqual(playout, [.started, .finished])
-        XCTAssertEqual(audio.playedPayloads.count, 2)
-        XCTAssertGreaterThanOrEqual(audio.stopCaptureCount, 1)
-        XCTAssertEqual(audio.startCaptureCount, 2, "Half-duplex capture resumes after playout")
-
-        bridge.disconnect(reason: "ended_by_user")
-        XCTAssertEqual(socket.cancelCode, .goingAway)
-        XCTAssertEqual(bridge.state, .ended)
+        audio.microphonePermission = .denied
+        let bridge = WatchVoiceBridge(audio: audio, channel: channel)
+        do {
+            try await bridge.startCompanion(
+                .init(owner: owner, mode: .conversation), onState: { _ in },
+                onTranscript: { _, _ in }, onSpeaking: { _ in })
+            XCTFail("denied microphone")
+        } catch {}
+        XCTAssertEqual(bridge.state, .failed("permission_denied"))
+        XCTAssertTrue(channel.sent.isEmpty)
     }
 
-    func testUnexpectedTicketBoundWorkerFailsBeforeAnyAudioPlayback() async throws {
+    private func harness(mode: CompanionVoiceActivation.Mode = .conversation) async throws -> WatchBridgeHarness {
+        let channel = WatchCompanionTestChannel()
         let audio = MockWatchVoiceAudioIO()
-        let socket = MockWatchVoiceWebSocket(messages: [.string(try readyJSON())])
-        let bridge = WatchVoiceBridge(
-            audio: audio,
-            socketFactory: { _ in (nil, socket) })
-        let grant = try XCTUnwrap(WatchVoiceBridgeGrant(json: grantJSON()))
-
-        try await bridge.connect(
-            grant: grant,
-            onState: { _ in },
-            onTranscript: { _ in },
-            onPlayout: { _ in })
-        socket.push(.string(try announcementJSON(worker: "voice-worker-evil")))
-        try await Task.sleep(for: .milliseconds(40))
-
-        XCTAssertEqual(bridge.state, .failed("invalid_control"))
-        XCTAssertTrue(audio.playedPayloads.isEmpty)
-        XCTAssertEqual(socket.cancelCode, .policyViolation)
+        let bridge = WatchVoiceBridge(audio: audio, channel: channel)
+        try await bridge.startCompanion(
+            .init(owner: owner, mode: mode, text: mode == .playback ? "Replay" : nil),
+            onState: { _ in }, onTranscript: { _, _ in }, onSpeaking: { _ in })
+        let session = try XCTUnwrap(channel.sent.first?.session)
+        let h = WatchBridgeHarness(channel: channel, audio: audio, bridge: bridge, session: session)
+        try await h.deliver(
+            .ready, CompanionVoiceConversation(chatId: "phone-chat", title: "Phone conversation").encoded())
+        return h
     }
 
-    private func assistantFrame(sequence: UInt64) -> WatchVoicePCMFrame {
-        WatchVoicePCMFrame(
-            kind: .assistant,
-            sequence: sequence,
-            timestampMicroseconds: sequence * 20_000,
-            payload: Data(repeating: 0x05, count: WatchVoicePCMFrame.assistantPayloadLength))!
-    }
+    private func drain() async { for _ in 0..<50 { await Task.yield() } }
+}
 
-    private func grantJSON() -> JSONValue {
-        .object([
-            "grant_id": .string("watch-grant-bridge-01"),
-            "transport": .string("watch_pcm_websocket"),
-            "session_id": .string(sessionId),
-            "generation": .number(1),
-            "media_grant_revision": .number(1),
-            "expires_at": .string(timestamp(seconds: 300)),
-            "url": .string("wss://astraldeep.example/api/voice/watch-bridge"),
-            "ticket": .string(String(repeating: "s", count: 48)),
-            "worker_identity": .string(worker),
-            "capture": profile(rate: 16_000),
-            "playback": profile(rate: 24_000),
-        ])
+@MainActor
+private final class WatchBridgeHarness {
+    let channel: WatchCompanionTestChannel
+    let audio: MockWatchVoiceAudioIO
+    let bridge: WatchVoiceBridge
+    let session: UUID
+    private var sequence: UInt64 = 0
+    init(channel: WatchCompanionTestChannel, audio: MockWatchVoiceAudioIO, bridge: WatchVoiceBridge, session: UUID) {
+        self.channel = channel
+        self.audio = audio
+        self.bridge = bridge
+        self.session = session
     }
-
-    private func readyJSON() throws -> String {
-        let value: JSONValue = .object([
-            "type": .string("bridge_ready"),
-            "schema_version": .string("1"),
-            "session_id": .string(sessionId),
-            "generation": .number(1),
-            "media_grant_revision": .number(1),
-            "worker_identity": .string(worker),
-            "capture": profile(rate: 16_000),
-            "playback": profile(rate: 24_000),
-        ])
-        return String(decoding: try value.encoded(), as: UTF8.self)
+    func deliver(_ kind: CompanionVoicePacket.Kind, _ payload: Data = Data()) async throws {
+        let packet = try CompanionVoicePacket(
+            kind: kind, session: session, sequence: sequence,
+            microseconds: sequence, payload: payload)
+        sequence += 1
+        try await channel.onPacket?(packet)
     }
+}
 
-    private func announcementJSON(worker: String) throws -> String {
-        let value: JSONValue = .object([
-            "type": .string("voice_announcement_media"),
-            "schema_version": .string("1"),
-            "session_id": .string(sessionId),
-            "generation": .number(1),
-            "media_grant_revision": .number(1),
-            "announcement_id": .string(announcementId),
-            "announcement_sequence": .number(1),
-            "turn_id": .string(turnId),
-            "kind": .string("acknowledgement"),
-            "quantum_role": .string("single"),
-            "quantum_index": .number(0),
-            "transport": .string("watch_pcm_websocket"),
-            "worker_identity": .string(worker),
-            "sample_rate_hz": .number(24_000),
-            "duration_samples": .number(960),
-            "first_media_sequence": .number(10),
-            "last_media_sequence": .number(11),
-        ])
-        return String(decoding: try value.encoded(), as: UTF8.self)
-    }
-
-    private func profile(rate: Int) -> JSONValue {
-        .object([
-            "encoding": .string("pcm_s16le"),
-            "channels": .number(1),
-            "sample_rate_hz": .number(Double(rate)),
-            "frame_duration_ms": .number(20),
-        ])
-    }
-
-    private func timestamp(seconds: TimeInterval) -> String {
-        ISO8601DateFormatter().string(from: Date().addingTimeInterval(seconds))
+@MainActor
+private final class WatchCompanionTestChannel: CompanionVoiceChannel {
+    var reachable = true
+    var onPacket: (@MainActor @Sendable (CompanionVoicePacket) async throws -> Void)?
+    var onReachabilityChanged: (@MainActor @Sendable (Bool) -> Void)?
+    var sent: [CompanionVoicePacket] = []
+    func send(_ packet: CompanionVoicePacket) async throws {
+        sent.append(try CompanionVoicePacket(data: packet.encoded))
     }
 }
 
 @MainActor
 private final class MockWatchVoiceAudioIO: WatchVoiceAudioIO {
     var microphonePermission: WatchVoicePermission = .authorized
-    private(set) var startCaptureCount = 0
-    private(set) var stopCaptureCount = 0
-    private(set) var playedPayloads: [Data] = []
-    private var captureHandler: (@Sendable (Data) -> Void)?
-
-    func requestMicrophonePermission() async -> WatchVoicePermission { microphonePermission }
+    var permissionRequests = 0
+    var prepared: [Bool] = []
+    var played: [Data] = []
+    var volumes: [Float] = []
+    var playbackStops = 0
+    var capture: (@Sendable (Data) -> Void)?
+    var started: (@MainActor () -> Void)?
+    var finished: (@MainActor () -> Void)?
+    func requestMicrophonePermission() async -> WatchVoicePermission {
+        permissionRequests += 1
+        return microphonePermission
+    }
     func setEventHandler(_ handler: @escaping @MainActor (WatchVoiceAudioEvent) -> Void) {}
-    func prepare() throws {}
-
-    func startCapture(_ handler: @escaping @Sendable (Data) -> Void) throws {
-        startCaptureCount += 1
-        captureHandler = handler
-    }
-
-    func stopCapture() {
-        stopCaptureCount += 1
-        captureHandler = nil
-    }
-
+    func prepare(capture: Bool) throws { prepared.append(capture) }
+    func startCapture(_ handler: @escaping @Sendable (Data) -> Void) throws { capture = handler }
+    func stopCapture() { capture = nil }
     func enqueuePlayback(
-        _ pcm: Data,
-        startsAnnouncement: Bool,
-        endsAnnouncement: Bool,
-        onStarted: @escaping @MainActor () -> Void,
-        onFinished: @escaping @MainActor () -> Void
+        _ pcm: Data, startsAnnouncement: Bool, endsAnnouncement: Bool,
+        onStarted: @escaping @MainActor () -> Void, onFinished: @escaping @MainActor () -> Void
     ) throws {
-        playedPayloads.append(pcm)
-        if startsAnnouncement { onStarted() }
-        if endsAnnouncement { onFinished() }
+        played.append(pcm)
+        if startsAnnouncement { started = onStarted }
+        if endsAnnouncement { finished = onFinished }
     }
-
-    func stopPlayback() {}
-    func stop() { stopCapture() }
-}
-
-@MainActor
-private final class MockWatchVoiceWebSocket: WatchVoiceWebSocket {
-    private var messages: [URLSessionWebSocketTask.Message]
-    private var waiter: CheckedContinuation<URLSessionWebSocketTask.Message, Error>?
-    private(set) var sent: [URLSessionWebSocketTask.Message] = []
-    private(set) var cancelCode: URLSessionWebSocketTask.CloseCode?
-
-    init(messages: [URLSessionWebSocketTask.Message]) {
-        self.messages = messages
-    }
-
-    func resume() {}
-
-    func receive() async throws -> URLSessionWebSocketTask.Message {
-        if !messages.isEmpty { return messages.removeFirst() }
-        return try await withCheckedThrowingContinuation { waiter = $0 }
-    }
-
-    func send(_ message: URLSessionWebSocketTask.Message) async throws {
-        sent.append(message)
-    }
-
-    func cancel(with closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
-        cancelCode = closeCode
-        waiter?.resume(throwing: URLError(.cancelled))
-        waiter = nil
-    }
-
-    func push(_ message: URLSessionWebSocketTask.Message) {
-        if let waiter {
-            self.waiter = nil
-            waiter.resume(returning: message)
-        } else {
-            messages.append(message)
-        }
+    func setVolume(_ volume: Float) { volumes.append(volume) }
+    func stopPlayback() { playbackStops += 1 }
+    func stop() {
+        stopCapture()
+        stopPlayback()
     }
 }

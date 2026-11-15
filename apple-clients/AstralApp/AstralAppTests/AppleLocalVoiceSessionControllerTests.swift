@@ -423,8 +423,8 @@ final class AppleLocalVoiceSessionControllerTests: XCTestCase {
             leaseExpiresAt: "2099-07-31T12:01:00Z")
     }
 
-    private func grant() -> AppleLiveKitGrant {
-        AppleLiveKitGrant(
+    private func grant() -> AppleVoiceRetiredGrant {
+        AppleVoiceRetiredGrant(
             grantId: "grant-01", sessionId: remoteSessionId, generation: 1,
             mediaGrantRevision: 2, expiresAt: "2099-07-31T12:02:00Z",
             url: "wss://voice.example.test", joinToken: String(repeating: "a", count: 64),

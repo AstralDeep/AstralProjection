@@ -63,4 +63,35 @@ final class VoiceConversationUITests: XCTestCase {
         screenshot.lifetime = .keepAlways
         add(screenshot)
     }
+
+    func testFirstMicShowsTheLocalModelGateBeforeRecording() {
+        app = XCUIApplication()
+        app.launchArguments = ["--astral-ui-test-first-login", "voice-composer"]
+        app.launchEnvironment["ASTRAL_UI_TESTING"] = "1"
+        app.launch()
+        let mic = app.buttons["voice-control-voice-start"]
+        XCTAssertTrue(mic.waitForExistence(timeout: 5))
+        mic.press()
+        #if os(macOS)
+            let download = app.buttons["voice-model-download"]
+            XCTAssertTrue(download.waitForExistence(timeout: 5))
+            XCTAssertTrue(download.label.contains("GB"))
+            XCTAssertTrue(download.isEnabled)
+            XCTAssertFalse(app.progressIndicators["voice-model-progress"].exists)
+        #else
+            XCTAssertTrue(app.descendants(matching: .any)["voice-model-setup"].waitForExistence(timeout: 5))
+            let unsupported = app.staticTexts["voice-model-unsupported"]
+            XCTAssertTrue(unsupported.exists)
+            XCTAssertTrue(unsupported.label.contains("simulator"))
+            XCTAssertFalse(app.buttons["voice-model-download"].exists)
+            XCTAssertFalse(
+                app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Download ")).firstMatch.exists)
+        #endif
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "apple-local-voice-model-gate"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        app.buttons["Done"].press()
+        XCTAssertTrue(app.textFields["chat-composer-input"].isEnabled)
+    }
 }

@@ -1,14 +1,17 @@
 # AstralProjection
 
 AstralProjection is the independent presentation and client release unit for
-the Astral system. It owns deterministic server rendering, ROTE capability
-adaptation, the shared UI protocol, web assets, and the Windows, Android, and
-Apple clients. Authentication, authorization, orchestration, policy, and
-durable state remain outside this repository.
+the Astral system. It owns deterministic server rendering, the shared UI
+protocol, web assets, and the Windows, Android, and Apple clients.
+Authentication, authorization, orchestration, policy, durable state, and ROTE
+capability adaptation remain outside this repository.
 
-The package preserves the public Python import names `webrender` and `rote`
-while exposing stable metadata, resources, view models, and pure chrome
-builders through `astralprojection`.
+The package preserves the public Python import name `webrender` while exposing
+stable metadata, resources, view models, and pure chrome builders through
+`astralprojection`. It depends on the `astral-rote` package from AstralKernel
+(`python/rote/`) for the `rote` import. It publishes its guidance, notes, and
+terminal view builders to ROTE through the `astral_rote.surfaces` entry-point
+group.
 
 ## Current web experience: UI v2
 
@@ -25,7 +28,7 @@ consume it.
 
 [examples/mcp_a2a_host/](examples/mcp_a2a_host/) is a minimal executable example for a
 developer outside this repository: it consumes only the published `astralprojection`
-wheel, adapts owner-authorized astralprims primitives with ROTE, and maps the portable
+wheel, adapts owner-authorized astralprims primitives with ROTE (the `astral-rote` package), and maps the portable
 output into pinned MCP (`mcp==2.3.0`, schema revision 2026-07-28) and A2A
 (`a2a-sdk==1.2.2`, protocol revision 1.0) envelopes. Its
 [README](examples/mcp_a2a_host/README.md) documents the public imports, resource
@@ -38,7 +41,6 @@ accessors, upgrade compatibility, and the host's security responsibilities;
   host-neutral presentation models/builders.
 - `backend/webrender/` — deterministic renderers, sanitization, accessibility,
   templates, and static assets.
-- `backend/rote/` — device capability and level-of-detail adaptation.
 - `contracts/` — authoritative UI protocol and cross-client fixtures.
 - `windows-client/`, `android-client/`, `apple-clients/` — thin native clients
   retaining their registered AstralDeep product/store identities.

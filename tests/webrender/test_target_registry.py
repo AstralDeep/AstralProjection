@@ -1,5 +1,5 @@
 """Tests for target fallback and profile-based target routing
-(backend/webrender/__init__.py, backend/rote/capabilities.py, AstralPrimitives).
+(backend/webrender/__init__.py, rote/capabilities.py, AstralPrimitives).
 """
 
 from types import SimpleNamespace

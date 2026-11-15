@@ -45,7 +45,7 @@ _SEMVER = re.compile(
 RUNTIME_CONTRACT_VERSIONS = (3,)
 LEGACY_RUNTIME_DISPOSITIONS = {2: "dispatch_mediated_only"}
 RUNTIME_LOCK_ARTIFACT = "requirements-release.lock.txt"
-RUNTIME_LOCK_SHA256 = "cd04dd23361ee769f57ea1d046b0b5e10aa50bb41ebe65c4683d7518c9e9a079"
+RUNTIME_LOCK_SHA256 = "bcbc222b7f306f501c80bde5f6347a1b37efadcb4c911cfac32637b47b435c0d"
 
 VOICE_DEVICE_ID_KEY = "astraldeep.voice.device_id.v1"
 VOICE_TRANSCRIPT_TOPIC = "astraldeep.voice.transcript.v1"
@@ -2918,7 +2918,7 @@ class OrchestratorClient(QObject):
         return self._send_current_work(local, payload, is_current=is_current)
 
     def send_current_work_continuity(self, payload: dict, request_generation: str, *, is_current=lambda: True) -> bool:
-        from astralprojection.work_continuity import validate_continuity_payload
+        from rote.work_continuity import validate_continuity_payload
 
         _uuid4(request_generation, "request_generation")
         try:

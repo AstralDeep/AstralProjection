@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>ASTRALMeshPushPublisherURL</key>
+	<string>$(ASTRAL_MESH_PUSH_PUBLISHER_URL)</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
@@ -22,6 +24,10 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<!-- Required by the Mac App Store: without it, altool rejects the .pkg with
 	     "The product archive is invalid. The Info.plist must contain a
 	     LSApplicationCategoryType key." Harmless on iOS, which ignores it.
@@ -68,7 +74,14 @@
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>AstralDeep uses on-device speech recognition only while you explicitly run a voice conversation. Spoken audio is processed on this device and is never uploaded.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>AstralDeep never captures photos or video. The real-time voice framework links camera APIs, so this permission text is required, but the app does not request camera access.</string>
+	<string>AstralDeep uses the camera only while you scan a pairing code from another of your devices. It never records or saves photos or video.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>AstralDeep finds your other devices on this network to keep your chats in sync.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_astral-mesh._udp</string>
+		<string>_astral-mesh._tcp</string>
+	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

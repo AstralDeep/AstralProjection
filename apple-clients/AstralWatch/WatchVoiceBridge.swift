@@ -1,6 +1,5 @@
-// Watch-side foreground PCM relay for conversational voice: owns only ephemeral capture/playback buffers,
-// never persists a ticket, transcript, or raw audio, and never falls back to platform ASR/TTS; driven by
-// WatchModel.
+// Captures and plays ephemeral PCM through the paired iPhone's on-device voice pipeline.
+// Session, sequence and playback fences prevent retired audio from reaching another conversation; there is no hosted or system-speech fallback.
 
 import AVFoundation
 import AstralCore
@@ -8,25 +7,16 @@ import Foundation
 import Observation
 
 enum WatchVoiceBridgeState: Equatable, Sendable {
-    case idle
-    case connecting
-    case ready
-    case reconnecting
+    case idle, connecting, ready, reconnecting
     case failed(String)
     case ended
 }
 
-enum WatchVoicePlayoutPhase: String, Equatable, Sendable {
-    case started
-    case finished
-    case interrupted
-}
-
+enum WatchVoicePlayoutPhase: String, Equatable, Sendable { case started, finished, interrupted }
 enum WatchVoiceAudioEvent: Equatable, Sendable {
     case interrupted(String)
     case recovered
 }
-
 struct WatchVoicePlayoutObservation: Equatable, Sendable {
     let announcement: WatchVoiceAnnouncement
     let phase: WatchVoicePlayoutPhase
@@ -36,16 +26,36 @@ struct WatchVoicePlayoutObservation: Equatable, Sendable {
 protocol WatchVoiceBridgeControlling: AnyObject {
     var state: WatchVoiceBridgeState { get }
     var microphonePermission: WatchVoicePermission { get }
+    var companionActive: Bool { get }
+    var companionConversation: CompanionVoiceConversation? { get }
     func requestMicrophonePermission() async -> WatchVoicePermission
-    func connect(
-        grant: WatchVoiceBridgeGrant,
+    func startCompanion(
+        _ activation: CompanionVoiceActivation,
         onState: @escaping @MainActor (WatchVoiceBridgeState) -> Void,
+        onTranscript: @escaping @MainActor (String, Bool) -> Void,
+        onSpeaking: @escaping @MainActor (Bool) -> Void) async throws
+    func setForeground(_ foreground: Bool)
+    func connect(
+        grant: WatchVoiceBridgeGrant, onState: @escaping @MainActor (WatchVoiceBridgeState) -> Void,
         onTranscript: @escaping @MainActor (WatchVoiceTranscript) -> Void,
-        onPlayout: @escaping @MainActor (WatchVoicePlayoutObservation) -> Void
-    ) async throws
+        onPlayout: @escaping @MainActor (WatchVoicePlayoutObservation) -> Void) async throws
     func setCaptureEnabled(_ enabled: Bool)
     func interruptPlayback()
     func disconnect(reason: String)
+}
+
+extension WatchVoiceBridgeControlling {
+    var companionActive: Bool { false }
+    var companionConversation: CompanionVoiceConversation? { nil }
+    func setForeground(_ foreground: Bool) { if !foreground { disconnect(reason: "background") } }
+    func startCompanion(
+        _ activation: CompanionVoiceActivation,
+        onState: @escaping @MainActor (WatchVoiceBridgeState) -> Void,
+        onTranscript: @escaping @MainActor (String, Bool) -> Void,
+        onSpeaking: @escaping @MainActor (Bool) -> Void
+    ) async throws {
+        throw CompanionVoiceError.notReachable
+    }
 }
 
 @MainActor
@@ -53,375 +63,343 @@ protocol WatchVoiceAudioIO: AnyObject {
     var microphonePermission: WatchVoicePermission { get }
     func requestMicrophonePermission() async -> WatchVoicePermission
     func setEventHandler(_ handler: @escaping @MainActor (WatchVoiceAudioEvent) -> Void)
-    func prepare() throws
+    func prepare(capture: Bool) throws
     func startCapture(_ handler: @escaping @Sendable (Data) -> Void) throws
     func stopCapture()
     func enqueuePlayback(
-        _ pcm: Data,
-        startsAnnouncement: Bool,
-        endsAnnouncement: Bool,
-        onStarted: @escaping @MainActor () -> Void,
-        onFinished: @escaping @MainActor () -> Void
-    ) throws
+        _ pcm: Data, startsAnnouncement: Bool, endsAnnouncement: Bool,
+        onStarted: @escaping @MainActor () -> Void, onFinished: @escaping @MainActor () -> Void) throws
+    func setVolume(_ volume: Float)
     func stopPlayback()
     func stop()
 }
 
-protocol WatchVoiceWebSocket: AnyObject {
-    func resume()
-    func receive() async throws -> URLSessionWebSocketTask.Message
-    func send(_ message: URLSessionWebSocketTask.Message) async throws
-    func cancel(with closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?)
-}
+private nonisolated final class WatchVoiceCaptureMailbox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var bytes = Data()
+    private var overflow = false
+    private var scheduled = false
+    private var retired = false
+    private let receive: @MainActor (Data, Bool) -> Void
 
-extension URLSessionWebSocketTask: WatchVoiceWebSocket {}
+    init(receive: @escaping @MainActor (Data, Bool) -> Void) { self.receive = receive }
+
+    func append(_ next: Data) {
+        let schedule = lock.withLock { () -> Bool in
+            guard !retired else { return false }
+            if next.count > 12_800 - bytes.count { overflow = true } else if !overflow { bytes.append(next) }
+            guard !scheduled else { return false }
+            scheduled = true
+            return true
+        }
+        if schedule {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let pending = self.lock.withLock { () -> (Data, Bool) in
+                    self.scheduled = false
+                    let result = (self.bytes, self.overflow || self.retired)
+                    self.bytes.removeAll()
+                    return result
+                }
+                self.receive(pending.0, pending.1)
+            }
+        }
+    }
+
+    func retire() {
+        lock.withLock {
+            retired = true
+            bytes.removeAll()
+        }
+    }
+}
 
 @MainActor
 @Observable
 final class WatchVoiceBridge: WatchVoiceBridgeControlling {
-    private static let closePolicyViolation = URLSessionWebSocketTask.CloseCode.policyViolation
-
-    private let audio: WatchVoiceAudioIO
-    private let socketFactory: (URLRequest) -> (URLSession?, any WatchVoiceWebSocket)
-    @ObservationIgnored private var urlSession: URLSession?
-    @ObservationIgnored private var socket: (any WatchVoiceWebSocket)?
-    @ObservationIgnored private var receiveTask: Task<Void, Never>?
-    @ObservationIgnored private var grant: WatchVoiceBridgeGrant?
-    @ObservationIgnored private var sequenceGate = WatchVoicePCMSequenceGate()
-    @ObservationIgnored private var captureSequence: UInt64 = 0
-    @ObservationIgnored private var captureStartedAt = ContinuousClock.now
-    @ObservationIgnored private var captureEnabled = false
-    @ObservationIgnored private var activeAnnouncement: WatchVoiceAnnouncement?
-    @ObservationIgnored private var announcementLedger = WatchVoiceAnnouncementLedger()
-    @ObservationIgnored private var announcementStarted = false
-    @ObservationIgnored private var awaitingAudioRecovery = false
-    @ObservationIgnored private var stateHandler: (@MainActor (WatchVoiceBridgeState) -> Void)?
-    @ObservationIgnored private var transcriptHandler: (@MainActor (WatchVoiceTranscript) -> Void)?
-    @ObservationIgnored private var playoutHandler: (@MainActor (WatchVoicePlayoutObservation) -> Void)?
-
-    private(set) var state: WatchVoiceBridgeState = .idle
-
-    convenience init() {
-        self.init(audio: WatchVoiceAudioEngine())
-    }
-
-    init(
-        audio: WatchVoiceAudioIO,
-        sessionFactory: @escaping () -> URLSession = {
-            let configuration = URLSessionConfiguration.ephemeral
-            configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-            configuration.urlCache = nil
-            configuration.httpCookieStorage = nil
-            configuration.waitsForConnectivity = false
-            return URLSession(configuration: configuration)
-        },
-        socketFactory: ((URLRequest) -> (URLSession?, any WatchVoiceWebSocket))? = nil
-    ) {
-        self.audio = audio
-        self.socketFactory =
-            socketFactory ?? { request in
-                let session = sessionFactory()
-                return (session, session.webSocketTask(with: request))
-            }
-        audio.setEventHandler { [weak self] event in self?.consumeAudioEvent(event) }
-    }
-
+    private let audio: any WatchVoiceAudioIO
+    private let channel: any CompanionVoiceChannel
+    private var session: UUID?
+    private var gate: CompanionVoiceSequenceGate?
+    private var sender: CompanionVoiceSender?
+    private var mode = CompanionVoiceActivation.Mode.conversation
+    private var foreground = true
+    private var generation = 0
+    private var captureEnabled = false
+    private var mailbox: WatchVoiceCaptureMailbox?
+    private var captureEpoch = UUID()
+    private var captureRemainder = Data()
+    private var captureQueue: [Data] = []
+    private var captureSending: Task<Void, Never>?
+    private var preparing: Task<Void, Never>?
+    private var lifetime: Task<Void, Never>?
+    private var speech: CompanionVoiceSpeech?
+    private var speechBytes = 0
+    private var stateHandler: (@MainActor (WatchVoiceBridgeState) -> Void)?
+    private var transcriptHandler: (@MainActor (String, Bool) -> Void)?
+    private var speakingHandler: (@MainActor (Bool) -> Void)?
+    private(set) var state = WatchVoiceBridgeState.idle
+    private(set) var companionConversation: CompanionVoiceConversation?
+    var companionActive: Bool { session != nil }
     var microphonePermission: WatchVoicePermission { audio.microphonePermission }
 
-    func requestMicrophonePermission() async -> WatchVoicePermission {
-        await audio.requestMicrophonePermission()
+    convenience init() { self.init(audio: WatchVoiceAudioEngine(), channel: WatchOverrideSync.shared) }
+
+    init(audio: any WatchVoiceAudioIO, channel: any CompanionVoiceChannel) {
+        self.audio = audio
+        self.channel = channel
+        audio.setEventHandler { [weak self] event in
+            if case .interrupted = event { self?.end(.failed("audio_interrupted")) }
+        }
+        channel.onPacket = { [weak self] packet in
+            guard let self else { throw CompanionVoiceError.notReachable }
+            do { try self.receive(packet) } catch {
+                if packet.session == self.session { self.end(.failed("invalid_audio")) }
+                throw error
+            }
+        }
+        channel.onReachabilityChanged = { [weak self] reachable in
+            if !reachable { self?.end(.failed("phone_unreachable")) }
+        }
     }
 
-    func connect(
-        grant: WatchVoiceBridgeGrant,
+    func requestMicrophonePermission() async -> WatchVoicePermission { await audio.requestMicrophonePermission() }
+
+    func startCompanion(
+        _ activation: CompanionVoiceActivation,
         onState: @escaping @MainActor (WatchVoiceBridgeState) -> Void,
-        onTranscript: @escaping @MainActor (WatchVoiceTranscript) -> Void,
-        onPlayout: @escaping @MainActor (WatchVoicePlayoutObservation) -> Void
+        onTranscript: @escaping @MainActor (String, Bool) -> Void,
+        onSpeaking: @escaping @MainActor (Bool) -> Void
     ) async throws {
         disconnect(reason: "replacement")
-        guard grant.expiresAt > Date() else { throw WatchVoiceBridgeError.expiredGrant }
-        self.grant = grant
         stateHandler = onState
         transcriptHandler = onTranscript
-        playoutHandler = onPlayout
-        sequenceGate.reset()
-        captureSequence = 0
-        activeAnnouncement = nil
-        announcementLedger.reset()
-        announcementStarted = false
-        awaitingAudioRecovery = false
-        captureEnabled = false
-        setState(.connecting)
-
-        do {
-            try audio.prepare()
-        } catch {
-            fail(.audioFailure)
-            throw WatchVoiceBridgeError.audioFailure
+        speakingHandler = onSpeaking
+        let token = generation
+        guard foreground, channel.reachable else {
+            end(.failed("phone_unreachable"))
+            throw CompanionVoiceError.notReachable
         }
-        var request = URLRequest(url: grant.url)
-        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        request.timeoutInterval = 15
-        request.setValue("Bearer \(grant.ticket)", forHTTPHeaderField: "Authorization")
-        request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
-        let (session, task) = socketFactory(request)
-        urlSession = session
-        socket = task
-        task.resume()
-
-        do {
-            let first = try await task.receive()
-            guard case .string(let text) = first,
-                text.utf8.count <= 12 * 1024,
-                let data = text.data(using: .utf8),
-                let json = try? JSONValue.parse(data),
-                WatchVoiceBridgeReady(json: json, grant: grant) != nil
-            else {
-                throw WatchVoiceBridgeError.invalidHandshake
+        setState(.connecting)
+        if activation.mode == .conversation {
+            let permission = await audio.requestMicrophonePermission()
+            guard permission == .authorized else {
+                end(.failed("permission_denied"))
+                throw CompanionVoiceError.rejected
             }
-            setState(.ready)
-            receiveTask = Task { [weak self] in await self?.receiveLoop() }
-        } catch {
-            fail(.invalidHandshake)
+        }
+        guard generation == token, foreground, channel.reachable else { throw CompanionVoiceError.notReachable }
+        let session = UUID()
+        self.session = session
+        self.mode = activation.mode
+        gate = CompanionVoiceSequenceGate(session: session)
+        let sender = CompanionVoiceSender(channel: channel, session: session)
+        self.sender = sender
+        preparing = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(90)) } catch { return }
+            guard let self, self.session == session, self.state == .connecting else { return }
+            self.end(.failed("phone_voice_unavailable"))
+        }
+        do { try await sender.send(.start, payload: activation.encoded()) } catch {
+            end(.failed((error as? CompanionVoiceError) == .rejected ? "phone_owner_unavailable" : "phone_unreachable"))
             throw error
         }
     }
 
+    func connect(
+        grant: WatchVoiceBridgeGrant, onState: @escaping @MainActor (WatchVoiceBridgeState) -> Void,
+        onTranscript: @escaping @MainActor (WatchVoiceTranscript) -> Void,
+        onPlayout: @escaping @MainActor (WatchVoicePlayoutObservation) -> Void
+    ) async throws {
+        onState(.failed("transport_retired"))
+        throw CompanionVoiceError.rejected
+    }
+
+    func setForeground(_ foreground: Bool) {
+        self.foreground = foreground
+        if !foreground { end(.ended) }
+    }
+
     func setCaptureEnabled(_ enabled: Bool) {
-        let next = enabled && state == .ready
-        guard next != captureEnabled else { return }
-        captureEnabled = next
-        guard captureEnabled else {
-            audio.stopCapture()
+        stopCapture()
+        captureEnabled = enabled && state == .ready && mode == .conversation && foreground
+        guard captureEnabled, speech == nil else { return }
+        let epoch = UUID()
+        captureEpoch = epoch
+        let mailbox = WatchVoiceCaptureMailbox { [weak self] bytes, overflow in
+            guard let self, self.captureEpoch == epoch, self.captureEnabled else { return }
+            if overflow {
+                self.end(.failed("audio_backpressure"))
+                return
+            }
+            self.queueCapture(bytes, epoch: epoch)
+        }
+        self.mailbox = mailbox
+        do { try audio.startCapture { mailbox.append($0) } } catch { end(.failed("audio_interrupted")) }
+    }
+
+    private func stopCapture() {
+        captureEnabled = false
+        captureEpoch = UUID()
+        mailbox?.retire()
+        mailbox = nil
+        audio.stopCapture()
+        captureRemainder.removeAll()
+        captureQueue.removeAll()
+        captureSending?.cancel()
+        captureSending = nil
+    }
+
+    private func queueCapture(_ bytes: Data, epoch: UUID) {
+        guard bytes.count.isMultiple(of: 2), bytes.count <= 12_800 else {
+            end(.failed("invalid_audio"))
             return
         }
-        captureStartedAt = ContinuousClock.now
-        startCaptureIfNeeded()
-    }
-
-    private func startCaptureIfNeeded() {
-        guard captureEnabled, state == .ready, activeAnnouncement == nil else { return }
-        do {
-            try audio.startCapture { [weak self] pcm in
-                Task { @MainActor [weak self] in await self?.sendMicrophonePCM(pcm) }
+        captureRemainder.append(bytes)
+        while captureRemainder.count >= 3_200 {
+            guard captureQueue.count < 4 else {
+                end(.failed("audio_backpressure"))
+                return
             }
-        } catch {
-            fail(.audioFailure)
+            captureQueue.append(Data(captureRemainder.prefix(3_200)))
+            captureRemainder.removeFirst(3_200)
         }
-    }
-
-    func interruptPlayback() {
-        audio.stopPlayback()
-        if let activeAnnouncement, announcementStarted {
-            playoutHandler?(
-                WatchVoicePlayoutObservation(
-                    announcement: activeAnnouncement,
-                    phase: .interrupted))
-        }
-        self.activeAnnouncement = nil
-        announcementStarted = false
-        startCaptureIfNeeded()
-    }
-
-    func disconnect(reason: String) {
-        receiveTask?.cancel()
-        receiveTask = nil
-        captureEnabled = false
-        audio.stop()
-        if let activeAnnouncement, announcementStarted {
-            playoutHandler?(
-                WatchVoicePlayoutObservation(
-                    announcement: activeAnnouncement,
-                    phase: .interrupted))
-        }
-        activeAnnouncement = nil
-        announcementStarted = false
-        socket?.cancel(with: .goingAway, reason: Data(reason.prefix(64).utf8))
-        socket = nil
-        urlSession?.invalidateAndCancel()
-        urlSession = nil
-        grant = nil
-        sequenceGate.reset()
-        announcementLedger.reset()
-        if reason != "audio_interrupted" && reason != "route_unavailable" {
-            awaitingAudioRecovery = false
-        }
-        if state != .idle { setState(.ended) }
-    }
-
-    private func consumeAudioEvent(_ event: WatchVoiceAudioEvent) {
-        switch event {
-        case .interrupted(let reason):
-            guard grant != nil else { return }
-            awaitingAudioRecovery = true
-            captureEnabled = false
-            audio.stop()
-            socket?.cancel(with: .goingAway, reason: Data(reason.utf8))
-            socket = nil
-            urlSession?.invalidateAndCancel()
-            urlSession = nil
-            grant = nil
-            activeAnnouncement = nil
-            announcementStarted = false
-            setState(.failed(reason))
-        case .recovered:
-            guard awaitingAudioRecovery else { return }
-            awaitingAudioRecovery = false
-            setState(.reconnecting)
-        }
-    }
-
-    private func receiveLoop() async {
-        while !Task.isCancelled, let socket {
+        guard captureSending == nil, let sender else { return }
+        captureSending = Task { [weak self] in
+            guard let self else { return }
+            defer { if self.captureEpoch == epoch { self.captureSending = nil } }
             do {
-                let message = try await socket.receive()
-                try await consume(message)
+                while self.captureEnabled, self.captureEpoch == epoch, !self.captureQueue.isEmpty {
+                    try Task.checkCancellation()
+                    let pcm = self.captureQueue.removeFirst()
+                    try await sender.send(.capture, payload: pcm)
+                }
             } catch is CancellationError {
-                return
-            } catch let error as WatchVoiceBridgeError {
-                if state != .ended { fail(error) }
-                return
-            } catch {
-                if state != .ended { fail(.networkFailure) }
-                return
-            }
+            } catch { if self.captureEpoch == epoch { self.end(.failed("phone_unreachable")) } }
         }
     }
 
-    private func consume(_ message: URLSessionWebSocketTask.Message) async throws {
-        guard state == .ready, let grant else { throw WatchVoiceBridgeError.notReady }
-        switch message {
-        case .data(let data):
-            try consumeAssistantPCM(data, grant: grant)
-        case .string(let text):
-            guard text.utf8.count <= 12 * 1024,
-                let data = text.data(using: .utf8),
-                let json = try? JSONValue.parse(data),
-                let type = json["type"]?.stringValue
-            else { throw WatchVoiceBridgeError.invalidControl }
-            switch type {
-            case "voice_transcript":
-                guard let transcript = WatchVoiceTranscript(json: json), transcript.matches(grant: grant)
-                else { throw WatchVoiceBridgeError.invalidControl }
-                transcriptHandler?(transcript)
-            case "voice_announcement_media":
-                guard activeAnnouncement == nil,
-                    let announcement = WatchVoiceAnnouncement(json: json),
-                    announcement.matches(grant: grant),
-                    announcementLedger.accept(announcement)
-                else { throw WatchVoiceBridgeError.invalidControl }
-                activeAnnouncement = announcement
-                announcementStarted = false
-            case "bridge_reconnecting":
-                guard json.objectValue.map({ Set($0.keys) == ["type", "schema_version", "reason"] }) == true,
-                    json["schema_version"]?.stringValue == "1",
-                    let reason = json["reason"], watchVoiceBridgeReason(reason)
-                else { throw WatchVoiceBridgeError.invalidControl }
-                captureEnabled = false
-                audio.stop()
-                setState(.reconnecting)
-            case "bridge_error", "bridge_ended":
-                guard let object = json.objectValue,
-                    Set(object.keys).isSubset(of: ["type", "schema_version", "reason"]),
-                    Set(object.keys).isSuperset(of: ["type", "schema_version"]),
-                    json["schema_version"]?.stringValue == "1",
-                    json["reason"].map(watchVoiceBridgeReason) ?? true
-                else { throw WatchVoiceBridgeError.invalidControl }
-                if type == "bridge_ended" {
-                    disconnect(reason: "server_ended")
-                } else {
-                    fail(.serverFailure)
-                }
-            case "speech_started", "speech_finished", "speech_interrupted", "ping", "pong":
-                guard text.utf8.count <= 2 * 1024 else {
-                    throw WatchVoiceBridgeError.invalidControl
-                }
-            default:
-                throw WatchVoiceBridgeError.invalidControl
+    private func receive(_ packet: CompanionVoicePacket) throws {
+        guard packet.session == session else { throw CompanionVoiceError.rejected }
+        guard gate?.accept(packet) == true else {
+            end(.failed("invalid_sequence"))
+            throw CompanionVoiceError.invalidSequence
+        }
+        switch packet.kind {
+        case .ready:
+            guard state == .connecting, let conversation = CompanionVoiceConversation(data: packet.payload) else {
+                throw CompanionVoiceError.invalidPacket
             }
-        @unknown default:
-            throw WatchVoiceBridgeError.invalidControl
+            companionConversation = conversation
+            preparing?.cancel()
+            preparing = nil
+            let session = packet.session
+            lifetime = Task { [weak self] in
+                do { try await Task.sleep(for: .seconds(3_600)) } catch { return }
+                if self?.session == session { self?.end(.ended) }
+            }
+            try audio.prepare(capture: mode == .conversation)
+            setState(.ready)
+            setCaptureEnabled(mode == .conversation)
+        case .speechStart:
+            guard state == .ready, speech == nil, let speech = CompanionVoiceSpeech(data: packet.payload) else {
+                throw CompanionVoiceError.invalidPacket
+            }
+            stopCapture()
+            self.speech = speech
+            speechBytes = 0
+            audio.setVolume(1)
+        case .speechPCM:
+            guard let speech, speechBytes + packet.payload.count <= speech.frames * 2 else {
+                throw CompanionVoiceError.invalidPacket
+            }
+            let starts = speechBytes == 0
+            speechBytes += packet.payload.count
+            let ends = speechBytes == speech.frames * 2
+            try audio.enqueuePlayback(
+                packet.payload, startsAnnouncement: starts, endsAnnouncement: ends,
+                onStarted: { [weak self] in self?.playbackStarted(speech) },
+                onFinished: { [weak self] in self?.playbackFinished(speech) })
+        case .partialTranscript, .finalTranscript:
+            guard state == .ready, mode == .conversation, let text = String(data: packet.payload, encoding: .utf8)
+            else { throw CompanionVoiceError.invalidPacket }
+            transcriptHandler?(text, packet.kind == .finalTranscript)
+        case .stopSpeech:
+            if speech?.id == UUID(uuidString: String(decoding: packet.payload, as: UTF8.self)) {
+                stopPlayback(notify: false)
+            }
+        case .volume:
+            if speech?.id == UUID(uuidString: String(decoding: packet.payload.prefix(36), as: UTF8.self)),
+                let value = packet.payload.last
+            {
+                audio.setVolume(Float(value) / 100)
+            }
+        case .stop: end(.ended, notify: false)
+        case .failure:
+            let reason = String(data: packet.payload, encoding: .utf8) ?? "phone_voice_unavailable"
+            end(.failed(reason), notify: false)
+        default: throw CompanionVoiceError.invalidPacket
         }
     }
 
-    private func consumeAssistantPCM(_ data: Data, grant: WatchVoiceBridgeGrant) throws {
-        guard let frame = WatchVoicePCMFrame(data: data), frame.kind == .assistant,
-            sequenceGate.accept(frame),
-            let announcement = activeAnnouncement,
-            announcement.matches(grant: grant),
-            frame.sequence >= announcement.firstMediaSequence,
-            frame.sequence <= announcement.lastMediaSequence
-        else { throw WatchVoiceBridgeError.invalidAudio }
-
-        let starts = frame.sequence == announcement.firstMediaSequence
-        let finishes = frame.sequence == announcement.lastMediaSequence
-        if starts && announcementStarted { throw WatchVoiceBridgeError.invalidAudio }
-        if !starts && !announcementStarted { throw WatchVoiceBridgeError.invalidAudio }
-        if starts { audio.stopCapture() }
-        try audio.enqueuePlayback(
-            frame.payload,
-            startsAnnouncement: starts,
-            endsAnnouncement: finishes,
-            onStarted: { [weak self] in
-                guard let self, self.activeAnnouncement == announcement else { return }
-                self.announcementStarted = true
-                self.playoutHandler?(
-                    WatchVoicePlayoutObservation(
-                        announcement: announcement,
-                        phase: .started))
-            },
-            onFinished: { [weak self] in
-                guard let self, self.activeAnnouncement == announcement else { return }
-                self.playoutHandler?(
-                    WatchVoicePlayoutObservation(
-                        announcement: announcement,
-                        phase: .finished))
-                self.activeAnnouncement = nil
-                self.announcementStarted = false
-                self.startCaptureIfNeeded()
-            })
+    private func playbackStarted(_ speech: CompanionVoiceSpeech) {
+        guard self.speech?.id == speech.id else { return }
+        speakingHandler?(true)
+        let sender = sender
+        Task { try? await sender?.send(.playbackStarted, payload: Data(speech.id.uuidString.utf8)) }
     }
 
-    private func sendMicrophonePCM(_ pcm: Data) async {
-        guard captureEnabled, state == .ready, let socket,
-            let frame = WatchVoicePCMFrame(
-                kind: .microphone,
-                sequence: captureSequence,
-                timestampMicroseconds: captureTimestampMicroseconds,
-                payload: pcm)
-        else { return }
-        if captureSequence == UInt64.max {
-            fail(.invalidAudio)
+    private func playbackFinished(_ speech: CompanionVoiceSpeech) {
+        guard self.speech?.id == speech.id, speechBytes == speech.frames * 2 else { return }
+        self.speech = nil
+        speechBytes = 0
+        speakingHandler?(false)
+        let sender = sender
+        Task { try? await sender?.send(.playbackFinished, payload: Data(speech.id.uuidString.utf8)) }
+        setCaptureEnabled(mode == .conversation)
+    }
+
+    func interruptPlayback() { stopPlayback(notify: true) }
+
+    private func stopPlayback(notify: Bool) {
+        let previous = speech
+        audio.stopPlayback()
+        speech = nil
+        speechBytes = 0
+        speakingHandler?(false)
+        let sender = sender
+        if notify, let previous {
+            Task { try? await sender?.send(.stopSpeech, payload: Data(previous.id.uuidString.utf8)) }
+        } else if notify, mode == .playback {
+            end(.ended)
             return
         }
-        captureSequence += 1
-        do {
-            try await socket.send(.data(frame.encoded))
-        } catch {
-            fail(.networkFailure)
-        }
+        if state == .ready { setCaptureEnabled(mode == .conversation) }
     }
 
-    private var captureTimestampMicroseconds: UInt64 {
-        let elapsed = captureStartedAt.duration(to: .now)
-        let seconds = max(0, elapsed.components.seconds)
-        let attoseconds = max(0, elapsed.components.attoseconds)
-        let whole = UInt64(seconds) * 1_000_000
-        let fraction = UInt64(attoseconds / 1_000_000_000_000)
-        return whole &+ fraction
-    }
+    func disconnect(reason: String) { end(.ended) }
 
-    private func fail(_ error: WatchVoiceBridgeError) {
-        captureEnabled = false
+    private func end(_ state: WatchVoiceBridgeState, notify: Bool = true) {
+        let previous = sender
+        generation &+= 1
+        session = nil
+        sender = nil
+        gate = nil
+        preparing?.cancel()
+        preparing = nil
+        lifetime?.cancel()
+        lifetime = nil
+        stopCapture()
         audio.stop()
-        socket?.cancel(with: Self.closePolicyViolation, reason: Data(error.safeReason.utf8))
-        socket = nil
-        urlSession?.invalidateAndCancel()
-        urlSession = nil
-        grant = nil
-        activeAnnouncement = nil
-        announcementStarted = false
-        setState(.failed(error.safeReason))
+        speech = nil
+        speechBytes = 0
+        companionConversation = nil
+        speakingHandler?(false)
+        setState(state)
+        Task {
+            if notify { try? await previous?.send(.stop) }
+            previous?.retire()
+        }
     }
 
     private func setState(_ next: WatchVoiceBridgeState) {
@@ -430,35 +408,11 @@ final class WatchVoiceBridge: WatchVoiceBridgeControlling {
     }
 }
 
-private func watchVoiceBridgeReason(_ value: JSONValue) -> Bool {
-    guard let reason = value.stringValue, (1...64).contains(reason.utf8.count) else { return false }
-    return reason.range(of: "^[a-z0-9_]+$", options: .regularExpression) != nil
-}
-
 enum WatchVoiceBridgeError: Error, Equatable, Sendable {
-    case expiredGrant
-    case invalidHandshake
-    case invalidControl
-    case invalidAudio
-    case notReady
-    case networkFailure
-    case audioFailure
-    case serverFailure
-
-    var safeReason: String {
-        switch self {
-        case .expiredGrant: return "expired_grant"
-        case .invalidHandshake: return "invalid_handshake"
-        case .invalidControl: return "invalid_control"
-        case .invalidAudio: return "invalid_audio"
-        case .notReady: return "not_ready"
-        case .networkFailure: return "network_interrupted"
-        case .audioFailure: return "audio_interrupted"
-        case .serverFailure: return "server_ended"
-        }
-    }
+    case expiredGrant, invalidHandshake, invalidControl, invalidAudio, notReady, networkFailure, audioFailure,
+        serverFailure
+    var safeReason: String { "phone_voice_unavailable" }
 }
-
 @MainActor
 final class WatchVoiceAudioEngine: WatchVoiceAudioIO {
     private let engine = AVAudioEngine()
@@ -542,9 +496,10 @@ final class WatchVoiceAudioEngine: WatchVoiceAudioIO {
         return granted ? .authorized : .denied
     }
 
-    func prepare() throws {
+    func prepare(capture: Bool) throws {
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.duckOthers])
+        try session.setCategory(
+            capture ? .playAndRecord : .playback, mode: capture ? .voiceChat : .spokenAudio, options: [.duckOthers])
         try session.setActive(true)
         engine.prepare()
         if !engine.isRunning { try engine.start() }
@@ -580,12 +535,13 @@ final class WatchVoiceAudioEngine: WatchVoiceAudioIO {
         onStarted: @escaping @MainActor () -> Void,
         onFinished: @escaping @MainActor () -> Void
     ) throws {
-        guard pcm.count == WatchVoicePCMFrame.assistantPayloadLength,
-            let buffer = AVAudioPCMBuffer(pcmFormat: playbackFormat, frameCapacity: 480),
+        let frames = pcm.count / 2
+        guard !pcm.isEmpty, pcm.count <= 4_800, pcm.count.isMultiple(of: 2),
+            let buffer = AVAudioPCMBuffer(pcmFormat: playbackFormat, frameCapacity: AVAudioFrameCount(frames)),
             let channel = buffer.int16ChannelData?[0]
         else { throw WatchVoiceBridgeError.audioFailure }
-        _ = pcm.copyBytes(to: UnsafeMutableBufferPointer(start: channel, count: 480))
-        buffer.frameLength = 480
+        _ = pcm.copyBytes(to: UnsafeMutableBufferPointer(start: channel, count: frames))
+        buffer.frameLength = AVAudioFrameCount(frames)
         player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { _ in
             guard endsAnnouncement else { return }
             Task { @MainActor in onFinished() }
@@ -597,6 +553,8 @@ final class WatchVoiceAudioEngine: WatchVoiceAudioIO {
             onStarted()
         }
     }
+
+    func setVolume(_ volume: Float) { player.volume = max(0, min(1, volume)) }
 
     func stopPlayback() {
         if player.isPlaying { player.stop() }

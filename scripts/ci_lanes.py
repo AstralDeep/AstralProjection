@@ -11,7 +11,6 @@ from pathlib import Path
 
 SHARED = (
     "contracts/",
-    "backend/rote/",
     "backend/webrender/chrome/",
     "src/",
     "scripts/",

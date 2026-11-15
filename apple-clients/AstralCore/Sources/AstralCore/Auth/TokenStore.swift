@@ -59,9 +59,9 @@ public final class InMemoryTokenStore: TokenStorage, @unchecked Sendable {
 
 #if canImport(Security)
     public final class KeychainTokenStore: TokenStorage, @unchecked Sendable {
-        private let service: String
+        public let service: String
 
-        public init(service: String = "com.personalailabs.astraldeep.tokens") {
+        public init(service: String = KeychainServices.name("tokens")) {
             self.service = service
         }
 

@@ -3,6 +3,15 @@
 
 import Foundation
 
+public enum KeychainServices {
+    public static let productionBundleIdentifier = "com.personalailabs.astraldeep"
+
+    public static func name(_ suffix: String, bundleIdentifier: String? = Bundle.main.bundleIdentifier) -> String {
+        let base = bundleIdentifier.flatMap { $0.isEmpty ? nil : $0 } ?? productionBundleIdentifier
+        return base + "." + suffix
+    }
+}
+
 public enum AstralConfig {
     static let serverBaseURLInfoKey = "ASTRALServerBaseURL"
     static let keycloakAuthorityInfoKey = "ASTRALKeycloakAuthority"
@@ -14,6 +23,13 @@ public enum AstralConfig {
     public static let fallbackKeycloakAuthority = "https://iam.ai.uky.edu/realms/Astral"
 
     public static var serverBaseURL: String { resolvedServerBaseURL() }
+
+    public static var meshPushPublisherURL: URL? {
+        guard let raw = Bundle.main.object(forInfoDictionaryKey: "ASTRALMeshPushPublisherURL") as? String,
+            let url = URL(string: raw), MeshPushRest(publisherURL: url) != nil
+        else { return nil }
+        return url
+    }
 
     public static var keycloakAuthority: String { resolvedKeycloakAuthority() }
 

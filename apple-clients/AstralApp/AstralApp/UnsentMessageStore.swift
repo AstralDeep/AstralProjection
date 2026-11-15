@@ -67,9 +67,9 @@ final class InMemoryUnsentMessageStore: UnsentMessageStorage, @unchecked Sendabl
 }
 
 final class KeychainUnsentMessageStore: UnsentMessageStorage, @unchecked Sendable {
-    private let service: String
+    let service: String
 
-    init(service: String = "com.personalailabs.astraldeep.unsent-message") {
+    init(service: String = KeychainServices.name("unsent-message")) {
         self.service = service
     }
 

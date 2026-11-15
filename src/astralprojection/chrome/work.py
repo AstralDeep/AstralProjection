@@ -14,7 +14,7 @@ from uuid import UUID
 from webrender.renderer import safe_url
 
 from astralprojection.models import ChromeViewModel, LayoutView, ThemeView
-from astralprojection.work_continuity import CONTINUITY_ACTION, validate_continuity_payload
+from rote.work_continuity import CONTINUITY_ACTION, validate_continuity_payload
 
 from ._components import alert, badge, build_view, button, card, key_value, text
 

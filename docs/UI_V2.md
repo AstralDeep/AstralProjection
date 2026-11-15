@@ -57,7 +57,7 @@ ladders for clients that do not support them.
 Apple/SwiftUI and Android/Compose now negotiate `console/v2` and consume the
 shared console catalog, labels, identity, selection and ROTE presentation.
 [`console_model.py`](../backend/webrender/chrome/console_model.py) defines the
-console data; [`console.py`](../backend/rote/console.py) adapts its geometry.
+console data; `rote/console.py` in `astral-rote` adapts its geometry.
 The existing chrome menu still owns available settings and actions. Measured
 viewport, display scale, input, motion and voice capabilities update through
 the existing device transport. Clients retain owner, request and connection
@@ -89,7 +89,7 @@ continue through the existing authenticated paths.
 Windows implementation belongs to the separate Windows workstream. This
 change leaves its source untouched and preserves legacy non-negotiating
 behavior. Consult [`ui_protocol.json`](../contracts/ui_protocol.json),
-[`capabilities.py`](../backend/rote/capabilities.py) and the client READMEs for
+`rote/capabilities.py` in `astral-rote` and the client READMEs for
 supported contracts and native build requirements.
 
 ## Native local qualification

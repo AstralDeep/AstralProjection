@@ -148,7 +148,8 @@ orchestrator to mock auth
 
 ```bash
 python -m venv .venv
-.venv/Scripts/python -m pip install -r requirements.txt
+.venv/Scripts/python -m pip install --require-hashes -r ../apple-clients/NodePack/build-requirements.lock
+.venv/Scripts/python ../scripts/install_presentation_components.py install --deep-source <pinned-Deep> --primitives-source <pinned-Primitives> --kernel-source <pinned-Kernel>
 .venv/Scripts/python main.py --token <JWT>    # uses the bundled production profile
 # Explicit local development uses a complete schema-conforming local profile:
 .venv/Scripts/python main.py --deployment-profile C:\path\to\local-profile.json --token dev-token
@@ -170,7 +171,9 @@ The first-party speech helper uses the repository-pinned .NET SDK from
 committed lock, then publish the warning-clean product before freezing Python:
 
 ```powershell
-.venv\Scripts\python -m pip install --require-hashes -r requirements-release.lock.txt
+.venv\Scripts\python -m pip install --require-hashes -r ..\apple-clients\NodePack\build-requirements.lock
+.venv\Scripts\python ..\scripts\install_presentation_components.py install `
+  --deep-source <pinned-Deep> --primitives-source <pinned-Primitives> --kernel-source <pinned-Kernel>
 dotnet restore asr-helper\tests\AstralSpeechHelper.Tests.csproj --locked-mode
 dotnet build asr-helper\tests\AstralSpeechHelper.Tests.csproj --configuration Release --no-restore
 dotnet publish asr-helper\AstralSpeechHelper.csproj `
@@ -470,3 +473,13 @@ modules), and we do not embed the web app's HTML.
 - **OIDC login** → the **system** browser (RFC 8252 external user-agent), which
   is the correct, more secure native pattern; it is the OS browser, **not** an
   in-app embedded web view. The app never sees your Keycloak password.
+
+
+Presentation wheels are built from the clean exact commits named by
+`presentation-sources.json` and its pinned Deep composition. The builder requires
+all three source paths, verifies the real local wheel hashes in the composed
+release lock, installs hash-locked external dependencies first, and verifies wheel
+provenance before PyInstaller runs. The release lock's file-URI variables are
+builder inputs, not public package URLs. Do not replace them with PyPI fallbacks.
+The matching source commits must be published through the authorized repository
+workflow before remote CI can fetch them; local qualification does not publish them.
