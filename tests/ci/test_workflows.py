@@ -448,7 +448,7 @@ def _assert_first_login_shards(apple: str) -> None:
     selected = [name for entry in shards for name in entry["tests"].split()]
     assert sorted(selected) == sorted(FIRST_LOGIN_UI_CLASSES)
     macos = entries[-1]
-    assert macos["platform"] == "macos" and macos["destination"] == "platform=macOS"
+    assert macos["platform"] == "macos" and macos["destination"] == "platform=macOS,arch=arm64"
     assert sorted(macos["tests"].split()) == sorted(MACOS_UI_CLASSES)
 
 
@@ -510,7 +510,7 @@ def _assert_apple_platform_contract(apple: str) -> None:
         assert "${XCODE_BUILD}" in job
 
     ios_destination = 'destination: "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5"'
-    macos_destination = 'destination: "platform=macOS"'
+    macos_destination = 'destination: "platform=macOS,arch=arm64"'
     ios_runtime_check = 'xcrun simctl list runtimes available | grep -F "iOS ${IOS_RUNTIME}"'
     exporter = "python3 scripts/export_xccov_line_coverage.py"
     for job, key in ((app_unit, "matrix.slug"), (first_login, "matrix.platform")):
@@ -1529,7 +1529,7 @@ def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, lane, slug)
         else {
             "matrix.slug": platform,
             "matrix.destination": (
-                "platform=macOS" if platform == "macos" else "platform=iOS Simulator,name=Owned Fixture"
+                "platform=macOS,arch=arm64" if platform == "macos" else "platform=iOS Simulator,name=Owned Fixture"
             ),
             "steps.ios_sim.outputs.udid": "owned-fixture-id",
         }
@@ -1577,6 +1577,8 @@ def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, lane, slug)
         assert not any(value.startswith("-only-testing:") for value in builds[0])
     assert xcode[-1][-1] == "test-without-building"
     assert xcode[-1][xcode[-1].index("-xctestrun") + 1] == str(runfile)
+    if platform == "macos":
+        assert xcode[-1][xcode[-1].index("-destination") + 1] == "platform=macOS,arch=arm64"
     assert all(flag not in xcode[-1] for flag in (
         "-project", "-scheme", "-derivedDataPath", "-clonedSourcePackagesDirPath",
         "-disableAutomaticPackageResolution", "-skipPackageUpdates",
@@ -1877,7 +1879,7 @@ def test_ios_ui_build_transport_is_required_and_bound_to_the_current_run():
     assert "needs: [changes, swift-package-prewarm, kernel-apple]" in macos_producer
     assert "timeout-minutes: 20" in macos_producer
     assert "-scheme AstralApp" in macos_producer and "-only-testing:" not in macos_producer
-    assert "-destination 'platform=macOS'" in macos_producer
+    assert "-destination 'platform=macOS,arch=arm64'" in macos_producer
     assert "-disableAutomaticPackageResolution -skipPackageUpdates build-for-testing" in macos_producer
     assert "scripts/ci_apple_ui_products.py pack --repo \"$PWD\" --platform macos" in macos_producer
     assert "test-without-building" not in macos_producer

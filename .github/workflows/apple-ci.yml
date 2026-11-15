@@ -411,7 +411,7 @@ jobs:
             destination: "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5"
           - name: macOS
             slug: macos
-            destination: "platform=macOS"
+            destination: "platform=macOS,arch=arm64"
     steps:
       - name: Check out candidate
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -740,7 +740,7 @@ jobs:
           set -euo pipefail
           derived="$PWD/build/060/app-macos-ui-dd"
           xcodebuild -project "${APP_PROJECT}" -scheme AstralApp \
-            -destination 'platform=macOS' -configuration Debug \
+            -destination 'platform=macOS,arch=arm64' -configuration Debug \
             CODE_SIGNING_ALLOWED=NO -enableCodeCoverage YES \
             COMPILER_INDEX_STORE_ENABLE=NO -derivedDataPath "$derived" \
             -clonedSourcePackagesDirPath "$PWD/build/060/swift-package-clones" \
@@ -788,7 +788,7 @@ jobs:
           - name: macOS
             slug: macos
             platform: macos
-            destination: "platform=macOS"
+            destination: "platform=macOS,arch=arm64"
             tests: >-
               LLMFirstLoginUITests VoiceConversationUITests Accessibility060UITests WorkspacePresentationUITests
               ConversationContinuityUITests/testDeterministicProcessRelaunchRestoresSemanticConversation
