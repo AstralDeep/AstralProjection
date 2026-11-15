@@ -59,6 +59,24 @@
             return result
         }
 
+        func testMeshDemandUsesExistingAPNsDelegateWithoutAlertPermissionOrServerMachine() {
+            status = .denied
+            let service = make()
+            var received: [String] = []
+            var failures = 0
+            service.setMeshRegistrationListeners(token: { received.append($0) }, failure: { failures += 1 })
+            service.setMeshRegistrationDemand(true)
+            XCTAssertEqual(registered, 1)
+            XCTAssertEqual(received, ["010203"])
+            XCTAssertEqual(requested, 0)
+            service.ownerSessionEnded(access: nil)
+            XCTAssertEqual(unregistered, 0)
+            service.handleRegistrationFailure()
+            XCTAssertEqual(failures, 1)
+            service.setMeshRegistrationDemand(false)
+            XCTAssertEqual(unregistered, 1)
+        }
+
         func testForegroundAdmissionDedupAndCurrentAuthorizedTap() async throws {
             let service = make()
             service.start()

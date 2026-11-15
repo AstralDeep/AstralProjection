@@ -265,6 +265,7 @@ final class AppModel: NSObject {
     @ObservationIgnored let onDeviceVoice: OnDeviceVoiceController
     #if os(iOS)
         @ObservationIgnored let watchVoice: PairedWatchVoiceRelay
+        @ObservationIgnored let meshPush: MeshPushCoordinator
     #endif
 
     var signedIn = false {
@@ -758,6 +759,8 @@ final class AppModel: NSObject {
         self.onDeviceVoice = localVoice
         #if os(iOS)
             self.watchVoice = PairedWatchVoiceRelay(controller: localVoice, channel: WatchOverrideSync.shared)
+            self.meshPush = MeshPushCoordinator(
+                rest: AstralConfig.meshPushPublisherURL.flatMap { MeshPushRest(publisherURL: $0) })
         #endif
         self.store = tokenStore
         if tokenStore is InMemoryTokenStore {
@@ -835,6 +838,14 @@ final class AppModel: NSObject {
         }
         #if os(iOS)
             configurePushNotifications()
+            meshPush.configure(
+                credential: { [weak self] in
+                    guard let self, self.signedIn, let access = await self.freshAccessToken(),
+                        self.signedIn, self.tokens?.accessToken == access,
+                        let owner = self.tokens?.conversationAccount
+                    else { return nil }
+                    return MeshPushCredential(owner: owner, access: access)
+                }, requestToken: { [weak self] enabled in self?.pushNotifications?.setMeshRegistrationDemand(enabled) })
             WatchOverrideSync.shared.activate()
             if !storedBase.isEmpty { WatchOverrideSync.shared.push(serverBaseText) }
         #else
@@ -884,8 +895,12 @@ final class AppModel: NSObject {
                 }
                 return true
             }
+            service.setMeshRegistrationListeners(
+                token: { [weak self] in self?.meshPush.receivedToken($0) },
+                failure: { [weak self] in self?.meshPush.registrationFailed() })
             service.start()
             pushNotifications = service
+            meshPush.authenticationChanged()
             trackPushConnection()
         }
 
@@ -2322,6 +2337,7 @@ final class AppModel: NSObject {
         }
         signedIn = true
         #if os(iOS)
+            meshPush.authenticationChanged()
             if let access = tokens?.accessToken { pushNotifications?.ownerAuthenticated(access: access) }
             if pushNotifications?.shouldOfferPermissionRequest() == true {
                 pushNotifications?.requestAuthorizationIfNeeded()
@@ -2387,6 +2403,9 @@ final class AppModel: NSObject {
         screen = .chat
         store.wipe()
         tokens = nil
+        #if os(iOS)
+            meshPush.authenticationChanged()
+        #endif
         conversationAccount = nil
         signedIn = false
         connected = false
@@ -7124,6 +7143,7 @@ final class AppModel: NSObject {
     func voiceSceneBecameActive() {
         #if os(iOS)
             pushSceneActive = true
+            meshPush.retry()
             pushNotifications?.sceneChanged(
                 active: true, connectionGeneration: connected ? continuity.connectionGeneration : nil)
         #endif

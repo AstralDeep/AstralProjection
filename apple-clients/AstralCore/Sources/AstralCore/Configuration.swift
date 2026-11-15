@@ -24,6 +24,13 @@ public enum AstralConfig {
 
     public static var serverBaseURL: String { resolvedServerBaseURL() }
 
+    public static var meshPushPublisherURL: URL? {
+        guard let raw = Bundle.main.object(forInfoDictionaryKey: "ASTRALMeshPushPublisherURL") as? String,
+            let url = URL(string: raw), MeshPushRest(publisherURL: url) != nil
+        else { return nil }
+        return url
+    }
+
     public static var keycloakAuthority: String { resolvedKeycloakAuthority() }
 
     public static func resolvedServerBaseURL(

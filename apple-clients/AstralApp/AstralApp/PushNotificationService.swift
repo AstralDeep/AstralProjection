@@ -47,6 +47,9 @@
     @MainActor
     final class PushNotificationService: NSObject, UNUserNotificationCenterDelegate {
         private var machine: PushDestinationMachine?
+        private var meshRegistrationDemand = false
+        private var meshToken: ((String) -> Void)?
+        private var meshRegistrationFailure: (() -> Void)?
         private let rest: PushRest
         private let tokenProvider: @Sendable () async -> String?
         private let identity: PushIdentity
@@ -90,6 +93,15 @@
         }
 
         func start() { refreshAuthorization() }
+        func setMeshRegistrationListeners(token: @escaping (String) -> Void, failure: @escaping () -> Void) {
+            meshToken = token
+            meshRegistrationFailure = failure
+        }
+        func setMeshRegistrationDemand(_ enabled: Bool) {
+            guard meshRegistrationDemand != enabled else { return }
+            meshRegistrationDemand = enabled
+            if enabled { system.register() } else if machine == nil { system.unregister() }
+        }
         func setInAppPresent(_ listener: ((PushPayload) -> Void)?) { inAppPresent = listener }
         func setSourceOpen(_ listener: ((PushSource) -> Bool)?) { sourceOpen = listener }
 
@@ -136,7 +148,7 @@
             connection = nil
             sequence = 0
             epoch += 1
-            system.unregister()
+            if !meshRegistrationDemand { system.unregister() }
             system.removeAll()
         }
 
@@ -193,10 +205,13 @@
         }
 
         func handleRegisteredDeviceToken(_ deviceToken: Data) {
+            let token = deviceToken.map { String(format: "%02x", $0) }.joined()
+            if meshRegistrationDemand { meshToken?(token) }
             guard let machine else { return }
-            execute(machine.onDeviceToken(deviceToken.map { String(format: "%02x", $0) }.joined()))
+            execute(machine.onDeviceToken(token))
         }
         func handleRegistrationFailure() {
+            if meshRegistrationDemand { meshRegistrationFailure?() }
             if let machine { execute(machine.onTokenRequestFailed(transient: true, code: "registration_failed")) }
         }
 

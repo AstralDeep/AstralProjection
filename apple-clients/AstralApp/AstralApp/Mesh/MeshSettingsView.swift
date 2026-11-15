@@ -62,6 +62,20 @@ struct MeshSettingsView: View {
                 }
                 .accessibilityIdentifier("mesh.settings.allowance")
             }
+            #if os(iOS)
+                Section("Background updates") {
+                    Text(model.meshPush.status)
+                        .accessibilityIdentifier("mesh.settings.push.status")
+                    if model.meshPush.isConfigured && !model.signedIn {
+                        Button("Sign in for background updates") { model.signIn() }
+                            .accessibilityIdentifier("mesh.settings.push.sign-in")
+                    } else if model.meshPush.isConfigured {
+                        Button("Retry registration") { model.meshPush.retry() }
+                            .accessibilityIdentifier("mesh.settings.push.retry")
+                    }
+                    if let error = model.signInError { Text(error).foregroundStyle(.red) }
+                }
+            #endif
             Section("Network") {
                 NavigationLink { MeshMailboxView() } label: {
                     Label("Mailbox", systemImage: "tray")
