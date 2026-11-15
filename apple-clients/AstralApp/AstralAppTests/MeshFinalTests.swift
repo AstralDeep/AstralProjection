@@ -1,8 +1,8 @@
 // Verifies the queued count that follows real message states, adapted surface rendering through resolved handles, the published tool catalog, mesh-wide grants, invitation pairing and renaming.
 // Everything runs over the in-memory kernel, so no network, Keychain or identity provider is involved.
 
-@testable import AstralDeep
 import AstralCore
+@testable import AstralDeep
 import XCTest
 
 @MainActor
@@ -16,11 +16,17 @@ final class MeshFinalTests: XCTestCase {
         _ = await h.runtime.send("first")
         await h.runtime.settle()
         XCTAssertEqual(h.runtime.chats.first?.queuedCount, 1)
+        let first = h.runtime.currentChat?.messages.first?.eventId
         h.kernel.turnError = nil
         _ = await h.runtime.send("second")
         await h.runtime.settle()
-        XCTAssertEqual(h.runtime.currentChat?.messages.filter { $0.delivery == .queued }.count, 0)
-        XCTAssertEqual(h.runtime.chats.first?.queuedCount, 0)
+        XCTAssertEqual(
+            h.runtime.currentChat?.messages.filter { $0.delivery == .queued }.map(\.eventId), first.map { [$0] })
+        XCTAssertEqual(
+            h.runtime.currentChat?.messages.filter { $0.author == .owner && $0.delivery == .recorded }.map(\.text),
+            ["second"])
+        XCTAssertEqual(h.runtime.currentChat?.messages.filter { $0.author == .assistant }.count, 1)
+        XCTAssertEqual(h.runtime.chats.first?.queuedCount, 1)
     }
 
     func testRenderedSurfaceUsesResolvedImagesAndNeverRawLinks() {
@@ -63,10 +69,13 @@ final class MeshFinalTests: XCTestCase {
         h.kernel.setHandles(["res:abc": MeshResolvedHandle(kind: .url, value: "https://example.com/a", mime: nil)])
         let surface = MeshRenderedSurface(
             surfaceId: "s",
-            tree: [.object(["type": .string("text"), "id": .string("t"), "href": .object(["$handle": .string("res:abc")])])],
+            tree: [
+                .object(["type": .string("text"), "id": .string("t"), "href": .object(["$handle": .string("res:abc")])])
+            ],
             untrusted: false, rejected: [])
         let id = h.kernel.seedChat(
-            title: "Rendered", messages: [MeshRuntimeHarness.message("m1", parent: nil, author: .assistant, at: 1, surfaces: ["s"])])
+            title: "Rendered",
+            messages: [MeshRuntimeHarness.message("m1", parent: nil, author: .assistant, at: 1, surfaces: ["s"])])
         h.kernel.setRendered(chatId: id, [surface])
         await h.runtime.openChat(id)
         XCTAssertEqual(h.runtime.resolvedHandles["res:abc"]?.value, "https://example.com/a")
@@ -153,7 +162,9 @@ final class MeshFinalTests: XCTestCase {
 
 final class MeshModelTextDisplayTests: XCTestCase {
     func testLinksBecomePlainTextWithTheirHost() {
-        let text = MeshModelText.display("See [the doc](https://evil.example/leak?x=1) and ![chart](https://a.test/c.png) or <https://b.test/p> and https://c.test/q now.")
+        let text = MeshModelText.display(
+            "See [the doc](https://evil.example/leak?x=1) and ![chart](https://a.test/c.png) or <https://b.test/p> and https://c.test/q now."
+        )
         XCTAssertTrue(text.contains("the doc (evil.example)"))
         XCTAssertFalse(text.contains("]("))
         XCTAssertFalse(text.contains("leak"))
@@ -180,7 +191,8 @@ final class MeshToolPresentationTests: XCTestCase {
     func testTitleAndEffectComeFromAnnotationsThenFromTheEffectKind() {
         let clock = MeshToolEntry(
             name: "current_datetime", summary: "Time.", effect: .meshRead, deviceId: nil,
-            annotations: MeshToolAnnotations(json: #"{"title":"Current date and time","effectNote":"Reads the clock only","readOnlyHint":true}"#))
+            annotations: MeshToolAnnotations(
+                json: #"{"title":"Current date and time","effectNote":"Reads the clock only","readOnlyHint":true}"#))
         XCTAssertEqual(MeshPresentation.toolTitle(clock), "Current date and time")
         XCTAssertEqual(MeshPresentation.toolEffect(clock), "Reads only. Stays on your mesh.")
         XCTAssertEqual(MeshPresentation.toolNote(clock), "Reads the clock only")

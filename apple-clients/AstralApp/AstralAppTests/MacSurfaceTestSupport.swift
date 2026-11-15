@@ -104,6 +104,14 @@
             get throws { try SurfaceAccessibility.elements(windowTitle: window.title) }
         }
 
+        var hostedAccessibility: [any NSAccessibilityProtocol] {
+            func walk(_ raw: Any, depth: Int) -> [any NSAccessibilityProtocol] {
+                guard depth < 64, let element = raw as? any NSAccessibilityProtocol else { return [] }
+                return [element] + (element.accessibilityChildren() ?? []).flatMap { walk($0, depth: depth + 1) }
+            }
+            return walk(view, depth: 0)
+        }
+
         func settle() async throws {
             SurfaceAccessibility.prepare(window)
             for _ in 0..<5 {
