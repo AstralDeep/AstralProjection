@@ -137,12 +137,27 @@ import XCTest
             let (model, storage, session) = try model()
             model.serverSessionRetryBackoff = BackoffPolicy(base: 0.05, factor: 2, cap: 0.05)
             let server = RestoreServer()
-            model.serverSessionTransport = { _ in
+            let logout = expectation(description: "retired server session is revoked")
+            model.serverSessionTransport = { request in
+                if request.httpMethod == "POST" {
+                    XCTAssertEqual(request.url?.path, "/api/auth/logout")
+                    XCTAssertEqual(request.value(forHTTPHeaderField: "Cookie"), session.cookie)
+                    XCTAssertEqual(
+                        request.value(forHTTPHeaderField: "Authorization"), "Bearer " + session.accessToken)
+                    logout.fulfill()
+                    return ServerSessionReply(
+                        body: .object([
+                            "outcome": .string("unconfirmed"), "revoked": .bool(false), "queued": .bool(false),
+                        ]))
+                }
+                XCTAssertEqual(request.httpMethod, "GET")
+                XCTAssertEqual(request.url?.path, "/auth/session")
                 guard await server.answer() else { throw ServerSessionError.unavailable }
                 if answer == "401" { throw ServerSessionError.retired }
                 return ServerSessionReply(body: .object(["authenticated": .bool(false)]))
             }
             await model.bootstrap()
+            await fulfillment(of: [logout], timeout: 5)
             XCTAssertFalse(model.signedIn, answer)
             XCTAssertFalse(model.connected, answer)
             XCTAssertEqual(model.signInError, "The saved server session could not be resumed. Sign in again.", answer)
