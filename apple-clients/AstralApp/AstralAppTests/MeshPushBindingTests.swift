@@ -58,7 +58,7 @@ final class MeshPushBindingTests: XCTestCase {
         XCTAssertFalse(value5)
         let value6 = await h.runtime.publishMeshWakeRoute(context, route: nil)
         XCTAssertTrue(value6)
-        await h.runtime.resumeStop()
+        await h.runtime.resume()
         let value7 = try await h.kernel.wakeRoutes().isEmpty
         XCTAssertTrue(value7)
         await h.runtime.close()
