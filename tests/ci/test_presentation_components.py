@@ -4,6 +4,7 @@ import hashlib
 import json
 import subprocess
 from types import SimpleNamespace
+from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 import pytest
 
@@ -105,6 +106,73 @@ def test_existing_build_output_is_refused(tmp_path, monkeypatch):
     monkeypatch.setattr(tool, "sources", lambda *a: (None, tmp_path, {}, {}))
     with pytest.raises(ValueError, match="absent"):
         tool.build(tmp_path, tmp_path, tmp_path, tmp_path)
+
+
+def test_wheel_zip_bytes_are_canonical_across_filesystem_metadata(tmp_path):
+    archives = []
+    contents = {
+        "sample/__init__.py": b"VALUE = 1\n",
+        "sample-1.0.dist-info/METADATA": b"Name: sample\nVersion: 1.0\n",
+    }
+    for name, system, mode in (("unix", 3, 0o100644), ("windows", 0, 0o100666)):
+        path = tmp_path / f"{name}.whl"
+        with ZipFile(path, "w", compression=ZIP_DEFLATED) as archive:
+            for member, payload in contents.items():
+                info = ZipInfo(member, (1980, 1, 1, 0, 0, 0))
+                info.create_system = system
+                info.external_attr = mode << 16
+                archive.writestr(info, payload)
+        archives.append(path)
+
+    for archive in archives:
+        tool.normalize_wheel_archive(archive)
+
+    assert archives[0].read_bytes() == archives[1].read_bytes()
+    with ZipFile(archives[0]) as archive:
+        assert {member.filename: archive.read(member.filename) for member in archive.infolist()} == contents
+        assert all(member.create_system == 3 for member in archive.infolist())
+        assert all(member.external_attr == 0o100644 << 16 for member in archive.infolist())
+
+
+def test_normalized_component_wheel_updates_receipt_digest(tmp_path):
+    wheel = tmp_path / "component.whl"
+    with ZipFile(wheel, "w") as archive:
+        archive.writestr("component.py", b"VALUE = 1\n")
+    lock = tmp_path / "astral-component-wheels.lock.json"
+    lock.write_text(json.dumps({"components": [{"wheel": wheel.name, "wheel_sha256": "old"}]}))
+
+    def write_lock(path, document):
+        path.write_text(json.dumps(document))
+
+    tool.normalize_component_wheels(SimpleNamespace(_write_lock=write_lock), lock)
+
+    entry = json.loads(lock.read_text())["components"][0]
+    assert entry["wheel_sha256"] == hashlib.sha256(wheel.read_bytes()).hexdigest()
+    with ZipFile(wheel) as archive:
+        assert archive.read("component.py") == b"VALUE = 1\n"
+
+
+@pytest.mark.parametrize("case", ["duplicate", "directory", "extra", "comment", "invalid-zip"])
+def test_noncanonical_wheel_archives_are_rejected(tmp_path, case):
+    path = tmp_path / "component.whl"
+    with ZipFile(path, "w") as archive:
+        first = ZipInfo("component.py")
+        if case == "extra":
+            first.extra = b"\x01\x00\x00\x00"
+        elif case == "comment":
+            first.comment = b"comment"
+        archive.writestr(first, b"source")
+        if case == "duplicate":
+            with pytest.warns(UserWarning, match="Duplicate name"):
+                archive.writestr(ZipInfo("component.py"), b"duplicate")
+        elif case == "directory":
+            archive.writestr(ZipInfo("package/"), b"")
+    if case == "invalid-zip":
+        path.write_bytes(b"not a zip archive")
+
+    with pytest.raises(ValueError, match="duplicate|noncanonical|could not be normalized"):
+        tool.normalize_wheel_archive(path)
+    assert not path.with_suffix(path.suffix + ".normalized").exists()
 
 
 def test_cli_requires_all_explicit_sources(monkeypatch):

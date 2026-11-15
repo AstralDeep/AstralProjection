@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 PINS = ROOT / "windows-client/presentation-sources.json"
@@ -21,6 +22,41 @@ VARIABLES = {"astral-primitives": "ASTRAL_PRIMITIVES_WHEEL_URI", "astral-kernel"
 
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def normalize_wheel_archive(path):
+    temporary = path.with_suffix(path.suffix + ".normalized")
+    try:
+        with zipfile.ZipFile(path, "r") as source:
+            names = [item.filename for item in source.infolist()]
+            if len(names) != len(set(names)):
+                raise ValueError("wheel contains duplicate archive members")
+            with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED) as target:
+                for item in source.infolist():
+                    if item.is_dir() or item.extra or item.comment:
+                        raise ValueError("wheel contains noncanonical archive metadata")
+                    info = zipfile.ZipInfo(item.filename, item.date_time)
+                    info.compress_type = item.compress_type
+                    info.create_system = 3
+                    info.external_attr = 0o100644 << 16
+                    info.internal_attr = 0
+                    target.writestr(info, source.read(item.filename), compress_type=item.compress_type)
+        temporary.replace(path)
+    except (OSError, zipfile.BadZipFile) as error:
+        temporary.unlink(missing_ok=True)
+        raise ValueError(f"wheel archive could not be normalized: {path.name}") from error
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def normalize_component_wheels(helper, lock_path):
+    lock_document = json.loads(lock_path.read_text())
+    for entry in lock_document["components"]:
+        wheel = lock_path.parent / entry["wheel"]
+        normalize_wheel_archive(wheel)
+        entry["wheel_sha256"] = digest(wheel)
+    helper._write_lock(lock_path, lock_document)
 
 
 def module(path, name):
@@ -107,7 +143,9 @@ def build(output, deep, primitives, kernel):
     os.environ["SOURCE_DATE_EPOCH"] = subprocess.check_output(["git", "-C", str(deep), "show", "-s", "--format=%ct", "HEAD"], text=True).strip()
     helper.build_wheels(contract, output / "wheels", output / "wheels/astral-component-wheels.lock.json")
     (output / "context.json").write_text(json.dumps({"deep": str(deep), "primitives": str(roots[KEYS[0]]), "kernel": str(roots[KEYS[1]])}, sort_keys=True) + "\n")
-    return helper, contract, output / "wheels/astral-component-wheels.lock.json"
+    wheel_lock = output / "wheels/astral-component-wheels.lock.json"
+    normalize_component_wheels(helper, wheel_lock)
+    return helper, contract, wheel_lock
 
 
 def install(output, deep, primitives, kernel, external_lock=None):

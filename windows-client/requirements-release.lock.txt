@@ -156,8 +156,8 @@ uc-micro-py==1.0.3 \
 
 # local-presentation: astralprims==0.13.0
 astralprims @ ${ASTRAL_PRIMITIVES_WHEEL_URI} \
-    --hash=sha256:08674e5aa5605db3c96db381bc71b6c0d60c7fbbc07f1b1d73c3700f9e4cfa3e
+    --hash=sha256:42aa5f519f5840273e9ac03327df5211c5a22049cb5983e5c23f2c75a25447d1
 
 # local-presentation: astral-rote==0.1.0
 astral-rote @ ${ASTRAL_ROTE_WHEEL_URI} \
-    --hash=sha256:35695af9906434fe3c70d30b263e839fa5e454f1c58cbd0ddc0f8888432d00ab
+    --hash=sha256:16f8f62428e76d71c2acf82b283fc4714044cad4ffc686da3ca34ee0dea9ed08
