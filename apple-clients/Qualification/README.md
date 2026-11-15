@@ -9,6 +9,7 @@ xcrun swiftc -O -swift-version 6 -parse-as-library \
   apple-clients/AstralApp/AstralApp/OnDevice/OnDeviceModelAdapter.swift \
   apple-clients/AstralApp/AstralApp/OnDevice/OnDeviceJSONSchema.swift \
   apple-clients/AstralApp/AstralApp/OnDevice/OnDeviceToolProposal.swift \
+  apple-clients/AstralApp/AstralApp/OnDevice/OnDeviceToolConversation.swift \
   apple-clients/Qualification/OnDeviceModelHost.swift \
   -o /absolute/evidence/directory/foundation-model-host
 ```

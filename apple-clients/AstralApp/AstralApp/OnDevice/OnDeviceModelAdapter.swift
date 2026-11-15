@@ -201,7 +201,8 @@ nonisolated final class FoundationModelsOnDeviceModel: AstralOnDeviceModelWarmab
             let options = GenerationOptions(maximumResponseTokens: max(1, request.maxTokens))
             do {
                 if let catalog {
-                    return try await FoundationToolProposals.perform(catalog, composed: composed, options: options)
+                    return try await FoundationToolProposals.perform(
+                        catalog, messages: request.messages, composed: composed, options: options)
                 }
                 let session = LanguageModelSession(model: model, tools: [], instructions: composed.instructions)
                 if let schema {

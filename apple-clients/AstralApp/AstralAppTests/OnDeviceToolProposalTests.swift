@@ -92,4 +92,11 @@ final class OnDeviceToolProposalTests: XCTestCase {
         XCTAssertThrowsError(try capture.finish())
     }
 
+    func testSchemaDepthIsBoundedBeforeRecursiveConversion() throws {
+        var value: [String: Any] = ["type": "string"]
+        for _ in 0..<40 { value = ["type": "array", "items": value] }
+        let data = try JSONSerialization.data(withJSONObject: value)
+        XCTAssertThrowsError(try OnDeviceJSONSchema(json: String(decoding: data, as: UTF8.self)))
+    }
+
 }

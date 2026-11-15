@@ -30,10 +30,11 @@ nonisolated indirect enum OnDeviceJSONSchema: Equatable, Sendable {
         self = try Self.parse(root)
     }
 
-    private static func parse(_ node: [String: Any]) throws -> OnDeviceJSONSchema {
+    private static func parse(_ node: [String: Any], depth: Int = 0) throws -> OnDeviceJSONSchema {
+        guard depth <= 32 else { throw OnDeviceSchemaError.unsupported("depth") }
         if let value = node["const"] as? String { return .string(allowed: [value]) }
         if let choices = node["anyOf"] as? [[String: Any]], !choices.isEmpty, choices.count <= 64 {
-            return .alternatives(try choices.map(parse))
+            return .alternatives(try choices.map { try parse($0, depth: depth + 1) })
         }
         guard let type = node["type"] as? String else {
             throw OnDeviceSchemaError.unsupported("type")
@@ -47,7 +48,7 @@ nonisolated indirect enum OnDeviceJSONSchema: Equatable, Sendable {
                     throw OnDeviceSchemaError.unsupported("property \(name)")
                 }
                 return OnDeviceSchemaProperty(
-                    name: name, schema: try parse(child), required: required.contains(name))
+                    name: name, schema: try parse(child, depth: depth + 1), required: required.contains(name))
             }
             return .object(parsed)
         case "string":
@@ -71,7 +72,7 @@ nonisolated indirect enum OnDeviceJSONSchema: Equatable, Sendable {
                 throw OnDeviceSchemaError.unsupported("items")
             }
             return .array(
-                items: try parse(items),
+                items: try parse(items, depth: depth + 1),
                 minItems: (node["minItems"] as? NSNumber)?.intValue,
                 maxItems: (node["maxItems"] as? NSNumber)?.intValue)
         default:
