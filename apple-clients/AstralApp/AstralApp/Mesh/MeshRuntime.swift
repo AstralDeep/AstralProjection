@@ -53,6 +53,13 @@ nonisolated final class MeshChangeRelay: @unchecked Sendable {
     func finish() { continuation?.finish() }
 }
 
+nonisolated final class MeshSessionGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var active = true
+    var current: Bool { lock.withLock { active } }
+    func retire() { lock.withLock { active = false } }
+}
+
 nonisolated final class MeshTurnLifetime: @unchecked Sendable {
     private let lock = NSLock()
     private var retired = false
@@ -420,6 +427,7 @@ final class MeshRuntime {
     @ObservationIgnored private var kernel: (any MeshKernel)?
     @ObservationIgnored private var keys: DeviceKeys?
     @ObservationIgnored private var wakeSession = UUID()
+    @ObservationIgnored private var wakeSessionGate = MeshSessionGate()
     @ObservationIgnored private var wakeDataRevision = UUID()
     @ObservationIgnored private let relay = MeshChangeRelay()
     @ObservationIgnored nonisolated(unsafe) private var consumer: Task<Void, Never>?
@@ -529,6 +537,8 @@ final class MeshRuntime {
             return
         }
         phase = .opening
+        wakeSessionGate.retire()
+        wakeSessionGate = MeshSessionGate()
         wakeSession = UUID()
         let session = wakeSession
         do {
@@ -621,6 +631,7 @@ final class MeshRuntime {
             for waiter in waiters { waiter.resume() }
         }
         phase = .closed
+        wakeSessionGate.retire()
         wakeSession = UUID()
         let retiring = Array(turnTasks.values).map { $0.retire() }
         for task in retiring { await task.value }
@@ -1384,10 +1395,12 @@ final class MeshRuntime {
     func prepareMeshPush(owner: ConversationAccount) async -> MeshPushContext? {
         guard isReady, status.hasMesh, let kernel else { return nil }
         let session = wakeSession
+        let gate = wakeSessionGate
         do {
             let context = try await Task.detached(priority: .userInitiated) {
                 let live = try await kernel.meshStatus()
-                guard live.hasMesh, !live.stopped, let mesh = live.meshId, let device = live.deviceId else {
+                guard gate.current, live.hasMesh, !live.stopped, let mesh = live.meshId, let device = live.deviceId
+                else {
                     throw MeshKernelError.unavailable("Mesh background updates are unavailable.")
                 }
                 let principal = try kernel.meshPrincipal()
@@ -1412,10 +1425,12 @@ final class MeshRuntime {
 
     func publishMeshWakeRoute(_ context: MeshPushContext, route: MeshWakeRoute?) async -> Bool {
         guard isReady, wakeSession == context.meshSession, let kernel else { return false }
+        let gate = wakeSessionGate
         do {
             let live = try await Task.detached(priority: .userInitiated) {
                 let live = try await kernel.meshStatus()
-                guard live.hasMesh, live.meshId == context.meshId, live.deviceId == context.deviceId else {
+                guard gate.current, live.hasMesh, live.meshId == context.meshId, live.deviceId == context.deviceId
+                else {
                     throw MeshKernelError.refused("The mesh wake target changed.")
                 }
                 if route != nil {
@@ -1427,6 +1442,7 @@ final class MeshRuntime {
                         })
                     else { throw MeshKernelError.refused("The mesh account does not match.") }
                 }
+                guard gate.current else { throw MeshKernelError.unavailable("The mesh session changed.") }
                 try await kernel.setWakeRoute(
                     expectedMeshId: context.meshId, expectedDeviceId: context.deviceId, route: route)
                 return try await kernel.meshStatus()
@@ -1484,7 +1500,9 @@ final class MeshRuntime {
     }
 
     func prepareVoiceSession() async throws -> MeshVoiceScope {
-        guard isReady, status.hasMesh else { throw MeshKernelError.unavailable("Open your mesh before starting voice.") }
+        guard isReady, status.hasMesh else {
+            throw MeshKernelError.unavailable("Open your mesh before starting voice.")
+        }
         guard !status.stopped else { throw MeshKernelError.stopped }
         let session = wakeSession
         if currentChatId == nil {

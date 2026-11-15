@@ -115,6 +115,28 @@ final class MeshPushBindingTests: XCTestCase {
         await h.runtime.close()
     }
 
+    func testRetirementDuringStatusLookupPreventsNativePublication() async throws {
+        let h = await prepare()
+        defer { h.cleanUp() }
+        let prepared = await h.runtime.prepareMeshPush(owner: owner)
+        let context = try XCTUnwrap(prepared)
+        let gate = ResumeWorkerGate()
+        defer { gate.release() }
+        let old = h.kernel
+        old.statusGate = { await gate.wait() }
+        let pending = Task { await h.runtime.publishMeshWakeRoute(context, route: route) }
+        let entered = await eventually { gate.entered == 1 }
+        XCTAssertTrue(entered)
+        await h.runtime.close()
+        await h.runtime.open()
+        gate.release()
+        let published = await pending.value
+        XCTAssertFalse(published)
+        XCTAssertFalse(old.calls.contains { $0.name == "setWakeRoute" })
+        XCTAssertFalse(h.kernel.calls.contains { $0.name == "setWakeRoute" })
+        await h.runtime.close()
+    }
+
     func testSuspendedPublicationCannotReportSuccessForAReplacementSession() async throws {
         let h = await prepare()
         defer { h.cleanUp() }
