@@ -62,7 +62,7 @@
                     settingsOpener: { _ in
                         opened += 1
                         return true
-                    }, desktopProbe: { true },
+                    }, appRevealer: { _ in XCTFail("A granted request reveals nothing") }, desktopProbe: { true },
                     desktopRearm: {
                         rearms += 1
                         return false

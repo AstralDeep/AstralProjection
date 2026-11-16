@@ -1,6 +1,6 @@
-// Presents explicit Mac permissions, workspace grants with their excluded patterns, and the persisted
-// bypass-approvals switch separately from server-owned product settings. The session panel and the bypass
-// confirmation sheet act on the same host authority.
+// Presents explicit Mac permissions with manual setup steps once macOS stops prompting, workspace grants with their
+// excluded patterns, and the persisted bypass-approvals switch separately from server-owned product settings.
+// The session panel and the bypass confirmation sheet act on the same host authority.
 
 #if os(macOS)
     import AppKit
@@ -10,6 +10,7 @@
     enum MacComputerControlCommand {
         case permission(MacComputerPermission)
         case refreshPermissions
+        case openPermissionSettings, revealApp, relaunch
         case setEnabled(Bool)
         case chooseWorkspaces
         case removeWorkspace(String)
@@ -21,6 +22,9 @@
             case .permission(.screen): host.requestScreen()
             case .permission(.monitoring): host.requestMonitoring()
             case .refreshPermissions: host.refreshPermissions()
+            case .openPermissionSettings: host.openPermissionSettings()
+            case .revealApp: host.revealApp()
+            case .relaunch: host.relaunch()
             case .setEnabled(let value): host.setEnabled(value)
             case .chooseWorkspaces:
                 host.stop()
@@ -65,10 +69,13 @@
                     permission("Screen Recording", allowed: host.screenAllowed, command: .permission(.screen))
                     permission(
                         "Input Monitoring", allowed: host.monitoringAllowed, command: .permission(.monitoring))
+                    if let setup = host.permissionSetup {
+                        MacComputerPermissionSetup(host: host, permission: setup)
+                    }
                     Button(
                         "Refresh permissions", action: MacComputerControlCommand.refreshPermissions.action(on: host)
                     )
-                    .disabled(!host.available)
+                    .disabled(!host.available).accessibilityIdentifier("mac-computer-refresh-permissions")
                     Toggle(
                         "Allow computer tasks on this Mac",
                         isOn: MacComputerControlCommand.enabledBinding(on: host)
@@ -177,6 +184,47 @@
                 Spacer()
                 Button(allowed ? "Review" : "Grant access", action: command.action(on: host)).disabled(!host.available)
             }
+        }
+    }
+
+    struct MacComputerPermissionSetup: View {
+        @Bindable var host: MacComputerHost
+        let permission: MacComputerPermission
+        @Environment(ThemeStore.self) private var theme: ThemeStore?
+
+        var body: some View {
+            let palette = theme?.palette ?? .graphite
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Add AstralDeep to \(permission.pane)").font(.headline)
+                    .accessibilityIdentifier("mac-computer-setup-title")
+                ForEach(Array(permission.setupSteps.enumerated()), id: \.offset) { index, step in
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("\(index + 1).").monospacedDigit().foregroundStyle(palette.muted)
+                        Text(step).fixedSize(horizontal: false, vertical: true)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("mac-computer-setup-step-\(index + 1)")
+                }
+                HStack {
+                    Button(
+                        "Open System Settings",
+                        action: MacComputerControlCommand.openPermissionSettings.action(on: host)
+                    )
+                    .accessibilityIdentifier("mac-computer-setup-open-settings")
+                    Button("Show in Finder", action: MacComputerControlCommand.revealApp.action(on: host))
+                        .accessibilityIdentifier("mac-computer-setup-reveal")
+                    if permission.needsRelaunch {
+                        Button("Relaunch", action: MacComputerControlCommand.relaunch.action(on: host))
+                            .accessibilityIdentifier("mac-computer-setup-relaunch")
+                    }
+                }
+                .disabled(!host.available)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(palette.surface2))
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("mac-computer-permission-setup")
         }
     }
 

@@ -46,8 +46,18 @@
             case .monitoring: return "Input Monitoring"
             }
         }
-        var noPromptGuidance: String {
-            "macOS no longer prompts for this app; open \(pane) and add AstralDeep with +"
+        var noPromptGuidance: String { "macOS no longer prompts for \(title)." }
+        var needsRelaunch: Bool { self != .accessibility }
+        var setupSteps: [String] {
+            [
+                "Open Privacy & Security > \(pane) in System Settings.",
+                "If AstralDeep is already listed, select it and click −.",
+                "Click +, then choose AstralDeep or drag it in from Finder.",
+                "Switch AstralDeep on.",
+                needsRelaunch
+                    ? "Choose Relaunch. \(title) takes effect after AstralDeep reopens."
+                    : "Choose Refresh permissions.",
+            ]
         }
         var settingsURL: URL {
             let anchor: String
@@ -93,6 +103,8 @@
         private(set) var screenAllowed = false
         private(set) var monitoringAllowed = false
         private(set) var lastError: String?
+        private(set) var permissionSetup: MacComputerPermission?
+        @ObservationIgnored private var permissionMessage: String?
         private(set) var awaitingApproval = false
         private(set) var working = false
         private(set) var bypass = false
@@ -119,6 +131,8 @@
         @ObservationIgnored private let permissionProvider: @MainActor () -> MacComputerPermissions
         @ObservationIgnored private let permissionRequester: @MainActor (MacComputerPermission) -> Bool
         @ObservationIgnored private let settingsOpener: @MainActor (URL) -> Bool
+        @ObservationIgnored private let appRevealer: @MainActor (URL) -> Void
+        @ObservationIgnored private let relauncher: @MainActor () -> Bool
         @ObservationIgnored private let desktopProbe: @Sendable () -> Bool
         @ObservationIgnored private var desktopRearm: @MainActor () -> Bool = { false }
         @ObservationIgnored private var bypassRestoreRearm: @MainActor () -> Bool = { false }
@@ -165,6 +179,8 @@
             permissionProvider: (@MainActor () -> MacComputerPermissions)? = nil,
             permissionRequester: (@MainActor (MacComputerPermission) -> Bool)? = nil,
             settingsOpener: (@MainActor (URL) -> Bool)? = nil,
+            appRevealer: (@MainActor (URL) -> Void)? = nil,
+            relauncher: (@MainActor () -> Bool)? = nil,
             desktopProbe: @escaping @Sendable () -> Bool = MacComputerDesktopProbe.usable,
             desktopRearm: (@MainActor () -> Bool)? = nil,
             localDesktopRearmProbe: (@MainActor () -> Bool)? = nil,
@@ -205,6 +221,8 @@
             self.permissionProvider = permissionProvider ?? MacComputerPermissions.current
             self.permissionRequester = permissionRequester ?? { $0.request() }
             self.settingsOpener = settingsOpener ?? { NSWorkspace.shared.open($0) }
+            self.appRevealer = appRevealer ?? { NSWorkspace.shared.activateFileViewerSelecting([$0]) }
+            self.relauncher = relauncher ?? { MacAppRelauncher.relaunch() }
             self.desktopProbe = desktopProbe
             let localInput = self.available && desktopRearm == nil ? MacComputerLocalInput(marker: marker) : nil
             self.localInput = localInput
@@ -646,6 +664,11 @@
             accessibilityAllowed = permissions.accessibility && permissions.posting
             screenAllowed = permissions.screen
             monitoringAllowed = permissions.monitoring
+            if let setup = permissionSetup, permissionReady(setup) {
+                permissionSetup = nil
+                if lastError == permissionMessage { lastError = nil }
+                permissionMessage = nil
+            }
             if enabled, session?.state != "paused", !authority.desktopIsAvailable || !desktopProbe() {
                 sessionLocked()
                 return
@@ -739,9 +762,7 @@
             }
             let asked = "computer.permission.requested." + permission.title
             if defaults.bool(forKey: asked) {
-                lastError =
-                    permission.noPromptGuidance
-                    + (settingsOpener(permission.settingsURL) ? "" : ". AstralDeep could not open that pane.")
+                guideSetup(permission, permission.noPromptGuidance)
                 return
             }
             defaults.set(true, forKey: asked)
@@ -757,13 +778,29 @@
                 lastError = result + " The current macOS check is now granted. Enable computer access yourself."
                 return
             }
+            guideSetup(permission, result + " The permission check immediately after this request reported no access.")
+        }
+        private func guideSetup(_ permission: MacComputerPermission, _ message: String) {
+            permissionSetup = permission
+            appRevealer(Bundle.main.bundleURL)
             let opened = settingsOpener(permission.settingsURL)
-            let instruction = opened ? "System Settings is open." : "Open System Settings > Privacy & Security."
-            let pane =
-                permission == .accessibility ? "Accessibility or Device Control and Data Access" : permission.title
-            lastError =
-                result + " The permission check immediately after this request reported no access. " + instruction
-                + " Enable AstralDeep under \(pane). If macOS asks, quit and reopen AstralDeep. Return here and choose Refresh permissions."
+            reportSetup(opened ? message : "AstralDeep could not open System Settings. " + message)
+        }
+        private func reportSetup(_ message: String) {
+            lastError = message
+            permissionMessage = message
+        }
+        func openPermissionSettings() {
+            guard available, let setup = permissionSetup, !settingsOpener(setup.settingsURL) else { return }
+            reportSetup("AstralDeep could not open System Settings. Open Privacy & Security > \(setup.pane) yourself.")
+        }
+        func revealApp() {
+            guard available else { return }
+            appRevealer(Bundle.main.bundleURL)
+        }
+        func relaunch() {
+            guard available, !relauncher() else { return }
+            reportSetup("AstralDeep could not relaunch. Quit and reopen it yourself.")
         }
         func setEnabled(_ value: Bool) {
             guard available else {

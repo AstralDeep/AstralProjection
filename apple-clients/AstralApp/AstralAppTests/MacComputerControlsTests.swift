@@ -76,7 +76,7 @@
                     permissionProvider: {
                         MacComputerPermissions(accessibility: false, screen: false, monitoring: false)
                     },
-                    permissionRequester: { _ in false }, settingsOpener: { _ in false },
+                    permissionRequester: { _ in false }, settingsOpener: { _ in false }, appRevealer: { _ in },
                     desktopProbe: { true }, desktopRearm: { false }, system: MacComputerTestSystem())
                 if available { MacComputerControlCommand.permission(.accessibility).perform(on: host) }
                 let window = NSWindow(
@@ -116,7 +116,10 @@
                 }
                 if available {
                     XCTAssertTrue(host.lastError?.contains("permission check immediately") == true)
-                    XCTAssertTrue(text.contains("returned not granted"))
+                    XCTAssertTrue(text.contains("AstralDeep could not open System Settings."), text)
+                    XCTAssertFalse(text.contains("returned not granted"), text)
+                    XCTAssertTrue(text.contains("Add AstralDeep to Device Control and Data Access"), text)
+                    XCTAssertTrue(text.contains("Choose Refresh permissions."), text)
                 } else {
                     XCTAssertEqual(host.statusLabel, "This build is a computer controller")
                 }
@@ -166,7 +169,7 @@
                 permissionRequester: {
                     calls.append($0)
                     return false
-                }, settingsOpener: { _ in false },
+                }, settingsOpener: { _ in false }, appRevealer: { _ in },
                 desktopProbe: { true }, desktopRearm: { false }, system: MacComputerTestSystem())
             for permission in [MacComputerPermission.accessibility, .screen, .monitoring] {
                 MacComputerControlCommand.permission(permission).perform(on: host)
