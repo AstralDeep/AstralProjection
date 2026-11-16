@@ -84,7 +84,8 @@ final class WatchWorkNavigationUITests: XCTestCase {
 
     private func waitForClock(_ command: String, status: String) {
         XCTAssertTrue(
-            waitUntil { peer.clockAcknowledgements[command] == status }, "Clock \(command) never became \(status)")
+            waitUntil { peer.clockAcknowledgements[command]?.contains(status) == true },
+            "Clock \(command) never became \(status)")
     }
 
     private func screenshot(_ name: String) {
@@ -135,14 +136,15 @@ final class WatchWorkNavigationUITests: XCTestCase {
     }
 
     func testPendingClockRegistrationDoesNotBlockCurrentServerResponse() throws {
+        let commands = peer.armPendingClockResponse(title: "Current response while clock waits")
         app.buttons["Work records"].tap()
         let pending = try frame(0, action: "chrome_open", mode: "list")
         let generation = try XCTUnwrap(pending["request_generation"] as? String)
-        let waiting = peer.advanceClock(generation: generation, milliseconds: 0, emptyRegistrationProbe: true)
+        XCTAssertEqual(peer.pendingClockGeneration, generation)
+        let waiting = commands.waiting
         waitForClock(waiting, status: "waiting")
-        let overlapping = peer.advanceClock(generation: generation, milliseconds: 0)
+        let overlapping = commands.overlapping
         waitForClock(overlapping, status: "rejected")
-        peer.respond(to: pending, title: "Current response while clock waits")
         XCTAssertTrue(app.staticTexts["Current response while clock waits"].waitForExistence(timeout: 5))
         backToHome()
         waitForClock(waiting, status: "retired")
@@ -177,20 +179,45 @@ final class WatchWorkNavigationUITests: XCTestCase {
 }
 
 final class WatchNavigationPeer: @unchecked Sendable {
+    private enum ClockResponsePhase {
+        case awaitingOpen, awaitingWaiting, awaitingRejection, responded
+    }
+
+    private struct ClockResponse {
+        let title: String
+        let waiting: String
+        let overlapping: String
+        var phase = ClockResponsePhase.awaitingOpen
+        var request: [String: Any]?
+    }
+
     let ready = XCTestExpectation(description: "private loopback peer ready")
     private let listener: NWListener
     private let queue = DispatchQueue(label: "astral.watch-navigation.test-peer")
     private var connections: [NWConnection] = []
     private var received: [[String: Any]] = []
-    private var acknowledgements: [String: String] = [:]
+    private var acknowledgements: [String: Set<String>] = [:]
     private var failures: [String] = []
     private var count = 0
     private let consoleFixture: [String: Any]?
     private var connectionGeneration: String?
+    private var clockResponse: ClockResponse?
     var port: UInt16? { listener.port?.rawValue }
     var frames: [[String: Any]] { queue.sync { received } }
-    var clockAcknowledgements: [String: String] { queue.sync { acknowledgements } }
+    var clockAcknowledgements: [String: Set<String>] { queue.sync { acknowledgements } }
     var errors: [String] { queue.sync { failures } }
+    var pendingClockGeneration: String? {
+        queue.sync { clockResponse?.request?["request_generation"] as? String }
+    }
+
+    func armPendingClockResponse(title: String) -> (waiting: String, overlapping: String) {
+        queue.sync {
+            let scenario = ClockResponse(
+                title: title, waiting: UUID().uuidString.lowercased(), overlapping: UUID().uuidString.lowercased())
+            clockResponse = scenario
+            return (scenario.waiting, scenario.overlapping)
+        }
+    }
 
     init(consoleFixture: [String: Any]? = nil) throws {
         self.consoleFixture = consoleFixture
@@ -279,7 +306,7 @@ final class WatchNavigationPeer: @unchecked Sendable {
                 let status = payload["status"] as? String,
                 ["advanced", "retired", "rejected", "waiting"].contains(status)
             {
-                self.acknowledgements[command] = status
+                self.acknowledgements[command, default: []].insert(status)
             } else if ["chrome_open", "chrome_close"].contains(value["action"] as? String ?? "") {
                 self.received.append(value)
             } else if self.consoleFixture != nil,
@@ -289,7 +316,45 @@ final class WatchNavigationPeer: @unchecked Sendable {
             } else {
                 self.failures.append("Unexpected non-Work frame")
             }
+            self.handleClockResponse(value, connection: connection)
             self.receive(connection)
+        }
+    }
+
+    private func handleClockResponse(_ value: [String: Any], connection: NWConnection) {
+        guard var scenario = clockResponse else { return }
+        switch scenario.phase {
+        case .awaitingOpen:
+            guard value["action"] as? String == "chrome_open",
+                let generation = value["request_generation"] as? String
+            else { return }
+            scenario.request = value
+            scenario.phase = .awaitingWaiting
+            clockResponse = scenario
+            sendClock(
+                scenario.waiting, generation: generation, milliseconds: 0, emptyRegistrationProbe: true,
+                connection: connection)
+        case .awaitingWaiting, .awaitingRejection:
+            guard value["action"] as? String == "navigation_test_clock_ack",
+                let payload = value["payload"] as? [String: Any],
+                let request = scenario.request,
+                let generation = request["request_generation"] as? String
+            else { return }
+            if scenario.phase == .awaitingWaiting,
+                payload["command_id"] as? String == scenario.waiting, payload["status"] as? String == "waiting"
+            {
+                scenario.phase = .awaitingRejection
+                clockResponse = scenario
+                sendClock(scenario.overlapping, generation: generation, milliseconds: 0, connection: connection)
+            } else if scenario.phase == .awaitingRejection,
+                payload["command_id"] as? String == scenario.overlapping, payload["status"] as? String == "rejected"
+            {
+                scenario.phase = .responded
+                clockResponse = scenario
+                respond(to: request, title: scenario.title)
+            }
+        case .responded:
+            return
         }
     }
 
@@ -306,14 +371,23 @@ final class WatchNavigationPeer: @unchecked Sendable {
         let command = UUID().uuidString.lowercased()
         queue.async {
             guard let connection = self.connections.first else { return }
-            var payload: [String: Any] = [
-                "type": "navigation_test_clock", "request_generation": generation,
-                "command_id": command, "milliseconds": milliseconds,
-            ]
-            if emptyRegistrationProbe { payload["empty_registration_probe"] = true }
-            self.send(payload, to: connection)
+            self.sendClock(
+                command, generation: generation, milliseconds: milliseconds,
+                emptyRegistrationProbe: emptyRegistrationProbe, connection: connection)
         }
         return command
+    }
+
+    private func sendClock(
+        _ command: String, generation: String, milliseconds: Int, emptyRegistrationProbe: Bool = false,
+        connection: NWConnection
+    ) {
+        var payload: [String: Any] = [
+            "type": "navigation_test_clock", "request_generation": generation,
+            "command_id": command, "milliseconds": milliseconds,
+        ]
+        if emptyRegistrationProbe { payload["empty_registration_probe"] = true }
+        send(payload, to: connection)
     }
 
     func respond(to request: [String: Any], title: String, detailButton: Bool = false, surface: String = "work") {
