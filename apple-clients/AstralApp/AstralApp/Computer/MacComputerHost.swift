@@ -783,8 +783,8 @@
         private func guideSetup(_ permission: MacComputerPermission, _ message: String) {
             permissionSetup = permission
             appRevealer(Bundle.main.bundleURL)
-            reportSetup(
-                settingsOpener(permission.settingsURL) ? message : "AstralDeep could not open System Settings. " + message)
+            let opened = settingsOpener(permission.settingsURL)
+            reportSetup(opened ? message : "AstralDeep could not open System Settings. " + message)
         }
         private func reportSetup(_ message: String) {
             lastError = message
