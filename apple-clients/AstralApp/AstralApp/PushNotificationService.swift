@@ -218,7 +218,11 @@
         func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async
             -> UNNotificationPresentationOptions
         {
-            if let id = Self.notificationId(notification.request.content.userInfo) { await admitForeground(id) }
+            let userInfo = notification.request.content.userInfo
+            if LocalNoticePayload.claims(userInfo) {
+                return IOSNotificationAdapter.active?.willPresent(userInfo: userInfo) ?? []
+            }
+            if let id = Self.notificationId(userInfo) { await admitForeground(id) }
             return []
         }
 
@@ -246,7 +250,14 @@
         func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse)
             async
         {
-            guard let id = Self.notificationId(response.notification.request.content.userInfo) else { return }
+            let request = response.notification.request
+            if LocalNoticePayload.claims(request.content.userInfo) {
+                IOSNotificationAdapter.active?.didReceive(
+                    identifier: request.identifier, userInfo: request.content.userInfo,
+                    action: response.actionIdentifier)
+                return
+            }
+            guard let id = Self.notificationId(request.content.userInfo) else { return }
             receiveTap(id)
         }
 
@@ -582,6 +593,7 @@
 
         func applicationWillTerminate(_ application: UIApplication) {
             MeshBackgroundWake.active?.cancel()
+            IOSNotificationAdapter.active?.applicationWillTerminate()
         }
 
         func application(
@@ -596,9 +608,13 @@
         }
         func application(
             _ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
-        ) { PushNotificationService.active?.handleRegisteredDeviceToken(deviceToken) }
+        ) {
+            PushNotificationService.active?.handleRegisteredDeviceToken(deviceToken)
+            IOSNotificationAdapter.active?.didRegister(deviceToken: deviceToken)
+        }
         func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
             PushNotificationService.active?.handleRegistrationFailure()
+            IOSNotificationAdapter.active?.didFailToRegister()
         }
     }
 #endif
