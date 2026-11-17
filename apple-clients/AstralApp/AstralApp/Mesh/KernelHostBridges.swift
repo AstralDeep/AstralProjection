@@ -44,6 +44,14 @@ nonisolated final class KernelHostSigner: AstralKernel.HostSigner, @unchecked Se
             guard built.effect == "roster.genesis" else { throw ConsentPromptError.invalidInput }
         case .other where prompt.title == "reveal_recovery" || prompt.title == "confirm_recovery":
             built = try ConsentPrompt.recovery(action: prompt.title, signingInput: message)
+        case .grantPhi, .revokePhi, .approvePhiDestination, .registerPhiApprover:
+            built = try ConsentPrompt.roster(signingInput: message)
+            let expected: [AstralKernel.ConsentKind: String] = [
+                .grantPhi: "roster.phi_grant", .revokePhi: "roster.phi_revoke",
+                .approvePhiDestination: "roster.phi_approve_destination",
+                .registerPhiApprover: "roster.phi_register_approver",
+            ]
+            guard built.effect == expected[prompt.kind] else { throw ConsentPromptError.invalidInput }
         case .toolEffect:
             if prompt.title == "run.takeover" {
                 built = try ConsentPrompt.takeover(canonicalAction: prompt.canonicalAction, signingInput: message)
@@ -158,6 +166,16 @@ nonisolated final class KernelLocalTools: AstralKernel.LocalTools, @unchecked Se
         case .phi: return .phi
         case .secret: return .secret
         }
+    }
+}
+
+nonisolated final class KernelPhiPrompt: AstralKernel.HostPhiPrompt, @unchecked Sendable {
+    private let prompt: any MeshPhiPrompting
+
+    init(_ prompt: any MeshPhiPrompting) { self.prompt = prompt }
+
+    func ask(question: AstralKernel.PhiQuestion) throws -> AstralKernel.PhiAnswer {
+        KernelMapping.phiAnswer(prompt.ask(KernelMapping.phiQuestion(question)))
     }
 }
 
