@@ -3,10 +3,19 @@
 
 @testable import AstralDeep
 import AstralKernel
+import CryptoKit
 import XCTest
 
 final class MeshCallerTicketTests: XCTestCase {
-    private let holder = MeshCallerTicketLimits.holderPrefix + "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+    private let holder =
+        MeshCallerTicketLimits.holderPrefix
+        + MeshCallerTicketTests.encoded(
+            Curve25519.Signing.PrivateKey().publicKey.rawRepresentation)
+
+    private static func encoded(_ data: Data) -> String {
+        data.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
     private let nodeId = "sha256:" + String(repeating: "c", count: 64)
     private let ticketId = "AAECAwQFBgcICQoLDA0ODw"
 
@@ -220,8 +229,10 @@ final class MeshCallerTicketTests: XCTestCase {
         return serving
     }
 
-    private func request(_ text: String, tool: String?) -> MeshCallerRequest {
-        MeshCallerRequest(authorization: text, proof: nil, method: "POST", target: "/a2a", bodySha256: "d", tool: tool)
+    private func request(_ text: String, tool: String?, proof: String? = nil) -> MeshCallerRequest {
+        MeshCallerRequest(
+            authorization: text, proof: proof ?? UUID().uuidString, method: "POST", target: "/a2a", bodySha256: "d",
+            tool: tool)
     }
 
     func testVerifyAdmitsACoveredToolAndRefusesTheRest() throws {
@@ -251,6 +262,16 @@ final class MeshCallerTicketTests: XCTestCase {
             try serving.verifyCallerRequest(self.request(issued.text, tool: "read_notes"))
         }
         assertRefused("caller.malformed") { try serving.verifyCallerRequest(self.request("forged", tool: nil)) }
+        assertRefused("caller.proof_malformed") {
+            try serving.verifyCallerRequest(
+                MeshCallerRequest(
+                    authorization: issued.text, proof: nil, method: "POST", target: "/a2a", bodySha256: "d", tool: nil))
+        }
+        _ = try serving.verifyCallerRequest(request(issued.text, tool: nil, proof: "nonce-1"))
+        assertRefused("caller.replayed") {
+            try serving.verifyCallerRequest(self.request(issued.text, tool: nil, proof: "nonce-1"))
+        }
+        XCTAssertEqual(try serving.callerTickets(), [])
 
         let elsewhere = MeshCallerTicket(
             id: ticketId, text: "in-memory-caller-ticket:" + ticketId, label: "Other", nodeId: nodeId,
@@ -276,6 +297,10 @@ final class MeshCallerTicketTests: XCTestCase {
         minter.setNodeCatalog(servingId, tools: ["current_datetime"])
         let issued = try mint(minter, node: servingId, lifetime: 60)
         serving.acceptCaller(issued)
+        let foreign = MeshCallerTicket(
+            id: issued.id, text: issued.text, label: issued.label, nodeId: nodeId, tools: issued.tools,
+            issuedAt: issued.issuedAt, expiresAt: issued.expiresAt, revoked: false, expired: false)
+        minter.acceptCaller(foreign)
         assertRefused("caller.wrong_node") { try minter.verifyCallerRequest(self.request(issued.text, tool: nil)) }
         clock.advance(61)
         assertRefused("caller.expired") { try serving.verifyCallerRequest(self.request(issued.text, tool: nil)) }
@@ -284,7 +309,133 @@ final class MeshCallerTicketTests: XCTestCase {
         XCTAssertNoThrow(try serving.verifyCallerRequest(request(fresh.text, tool: nil)))
         try serving.raiseStop()
         assertRefused("caller.stopped") { try serving.verifyCallerRequest(self.request(fresh.text, tool: nil)) }
+        let future = MeshCallerTicket(
+            id: ticketId, text: "in-memory-caller-ticket:future", label: "Early", nodeId: servingId,
+            tools: ["current_datetime"], issuedAt: clock.now.addingTimeInterval(301),
+            expiresAt: clock.now.addingTimeInterval(900), revoked: false, expired: false)
+        serving.acceptCaller(future)
+        assertRefused("caller.stopped") { try serving.verifyCallerRequest(self.request(future.text, tool: nil)) }
         let none = servingNode(clock: clock, hasMesh: false)
         assertRefused("mesh.not_enrolled") { try none.verifyCallerRequest(self.request(issued.text, tool: nil)) }
+    }
+
+    func testVerifyFollowsTheKernelOrderForStoppedExpiredNotYetValidAndRevoked() throws {
+        let clock = Clock()
+        let serving = servingNode(clock: clock)
+        let servingId = serving.localMember.memberId
+        func ticket(_ id: String, issued: TimeInterval, expires: TimeInterval) -> MeshCallerTicket {
+            MeshCallerTicket(
+                id: id, text: "in-memory-caller-ticket:" + id, label: "Script", nodeId: servingId,
+                tools: ["current_datetime"], issuedAt: clock.now.addingTimeInterval(issued),
+                expiresAt: clock.now.addingTimeInterval(expires), revoked: false, expired: false)
+        }
+        let both = ticket(ticketId, issued: -120, expires: -60)
+        serving.acceptCaller(both)
+        try serving.revokeCallerTicket(id: both.id)
+        assertRefused("caller.expired") { try serving.verifyCallerRequest(self.request(both.text, tool: nil)) }
+        let early = ticket("AAECAwQFBgcICQoLDA0ODg", issued: 301, expires: 900)
+        serving.acceptCaller(early)
+        try serving.revokeCallerTicket(id: early.id)
+        assertRefused("caller.not_yet_valid") { try serving.verifyCallerRequest(self.request(early.text, tool: nil)) }
+        let edge = ticket("AAECAwQFBgcICQoLDA0ODQ", issued: 300, expires: 900)
+        serving.acceptCaller(edge)
+        XCTAssertNoThrow(try serving.verifyCallerRequest(request(edge.text, tool: nil)))
+        try serving.raiseStop()
+        let late = ticket("AAECAwQFBgcICQoLDA0ODA", issued: -120, expires: -60)
+        serving.acceptCaller(late)
+        assertRefused("caller.stopped") { try serving.verifyCallerRequest(self.request(late.text, tool: nil)) }
+    }
+
+    func testMintFollowsTheKernelRefusalOrder() throws {
+        let bare = kernel()
+        let quiet = "sha256:" + String(repeating: "e", count: 64)
+        bare.setMembers([
+            bare.localMember,
+            MeshMember(memberId: quiet, label: "Quiet", kind: .node, isThisDevice: false, lastSeen: nil, path: .none),
+        ])
+        let badHolder = MeshCallerTicketLimits.holderPrefix + "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        assertRefused("caller.malformed") { try self.mint(bare, node: quiet, holder: badHolder, label: "") }
+        assertRefused("caller.no_catalog") { try self.mint(bare, node: quiet, label: "", tools: ["nope"]) }
+        let ready = kernel()
+        assertRefused("caller.malformed") {
+            try self.mint(ready, label: "", tools: ["current_datetime", "current_datetime"])
+        }
+        assertRefused("caller.unknown_tool") { try self.mint(ready, label: "", tools: ["nope"]) }
+        assertRefused("caller.malformed") { try self.mint(ready, label: "") }
+    }
+
+    func testMintRefusesHoldersTheContractRefuses() throws {
+        let kernel = kernel()
+        for body in [
+            "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "7P_______________________________________38",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "xxdqcD1N2E-6PAt2DRBnDyogU_osOczGTsf9d5KsA3o",
+            "8P_______________________________________38", "AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "g3CbrxsbDVAKgzza0u8li0rIi69fB07TnnuBcQUlhhU", "UU-dss261QdcDIytewJIFUZ9LfRJ7YPoznhUKKucbUU",
+            "Dlpu61n2r1mTZNr2znmyNj88J5uS-CL6dXSBlKOdtng", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "ao9kUOTk8q_1fMMlLRDadLU3dFCg-LEsYYR-jvraeeo=", "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIA",
+        ] {
+            assertRefused("caller.malformed") {
+                try self.mint(kernel, holder: MeshCallerTicketLimits.holderPrefix + body)
+            }
+        }
+        assertRefused("caller.malformed") {
+            try self.mint(
+                kernel, holder: "astral-caller-holder:v2:ao9kUOTk8q_1fMMlLRDadLU3dFCg-LEsYYR-jvraeeo")
+        }
+        assertRefused("caller.malformed") {
+            try self.mint(kernel, holder: "astral-caller-key:v1:fNd75Qk6076AZdCao5Nq58e_DMdnLZjibOMxW6BNQXs")
+        }
+        XCTAssertNoThrow(
+            try self.mint(
+                kernel, holder: MeshCallerTicketLimits.holderPrefix + "ao9kUOTk8q_1fMMlLRDadLU3dFCg-LEsYYR-jvraeeo"))
+    }
+
+    func testLabelTableMatchesThePinnedContractFile() throws {
+        let url = try XCTUnwrap(
+            Bundle(for: MeshCallerTicketTests.self).url(forResource: "label_classes", withExtension: "json"))
+        let bytes = try Data(contentsOf: url)
+        XCTAssertEqual(
+            SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined(),
+            "7384cec524e91f5049c3fb2cbaf55a9eef56154fa34acc76f2559be55cfd640d")
+        let table = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+        let refused = try XCTUnwrap(table["refused"] as? [String: [[UInt32]]])
+        let expected = refused.values.flatMap { $0 }.sorted { $0[0] < $1[0] }
+        XCTAssertEqual(MeshCallerLabelClasses.ranges.map { [$0.first, $0.last] }, expected)
+        for range in expected {
+            for point in [range[0], range[1]] {
+                if let scalar = Unicode.Scalar(point) {
+                    XCTAssertTrue(MeshCallerLabelClasses.refuses(scalar), "\(point)")
+                }
+            }
+            if range[0] > 0, let before = Unicode.Scalar(range[0] - 1),
+                !expected.contains(where: { $0[0] <= range[0] - 1 && range[0] - 1 <= $0[1] })
+            {
+                XCTAssertFalse(MeshCallerLabelClasses.refuses(before), "\(range[0] - 1)")
+            }
+        }
+        XCTAssertFalse(MeshCallerLabelClasses.refuses("\u{2028}"))
+        XCTAssertTrue(MeshCallerLabelClasses.refuses("\u{200D}"))
+        XCTAssertTrue(MeshCallerLabelClasses.refuses("\u{0000}"))
+        XCTAssertFalse(MeshCallerLabelClasses.refuses("a"))
+        XCTAssertFalse(MeshCallerLabelClasses.refuses("\u{1F600}"))
+    }
+
+    func testLabelsFollowTheTableAndCountScalars() throws {
+        let kernel = kernel()
+        XCTAssertNoThrow(try mint(kernel, label: "line\u{2028}break"))
+        assertRefused("caller.malformed") { try self.mint(kernel, label: "joiner\u{200D}") }
+        let accented = String(repeating: "e\u{301}", count: 32)
+        XCTAssertEqual(accented.unicodeScalars.count, 64)
+        XCTAssertNoThrow(try mint(kernel, label: accented))
+        assertRefused("caller.malformed") { try self.mint(kernel, label: accented + "x") }
+    }
+
+    func testMissingLocalRosterEntryIsDeniedLikeTheKernel() throws {
+        let kernel = kernel()
+        kernel.setMembers([])
+        XCTAssertThrowsError(try mint(kernel)) { XCTAssertEqual($0 as? MeshKernelError, .consentDenied) }
+        XCTAssertThrowsError(try kernel.verifyCallerRequest(request("t", tool: nil))) {
+            XCTAssertEqual($0 as? MeshKernelError, .consentDenied)
+        }
     }
 }

@@ -133,7 +133,10 @@ final class RealMeshKernelTests: XCTestCase {
         XCTAssertThrowsError(
             try mac.kernel.verifyCallerRequest(
                 MeshCallerRequest(
-                    authorization: "forged", proof: nil, method: "POST", target: "/a2a", bodySha256: "d", tool: nil)))
+                    authorization: "forged", proof: nil, method: "POST", target: "/a2a", bodySha256: "d", tool: nil))
+        ) {
+            XCTAssertEqual($0 as? MeshKernelError, .refused(KernelMapping.failureText(code: "caller.malformed")))
+        }
         await mac.kernel.stopNetwork()
     }
 
