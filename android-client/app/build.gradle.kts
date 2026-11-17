@@ -1,5 +1,5 @@
 // Gradle build for the :app Android/Compose client, depending on :core for pure logic; configures lint,
-// release signing, the registered Play/OIDC application identity, and dependency-version overrides.
+// release signing, the registered Play application identity, and dependency-version overrides.
 
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.RegularFileProperty
@@ -125,9 +125,8 @@ val keystoreProperties =
         if (f.exists()) f.inputStream().use { load(it) }
     }
 
-// Registered Play/OIDC id — never mint a new one on repo moves
+// Registered Play id — never mint a new one on repo moves
 val registeredApplicationId = "com.personalailabs.astraldeep"
-val registeredRedirectScheme = "com.personalailabs.astraldeep"
 val migrationVersionCodeFloor = 5
 val currentVersionCode = 9
 check(currentVersionCode >= migrationVersionCodeFloor) {
@@ -138,9 +137,6 @@ object AndroidDeploymentProfiles {
     fun validate(
         api: String,
         websocket: String,
-        issuer: String,
-        client: String,
-        redirect: String,
     ) {
         fun endpoint(
             value: String,
@@ -157,7 +153,6 @@ object AndroidDeploymentProfiles {
         }
         val backend = endpoint(api, "https")
         val socket = endpoint(websocket, "wss")
-        val authority = endpoint(issuer, "https")
         require(backend.path in setOf("", "/") && socket.path == "/ws") { "Invalid backend deployment path" }
         require(
             backend.host.equals(socket.host, ignoreCase = true) &&
@@ -165,41 +160,26 @@ object AndroidDeploymentProfiles {
         ) {
             "REST and WebSocket deployment origins differ"
         }
-        require(Regex("/(?:[A-Za-z0-9._~-]+/)*realms/[A-Za-z0-9._~-]+").matches(authority.path)) {
-            "Invalid Keycloak realm authority"
-        }
-        require(client == "astral-mobile" && redirect == "com.personalailabs.astraldeep:/oauth2redirect") {
-            "Registered Android OIDC identity cannot change"
-        }
     }
 }
 
 abstract class VerifyAndroidDeploymentProfileTask : DefaultTask() {
     @TaskAction
     fun verify() {
-        val valid =
-            listOf(
-                "https://example.invalid",
-                "wss://example.invalid/ws",
-                "https://iam.example.invalid/realms/Astral",
-                "astral-mobile",
-                "com.personalailabs.astraldeep:/oauth2redirect",
-            )
-        AndroidDeploymentProfiles.validate(valid[0], valid[1], valid[2], valid[3], valid[4])
-        AndroidDeploymentProfiles.validate("https://example.invalid:443/", valid[1], valid[2], valid[3], valid[4])
+        val valid = listOf("https://example.invalid", "wss://example.invalid/ws")
+        AndroidDeploymentProfiles.validate(valid[0], valid[1])
+        AndroidDeploymentProfiles.validate("https://example.invalid:443/", valid[1])
         val invalid =
             listOf(
                 0 to "http://example.invalid", 0 to "https://owner:secret@example.invalid", 0 to "https://example.invalid/api",
                 0 to "https://example.invalid?key=value", 0 to "https://example.invalid#fragment", 0 to "https://example.invalid:0",
                 0 to "https://example.invalid:65536", 1 to "ws://example.invalid/ws", 1 to "wss://foreign.invalid/ws",
-                1 to "wss://example.invalid:9443/ws", 1 to "wss://example.invalid/other", 2 to "https://iam.example.invalid",
-                2 to "https://iam.example.invalid/realms/Astral/", 2 to "https://iam.example.invalid/realms/%41stral",
-                3 to "other-client", 4 to "other:/oauth2redirect",
+                1 to "wss://example.invalid:9443/ws", 1 to "wss://example.invalid/other",
             )
         for ((position, value) in invalid) {
             val candidate = valid.toMutableList().apply { this[position] = value }
             check(
-                runCatching { AndroidDeploymentProfiles.validate(candidate[0], candidate[1], candidate[2], candidate[3], candidate[4]) }
+                runCatching { AndroidDeploymentProfiles.validate(candidate[0], candidate[1]) }
                     .exceptionOrNull() is IllegalArgumentException,
             ) { "Unsafe deployment profile was accepted" }
         }
@@ -207,18 +187,12 @@ abstract class VerifyAndroidDeploymentProfileTask : DefaultTask() {
 }
 
 val deploymentProperties =
-    listOf("astralApiBase", "astralWebSocketUrl", "astralKeycloakAuthority", "astralOidcClientId", "astralOidcRedirectUri")
+    listOf("astralApiBase", "astralWebSocketUrl")
 val deploymentValues = deploymentProperties.map { providers.gradleProperty(it).orNull }
 val explicitDeployment = deploymentValues.any { it != null }
 if (explicitDeployment) {
-    require(deploymentValues.take(3).all { it != null }) { "Explicit deployment requires API, WebSocket and Keycloak authority together" }
-    AndroidDeploymentProfiles.validate(
-        deploymentValues[0]!!,
-        deploymentValues[1]!!,
-        deploymentValues[2]!!,
-        deploymentValues[3] ?: "astral-mobile",
-        deploymentValues[4] ?: "com.personalailabs.astraldeep:/oauth2redirect",
-    )
+    require(deploymentValues.all { it != null }) { "Explicit deployment requires API and WebSocket together" }
+    AndroidDeploymentProfiles.validate(deploymentValues[0]!!, deploymentValues[1]!!)
 }
 val verifyAndroidDeploymentProfile = tasks.register<VerifyAndroidDeploymentProfileTask>("verifyDeploymentBuildProfile")
 tasks.named("preBuild") { dependsOn(verifyAndroidDeploymentProfile) }
@@ -293,15 +267,7 @@ android {
         versionName = "1.7"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        manifestPlaceholders["appAuthRedirectScheme"] = registeredRedirectScheme
         buildConfigField("boolean", "ASTRAL_EXPLICIT_DEPLOYMENT", explicitDeployment.toString())
-        buildConfigField("String", "ASTRAL_KEYCLOAK_AUTHORITY", "\"${deploymentValues[2] ?: "https://iam.ai.uky.edu/realms/Astral"}\"")
-        buildConfigField("String", "ASTRAL_OIDC_CLIENT_ID", "\"${deploymentValues[3] ?: "astral-mobile"}\"")
-        buildConfigField(
-            "String",
-            "ASTRAL_OIDC_REDIRECT_URI",
-            "\"${deploymentValues[4] ?: "com.personalailabs.astraldeep:/oauth2redirect"}\"",
-        )
     }
 
     buildFeatures {
@@ -400,6 +366,7 @@ dependencies {
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.fragment)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.window)
@@ -410,7 +377,6 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
-    implementation(libs.appauth)
     implementation(libs.firebase.messaging)
     implementation(libs.play.services.basement)
     implementation(libs.coil.compose)

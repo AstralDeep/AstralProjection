@@ -1,4 +1,4 @@
-"""Tests for Android and Apple client release identity: store/OIDC registration, signing
+"""Tests for Android and Apple client release identity: store registration, signing
 configuration, and build numbering stay stable.
 """
 
@@ -21,36 +21,19 @@ def _plist(relative_path: str) -> dict[str, object]:
     return plistlib.loads((ROOT / relative_path).read_bytes())
 
 
-def test_android_store_and_oidc_identity_remain_registered_values() -> None:
+def test_android_store_identity_stays_registered_and_no_sign_in_remains() -> None:
     gradle = _text("android-client/app/build.gradle.kts")
     manifest = _text("android-client/app/src/main/AndroidManifest.xml")
-    app_config = _text(
-        "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/AppConfig.kt"
-    )
-    oidc_auth = _text(
-        "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/auth/OidcAuth.kt"
-    )
 
     assert 'val registeredApplicationId = "com.personalailabs.astraldeep"' in gradle
-    assert 'val registeredRedirectScheme = "com.personalailabs.astraldeep"' in gradle
     assert "val migrationVersionCodeFloor = 5" in gradle
     assert "val currentVersionCode = 9" in gradle
     assert "check(currentVersionCode >= migrationVersionCodeFloor)" in gradle
     assert "applicationId = registeredApplicationId" in gradle
     assert "versionCode = currentVersionCode" in gradle
     assert 'versionName = "1.7"' in gradle
-    assert 'manifestPlaceholders["appAuthRedirectScheme"] = registeredRedirectScheme' in gradle
-
-    redirect_uri = "com.personalailabs.astraldeep:/oauth2redirect"
-    deployment = _text(
-        "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/deployment/ClientDeploymentProfile.kt"
-    )
-    assert "BuildConfig.ASTRAL_OIDC_REDIRECT_URI" in app_config
-    assert "val OIDC_REDIRECT_URI: String = deployment.redirectUri" in app_config
-    assert f'clientId == "astral-mobile" && redirectUri == "{redirect_uri}"' in deployment
-    assert f'client == "astral-mobile" && redirect == "{redirect_uri}"' in gradle
-    assert "Uri.parse(AppConfig.OIDC_REDIRECT_URI)" in oidc_auth
-    assert 'android:scheme="${appAuthRedirectScheme}"' in manifest
+    assert "appAuthRedirectScheme" not in gradle + manifest
+    assert "net.openid.appauth" not in manifest
 
 
 def test_android_release_signing_stays_private_and_indirect() -> None:

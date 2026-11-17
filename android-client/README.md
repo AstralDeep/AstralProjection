@@ -44,7 +44,7 @@ android-client/
 │           #   streaming/ (push consumer), push/ (notification adapter decisions),
 │           #   rest/ (audit REST shaping)
 └── app/    # Android/Compose:
-            #   transport/ (OkHttp WS), auth/ (AppAuth OIDC PKCE), render/
+            #   transport/ (OkHttp WS), render/
             #   (type→@Composable registry), push/ (OS notification adapter),
             #   stream/, ui/ (adaptive scaffold + chat/agents/history/audit screens)
 ```
@@ -87,39 +87,25 @@ integration interfaces and qualification limits.
 
 ## Run
 
-**Real Keycloak (the product auth).** The `astral-mobile` public client is
-provisioned and allow-listed (`KEYCLOAK_ALLOWED_AZP`). Its Valid Redirect URIs
-include the Android scheme `com.personalailabs.astraldeep:/oauth2redirect` (matching
-the app's `appAuthRedirectScheme` manifest placeholder). Point the app at the
-orchestrator (`wss://<host>/ws`) and sign in via the system browser (OIDC
-Authorization-Code + PKCE), registering as `device_type=android`. See
-[`docs/keycloak-android-client-setup.md`](../docs/keycloak-android-client-setup.md).
+**Paused.** Android is paused until its kernel port qualifies. `MainActivity` opens one
+screen, "Astral for Android is not available yet. Use the Mac or iPhone app.", and
+the app has no sign-in. The rest of the client stays compiled and is not reachable
+from that screen.
 
-The app authenticates **only** via Keycloak OIDC (AppAuth PKCE) — there is no
-dev-token or mock-auth shortcut (the unused `DevAuth` path was removed in feature
-044).
-
-An explicit deployment build retains the registered `astral-mobile` public client
-and `com.personalailabs.astraldeep:/oauth2redirect` callback. Supply all three
-endpoint properties together:
+An explicit deployment build supplies both endpoint properties together:
 
 ```bash
 ./gradlew :app:assembleDebug \
   -PastralApiBase=https://backend.example.invalid \
-  -PastralWebSocketUrl=wss://backend.example.invalid/ws \
-  -PastralKeycloakAuthority=https://iam.example.invalid/realms/Astral
+  -PastralWebSocketUrl=wss://backend.example.invalid/ws
 ```
 
 REST and WebSocket must use the same TLS origin, with the REST origin at `/` and
-the WebSocket path at `/ws`. Keycloak must be a canonical HTTPS realm authority.
-Credentials, query strings, fragments, insecure schemes and partial profiles are
-rejected during Gradle configuration and by the Android-free runtime validator.
-Optional `astralOidcClientId` and `astralOidcRedirectUri` properties may only
-restate the registered identities. The backend must allow the mobile client and
-provision its public PKCE/S256 callback; the normal server session and AppAuth
-flows remain required. A secure staging build uses the same stock application
-code and certificate verification as a release build, with its compiled endpoint
-profile bound to the retained APK digest.
+the WebSocket path at `/ws`. Credentials, query strings, fragments, insecure
+schemes and partial profiles are rejected during Gradle configuration and by the
+Android-free runtime validator. A secure staging build uses the same stock
+application code and certificate verification as a release build, with its
+compiled endpoint profile bound to the retained APK digest.
 
 Without an explicit profile, the existing debug loopback and release deployment
 values are preserved. This does not make insecure debug endpoints eligible for
@@ -148,7 +134,7 @@ and so are the coverage and lint floors; `next-major-readiness` is advisory.
 - **No web view.** Every surface is native Compose; chrome that the web shell
   receives as HTML (`chrome_render`) is acknowledged, not embedded — native
   screens (Agents/History/Audit) are driven by the existing data actions/REST.
-- **Dependencies** (Compose/AndroidX, OkHttp, kotlinx.serialization, AppAuth,
+- **Dependencies** (Compose/AndroidX, OkHttp, kotlinx.serialization,
   Coil) are declared in `gradle/libs.versions.toml` and pinned by the Gradle
   lockfiles and `gradle/verification-metadata.xml`; any dependency may be added
   that way.

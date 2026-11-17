@@ -9,17 +9,14 @@ import com.google.firebase.FirebaseOptions
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
-import com.personalailabs.astraldeep.app.AstralApp
 import com.personalailabs.astraldeep.app.BuildConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlin.coroutines.resume
 
@@ -99,20 +96,7 @@ class FcmPushProvider(private val context: Context) : PushProviderBackend {
 }
 
 class AstralFirebaseMessagingService : FirebaseMessagingService() {
-    override fun onMessageReceived(message: RemoteMessage) {
-        if (message.notification != null) return
-        runBlocking {
-            withContext(Dispatchers.Main) {
-                (application as AstralApp).pushRuntime.receiveProviderMessage(message.data)
-            }
-        }
-    }
+    override fun onMessageReceived(message: RemoteMessage) = Unit
 
-    override fun onRegistered(token: String) {
-        runBlocking { withContext(Dispatchers.Main) { (application as AstralApp).pushRuntime.refreshProviderToken() } }
-    }
-
-    override fun onNewToken(token: String) {
-        runBlocking { withContext(Dispatchers.Main) { (application as AstralApp).pushRuntime.refreshProviderToken() } }
-    }
+    override fun onNewToken(token: String) = Unit
 }
