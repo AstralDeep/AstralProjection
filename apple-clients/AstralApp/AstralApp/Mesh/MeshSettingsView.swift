@@ -51,6 +51,12 @@ struct MeshSettingsView: View {
                     Label("Contacts", systemImage: "person.2")
                 }
                 .accessibilityIdentifier("mesh.settings.contacts")
+                NavigationLink {
+                    MeshSharesView()
+                } label: {
+                    Label("Shared chats", systemImage: "square.and.arrow.up")
+                }
+                .accessibilityIdentifier("mesh.settings.shares")
             }
             Section("Assistant") {
                 NavigationLink {

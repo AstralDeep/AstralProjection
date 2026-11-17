@@ -83,6 +83,7 @@ struct MeshChatDetailView: View {
     @Environment(ThemeStore.self) private var theme
     @State private var draft = ""
     @State private var requesting: MeshMember?
+    @State private var sharing = false
     @State private var choosingAttachment = false
     @State private var fileProblem: String?
     private var p: AstralPalette { theme.palette }
@@ -102,9 +103,10 @@ struct MeshChatDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbar {
-            if !otherMembers.isEmpty {
-                ToolbarItem(placement: .primaryAction) { chatMenu }
-            }
+            ToolbarItem(placement: .primaryAction) { chatMenu }
+        }
+        .sheet(isPresented: $sharing) {
+            if let chatId = mesh.currentChatId { MeshShareSheet(chatId: chatId) }
         }
         .sheet(item: $requesting) { member in
             NavigationStack {
@@ -264,6 +266,8 @@ struct MeshChatDetailView: View {
 
     private var chatMenu: some View {
         Menu {
+            Button("Share Chat", systemImage: "square.and.arrow.up") { sharing = true }
+                .accessibilityIdentifier(MeshShareID.action)
             ForEach(otherMembers) { member in
                 Button("Send a Request to " + member.label, systemImage: "paperplane") { requesting = member }
             }
