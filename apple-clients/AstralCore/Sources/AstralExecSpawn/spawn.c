@@ -68,6 +68,7 @@ int astral_exec_spawn(
     }
     fcntl(status[0], F_SETFD, FD_CLOEXEC);
     fcntl(status[1], F_SETFD, FD_CLOEXEC);
+    int table = getdtablesize();
     pid_t pid = fork();
     if (pid < 0) {
         int code = errno;
@@ -80,7 +81,6 @@ int astral_exec_spawn(
         if (setsid() < 0) {
             fail(status[1], STEP_SESSION, errno);
         }
-        int table = getdtablesize();
         int sources[3] = {stdin_fd, stdout_fd, stderr_fd};
         for (int index = 0; index < 3; index++) {
             int moved = fcntl(sources[index], F_DUPFD, 3);

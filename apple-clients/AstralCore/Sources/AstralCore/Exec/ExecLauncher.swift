@@ -211,7 +211,10 @@ public struct ExecLauncher: Sendable {
                 Self.closeAll(outPipe + errPipe + inPipe + [childInput])
                 return .launchFailed
             }
-            if needsInput { childInput = inPipe[0] }
+            if needsInput {
+                close(childInput)
+                childInput = inPipe[0]
+            }
             let wall = policy.wallMs
             var limits = astral_exec_limits(
                 file_bytes: UInt64(policy.limits.fileBytes), open_files: UInt64(policy.limits.openFiles), core_bytes: 0,
