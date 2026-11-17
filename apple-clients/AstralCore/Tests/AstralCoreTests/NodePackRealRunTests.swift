@@ -28,7 +28,7 @@
             var policy = NodeSupervisorPolicy()
             policy.startupChecks = 240
             let environment = NodeHostEnvironment(
-                root: root, available: true, issuer: "https://iam.invalid/realms/Astral", clientId: "astral-desktop",
+                root: root, available: true,
                 meshLabel: "Test Mac node", defaults: defaults, policy: policy)
             let controller = NodeHostController(environment: environment)
             controller.packURLText = address

@@ -12,14 +12,9 @@ enum WatchVoiceBridgeState: Equatable, Sendable {
     case ended
 }
 
-enum WatchVoicePlayoutPhase: String, Equatable, Sendable { case started, finished, interrupted }
 enum WatchVoiceAudioEvent: Equatable, Sendable {
     case interrupted(String)
     case recovered
-}
-struct WatchVoicePlayoutObservation: Equatable, Sendable {
-    let announcement: WatchVoiceAnnouncement
-    let phase: WatchVoicePlayoutPhase
 }
 
 @MainActor
@@ -35,10 +30,6 @@ protocol WatchVoiceBridgeControlling: AnyObject {
         onTranscript: @escaping @MainActor (String, Bool) -> Void,
         onSpeaking: @escaping @MainActor (Bool) -> Void) async throws
     func setForeground(_ foreground: Bool)
-    func connect(
-        grant: WatchVoiceBridgeGrant, onState: @escaping @MainActor (WatchVoiceBridgeState) -> Void,
-        onTranscript: @escaping @MainActor (WatchVoiceTranscript) -> Void,
-        onPlayout: @escaping @MainActor (WatchVoicePlayoutObservation) -> Void) async throws
     func setCaptureEnabled(_ enabled: Bool)
     func interruptPlayback()
     func disconnect(reason: String)
@@ -204,15 +195,6 @@ final class WatchVoiceBridge: WatchVoiceBridgeControlling {
             end(.failed((error as? CompanionVoiceError) == .rejected ? "phone_owner_unavailable" : "phone_unreachable"))
             throw error
         }
-    }
-
-    func connect(
-        grant: WatchVoiceBridgeGrant, onState: @escaping @MainActor (WatchVoiceBridgeState) -> Void,
-        onTranscript: @escaping @MainActor (WatchVoiceTranscript) -> Void,
-        onPlayout: @escaping @MainActor (WatchVoicePlayoutObservation) -> Void
-    ) async throws {
-        onState(.failed("transport_retired"))
-        throw CompanionVoiceError.rejected
     }
 
     func setForeground(_ foreground: Bool) {

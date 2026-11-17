@@ -6,18 +6,25 @@ import Foundation
 
 nonisolated enum MeshKernelError: Error, Equatable, Sendable {
     case unavailable(String)
-    case refused(String)
+    case refused(code: String?, message: String)
     case notFound
     case meshKeyBindingUnavailable
     case consentDenied
     case stopped
     case storage(String)
 
+    static func refused(_ message: String) -> MeshKernelError { .refused(code: nil, message: message) }
+
+    var code: String? {
+        if case .refused(let code, _) = self { return code }
+        return nil
+    }
+
     var message: String {
         switch self {
         case .unavailable(let reason): return reason
-        case .refused(let reason): return reason
-        case .meshKeyBindingUnavailable: return "Watch voice is unavailable until mesh-key binding is supported."
+        case .refused(_, let message): return message
+        case .meshKeyBindingUnavailable: return "Open the mesh this Watch belongs to on your iPhone."
         case .notFound: return "That item is no longer on this device."
         case .consentDenied: return "The approval was denied."
         case .stopped: return "The mesh is stopped."
@@ -130,6 +137,45 @@ nonisolated struct MeshMember: Identifiable, Equatable, Sendable {
     var id: String { memberId }
 }
 
+nonisolated struct MeshCallerTicket: Identifiable, Equatable, Sendable {
+    let id: String
+    let text: String
+    let label: String
+    let nodeId: String
+    let tools: [String]
+    let issuedAt: Date
+    let expiresAt: Date
+    let revoked: Bool
+    let expired: Bool
+}
+
+nonisolated struct MeshCallerRequest: Equatable, Sendable {
+    let authorization: String
+    let proof: String?
+    let method: String
+    let target: String
+    let bodySha256: String
+    let tool: String?
+}
+
+nonisolated struct MeshVerifiedCaller: Equatable, Sendable {
+    let id: String
+    let meshId: String
+    let deviceId: String
+    let label: String
+    let tool: String?
+    let tools: [String]
+    let expiresAt: Date
+}
+
+nonisolated enum MeshCallerTicketLimits {
+    static let maxTools = 32
+    static let maxLabelLength = 64
+    static let maxLifetimeSeconds: UInt64 = 2_592_000
+    static let a2aTool = "a2a.message"
+    static let holderPrefix = "astral-caller-holder:v1:"
+}
+
 nonisolated struct MeshDeviceSync: Equatable, Sendable {
     enum State: String, Equatable, Sendable { case synced, behind, unreachable }
     let memberId: String
@@ -181,6 +227,8 @@ nonisolated struct MeshChatMessage: Identifiable, Equatable, Sendable {
     let delivery: MeshDelivery
     let surfaceIds: [String]
     var attachments: [MeshAttachment] = []
+    var confidentiality = "private"
+    var integrity = "owner"
     var id: String { eventId }
 }
 
@@ -446,6 +494,7 @@ nonisolated struct MeshToolEntry: Identifiable, Equatable, Sendable {
     let effect: MeshToolEffect
     let deviceId: String?
     var grantName: String?
+    var published = false
     var annotations = MeshToolAnnotations()
     var scope: String { effect.scope }
     var grantTarget: String { grantName ?? name }
@@ -550,12 +599,19 @@ nonisolated protocol MeshKernel: Sendable {
     func approvePairing(payload: String) async throws
     func roster() async throws -> [MeshMember]
     func removeDevice(memberId: String) throws
+    func mintCallerTicket(
+        nodeId: String, holderKey: String, label: String, toolNames: [String], a2a: Bool, lifetimeSeconds: UInt64
+    ) throws -> MeshCallerTicket
+    func callerTickets() throws -> [MeshCallerTicket]
+    func revokeCallerTicket(id: String) throws
+    func verifyCallerRequest(_ request: MeshCallerRequest) throws -> MeshVerifiedCaller
     func raiseStop() throws
     func resumeStop() throws
     func exportBackup(path: String) throws
 
     func listChats() throws -> [MeshChatSummary]
     func chat(chatId: String) throws -> MeshChatView
+    func chatForDevice(chatId: String, deviceProfileJson: String) throws -> MeshChatView
     func createChat(title: String) throws -> String
     func sendMessage(chatId: String, text: String, continues: String?) throws -> String
     func addAttachment(chatId: String, bytes: Data, mime: String, name: String) throws -> MeshAttachment

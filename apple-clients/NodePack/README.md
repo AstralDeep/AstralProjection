@@ -58,22 +58,22 @@ The node runs with the personal profile and its own private home. The app restar
 
 ## Qualify an installed pack
 
-`qualify/tool_turn.py` proves an owner-authenticated tool turn against a pack with loopback fixtures only. It needs no sign-in, no network and none of the owner's apps or data. It uses a temporary home and removes it at the end.
+`qualify/pairing_offer.py` proves the no-sign-in pairing path against a pack with loopback requests only. It needs no sign-in, no network and none of the owner's apps or data. It uses a temporary home and removes it at the end.
 
 ```text
-python3 qualify/tool_turn.py --pack ~/Library/Caches/AstralNodePack/pack-<id>
+python3 qualify/pairing_offer.py --pack ~/Library/Caches/AstralNodePack/pack-<id>
 ```
 
 `--pack` takes an installed pack directory, or an assembled folder holding `node-pack.json` and its archive. The driver checks the archive size and SHA-256 against the descriptor before it unpacks it. `--keep` leaves the temporary folder for inspection.
 
-The driver runs the pack's own install script and launcher, with a loopback token issuer and a loopback model. It then checks, in order:
+The driver runs the pack's own install script and launcher, then checks, in order:
 
-- a request with no token and one with a forged token both get 401, and the owner token gets 200
-- the WebSocket registers and the provider is saved
-- the model is offered the bundled tools, including `generate_dynamic_chart`
-- the tool runs, its result reaches the model, and the turn completes
-- the chart streams to the client and is persisted in the chat history and in the node database
-- the node log holds no secret value and every process the run started has exited
+- the descriptor is v2, offers mesh pairing and names no identity server
+- a request with no credential and one with a bearer token both get 401
+- an offer with no secret, a wrong secret or a forwarding header is refused with its own code
+- the secret from the node's data directory returns the offer, and the secret is replaced and refused on replay
+- the secret file and data directory are private and no secret value reaches the node log
+- every process the run started has exited
 
 It prints one PASS or FAIL line per check with counts and never prints a token or key. It exits non-zero on any mismatch or setup failure. A run takes about half a minute plus the unpack time for an archive folder.
 

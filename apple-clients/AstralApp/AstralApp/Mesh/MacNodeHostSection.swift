@@ -1,4 +1,4 @@
-// The "Run a node on this Mac" settings section: it offers the downloadable node pack with its size, shows install and run state, and starts the pairing into the owner's mesh.
+// The "Run a node on this Mac" settings section: it offers the downloadable node pack with its size, shows install and run state, and starts the pairing into the owner's mesh with no sign-in.
 // MeshSettingsView embeds it on macOS only, and the pairing approval reuses MeshAddDeviceView so the node joins like any other device.
 
 #if os(macOS)
@@ -42,7 +42,7 @@
                     Button("Remove", role: .destructive) { Task { await controller.remove() } }
                 } message: {
                     Text(
-                        "The node stops and its program files are deleted. Its data and identity stay in the node folder."
+                        "The node stops and its program files are deleted. Its old sign-in account and its data stay in the node folder."
                     )
                 }
             }
@@ -86,7 +86,9 @@
                     LabeledContent("Mesh", value: mesh.state == "enrolled" ? "Joined" : "Not joined")
                         .accessibilityIdentifier("mesh.node.mesh-state")
                 }
-                joinButton
+                MacNodeJoinArea(
+                    legacyOwner: controller.hasLegacyOwner, remove: { confirmingRemoval = true },
+                    join: { joinButton })
                 Toggle("Keep running after quit", isOn: Bindable(controller).keepRunning)
                     .accessibilityIdentifier("mesh.node.keep")
                 HStack {
@@ -129,7 +131,7 @@
         }
 
         private var joinButton: some View {
-            Button(pairing ? "Waiting for sign-in" : "Add this node to my mesh") {
+            Button(pairing ? "Starting" : "Add this node to my mesh") {
                 Task { await join() }
             }
             .disabled(pairing || mesh.status.meshId == nil || controller.descriptor?.mesh?.state == "enrolled")
@@ -141,25 +143,54 @@
             notice = nil
             defer { pairing = false }
             do {
-                switch try await controller.requestPairing(ownerToken: MacNodeHostStore.ownerToken) {
+                switch try await controller.requestPairing() {
                 case .offer(let offer):
                     await mesh.previewAddDevice(payload: offer.payload)
                     showingApproval = true
                 case .alreadyJoined:
                     notice = "This node is already in a mesh."
                 }
-            } catch NodePairingError.unauthorized {
-                notice = "The node did not accept this sign-in."
-            } catch NodePairingError.refused(_, let detail) {
-                notice =
-                    detail == "node_owner_mismatch"
-                    ? "This node belongs to a different account." : "The node refused the request."
-            } catch NodePairingError.meshUnavailable(let code) {
-                notice = "The node cannot join a mesh yet (\(code))."
-            } catch NodeHostSignInError.cancelled {
-                notice = nil
             } catch {
-                notice = "Pairing did not start."
+                notice = NodeHostController.describePairing(error)
+            }
+        }
+    }
+
+    enum MacNodeJoinState: Equatable {
+        case join, legacyOwner
+
+        init(legacyOwner: Bool) { self = legacyOwner ? .legacyOwner : .join }
+    }
+
+    struct MacNodeJoinArea<Join: View>: View {
+        let legacyOwner: Bool
+        let remove: () -> Void
+        @ViewBuilder let join: () -> Join
+
+        var body: some View {
+            switch MacNodeJoinState(legacyOwner: legacyOwner) {
+            case .legacyOwner: MacNodeLegacyOwnerRow(remove: remove)
+            case .join: join()
+            }
+        }
+    }
+
+    struct MacNodeLegacyOwnerRow: View {
+        @Environment(ThemeStore.self) private var theme
+        let remove: () -> Void
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 8) {
+                Label(
+                    "This node was set up with sign-in and cannot join your mesh.",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .foregroundStyle(theme.palette.warning)
+                .accessibilityIdentifier("mesh.node.legacy-owner")
+                Text("Removing the pack keeps the old account and its data in the node folder.")
+                    .font(ConsoleTypography.footnote).foregroundStyle(theme.palette.muted)
+                Button("Remove node pack…", role: .destructive, action: remove)
+                    .accessibilityIdentifier("mesh.node.legacy-remove")
             }
         }
     }
