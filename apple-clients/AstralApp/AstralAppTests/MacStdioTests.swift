@@ -261,6 +261,28 @@
             XCTAssertNil(after)
         }
 
+        func testUnsafeServerIdsAreRefusedBeforeTouchingTheFilesystem() throws {
+            let sentinel = root + "/outside/keep"
+            try "keep".write(toFile: sentinel, atomically: true, encoding: .utf8)
+            let bad = ["../x", "../../outside", "a/b", String(repeating: "A", count: 32),
+                String(repeating: "a", count: 31), String(repeating: "a", count: 33), ""]
+            for id in bad {
+                XCTAssertThrowsError(try launcher.start(request: try request(id: id)), id)
+                launcher.stop(id: id)
+            }
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root + "/data/exec"))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root + "/data/x"))
+            XCTAssertEqual(try String(contentsOfFile: sentinel, encoding: .utf8), "keep")
+        }
+
+        func testAWorkspaceThatEscapesTheExecFolderIsRefused() throws {
+            try FileManager.default.createDirectory(atPath: root + "/data/exec", withIntermediateDirectories: true)
+            try FileManager.default.createSymbolicLink(
+                atPath: root + "/data/exec/" + idOne, withDestinationPath: root + "/outside")
+            XCTAssertThrowsError(try launcher.start(request: try request(id: idOne)))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: root + "/outside"))
+        }
+
         func testAPolicyThatIsNotTheApprovedOneStartsNothing() throws {
             var changed = try request(id: idOne)
             changed.policyDigest = "sha256:" + String(repeating: "0", count: 64)

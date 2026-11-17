@@ -46,6 +46,7 @@
         }
 
         func start(request: HostLaunchRequest) throws -> HostLaunchedServer {
+            try Self.requireValidId(request.id)
             let existing: Running? = lock.withLock { running.removeValue(forKey: request.id) }
             if let existing { Self.end(existing) }
             let plan = try Self.plan(request, dataDirectory: dataDirectory, extraReads: extraReads())
@@ -61,6 +62,7 @@
         }
 
         func stop(id: String) {
+            guard Self.isValidId(id) else { return }
             let found: Running? = lock.withLock { running.removeValue(forKey: id) }
             if let found { Self.end(found) }
         }
@@ -125,6 +127,32 @@
             return String(cString: resolved)
         }
 
+        static func isValidId(_ id: String) -> Bool {
+            id.utf8.count == 32 && id.utf8.allSatisfy { ($0 >= 0x30 && $0 <= 0x39) || ($0 >= 0x61 && $0 <= 0x66) }
+        }
+
+        static func requireValidId(_ id: String) throws {
+            guard isValidId(id) else { throw HostLauncherError.Failed(message: "the server id is not valid") }
+        }
+
+        static func checkedWorkspace(id: String, dataDirectory: String) throws -> String {
+            try requireValidId(id)
+            let execFolder = dataDirectory + "/exec"
+            try FileManager.default.createDirectory(
+                atPath: execFolder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            let expected = try resolvedPath(execFolder) + "/" + id
+            let candidate = execFolder + "/" + id
+            if lstatExists(candidate), try resolvedPath(candidate) != expected {
+                throw HostLauncherError.Failed(message: "the server workspace is not inside the exec folder")
+            }
+            return expected
+        }
+
+        private static func lstatExists(_ path: String) -> Bool {
+            var info = stat()
+            return lstat(path, &info) == 0
+        }
+
         struct Plan {
             let document: Data
             let hosts: [String]
@@ -139,7 +167,7 @@
                     == request.policyDigest,
                 var policy = try? JSONSerialization.jsonObject(with: source) as? [String: Any]
             else { throw HostLauncherError.Failed(message: "the launch policy is not the one approved") }
-            let workspace = dataDirectory + "/exec/" + request.id
+            let workspace = try checkedWorkspace(id: request.id, dataDirectory: dataDirectory)
             try FileManager.default.createDirectory(
                 atPath: workspace, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             let granted: [String] = (policy["reads"] as? [String]) ?? []
