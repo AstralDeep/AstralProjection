@@ -16,7 +16,7 @@ final class KernelServiceTests: XCTestCase {
         let device = try TestDevice(label: "mac", in: self, marker: 1)
         let service = try device.open()
         XCTAssertEqual(service.version, AstralKernelInfo.version)
-        let status = await service.kernel.meshStatus()
+        let status = try await service.kernel.meshStatus()
         XCTAssertEqual(status.state, .notEnrolled)
         XCTAssertNil(status.meshId)
         XCTAssertEqual(status.marker, .fresh)
@@ -43,7 +43,7 @@ final class KernelServiceTests: XCTestCase {
         XCTAssertThrowsError(try service.kernel.sendMessage(chatId: chat, text: "  ", continues: nil))
 
         let again = try device.open()
-        let status = await again.kernel.meshStatus()
+        let status = try await again.kernel.meshStatus()
         XCTAssertEqual(status.state, .enrolled)
         XCTAssertEqual(status.marker, .matches)
         XCTAssertEqual(try again.kernel.listChats().count, 1)
@@ -77,7 +77,7 @@ final class KernelServiceTests: XCTestCase {
         let service = try device.open()
         let kit = try service.kernel.createMesh()
         let reopened = try device.open()
-        let pending = await reopened.kernel.meshStatus()
+        let pending = try await reopened.kernel.meshStatus()
         XCTAssertTrue(pending.recoveryPending)
         device.signer.allowPresence = false
         XCTAssertThrowsError(try reopened.kernel.createMesh())
@@ -85,7 +85,7 @@ final class KernelServiceTests: XCTestCase {
         device.signer.allowPresence = true
         XCTAssertEqual(try reopened.kernel.createMesh(), kit)
         try reopened.kernel.confirmMeshRecovery()
-        let confirmed = await reopened.kernel.meshStatus()
+        let confirmed = try await reopened.kernel.meshStatus()
         XCTAssertFalse(confirmed.recoveryPending)
         XCTAssertEqual(try reopened.kernel.meshPrincipal().meshId, kit.meshId)
     }
@@ -122,6 +122,6 @@ final class KernelServiceTests: XCTestCase {
         }
         XCTAssertEqual(states.first, .starting)
         await service.kernel.stopNetwork()
-        XCTAssertEqual(service.kernel.endpointState(), .stopped)
+        XCTAssertEqual(try service.kernel.endpointState(), .stopped)
     }
 }
