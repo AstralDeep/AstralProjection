@@ -11,7 +11,6 @@
             let sessionLocked: @MainActor () -> Void
             let screensSlept: @MainActor () -> Void
             let sessionUnlocked: @MainActor () -> Void
-            let connectionMayHaveChanged: @MainActor () -> Void
             let audioConfigurationChanged: @MainActor () -> Void
             let willTerminate: @MainActor () -> Void
 
@@ -23,7 +22,6 @@
                     },
                     screensSlept: { model.macComputerHost.sessionLocked() },
                     sessionUnlocked: { model.voiceSessionUnlocked() },
-                    connectionMayHaveChanged: { model.verifyConnection() },
                     audioConfigurationChanged: { model.voiceAudioEngineConfigurationChanged() },
                     willTerminate: {
                         model.voiceApplicationWillTerminate()
@@ -51,8 +49,6 @@
             observe(workspaceCenter, NSWorkspace.sessionDidResignActiveNotification, handlers.sessionLocked)
             observe(workspaceCenter, NSWorkspace.screensDidSleepNotification, handlers.screensSlept)
             observe(workspaceCenter, NSWorkspace.sessionDidBecomeActiveNotification, handlers.sessionUnlocked)
-            observe(workspaceCenter, NSWorkspace.didWakeNotification, handlers.connectionMayHaveChanged)
-            observe(appCenter, NSApplication.didBecomeActiveNotification, handlers.connectionMayHaveChanged)
             observe(appCenter, .AVAudioEngineConfigurationChange, handlers.audioConfigurationChanged)
             // Runs on the posting main thread so cleanup finishes before the process exits.
             observe(appCenter, NSApplication.willTerminateNotification, queue: nil, handlers.willTerminate)

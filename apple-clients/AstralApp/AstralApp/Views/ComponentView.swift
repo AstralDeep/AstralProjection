@@ -1,6 +1,6 @@
 // Native SwiftUI renderer for the astralprims component vocabulary, styled to match web/Android/Windows and
 // round-tripping actions via emit(); unknown types fall back to labeled text. ConsoleShell's Mac settings sheet
-// opts into a compact density whose controls keep one size across states. Used by ChatView, CanvasCapture, Screens.
+// opts into a compact density whose controls keep one size across states. Used by ComponentView.
 
 import AstralCore
 import SwiftUI
@@ -88,13 +88,8 @@ struct ComponentAlertMessage: View {
 struct ComponentView: View {
     let component: AstralComponent
     @Environment(ThemeStore.self) var theme
-    @Environment(AppModel.self) var model
-    @Environment(\.astralNavigationTranscript) private var navigationTranscript
-    @Environment(\.astralComponentActionOwner) private var componentActionOwner
-    @Environment(\.astralNavigationSurface) private var navigationSurface
     @Environment(\.astralWorkReadSurface) private var workReadSurface
     @Environment(\.astralViewportWidth) private var viewportWidth
-    @Environment(\.canvasCapturePath) private var capturePath
     @Environment(\.astralCompactSettings) private var compactSettings
     @Environment(\.astralCompactCardContent) private var compactCardContent
     @Environment(\.astralCompactChip) private var compactChip
@@ -102,19 +97,6 @@ struct ComponentView: View {
     @State private var slotWidth: CGFloat = 0
 
     private var p: AstralPalette { theme.palette }
-    private var captureNode: CanvasCaptureNode? { model.canvasCapture.node(path: capturePath, component: component) }
-
-    private func captureLayout() {
-        guard slotWidth.isFinite, slotWidth > 0 else { return }
-        if component.type == "grid" {
-            model.canvasCapture.record(
-                captureNode,
-                columns: fittedColumns(
-                    authored: RenderNumber.int(component.raw["columns"]?.numberValue ?? 2, in: 1...12)))
-        } else if component.type == "container", component.raw["direction"]?.stringValue == "row" {
-            model.canvasCapture.record(captureNode, columns: fittedColumns(authored: max(1, component.children.count)))
-        }
-    }
 
     private func fittedColumns(authored: Int) -> Int {
         guard slotWidth > 0 else { return min(authored, 2) }
@@ -133,29 +115,13 @@ struct ComponentView: View {
     }
 
     var body: some View {
-        let owner =
-            model.workspaceCanvas.contains(component)
-                && ComponentChromeModel.canonicalIdentity(of: component) != nil ? component : componentActionOwner
-        return CanvasCompositeCapture(
-            component: component, node: captureNode, registry: model.canvasCapture, palette: p, layoutWidth: slotWidth
-        ) { renderedContent }
-        .environment(\.astralComponentActionOwner, owner)
-        .onAppear { captureLayout() }
-        .onChange(of: slotWidth) { _, _ in captureLayout() }
-        .onChange(of: captureNode) { _, _ in captureLayout() }
+        renderedContent
     }
 
     @ViewBuilder
     private var renderedContent: some View {
-        if WorkspaceWelcome.role(of: component) == .examples {
-            WelcomeExamplesLayout { childViews }
-                .frame(maxWidth: .infinity)
-        } else if WorkspaceWelcome.role(of: component) == .more {
-            CollapsibleComponent(component: component)
-        } else if compactSettings, CompactSettingsLayout.rendered.contains(component.type) {
+        if compactSettings, CompactSettingsLayout.rendered.contains(component.type) {
             compactContent
-        } else if ArtifactDocument.types.contains(component.type) {
-            artifactContent
         } else {
             switch component.type {
             case "text":
@@ -212,18 +178,10 @@ struct ComponentView: View {
                 fileUploadHint
             case "input":
                 InputComponent(component: component)
-            case "param_picker":
-                ParamPickerComponent(component: component)
             case "tabs":
                 TabsComponent(component: component)
-            case "color_picker":
-                ColorPickerComponent(component: component)
-            case "chat_history":
-                chatHistoryView
             case "bar_chart", "line_chart", "pie_chart", "plotly_chart":
                 ChartComponent(component: component)
-            case "file_download", "download_card":
-                DownloadComponent(component: component)
             case "skeleton":
                 skeletonView
             case "theme_apply":
@@ -233,19 +191,6 @@ struct ComponentView: View {
             default:
                 fallbackView
             }
-        }
-    }
-
-    @ViewBuilder
-    private var artifactContent: some View {
-        if component.type == "artifact" {
-            ArtifactView(component: component)
-        } else {
-            #if os(macOS)
-                HtmlArtifactView(component: component)
-            #else
-                fallbackView
-            #endif
         }
     }
 
@@ -448,20 +393,7 @@ struct ComponentView: View {
 
     @ViewBuilder
     private var heroView: some View {
-        if WorkspaceWelcome.role(of: component) == .intro {
-            VStack(spacing: 8) {
-                markdown(component.raw["heading"]?.stringValue ?? component.title ?? "")
-                    .font(ConsoleTypography.largeTitle.weight(.medium)).foregroundStyle(p.text)
-                if let subtitle = component.raw["subtitle"]?.stringValue {
-                    markdown(subtitle).foregroundStyle(p.muted)
-                }
-            }
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-        } else {
-            ordinaryHero
-        }
+        ordinaryHero
     }
 
     private var ordinaryHero: some View {
@@ -653,16 +585,13 @@ struct ComponentView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Group {
                     if source.prefix(5).lowercased() == "data:" {
-                        InlineComponentImageView(source: source, node: captureNode, registry: model.canvasCapture)
+                        InlineComponentImageView(source: source)
                     } else if let url = URL(string: source) {
                         AsyncImage(url: url) { phase in
                             if let image = phase.image {
-                                CanvasLoadedImage(image: image, node: captureNode, registry: model.canvasCapture)
+                                image.resizable().scaledToFit()
                             } else {
                                 ProgressView().tint(p.primary)
-                                    .onAppear {
-                                        if let node = captureNode { model.canvasCapture.retain(nil, for: node) }
-                                    }
                             }
                         }
                     }
@@ -703,9 +632,6 @@ struct ComponentView: View {
     private var buttonView: some View {
         let label = component.label ?? component.title ?? "Continue"
         let variant = component.variant ?? "primary"
-        let invoke = model.componentInvocationCallback(component, owner: componentActionOwner ?? component)
-        let action = component.raw["action"]?.stringValue ?? "component_action"
-        let navigate = model.navigationCallback(component, surface: navigationSurface, transcript: navigationTranscript)
         let serverDisabled =
             component.raw["disabled"]?.boolValue == true || component.raw["enabled"]?.boolValue == false
         let chip = CompactSettingsLayout.chipState(
@@ -717,12 +643,6 @@ struct ComponentView: View {
                 let componentId = component.componentId
             {
                 meshAction(componentId, capability, payload)
-            } else if action == "load_chat" {
-                navigate(payload)
-            } else if action == "component_action" {
-                invoke(payload)
-            } else {
-                model.emit(action, payload: payload)
             }
         } label: {
             if compactSettings {
@@ -730,15 +650,10 @@ struct ComponentView: View {
             } else {
                 Text(label).fixedSize(horizontal: false, vertical: true)
                     .frame(
-                        maxWidth: variant == "primary" && !WorkspaceWelcome.isExample(component) && meshAction == nil
-                            ? .infinity : nil)
+                        maxWidth: variant == "primary" && meshAction == nil ? .infinity : nil)
             }
         }
-        .disabled(
-            chip.disabled
-                || (model.screen == .surface && (!model.connected || model.paramPickerPending(action: action)))
-        )
-        .accessibilityValue(ComponentAccessibility.buttonValue(pending: model.paramPickerPending(action: action)))
+        .disabled(chip.disabled)
         .accessibilityAddTraits(compactSettings && compactChip == true ? .isSelected : [])
         #if os(macOS)
             let accessibleButton =
@@ -748,9 +663,7 @@ struct ComponentView: View {
         #else
             let accessibleButton = button
         #endif
-        if WorkspaceWelcome.isExample(component) {
-            accessibleButton.buttonStyle(WelcomeExampleButtonStyle(palette: p))
-        } else if meshAction != nil {
+        if meshAction != nil {
             switch variant {
             case "secondary", "ghost": accessibleButton.buttonStyle(.bordered)
             case "danger": accessibleButton.buttonStyle(.borderedProminent).tint(p.error)
@@ -759,24 +672,6 @@ struct ComponentView: View {
         } else {
             accessibleButton.buttonStyle(
                 AstralButtonStyle(palette: p, variant: variant, chip: compactSettings ? compactChip : nil))
-        }
-    }
-
-    private var chatHistoryView: some View {
-        let items = (component.raw["items"]?.arrayValue ?? []).compactMap { ChatSummary(historyItem: $0) }
-        let navigate = model.navigationCallback(component, surface: navigationSurface, transcript: navigationTranscript)
-        return VStack(alignment: .leading, spacing: 2) {
-            if !items.isEmpty {
-                HistoryHeader(title: component.raw["title"]?.stringValue ?? "Recent chats", count: items.count)
-                ForEach(Array(items.enumerated()), id: \.offset) { _, chat in
-                    Button {
-                        navigate(["chat_id": .string(chat.id)])
-                    } label: {
-                        HistoryRow(chat: chat)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
         }
     }
 
@@ -1039,7 +934,7 @@ struct ComponentView: View {
 
     @ViewBuilder
     private var childViews: some View {
-        CanvasComponentChildren(raw: component.raw, path: capturePath)
+        ComponentChildrenList(raw: component.raw)
     }
 
     private func markdown(_ string: String) -> Text {
@@ -1211,7 +1106,7 @@ enum CompactSettingsLayout {
         private(set) var headerActions: [Item] = []
 
         init(_ raw: JSONValue, titled: Bool) {
-            var items = CanvasCaptureChildren.items(raw).map { Item(index: $0.index, component: $0.component) }[...]
+            var items = ComponentChildren.items(raw).map { Item(index: $0.index, component: $0.component) }[...]
             while let first = items.first, CompactSettingsLayout.isBadgeRun(first.component) {
                 badges.append(first)
                 items = items.dropFirst()
@@ -1394,12 +1289,7 @@ extension ComponentView {
 
     private func compactChild(_ item: CompactSettingsLayout.Item) -> some View {
         ComponentView(component: item.component)
-            .environment(\.canvasCapturePath, childPath(item.index))
             .environment(\.astralCompactCardContent, true)
-    }
-
-    private func childPath(_ index: Int) -> String? {
-        capturePath.map { $0 + "/\(CanvasCaptureChildren.key(component.raw))/\(index)" }
     }
 
     private func compactActions(_ run: [CompactSettingsLayout.Item]) -> some View {
@@ -1411,13 +1301,12 @@ extension ComponentView {
     @ViewBuilder
     private var compactContainer: some View {
         if CompactSettingsLayout.isInlineRow(component) {
-            let items = CanvasCaptureChildren.items(component.raw)
+            let items = ComponentChildren.items(component.raw)
             let chips = CompactSettingsLayout.chipSelection(items.map { $0.component })
             CompositeFlow(spacing: 6, centered: true) {
                 ForEach(Array(items.enumerated()), id: \.offset) { offset, item in
                     ComponentView(component: item.component)
-                        .environment(\.canvasCapturePath, childPath(item.index))
-                        .environment(\.astralCompactChip, chips?[offset])
+                                    .environment(\.astralCompactChip, chips?[offset])
                 }
             }
         } else {
@@ -1689,235 +1578,6 @@ private struct CompactButtonLabel: View {
     }
 }
 
-struct DownloadComponent: View {
-    let component: AstralComponent
-    var automaticallyStart = false
-    var workspaceExport: AppModel.WorkspaceActionContext? = nil
-    var componentExport: AppModel.ComponentActionContext? = nil
-    @Environment(ThemeStore.self) var theme
-    @Environment(AppModel.self) var model
-    @State private var phase = Phase.idle
-    @State private var downloadTask: Task<Void, Never>?
-    @State private var temporaryFile: URL?
-    @State private var savePanel: NativeDownloadSaveLease?
-    private var p: AstralPalette { theme.palette }
-
-    enum Phase: Equatable {
-        case idle, fetching
-        case done(URL)
-        case failed(String)
-    }
-
-    private var urlString: String? {
-        (component.raw["download_url"]?.stringValue ?? component.url)
-            .flatMap { $0.isEmpty ? nil : $0 }
-    }
-    private var filename: String? { component.raw["filename"]?.stringValue }
-    private var label: String {
-        component.label ?? filename ?? component.title ?? "Download"
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if let title = component.title, !title.isEmpty {
-                Text(InlineMarkdown.attributed(title))
-                    .font(ConsoleTypography.subheadline.bold()).foregroundStyle(p.text)
-            }
-            if let desc = component.raw["description"]?.stringValue, !desc.isEmpty {
-                Text(InlineMarkdown.attributed(desc))
-                    .font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            let meta = [
-                component.raw["version"]?.stringValue,
-                component.raw["platform"]?.stringValue,
-            ]
-            .compactMap { $0 }.filter { !$0.isEmpty }
-            if !meta.isEmpty {
-                Text(meta.joined(separator: " • "))
-                    .font(ConsoleTypography.caption2).foregroundStyle(p.muted)
-            }
-            switch phase {
-            case .idle:
-                Button {
-                    download()
-                } label: {
-                    Label(label, systemImage: "arrow.down.circle")
-                }
-                .buttonStyle(AstralButtonStyle(palette: p, variant: "secondary"))
-                .disabled(urlString == nil && componentExport == nil)
-                .accessibilityLabel("Download \(filename ?? label)")
-            case .fetching:
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Downloading…").font(ConsoleTypography.callout).foregroundStyle(p.muted)
-                }
-            case .done(let file):
-                #if os(macOS)
-                    HStack(spacing: 8) {
-                        Image(systemName: "checkmark.circle.fill").foregroundStyle(p.success)
-                        Text("Saved \(file.lastPathComponent)")
-                            .font(ConsoleTypography.callout).foregroundStyle(p.text)
-                        Button("Show in Finder") {
-                            NSWorkspace.shared.activateFileViewerSelecting([file])
-                        }
-                        .font(ConsoleTypography.callout)
-                        .tint(p.readablePrimary)
-                    }
-                #else
-                    ShareLink(item: file) {
-                        Label(
-                            "Save or share \(file.lastPathComponent)",
-                            systemImage: "square.and.arrow.up")
-                    }
-                    .buttonStyle(AstralButtonStyle(palette: p, variant: "primary"))
-                #endif
-            case .failed(let why):
-                HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(p.warning)
-                    Text(why).font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                    Button("Retry") { download() }
-                        .font(ConsoleTypography.callout).tint(p.readablePrimary)
-                }
-            }
-            if urlString == nil,
-                let page = component.raw["html_url"]?.stringValue,
-                let pageURL = URL(string: page), !page.isEmpty
-            {
-                Link("Open the releases page", destination: pageURL)
-                    .font(ConsoleTypography.caption).tint(p.readablePrimary)
-            }
-        }
-        .task {
-            if automaticallyStart, case .idle = phase { download() }
-        }
-        .onDisappear { cancelDownload() }
-        .onChange(of: model.downloadOwner) { _, _ in cancelDownload() }
-        .onChange(of: model.activeChatId) { _, _ in
-            if workspaceExport != nil { cancelDownload() }
-        }
-        .onChange(of: model.lastCommittedRenderRevision) { _, _ in
-            if workspaceExport != nil { cancelDownload() }
-        }
-        .onChange(of: componentExport.map(model.componentActionIsCurrent) ?? true) { _, current in
-            if !current { cancelDownload() }
-        }
-
-    }
-
-    private func cancelDownload() {
-        downloadTask?.cancel()
-        downloadTask = nil
-        let cancelledPanel = savePanel
-        savePanel = nil
-        cancelledPanel?.cancel()
-        if let file = temporaryFile { RestClient.removeTemporaryDownload(file) }
-        temporaryFile = nil
-        phase = .idle
-    }
-
-    private func download() {
-        guard componentExport != nil || urlString != nil else { return }
-        if let componentExport, !model.componentActionIsCurrent(componentExport) { return }
-        cancelDownload()
-        phase = .fetching
-        let owner = model.downloadOwner
-        downloadTask = Task { @MainActor in
-            do {
-                let file: URL
-                if let componentExport {
-                    file = try await model.downloadComponentCSV(componentExport)
-                } else if let workspaceExport {
-                    file = try await model.downloadWorkspaceCanvas(workspaceExport)
-                } else {
-                    file = try await model.downloadArtifact(from: urlString!, suggestedFilename: filename)
-                }
-                guard !Task.isCancelled, model.downloadOwner == owner,
-                    componentExport.map(model.componentActionIsCurrent) ?? true
-                else {
-                    RestClient.removeTemporaryDownload(file)
-                    return
-                }
-                temporaryFile = file
-                finish(with: file, owner: owner)
-            } catch is CancellationError {} catch {
-                if !Task.isCancelled, model.downloadOwner == owner,
-                    componentExport.map(model.componentActionIsCurrent) ?? true
-                {
-                    phase = .failed("Download failed — check your connection and try again.")
-                }
-            }
-        }
-    }
-
-    @MainActor
-    private func finish(with file: URL, owner: AppModel.DownloadOwner) {
-        #if os(macOS)
-            let holder = NativeDownloadSaveLease(file: file)
-            savePanel = holder
-            let panel = holder.panel
-            panel.nameFieldStringValue = file.lastPathComponent
-            panel.canCreateDirectories = true
-            panel.begin { response in
-                defer {
-                    RestClient.removeTemporaryDownload(file)
-                    if savePanel === holder {
-                        if temporaryFile == file { temporaryFile = nil }
-                        savePanel = nil
-                    }
-                }
-                guard savePanel === holder, temporaryFile == file, !holder.cancelled,
-                    model.downloadOwner == owner,
-                    workspaceExport.map(model.workspaceActionIsCurrent) ?? true,
-                    componentExport.map(model.componentActionIsCurrent) ?? true
-                else { return }
-                if response == .OK, let destination = panel.url {
-                    do {
-                        if try holder.save(
-                            to: destination, isCurrent: { savePanel === holder && temporaryFile == file })
-                        {
-                            phase = .done(destination)
-                        }
-                    } catch { phase = .failed("The file could not be saved.") }
-                } else {
-                    phase = .idle
-                }
-            }
-        #else
-            phase = .done(file)
-        #endif
-    }
-}
-
-@MainActor
-final class NativeDownloadSaveLease {
-    let file: URL
-    private(set) var cancelled = false
-
-    init(file: URL) { self.file = file }
-
-    // Guards against a stale completion from a replaced panel
-    func save(to destination: URL, isCurrent: () -> Bool) throws -> Bool {
-        guard !cancelled, isCurrent() else { return false }
-        let data = try Data(contentsOf: file, options: .mappedIfSafe)
-        guard data.count <= 64 * 1024 * 1024 else { throw URLError(.dataLengthExceedsMaximum) }
-        try data.write(to: destination, options: .atomic)
-        return true
-    }
-
-    func cancel() {
-        cancelled = true
-        #if os(macOS)
-            panel.cancel(nil)
-        #endif
-    }
-
-    #if os(macOS)
-        let panel = NSSavePanel()
-    #endif
-}
-
 enum TableColumnLayout {
     static let stickyRowLimit = 10
     static let rowHeight: CGFloat = 32
@@ -1940,7 +1600,6 @@ enum TableColumnLayout {
 struct TableComponent: View {
     let component: AstralComponent
     @Environment(ThemeStore.self) var theme
-    @Environment(AppModel.self) var model
     @Environment(\.astralCompactSettings) private var compactSettings
     @State private var tableWidth: CGFloat = 0
     private var p: AstralPalette { theme.palette }
@@ -1969,7 +1628,6 @@ struct TableComponent: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: AstralRadius.md))
             .overlay(RoundedRectangle(cornerRadius: AstralRadius.md).strokeBorder(p.border))
-            pager
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -2040,7 +1698,6 @@ struct TableComponent: View {
                 .frame(width: widths.reduce(0, +), alignment: .leading)
             }
             .clipShape(RoundedRectangle(cornerRadius: AstralRadius.sm))
-            pager
         }
         .padding(ComponentSpacing.tight)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2086,50 +1743,14 @@ struct TableComponent: View {
         .frame(minHeight: header ? 28 : TableColumnLayout.rowHeight, alignment: .leading)
     }
 
-    @ViewBuilder
-    private var pager: some View {
-        if let total = component.raw["total_rows"]?.numberValue,
-            let size = component.raw["page_size"]?.numberValue, size > 0,
-            let range = RenderNumber.pagerRows(
-                offset: component.raw["page_offset"]?.numberValue ?? 0, size: size, total: total)
-        {
-            let offset = component.raw["page_offset"]?.numberValue ?? 0
-            let start = range.start
-            let end = range.end
-            HStack {
-                Button("‹ Prev") { paginate(offset: max(offset - size, 0), size: size) }
-                    .disabled(offset <= 0)
-                Spacer()
-                Text("rows \(start)–\(end) of \(range.total)").font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                Spacer()
-                Button("Next ›") { paginate(offset: offset + size, size: size) }
-                    .disabled(end >= range.total)
-            }
-            .font(ConsoleTypography.caption)
-            .tint(p.readablePrimary)
-            .padding(.top, 4)
-        }
-    }
-
-    private func paginate(offset: Double, size: Double) {
-        guard let cid = component.componentId else { return }
-        model.emit(
-            "table_paginate",
-            payload: [
-                "component_id": .string(cid),
-                "params": .object(["page_offset": .number(offset), "page_size": .number(size)]),
-            ])
-    }
 }
 
 struct InputComponent: View {
     let component: AstralComponent
     @Environment(ThemeStore.self) var theme
-    @Environment(AppModel.self) var model
     @Environment(\.astralCompactSettings) private var compactSettings
     @Environment(\.astralMeshAction) private var meshAction
     @State private var value = ""
-    @State private var editingOwner = UUID()
     @State private var initialValue = ""
     @FocusState private var editingFocused: Bool
     private var p: AstralPalette { theme.palette }
@@ -2159,13 +1780,6 @@ struct InputComponent: View {
             initialValue = component.raw["value"]?.stringValue ?? ""
             value = initialValue
         }
-        .onChange(of: value) { _, _ in updateEditing() }
-        .onChange(of: editingFocused) { _, _ in updateEditing() }
-        .onDisappear { model.setDirectEditing(editingOwner, active: false) }
-    }
-
-    private func updateEditing() {
-        model.setDirectEditing(editingOwner, active: editingFocused || value != initialValue)
     }
 
     private func submit() {
@@ -2175,436 +1789,6 @@ struct InputComponent: View {
             let componentId = component.componentId
         {
             meshAction(componentId, capability, ["value": .string(trimmed)])
-        } else if let action = component.raw["action"]?.stringValue {
-            model.emit(action, payload: ["value": .string(trimmed)])
-        } else {
-            model.emit("chat_message", payload: ["message": .string(trimmed)])
-        }
-    }
-}
-
-struct ParamPickerComponent: View {
-    let component: AstralComponent
-    @Environment(\.astralGuidanceSurface) private var guidanceSurface
-    @Environment(\.astralCompactSettings) private var compactSettings
-    @Environment(\.astralCompactCardContent) private var compactCardContent
-    @Environment(ThemeStore.self) var theme
-    @Environment(AppModel.self) var model
-    @State private var values: [String: String] = [:]
-    @State private var flags: [String: Bool] = [:]
-    @State private var validationError: String?
-    @State private var submittedAction: String?
-    @State private var editingOwner = UUID()
-    @FocusState private var editingField: String?
-    private var p: AstralPalette { theme.palette }
-
-    private var form: ParameterForm? { ParameterForm(component: component) }
-    private var fields: [JSONValue] { form?.fields ?? [] }
-    private var actions: [ParameterAction] { form?.actions ?? [] }
-    private var hasLLMSave: Bool {
-        component.raw["submit_action"]?.stringValue == "chrome_llm_save"
-            || actions.contains { $0.action == "chrome_llm_save" }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let title = component.title, !title.isEmpty {
-                formText(title)
-                    .font(
-                        compactSettings ? ConsoleTypography.subheadline.weight(.semibold) : ConsoleTypography.headline
-                    )
-                    .foregroundStyle(p.text)
-                    .fieldHelp(component.raw["description"]?.stringValue)
-                    .accessibilityIdentifier(
-                        hasLLMSave ? "llm-provider-form-title" : "param-picker-form-title"
-                    )
-                    .onTapGesture { editingField = nil }
-            }
-            if compactSettings {
-                compactFields
-            } else {
-                ForEach(Array(fields.enumerated()), id: \.offset) { _, field in
-                    fieldView(field)
-                }
-            }
-            AstralToolbarLayout(wraps: true, spacing: compactSettings ? 6 : 8, rightAligned: compactSettings) {
-                ForEach(Array(actions.enumerated()), id: \.offset) { _, definition in
-                    VStack(alignment: compactSettings ? .trailing : .leading, spacing: 4) {
-                        paramButton(
-                            label: definition.label, action: definition.action,
-                            variant: definition.variant, payload: definition.payload,
-                            available: definition.available)
-                        if definition.action != "chrome_llm_save", let action = definition.action,
-                            let status = model.paramPickerStatus(action: action)
-                        {
-                            Text(status).font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .accessibilityIdentifier("param-status-\(action)")
-                                .accessibilityAddTraits(.updatesFrequently)
-                        }
-                    }
-                }
-            }
-            if actions.contains(where: { !$0.available }) {
-                Text("This form includes an unavailable action. Reload this screen and try again.")
-                    .font(ConsoleTypography.caption).foregroundStyle(p.error)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if let validationError {
-                Text(validationError).font(ConsoleTypography.caption).foregroundStyle(p.error)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("param-validation-error")
-            }
-            if hasLLMSave, let operation = model.llmFirstLoginOperation {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    if operation.isLoading {
-                        ProgressView().controlSize(.small).tint(p.primary)
-                            .accessibilityHidden(true)
-                    }
-                    // No accessibilityElement wrapper — macOS AXGroups drop AXValue
-                    Text(operation.presentedLabel)
-                        .font(ConsoleTypography.caption)
-                        .foregroundStyle(operation.errorCode == nil ? p.muted : p.error)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("llm-save-status")
-                        .accessibilityLabel("AI provider setup status")
-                        .accessibilityValue(operation.presentedLabel)
-                        .accessibilityAddTraits(.updatesFrequently)
-                }
-            }
-        }
-        .padding(compactSettings ? 0 : 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            compactSettings ? Color.clear : p.surface.opacity(0.5), in: RoundedRectangle(cornerRadius: AstralRadius.lg)
-        )
-        .overlay(RoundedRectangle(cornerRadius: AstralRadius.lg).stroke(compactSettings ? Color.clear : p.border))
-        .onChange(of: values) { _, _ in updateEditing() }
-        .onChange(of: flags) { _, _ in updateEditing() }
-        .onChange(of: editingField) { _, _ in updateEditing() }
-        .onChange(of: component.raw) { old, new in
-            let oldFields = old["fields"]?.arrayValue ?? []
-            let newFields = new["fields"]?.arrayValue ?? []
-            let names = Set(newFields.compactMap { $0["name"]?.stringValue })
-            values = values.filter { names.contains($0.key) }
-            for field in newFields {
-                guard let name = field["name"]?.stringValue,
-                    let previous = oldFields.first(where: { $0["name"]?.stringValue == name }),
-                    previous["default"] != field["default"],
-                    values[name] == previous["default"]?.displayText
-                else { continue }
-                values.removeValue(forKey: name)
-            }
-            validationError = nil
-        }
-        .onChange(of: model.paramPickerCompleted(action: submittedAction ?? "")) { _, completed in
-            if completed {
-                for field in fields where (field["kind"]?.stringValue ?? field["type"]?.stringValue) == "password" {
-                    if let name = field["name"]?.stringValue { values.removeValue(forKey: name) }
-                }
-            }
-        }
-        .onDisappear { model.setDirectEditing(editingOwner, active: false) }
-    }
-
-    private func updateEditing() {
-        model.setDirectEditing(editingOwner, active: editingField != nil || !values.isEmpty || !flags.isEmpty)
-    }
-
-    private func formText(_ text: String) -> Text {
-        guidanceSurface ? Text(verbatim: text) : Text(InlineMarkdown.attributed(text))
-    }
-
-    static func placeholder(_ field: JSONValue) -> String { field["example"]?.stringValue ?? "" }
-
-    @ViewBuilder
-    private func fieldView(_ field: JSONValue) -> some View {
-        if fieldIsVisible(field) { fieldBody(field) }
-    }
-
-    @ViewBuilder
-    private var compactFields: some View {
-        let first = fields.firstIndex(where: fieldIsVisible)
-        if first != nil {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(fields.enumerated()), id: \.offset) { index, field in
-                    if fieldIsVisible(field) {
-                        if index != first { Divider().overlay(p.border) }
-                        compactFieldRow(field).padding(.vertical, 6).frame(minHeight: 32)
-                    }
-                }
-            }
-            .controlSize(.small)
-            .compactGroupBox(!compactCardContent, palette: p)
-        }
-    }
-
-    @ViewBuilder
-    private func compactFieldRow(_ field: JSONValue) -> some View {
-        let name: String = field["name"]?.stringValue ?? ""
-        let label: String = field["label"]?.stringValue ?? name
-        let kind: String = field["kind"]?.stringValue ?? field["type"]?.stringValue ?? "text"
-        let title: String = label + (field["required"]?.boolValue == true ? " *" : "")
-        if kind == "textarea" || kind == "checklist" {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(title).font(ConsoleTypography.footnote).foregroundStyle(p.text)
-                    .accessibilityHidden(kind == "textarea")
-                fieldControl(field, name: name, label: label, kind: kind).fieldHelp(field["help"]?.stringValue)
-            }
-        } else {
-            HStack(alignment: .center, spacing: 16) {
-                Text(title).font(ConsoleTypography.footnote).foregroundStyle(p.text)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityHidden(true)
-                compactControl(field, name: name, label: label, kind: kind).layoutPriority(1)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func compactControl(_ field: JSONValue, name: String, label: String, kind: String) -> some View {
-        let control = fieldControl(field, name: name, label: label, kind: kind).fieldHelp(field["help"]?.stringValue)
-        Group {
-            switch kind {
-            case "boolean", "checkbox":
-                control.toggleStyle(.switch)
-            case "select":
-                control.labelsHidden()
-            default:
-                control
-            }
-        }
-        .frame(width: SettingsControlMetrics.formColumn, alignment: .trailing)
-    }
-
-    private func fieldIsVisible(_ field: JSONValue) -> Bool {
-        if guidanceSurface, let form = GuidanceForm(component: component) {
-            return form.visible(
-                field,
-                values: values.mapValues(JSONValue.string).merging(flags.mapValues(JSONValue.bool)) { _, flag in flag })
-        }
-        return form?.visible(field, values: values, flags: flags) ?? true
-    }
-
-    @ViewBuilder
-    private func fieldBody(_ field: JSONValue) -> some View {
-        let name = field["name"]?.stringValue ?? ""
-        let label = field["label"]?.stringValue ?? name
-        let kind = field["kind"]?.stringValue ?? field["type"]?.stringValue ?? "text"
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label + (field["required"]?.boolValue == true ? " *" : ""))
-                .font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                .accessibilityHidden(kind != "checklist")
-            fieldControl(field, name: name, label: label, kind: kind)
-                .fieldHelp(field["help"]?.stringValue)
-        }
-    }
-
-    static func accessibleLabel(_ label: String, required: Bool) -> String {
-        required ? "\(label), required" : label
-    }
-
-    // One switch over every kind inside fieldBody exceeded the Xcode 26.3 Release type-checker limit
-    @ViewBuilder
-    private func fieldControl(_ field: JSONValue, name: String, label: String, kind: String) -> some View {
-        let spoken = Self.accessibleLabel(label, required: field["required"]?.boolValue == true)
-        switch kind {
-        case "boolean", "checkbox":
-            booleanField(field, name: name, label: spoken)
-        case "select":
-            selectField(field, name: name, label: label, spoken: spoken)
-        case "checklist":
-            checklistField(field, name: name)
-        case "number":
-            numberField(field, name: name, label: spoken)
-        case "password":
-            passwordField(field, name: name, label: spoken)
-        case "textarea":
-            textareaField(field, name: name, label: spoken)
-        default:
-            plainTextField(field, name: name, label: spoken)
-        }
-    }
-
-    @ViewBuilder
-    private func booleanField(_ field: JSONValue, name: String, label: String) -> some View {
-        let isOn: Binding<Bool> = Binding(
-            get: { flags[name] ?? (field["default"]?.boolValue ?? false) },
-            set: { flags[name] = $0 })
-        let enabled: Bool = flags[name] ?? (field["default"]?.boolValue ?? false)
-        Toggle("", isOn: isOn)
-            .labelsHidden().tint(p.primary)
-            .accessibilityIdentifier("param-field-\(name)")
-            .accessibilityLabel(label)
-            .accessibilityValue(enabled ? "Enabled" : "Disabled")
-    }
-
-    @ViewBuilder
-    private func selectField(_ field: JSONValue, name: String, label: String, spoken title: String) -> some View {
-        let options: [ParameterOption] = form?.options(field) ?? []
-        let selection: Binding<String> = Binding(
-            get: { form?.stringValue(field, values: values) ?? "" },
-            set: { values[name] = $0 })
-        let spoken: String = options.first(where: { $0.value == selection.wrappedValue })?.label ?? "Not selected"
-        Picker(label, selection: selection) {
-            ForEach(options) { Text($0.label).tag($0.value) }
-        }
-        .pickerStyle(.menu).tint(p.readablePrimary)
-        .astralSelectOutline(compactSettings, palette: p)
-        .compactTooltip(compactSettings ? spoken : nil)
-        .accessibilityIdentifier("param-field-\(name)")
-        .accessibilityLabel(title)
-        .accessibilityValue(spoken)
-    }
-
-    @ViewBuilder
-    private func checklistField(_ field: JSONValue, name: String) -> some View {
-        let options: [ParameterOption] = form?.options(field) ?? []
-        ForEach(options) { option in
-            checklistOption(field: field, name: name, option: option)
-        }
-    }
-
-    @ViewBuilder
-    private func checklistOption(field: JSONValue, name: String, option: ParameterOption) -> some View {
-        let key = "\(name).\(option.value)"
-        let isOn: Binding<Bool> = Binding(
-            get: { form?.selected(field, option: option.value, flags: flags) ?? false },
-            set: { flags[key] = $0 })
-        Toggle(option.label, isOn: isOn)
-            .font(compactSettings ? ConsoleTypography.footnote : ConsoleTypography.callout).tint(p.primary)
-            .accessibilityIdentifier("param-field-\(name)-\(option.value)")
-            .accessibilityLabel(option.label)
-            .accessibilityValue(isOn.wrappedValue ? "Selected" : "Not selected")
-    }
-
-    @ViewBuilder
-    private func numberField(_ field: JSONValue, name: String, label: String) -> some View {
-        let text: Binding<String> = Binding(
-            get: {
-                values[name]
-                    ?? (field["default"]?.stringValue
-                        ?? field["default"]?.numberValue.map { JSONValue.number($0).displayText } ?? "")
-            },
-            set: { values[name] = $0 })
-        TextField(Self.placeholder(field), text: text)
-            .astralFieldStyle(compactSettings, palette: p)
-            .focused($editingField, equals: name)
-            #if os(iOS)
-                .keyboardType(.decimalPad)
-            #endif
-            .accessibilityIdentifier("param-field-\(name)")
-            .accessibilityLabel(label)
-    }
-
-    @ViewBuilder
-    private func passwordField(_ field: JSONValue, name: String, label: String) -> some View {
-        let text: Binding<String> = Binding(
-            get: { values[name] ?? "" },
-            set: { values[name] = $0 })
-        SecureField(Self.placeholder(field), text: text)
-            .astralFieldStyle(compactSettings, palette: p)
-            .focused($editingField, equals: name)
-            .onSubmit { editingField = nil }
-            .accessibilityIdentifier("param-field-\(name)")
-            .accessibilityLabel(label)
-    }
-
-    @ViewBuilder
-    private func textareaField(_ field: JSONValue, name: String, label: String) -> some View {
-        let text: Binding<String> = Binding(
-            get: { values[name] ?? (field["default"]?.stringValue ?? "") },
-            set: { values[name] = $0 })
-        TextEditor(text: text)
-            .focused($editingField, equals: name)
-            .compactFont(compactSettings ? ConsoleTypography.footnote : nil)
-            .scrollContentBackground(compactSettings ? .hidden : .automatic)
-            .padding(compactSettings ? 6 : 0)
-            .frame(minHeight: compactSettings ? 64 : 80)
-            .background(
-                compactSettings ? p.text.opacity(0.04) : Color.clear,
-                in: RoundedRectangle(cornerRadius: AstralRadius.sm)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: AstralRadius.sm).strokeBorder(
-                    compactSettings ? p.fieldBorder : Color.clear)
-            )
-            .autocorrectionDisabled(true)
-            #if os(iOS)
-                .textInputAutocapitalization(.never)
-            #endif
-            .accessibilityIdentifier("param-field-\(name)")
-            .accessibilityLabel(label)
-    }
-
-    @ViewBuilder
-    private func plainTextField(_ field: JSONValue, name: String, label: String) -> some View {
-        let text: Binding<String> = Binding(
-            get: { values[name] ?? (field["default"]?.stringValue ?? "") },
-            set: { values[name] = $0 })
-        TextField(Self.placeholder(field), text: text)
-            .astralFieldStyle(compactSettings, palette: p)
-            .focused($editingField, equals: name)
-            .onSubmit { editingField = nil }
-            .autocorrectionDisabled(true)
-            #if os(iOS)
-                .textInputAutocapitalization(.never)
-            #endif
-            .accessibilityIdentifier("param-field-\(name)")
-            .accessibilityLabel(label)
-    }
-
-    @ViewBuilder
-    private func paramButton(
-        label: String,
-        action: String?,
-        variant: String,
-        payload: [String: JSONValue],
-        available: Bool
-    ) -> some View {
-        Button {
-            submit(action: action, payload: payload)
-        } label: {
-            if compactSettings { CompactButtonLabel(text: label) } else { Text(label) }
-        }
-        .buttonStyle(AstralButtonStyle(palette: p, variant: variant))
-        .disabled(
-            !available || !model.connected || model.timelineReadOnly
-                || model.paramPickerPending(action: action ?? "")
-                || (guidanceSurface && (!model.connected || model.guidanceUpdate == nil))
-        )
-        .accessibilityIdentifier(
-            action == "chrome_llm_save" ? "llm-save-button" : "param-action-\(action ?? "message")"
-        )
-        .accessibilityLabel(label)
-        .accessibilityValue(ComponentAccessibility.buttonValue(pending: model.paramPickerPending(action: action ?? "")))
-    }
-
-    private func submit(action: String?, payload: [String: JSONValue]) {
-        guard let form else { return }
-        validationError = form.validationMessage(values: values, flags: flags)
-        guard validationError == nil else { return }
-        let collected = form.collected(values: values, flags: flags)
-        if guidanceSurface {
-            guard let request = GuidanceForm(component: component)?.request(values: collected) else { return }
-            _ = model.sendGuidanceRequest(action: request.action, payload: request.payload)
-            return
-        }
-        if let action {
-            if model.submitParamPicker(action: action, fields: collected, payload: payload) { submittedAction = action }
-        } else if let template = component.raw["submit_message_template"]?.stringValue {
-            var message = template
-            if message.contains("{__values_json__}") {
-                let json =
-                    (try? JSONValue.object(collected).encoded())
-                    .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
-                message = message.replacingOccurrences(of: "{__values_json__}", with: json)
-            }
-            for (key, value) in collected {
-                message = message.replacingOccurrences(of: "{\(key)}", with: value.displayText)
-            }
-            model.emit("chat_message", payload: ["message": .string(message)])
         }
     }
 }
@@ -2612,17 +1796,11 @@ struct ParamPickerComponent: View {
 struct TabsComponent: View {
     let component: AstralComponent
     @Environment(ThemeStore.self) var theme
-    @Environment(AppModel.self) private var model
-    @Environment(\.canvasCapturePath) private var capturePath
     @Environment(\.astralCompactSettings) private var compactSettings
     @State private var selection = 0
     private var p: AstralPalette { theme.palette }
 
     private var tabs: [JSONValue] { component.raw["tabs"]?.arrayValue ?? [] }
-    private var captureNode: CanvasCaptureNode? { model.canvasCapture.node(path: capturePath, component: component) }
-    private func retainSelection() {
-        model.canvasCapture.record(captureNode, state: .array([.number(Double(selection))]))
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -2634,19 +1812,9 @@ struct TabsComponent: View {
                 }
             }
             if tabs.indices.contains(selection) {
-                CanvasComponentChildren(raw: tabs[selection], path: capturePath.map { $0 + "/tabs/\(selection)" })
+                ComponentChildrenList(raw: tabs[selection])
             }
         }
-        .onAppear {
-            if let retained = model.canvasCapture.state(for: captureNode)?.arrayValue?.first?.numberValue,
-                retained >= 0, retained < Double(tabs.count)
-            {
-                selection = Int(retained)
-            }
-            retainSelection()
-        }
-        .onChange(of: selection) { _, _ in retainSelection() }
-        .onChange(of: captureNode) { _, _ in retainSelection() }
     }
 
     @ViewBuilder
@@ -2665,13 +1833,9 @@ struct TabsComponent: View {
 struct CollapsibleComponent: View {
     let component: AstralComponent
     @Environment(ThemeStore.self) var theme
-    @Environment(AppModel.self) private var model
-    @Environment(\.canvasCapturePath) private var capturePath
     @Environment(\.astralCompactSettings) private var compactSettings
     @State private var expanded: Bool
     private var p: AstralPalette { theme.palette }
-    private var captureNode: CanvasCaptureNode? { model.canvasCapture.node(path: capturePath, component: component) }
-    private func retainExpansion() { model.canvasCapture.record(captureNode, state: .bool(expanded)) }
 
     init(component: AstralComponent) {
         self.component = component
@@ -2682,21 +1846,15 @@ struct CollapsibleComponent: View {
     private var spokenTitle: String { title ?? component.raw["aria-label"]?.stringValue ?? "Details" }
 
     var body: some View {
-        let welcome = WorkspaceWelcome.role(of: component) == .more
-        VStack(alignment: welcome ? .center : .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
             Button {
                 withAnimation { expanded.toggle() }
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: expanded ? "chevron.down" : "chevron.right").foregroundStyle(p.muted)
-                    if let title {
-                        Text(InlineMarkdown.attributed(title))
-                            .font(welcome ? ConsoleTypography.subheadline : headerFont)
-                            .foregroundStyle(welcome ? p.muted : p.text)
-                    } else if !welcome {
-                        Text("Details").font(headerFont).foregroundStyle(p.text)
-                    }
-                    if !welcome { Spacer(minLength: 0) }
+                    Text(title.map { InlineMarkdown.attributed($0) } ?? AttributedString("Details"))
+                        .font(headerFont).foregroundStyle(p.text)
+                    Spacer(minLength: 0)
                 }
                 .frame(minWidth: 44, minHeight: compactSettings ? 28 : 44)
                 .contentShape(Rectangle())
@@ -2706,29 +1864,16 @@ struct CollapsibleComponent: View {
             .accessibilityLabel(title.map { Text(InlineMarkdown.attributed($0)) } ?? Text(spokenTitle))
             .accessibilityValue(expanded ? "Expanded" : "Collapsed")
             if expanded {
-                if welcome {
-                    WelcomeExamplesLayout {
-                        CanvasComponentChildren(raw: component.raw, path: capturePath)
-                    }
-                } else {
-                    CanvasComponentChildren(raw: component.raw, path: capturePath)
-                }
+                ComponentChildrenList(raw: component.raw)
             }
         }
-        .padding(welcome ? 0 : compactSettings ? 10 : 12)
-        .frame(maxWidth: .infinity, alignment: welcome ? .center : .leading)
-        .background(welcome ? Color.clear : p.surface.opacity(0.4), in: RoundedRectangle(cornerRadius: AstralRadius.md))
+        .padding(compactSettings ? 10 : 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(p.surface.opacity(0.4), in: RoundedRectangle(cornerRadius: AstralRadius.md))
         .overlay(
-            RoundedRectangle(cornerRadius: AstralRadius.md).strokeBorder(
-                compactSettings && !welcome ? p.border : Color.clear)
+            RoundedRectangle(cornerRadius: AstralRadius.md).strokeBorder(compactSettings ? p.border : Color.clear)
         )
-        .astralChartBackdrop(p, color: p.surface, opacity: welcome ? 0 : 0.4)
-        .onAppear {
-            if let retained = model.canvasCapture.state(for: captureNode)?.boolValue { expanded = retained }
-            retainExpansion()
-        }
-        .onChange(of: expanded) { _, _ in retainExpansion() }
-        .onChange(of: captureNode) { _, _ in retainExpansion() }
+        .astralChartBackdrop(p, color: p.surface, opacity: 0.4)
     }
 
     private var headerFont: Font {
@@ -2787,94 +1932,6 @@ extension View {
         } else {
             self
         }
-    }
-}
-
-struct ColorPickerComponent: View {
-    let component: AstralComponent
-    @Environment(ThemeStore.self) var theme
-    @Environment(AppModel.self) var model
-    @Environment(\.astralCompactSettings) private var compactSettings
-    @State private var draft: String?
-    @State private var validationError: String?
-    private var p: AstralPalette { theme.palette }
-    private var value: String { draft ?? component.raw["value"]?.stringValue ?? "#6366F1" }
-    private var label: String { component.label ?? "Color" }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: compactSettings ? 4 : 6) {
-            if compactSettings {
-                HStack(spacing: 10) {
-                    Text(label).font(ConsoleTypography.footnote).foregroundStyle(p.text)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    controls
-                }
-                .padding(.vertical, 6)
-                .compactGroupBox(true, palette: p)
-            } else {
-                Text(label).font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                HStack(spacing: 10) { controls }
-            }
-            if let validationError {
-                Text(validationError).font(ConsoleTypography.caption).foregroundStyle(p.error)
-            }
-        }
-        .onChange(of: component.raw["value"]) { _, _ in
-            if !model.paramPickerPending(action: "save_theme") { draft = nil }
-        }
-    }
-
-    @ViewBuilder
-    private var controls: some View {
-        ColorPicker(
-            label,
-            selection: Binding(
-                get: { Color(cssHex: value) ?? p.primary },
-                set: { color in
-                    let resolved = color.resolve(in: EnvironmentValues())
-                    draft = String(
-                        format: "#%02X%02X%02X", Int((resolved.red * 255).rounded()),
-                        Int((resolved.green * 255).rounded()), Int((resolved.blue * 255).rounded()))
-                    validationError = nil
-                }), supportsOpacity: false
-        )
-        .labelsHidden().accessibilityLabel("Choose \(label) color")
-        TextField(
-            "#RRGGBB",
-            text: Binding(
-                get: { value },
-                set: {
-                    draft = $0
-                    validationError = nil
-                })
-        )
-        .font(ConsoleTypography.mono(compactSettings ? 12 : 13)).textFieldStyle(.roundedBorder)
-        .frame(width: compactSettings ? 96 : nil)
-        .autocorrectionDisabled(true)
-        #if os(iOS)
-            .textInputAutocapitalization(.never)
-        #endif
-        .accessibilityLabel("\(label) color value")
-        .accessibilityIdentifier("theme-color-\(component.raw["color_key"]?.stringValue ?? "value")")
-        Button("Apply") { choose(value) }
-            .buttonStyle(AstralButtonStyle(palette: p, variant: "secondary"))
-            .disabled(!model.connected || model.paramPickerPending(action: "save_theme"))
-            .accessibilityLabel("Apply \(label) color")
-    }
-
-    private func choose(_ raw: String) {
-        let stripped = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        let hex = stripped.hasPrefix("#") ? stripped : "#" + stripped
-        guard Color(cssHex: hex) != nil else {
-            validationError = "Enter a six-digit hex color, such as #123ABC."
-            return
-        }
-        guard let key = component.raw["color_key"]?.stringValue else { return }
-        guard model.saveThemeColor(key: key, value: hex.uppercased()) else {
-            validationError = "Reconnect before saving your color."
-            return
-        }
-        validationError = nil
     }
 }
 

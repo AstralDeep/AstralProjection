@@ -28,9 +28,7 @@ Orchestrator (:8001)  ──WebSocket /ws──►  OrchestratorClient (asyncio 
   donut and radar charts using native Qt layouts and painting.
 - `astral_client/console.py`, `console_widgets.py` — validated `console/v2`
   chrome/catalog and ROTE presentation rendered as the native application shell.
-- `astral_client/workspace_actions.py` — authorized committed-canvas export and
-  share, fenced to the current owner, connection, chat and render revision.
-- `astral_client/app.py` — main window (chat rail + canvas) and message wiring.
+- `astral_client/not_available.py` — the one window the client opens while it waits for its kernel port.
 - `astral_client/theme.py` — server theme roles and packaged shared Open Sans.
 
 ### Console v2

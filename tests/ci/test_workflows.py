@@ -398,17 +398,30 @@ def _assert_retry_policy_in_one_run(job: str, run: str) -> None:
 
 
 FIRST_LOGIN_UI_CLASSES = (
-    "Accessibility060UITests",
-    "LLMFirstLoginUITests",
-    "VoiceConversationUITests",
-    "WorkspacePresentationUITests",
-    "WorkspaceActionsUITests",
-    "SettingsControlsUITests",
-    "ConversationContinuityUITests/testDeterministicProcessRelaunchRestoresSemanticConversation",
+    "MeshStoredSurfaceUITests",
+    "MeshModeUITests/testFirstLaunchShowsCreateAndJoinBeforeAnyServerLogin",
+    "MeshModeUITests/testLegacyServerLoginPreferenceOpensMeshChoices",
+    "MeshModeUITests/testAttachmentOnlyMessageShowsItsFileAndTheComposerCanAddAnother",
+    "MeshModeUITests/testCreatingAMeshShowsRecoveryWordsOnceAndRequiresConfirmation",
+    "MeshModeUITests/testRecoveringWithTheWordsShowsTheRestoredMeshAndDevice",
+    "MeshModeUITests/testRequestsShowInTheChatAndCanBeRefusedWithAReason",
+    "MeshModeUITests/testRemoteMCPManagerIsReachableFromSettings",
+    "MeshModeUITests/testPermissionsAndMailboxLiveInSettings",
+    "MeshModeUITests/testReviewOpensTheConsentSheetWithTheActionAndDenyClosesIt",
+    "MeshModeUITests/testDenyOnTheBannerDismissesTheApprovalWithoutASheet",
+    "MeshModeUITests/testOutcomeUnknownCardOffersCheckOrLeave",
+    "MeshModeUITests/testTheLargestTextSizeKeepsEveryMeshScreenUsable",
+    "MeshModeUITests/testRunsAndSettingsScreensRender",
+    "MeshModeUITests/testJoinOffersScanOrPasteAndShowsTheComparisonCode",
+    "MeshModeUITests/testJoinCanShowItsOwnCodeInstead",
+    "MeshModeUITests/testShellShowsWaitingDeviceQueuedMessageBranchesAndApproval",
+    "MeshModeUITests/testDevicesAndSettingsExposeMembersStopAndAllowance",
+    "MeshModeUITests/testAddingADeviceShowsAnInvitationThenComparesCodesAndApproves",
+    "MeshModeUITests/testTheFallbackWalksThroughCodeComparisonAndApproval",
+    "MeshModeUITests/testAnUnreadableCodeKeepsThePersonOnTheCodeStepWithAnError",
+    "MeshModeUITests/testDeviceDetailOffersRequestAndRemovalWithConfirmation",
 )
-MACOS_UI_CLASSES = tuple(
-    name for name in FIRST_LOGIN_UI_CLASSES if name not in {"WorkspaceActionsUITests", "SettingsControlsUITests"}
-)
+MACOS_UI_CLASSES = ("MeshModeUITests", "MeshStoredSurfaceUITests")
 
 
 def _first_login_matrix(apple: str) -> list[dict[str, str]]:

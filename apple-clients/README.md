@@ -355,7 +355,7 @@ activate the extracted workflow in this repository.
   machine-checked seed of the 044 parity matrix rows for ios/macos/watch.
 - Active owner CI: `.github/workflows/apple-ci.yml` runs strict recursive
   `swift-format`, the icon `--check` gate, `swift test` with coverage, and
-  unsigned `xcodebuild` tests for iOS 26.5, macOS, first-login UI, and watchOS
+  unsigned `xcodebuild` tests for iOS 26.5, macOS, mesh UI, and watchOS
   26.5 against Xcode 26.6 (build 17F113). Its fail-closed `apple-required`
   aggregate requires every platform result and matrix success marker.
 - Known gaps: `KNOWN-ISSUES.md`.

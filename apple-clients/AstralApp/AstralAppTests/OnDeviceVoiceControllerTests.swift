@@ -66,7 +66,7 @@ final class OnDeviceVoiceControllerTests: XCTestCase {
         let controller = OnDeviceVoiceController(store: store)
         let model = AppModel(
             voiceController: legacy, onDeviceVoiceController: controller)
-        await model.activateVoice()
+        await model.onDeviceVoice.activate()
         XCTAssertTrue(controller.showingSetup)
         XCTAssertEqual(api.startCount, 0)
         XCTAssertFalse(legacy.active)

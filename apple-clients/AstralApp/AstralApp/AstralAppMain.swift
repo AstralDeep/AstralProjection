@@ -35,11 +35,7 @@ struct AstralApp: App {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 
     init() {
-        #if DEBUG
-            let launchModel = FirstLoginUITestFixture.workspaceActionsModel() ?? AppModel(unsentMessageStore: KeychainUnsentMessageStore())
-        #else
-            let launchModel = AppModel(unsentMessageStore: KeychainUnsentMessageStore())
-        #endif
+        let launchModel = AppModel()
         _model = State(initialValue: launchModel)
         let coordinator = ConsentCoordinator()
         _consent = State(initialValue: coordinator)
@@ -72,9 +68,11 @@ struct AstralApp: App {
         #endif
         #if os(macOS)
             lifecycle = MacAppLifecycle(handlers: .live(launchModel))
-            let busy: @MainActor () -> Bool = { [launchModel] in
+            let meshRuntime = _mesh.wrappedValue
+            let busy: @MainActor () -> Bool = { [launchModel, meshRuntime] in
                 UpdateCoordinator.isTaskActive(
-                    turnActive: launchModel.turnActive, session: launchModel.macComputerHost.session)
+                    turnActive: meshRuntime.currentTurn?.running == true,
+                    session: launchModel.macComputerHost.session)
             }
             _updates = StateObject(
                 wrappedValue: ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
@@ -84,21 +82,9 @@ struct AstralApp: App {
         ConsoleTypography.registerFonts()
     }
 
-    @ViewBuilder private var gatedRoot: some View {
-        #if DEBUG
-            if FirstLoginUITestFixture.requestedScenario() != nil {
-                RootView()
-            } else {
-                MeshRootView()
-            }
-        #else
-            MeshRootView()
-        #endif
-    }
-
     var body: some Scene {
         WindowGroup("AstralDeep", id: "main") {
-            gatedRoot
+            MeshRootView()
                 .environment(model)
                 .environment(modeStore)
                 .environment(consent)
@@ -112,7 +98,7 @@ struct AstralApp: App {
                 .environment(
                     \.openURL,
                     OpenURLAction { url in
-                        guard let destination = InlineMarkdown.safeLink(url, relativeTo: model.serverBase) else {
+                        guard let destination = InlineMarkdown.safeLink(url) else {
                             return .discarded
                         }
                         return .systemAction(destination)
@@ -121,12 +107,6 @@ struct AstralApp: App {
                 .preferredColorScheme(model.themeStore.colorScheme)
                 .task {
                     await model.onDeviceVoice.store?.attach()
-                    #if DEBUG
-                        if let scenario = FirstLoginUITestFixture.requestedScenario() {
-                            FirstLoginUITestFixture.install(scenario, on: model)
-                            return
-                        }
-                    #endif
                     #if os(macOS)
                         if !unitTestHost, let requirement = await updates.enforce(UpdatePolicyGate()) {
                             updateRequirement = requirement
@@ -191,35 +171,16 @@ struct AstralApp: App {
             .windowStyle(.titleBar)
             .defaultSize(width: 1280, height: 820)
             .commands {
-                MacWorkbenchCommands()
                 CommandGroup(after: .appInfo) { UpdateMenuItems(coordinator: updates) }
             }
         #endif
         #if os(macOS)
             MenuBarExtra("AstralDeep", systemImage: "sparkles") {
-                MacMenuBarContent(model: model, updateRequired: updateRequirement != nil)
+                MacMenuBarContent(updateRequired: updateRequirement != nil)
             }
             .menuBarExtraStyle(.menu)
-            Window("Quick Entry", id: "quick-entry") {
-                MacQuickEntryView(model: model, updateRequired: updateRequirement != nil)
-                    .environment(model.themeStore)
-                    .font(ConsoleTypography.body)
-                    .tint(model.themeStore.palette.primary)
-                    .preferredColorScheme(model.themeStore.colorScheme)
-            }
-            .defaultSize(width: 480, height: 260)
-            Window("Scheduled Work", id: "scheduled-work") {
-                MacScheduledWorkCenter(model: model, updateRequired: updateRequirement != nil)
-                    .environment(model)
-                    .environment(model.themeStore)
-                    .font(ConsoleTypography.body)
-                    .tint(model.themeStore.palette.primary)
-                    .preferredColorScheme(model.themeStore.colorScheme)
-            }
-            .defaultSize(width: 900, height: 600)
             Settings {
                 MacSettingsView(updates: updates)
-                    .environment(model)
                     .environment(model.themeStore)
                     .font(ConsoleTypography.body)
                     .tint(model.themeStore.palette.primary)

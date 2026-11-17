@@ -64,8 +64,6 @@ def native_root(qapp, _native_test_roots):
     from PySide6.QtWidgets import QWidget
     from shiboken6 import isValid
 
-    from astral_client.app import SurfaceDialog
-
     roots = []
 
     def create(factory, *args, **kwargs):
@@ -77,8 +75,6 @@ def native_root(qapp, _native_test_roots):
     yield create
     for widget in reversed(roots):
         if isValid(widget):
-            if isinstance(widget, SurfaceDialog):
-                widget.set_mandatory(False)
             widget.close()
             widget.deleteLater()
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)

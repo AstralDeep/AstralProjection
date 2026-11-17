@@ -1,6 +1,6 @@
 """Fail-closed release verifier for the Windows client: resolves the latest trusted
 GitHub release, checks its SHA-256 and sigstore signature against a pinned OIDC
-identity before returning a verified exe path to app.py and deployment.py.
+identity before returning a verified exe path to deployment.py.
 """
 
 from __future__ import annotations

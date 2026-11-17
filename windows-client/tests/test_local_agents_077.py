@@ -125,19 +125,3 @@ def test_dialog_lists_refreshes_and_stops_through_the_host(qapp, tmp_path, nativ
     assert local_agents.open_folder("") is False
 
 
-def test_settings_menu_carries_the_local_entry_only_for_a_hosting_profile(qapp, native_root):
-    from astral_client.app import TopBar
-    calls = []
-    bar = native_root(TopBar, "sam", lambda: None, lambda: None, lambda *a: None, lambda: None,
-                 local_items=[("Agents on this PC", lambda: calls.append("open"))])
-    bar.set_menu_model({"menu": [{"label": "Account", "items": [
-        {"label": "My agents & skills", "surface": "agent_authoring"}]}],
-        "signout": {"label": "Sign out", "action": "logout"}})
-    labels = [a.text() for a in bar._menu.actions() if a.text()]
-    assert "Agents on this PC" in labels
-    assert labels.index("Agents on this PC") > labels.index("My agents && skills")
-    [a for a in bar._menu.actions() if a.text() == "Agents on this PC"][0].trigger()
-    assert calls == ["open"]
-    plain = native_root(TopBar, "sam", lambda: None, lambda: None, lambda *a: None, lambda: None)
-    plain.set_menu_model({"menu": [], "signout": {"label": "Sign out", "action": "logout"}})
-    assert "Agents on this PC" not in [a.text() for a in plain._menu.actions()]

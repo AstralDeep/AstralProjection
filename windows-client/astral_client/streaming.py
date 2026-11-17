@@ -1,6 +1,6 @@
 """Converts orchestrator ui_stream_data frames into Canvas ops, rendering only the
 structured components (never the web html). Keys nodes by stream_id, or component_id
-when bridged to a workspace identity; used by astral_client/app.py.
+when bridged to a workspace identity.
 """
 
 from __future__ import annotations

@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		AD0900000000000000000013 /* WorkspaceActionLoopback.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD0900000000000000000014; };
 		AB00000000000000000000F4 /* AstralKernel in Frameworks */ = {isa = PBXBuildFile; productRef = AB00000000000000000000F2 /* AstralKernel */; };
 		AA00000000000000000000A4 /* AstralCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA00000000000000000000A2 /* AstralCore */; };
 		AF1030000000000000000003 /* AstralVoiceModel in Frameworks */ = {isa = PBXBuildFile; productRef = AF1030000000000000000002 /* AstralVoiceModel */; };
@@ -64,7 +63,6 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		AD0900000000000000000014 /* WorkspaceActionLoopback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AstralAppUITests/WorkspaceActionLoopback.swift; sourceTree = SOURCE_ROOT; };
 		222F50272FFD60D80016B0D6 /* AstralDeep.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AstralDeep.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA00000000000000000000B1 /* AstralWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AstralWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA00000000000000000000D1 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Base.xcconfig; path = ../Config/Base.xcconfig; sourceTree = "<group>"; };
@@ -483,7 +481,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AD0900000000000000000013 /* WorkspaceActionLoopback.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

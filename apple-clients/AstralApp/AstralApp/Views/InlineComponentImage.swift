@@ -1,5 +1,5 @@
 // Decodes bounded JPEG and PNG data URIs for the shared component renderer without network access.
-// Loaded pixels use the existing canvas capture registry and its owner-bound retention checks.
+// The view scales the decoded image to fit its slot.
 
 import AstralCore
 import ImageIO
@@ -42,15 +42,13 @@ enum InlineComponentImage {
 
 struct InlineComponentImageView: View {
     let source: String
-    let node: CanvasCaptureNode?
-    let registry: CanvasCaptureRegistry
     @State private var decoded: CGImage?
     @State private var failed = false
 
     var body: some View {
         Group {
             if let decoded {
-                CanvasLoadedImage(image: Image(decorative: decoded, scale: 1), node: node, registry: registry)
+                Image(decorative: decoded, scale: 1).resizable().scaledToFit()
             } else if failed {
                 Label("Image unavailable", systemImage: "photo.badge.exclamationmark")
                     .font(ConsoleTypography.caption)
@@ -65,7 +63,6 @@ struct InlineComponentImageView: View {
             guard !Task.isCancelled else { return }
             decoded = image
             failed = image == nil
-            if failed, let node { registry.retain(nil, for: node) }
         }
     }
 }

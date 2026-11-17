@@ -20,26 +20,6 @@ final class VoiceSessionController065Tests: XCTestCase {
     private let submission = "00000000-0000-4000-8000-000000000007"
     private let request = "00000000-0000-4000-8000-000000000008"
 
-    func testAppModelDoesNotWireLegacyControllerToHostedChatOrMedia() async throws {
-        let api = FakeVoiceAPI()
-        let media = FakeVoiceMedia()
-        let controller = makeController(api: api, media: media)
-        let model = AppModel(voiceController: controller)
-        defer { controller.close() }
-        model.signedIn = true
-        model.connected = true
-        var wires: [String] = []
-        model.currentConnectionVoiceSendOverride = { wires.append($0) }
-        model.outboundTap = { wires.append($0) }
-        XCTAssertTrue(model.beginConversationConnection(connection))
-        install(controller, replaceSender: false)
-        controller.updateVisibleChatLocally(nil)
-        await controller.activate()
-        XCTAssertTrue(wires.isEmpty)
-        XCTAssertEqual(api.startCount, 0)
-        XCTAssertEqual(media.connectCount, 0)
-    }
-
     func testExistingChatActivationRequiresMatchingHydrationBeforePermissionAndMedia() async throws {
         let api = FakeVoiceAPI()
         api.startOutcome = .started(restSession(synced: true), grant())
@@ -400,32 +380,6 @@ final class VoiceSessionController065Tests: XCTestCase {
         XCTAssertEqual(media.connectCount, 0)
         XCTAssertEqual(controller.reason, "permission_denied")
         XCTAssertEqual(controller.phase, "error")
-    }
-
-    func testAppModelRejectsRetiredVoiceWireWithoutSendingOrChangingConversation() throws {
-        let model = AppModel()
-        model.signedIn = true
-        model.connected = true
-        XCTAssertTrue(model.beginConversationConnection(connection))
-        var sent: [String] = []
-        model.currentConnectionVoiceSendOverride = { sent.append($0) }
-        model.consoleDashboardVisible = true
-        let newChat = Outbound.correlatedVoiceNewChat(
-            connectionGeneration: connection,
-            submissionId: "00000000-0000-4000-8000-00000000000d",
-            requestGeneration: "00000000-0000-4000-8000-00000000000e")
-        let transcript = try XCTUnwrap(
-            VoiceTranscript(frame: try XCTUnwrap(InboundFrame.parse(finalTranscript()))))
-        let voiceChat = Outbound.voiceChatMessage(
-            transcript: transcript, connectionGeneration: connection)
-        XCTAssertFalse(model.sendVoiceWire(newChat))
-        XCTAssertFalse(model.sendVoiceWire(voiceChat))
-        XCTAssertFalse(model.sendVoiceWire(voiceChat))
-        XCTAssertTrue(sent.isEmpty)
-        XCTAssertTrue(model.localOperationSubmissions.isEmpty)
-        XCTAssertTrue(model.transientTurns.isEmpty)
-        XCTAssertTrue(model.consoleDashboardVisible)
-        XCTAssertNil(model.errorBanner)
     }
 
     func testActivationConnectsLiveKitAndDefersCaptureUntilContextSync() async {
