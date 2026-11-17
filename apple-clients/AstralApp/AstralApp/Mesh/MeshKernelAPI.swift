@@ -604,18 +604,62 @@ nonisolated struct MeshConnectionProposal: Equatable, Sendable {
     let endpoint: String
     let local: Bool
     let device: String?
-    let scheme: String
+    var scheme: String
     let issuer: String?
     let issuerHost: String?
-    let redirectHost: String?
+    var redirectHost: String?
     let scopes: [String]
-    let resource: String?
+    var resource: String?
     let clientId: String?
     let tools: [MeshConnectionTool]
     let egress: [String]
     let flowHint: String
     let replaces: String?
     let expiresMs: UInt64
+    var kind: String = "mcp-http"
+    var card: MeshProposedCard?
+    var keyHeader: String?
+    var keyFormat: String?
+    var keyItem: String?
+    var models: [String] = []
+    var keyRecipients: [String]?
+}
+
+nonisolated struct MeshProposedCard: Equatable, Sendable {
+    let url: String
+    let hash: String
+    let origin: String
+    let signer: String?
+    let signed: Bool
+    let extendedHash: String?
+    let extendedPending: Bool
+    let skills: [String]
+}
+
+nonisolated struct MeshConnectionSecret: Sendable, CustomStringConvertible, CustomDebugStringConvertible {
+    let name: String
+    let value: String
+
+    var description: String { "MeshConnectionSecret(name: \(name))" }
+    var debugDescription: String { description }
+}
+
+nonisolated struct MeshHttpApiDraft: Sendable {
+    let name: String
+    let endpoint: String
+    let header: String
+    let format: String
+    let key: String
+    let recipients: [String]?
+}
+
+nonisolated struct MeshModelConnectionDraft: Sendable {
+    let name: String
+    let endpoint: String
+    let provider: String
+    let models: [String]
+    let apiKeys: [String]
+    let recipients: [String]?
 }
 
 nonisolated struct MeshConnectionState: Equatable, Sendable {
@@ -896,6 +940,13 @@ nonisolated protocol MeshKernel: Sendable {
     func allowance() throws -> MeshAllowance
 
     func proposeConnection(endpoint: String, name: String, local: Bool) async throws -> MeshConnectionProposal
+    func proposeA2AConnection(cardURL: String, name: String, key: String?, recipients: [String]?) async throws
+        -> MeshConnectionProposal
+    func proposeKeyConnection(endpoint: String, name: String, local: Bool, key: String, recipients: [String]?)
+        async throws -> MeshConnectionProposal
+    func proposeHttpApiConnection(_ draft: MeshHttpApiDraft) async throws -> MeshConnectionProposal
+    func proposeModelConnection(_ draft: MeshModelConnectionDraft) async throws -> MeshConnectionProposal
+    func setConnectionKey(id: String, secrets: [MeshConnectionSecret], recipients: [String]?) throws
     func reviewConnection(id: String) async throws -> MeshConnectionProposal
     func approveConnection(proposal: String, flow: String, toolNames: [String], clientId: String?) throws
         -> MeshConnection

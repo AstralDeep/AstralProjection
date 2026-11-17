@@ -14,9 +14,24 @@ nonisolated final class InMemoryConnections: @unchecked Sendable {
         var open: Bool { issuer == nil }
     }
 
+    struct Card: Sendable {
+        var hash = "sha256:" + String(repeating: "a", count: 64)
+        var origin = ""
+        var signed = false
+        var signer: String?
+        var skills: [String] = ["Answer questions"]
+        var scheme = "none"
+        var issuer: String?
+        var scopes: [String] = []
+        var interfaceHosts: [String] = []
+        var extendedHash: String?
+    }
+
     private struct Held {
         var proposal: MeshConnectionProposal
         var base: Int?
+        var keys: [String: Data] = [:]
+        var recipients: [String]?
     }
 
     private struct Flow {
@@ -39,6 +54,7 @@ nonisolated final class InMemoryConnections: @unchecked Sendable {
         var pendingTools: [MeshConnectionTool]?
         var requiredScopes: [String]?
         var stepUpUsed = false
+        var keyRecipients: [String]?
     }
 
     static let maxProposals = 8
@@ -55,6 +71,7 @@ nonisolated final class InMemoryConnections: @unchecked Sendable {
     private var records: [String: Record] = [:]
     private var flows: [String: Flow] = [:]
     private var secrets: [String: Data] = [:]
+    private var cards: [String: Card] = [:]
     private var counter = 0
 
     var isNode = false
@@ -72,6 +89,27 @@ nonisolated final class InMemoryConnections: @unchecked Sendable {
 
     func registerServer(_ endpoint: String, _ server: Server) { lock.withLock { servers[endpoint] = server } }
 
+    func modelFacts(of id: String) -> (models: [String], recipients: [String]?)? {
+        lock.withLock {
+            guard let proposal = records[id]?.proposal, proposal.kind == "model" else { return nil }
+            return (proposal.models, records[id]?.keyRecipients)
+        }
+    }
+
+    func registerCard(_ url: String, _ card: Card) { lock.withLock { cards[url] = card } }
+
+    func changeCard(_ url: String, _ change: (inout Card) -> Void) {
+        lock.withLock {
+            guard var card = cards[url] else { return }
+            change(&card)
+            cards[url] = card
+            for (id, record) in records where record.proposal.endpoint == url {
+                guard let pinned = record.proposal.card, pinned != Self.facts(card, url: url) else { continue }
+                _ = state(id, "needs_attention", "refused")
+            }
+        }
+    }
+
     func seedDeviceState(_ id: String, _ state: MeshConnectionDeviceState) {
         lock.withLock { records[id]?.states[state.device] = state }
     }
@@ -86,10 +124,118 @@ nonisolated final class InMemoryConnections: @unchecked Sendable {
         }
     }
 
+    func proposeKey(endpoint: String, name: String, local: Bool, key: String, recipients: [String]?) throws
+        -> MeshConnectionProposal
+    {
+        try Self.checkName(name)
+        try Self.checkKey(key)
+        try Self.checkRecipients(recipients)
+        let server = try discover(endpoint: endpoint, local: local)
+        return lock.withLock {
+            counter += 1
+            let id = String(format: "%032x", counter)
+            var base = draft(id, name, endpoint, local, Server(issuer: nil, scopes: [], tools: server.tools),
+                replaces: nil, record: nil)
+            base.scheme = "key"
+            base.redirectHost = nil
+            base.resource = nil
+            base.keyRecipients = recipients
+            return hold(base, base: nil, keys: ["key": Data(key.utf8)], recipients: recipients)
+        }
+    }
+
+    func proposeHttpApi(_ draft: MeshHttpApiDraft) throws -> MeshConnectionProposal {
+        try Self.checkName(draft.name)
+        try Self.checkKey(draft.key)
+        try Self.checkRecipients(draft.recipients)
+        guard let url = URLComponents(string: draft.endpoint), url.scheme == "https", let host = url.host,
+            !host.isEmpty
+        else { throw Self.refused("connection.egress_refused") }
+        guard draft.format.components(separatedBy: "{key}").count == 2 else { throw Self.refused("connection.malformed") }
+        guard !draft.header.isEmpty, draft.header.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") })
+        else { throw Self.refused("connection.malformed") }
+        return lock.withLock {
+            counter += 1
+            let id = String(format: "%032x", counter)
+            let found = MeshConnectionProposal(
+                proposal: "proposal-\(id)-\(counter)", connection: id, name: draft.name, endpoint: draft.endpoint,
+                local: false, device: nil, scheme: "key", issuer: nil, issuerHost: nil, redirectHost: nil,
+                scopes: [], resource: nil, clientId: nil, tools: [], egress: [host], flowHint: "private",
+                replaces: nil, expiresMs: nowMs + Self.proposalTTLMs, kind: "http-api", keyHeader: draft.header,
+                keyFormat: draft.format, keyItem: "astral.connection.key/" + id, keyRecipients: draft.recipients)
+            return hold(found, base: nil, keys: ["key": Data(draft.key.utf8)], recipients: draft.recipients)
+        }
+    }
+
+    func proposeModel(_ draft: MeshModelConnectionDraft) throws -> MeshConnectionProposal {
+        try Self.checkName(draft.name)
+        try Self.checkRecipients(draft.recipients)
+        guard !draft.models.isEmpty, !draft.apiKeys.isEmpty else { throw Self.refused("connection.key_required") }
+        try draft.apiKeys.forEach(Self.checkKey)
+        guard let url = URLComponents(string: draft.endpoint), let host = url.host, !host.isEmpty,
+            url.scheme == "https" || ["127.0.0.1", "::1", "localhost"].contains(host)
+        else { throw Self.refused("connection.egress_refused") }
+        return lock.withLock {
+            counter += 1
+            let id = String(format: "%032x", counter)
+            let found = MeshConnectionProposal(
+                proposal: "proposal-\(id)-\(counter)", connection: id, name: draft.name, endpoint: draft.endpoint,
+                local: false, device: nil, scheme: "key", issuer: nil, issuerHost: nil, redirectHost: nil,
+                scopes: [], resource: nil, clientId: nil, tools: [], egress: [host], flowHint: "private",
+                replaces: nil, expiresMs: nowMs + Self.proposalTTLMs, kind: "model",
+                keyItem: "astral.provider/" + draft.provider, models: draft.models, keyRecipients: draft.recipients)
+            return hold(found, base: nil, keys: ["key": Data(draft.apiKeys.joined(separator: "\n").utf8)],
+                recipients: draft.recipients)
+        }
+    }
+
+    func proposeA2A(cardURL: String, name: String, key: String?, recipients: [String]?) throws
+        -> MeshConnectionProposal
+    {
+        try Self.checkName(name)
+        try Self.checkRecipients(recipients)
+        guard let url = URLComponents(string: cardURL), url.scheme == "https", url.host != nil else {
+            throw Self.refused("a2a.insecure_url")
+        }
+        guard let card = lock.withLock({ cards[cardURL] }) else { throw Self.refused("net.unreachable") }
+        if card.scheme == "key" { try Self.checkKey(key ?? "") }
+        return lock.withLock {
+            counter += 1
+            let id = String(format: "%032x", counter)
+            var found = a2aDraft(id, name, cardURL, card, replaces: nil, flow: "private")
+            found.keyRecipients = recipients
+            let keys: [String: Data] = card.scheme == "key" ? ["key": Data((key ?? "").utf8)] : [:]
+            return hold(found, base: nil, keys: keys, recipients: recipients)
+        }
+    }
+
+    func setKey(id: String, secrets entries: [MeshConnectionSecret], recipients: [String]?) throws {
+        try Self.checkRecipients(recipients)
+        try entries.forEach { try Self.checkKey($0.value) }
+        try lock.withLock {
+            guard let record = records[id] else { throw Self.refused("connection.unknown") }
+            guard record.proposal.scheme == "key" else { throw Self.refused("connection.no_key") }
+            for entry in entries {
+                secrets["astral.connection/v1/\(id)/\(entry.name)"] = Data(entry.value.utf8)
+            }
+            records[id]?.keyRecipients = recipients
+            let here: Bool = recipients?.contains(deviceId) ?? true
+            _ = state(id, here ? "signed_in" : "not_signed_in", nil)
+        }
+    }
+
     func review(id: String) throws -> MeshConnectionProposal {
         let (record, server) = try lock.withLock { () -> (Record, Server) in
             guard let record = records[id] else { throw Self.refused("connection.unknown") }
             return (record, servers[record.proposal.endpoint] ?? Server())
+        }
+        if record.proposal.kind == "a2a" {
+            return try lock.withLock {
+                guard let card = cards[record.proposal.endpoint] else { throw Self.refused("net.unreachable") }
+                let found = a2aDraft(
+                    id, record.proposal.name, record.proposal.endpoint, card, replaces: id, flow: record.flow)
+                return hold(found, base: record.revision, keys: [:], recipients: nil)
+            }
         }
         var scopes = server.scopes
         if let required = record.requiredScopes { scopes = Array(Set(scopes).union(required)).sorted() }
@@ -132,8 +278,16 @@ nonisolated final class InMemoryConnections: @unchecked Sendable {
             record.scopes = entry.proposal.scopes
             record.revision += 1
             record.pendingTools = nil
+            record.keyRecipients = entry.recipients ?? record.keyRecipients
             records[id] = record
-            return info(id, record, clientId: clientId)
+            for (name, value) in entry.keys { secrets["astral.connection/v1/\(id)/\(name)"] = value }
+            let here: Bool = record.keyRecipients?.contains(deviceId) ?? true
+            if entry.proposal.scheme == "key", !entry.keys.isEmpty, here { _ = state(id, "signed_in", nil) }
+            if entry.proposal.replaces != nil, record.states[deviceId]?.reason == "refused" {
+                let held: Bool = secrets.keys.contains { $0.hasPrefix("astral.connection/v1/\(id)/") }
+                _ = state(id, held ? "signed_in" : "not_signed_in", nil)
+            }
+            return info(id, records[id] ?? record, clientId: clientId)
         }
         return value
     }
@@ -294,9 +448,11 @@ nonisolated final class InMemoryConnections: @unchecked Sendable {
             egress: egress, flowHint: flowHint, replaces: replaces, expiresMs: expires)
     }
 
-    private func hold(_ proposal: MeshConnectionProposal, base: Int?) -> MeshConnectionProposal {
+    private func hold(
+        _ proposal: MeshConnectionProposal, base: Int?, keys: [String: Data] = [:], recipients: [String]? = nil
+    ) -> MeshConnectionProposal {
         held.removeAll { $0.proposal.expiresMs <= nowMs }
-        held.append(Held(proposal: proposal, base: base))
+        held.append(Held(proposal: proposal, base: base, keys: keys, recipients: recipients))
         if held.count > Self.maxProposals { held.removeFirst(held.count - Self.maxProposals) }
         return proposal
     }
@@ -347,12 +503,53 @@ nonisolated final class InMemoryConnections: @unchecked Sendable {
             .filter { $0.device != deviceId }
             .sorted { $0.device < $1.device }
         return MeshConnection(
-            id: id, server: server, name: proposal.name, kind: "mcp-http", endpoint: proposal.endpoint,
+            id: id, server: server, name: proposal.name, kind: proposal.kind, endpoint: proposal.endpoint,
             local: proposal.local, device: proposal.device, scheme: proposal.scheme, issuer: proposal.issuer,
             scopes: record.scopes, clientId: clientId ?? proposal.clientId, flow: record.flow,
             egress: proposal.egress, tools: record.tools, approvedBy: deviceId, approvedByRemovedDevice: false,
             unsupported: nil, supportedHere: supported, thisDevice: own, attention: attention,
             otherDevices: others, pendingTools: record.pendingTools)
+    }
+
+    nonisolated static func facts(_ card: Card, url: String) -> MeshProposedCard {
+        MeshProposedCard(
+            url: url, hash: card.hash, origin: card.origin, signer: card.signer, signed: card.signed,
+            extendedHash: card.extendedHash, extendedPending: false, skills: card.skills)
+    }
+
+    private func a2aDraft(
+        _ id: String, _ name: String, _ url: String, _ card: Card, replaces: String?, flow: String
+    ) -> MeshConnectionProposal {
+        let cardHost: String = URLComponents(string: url)?.host ?? ""
+        let issuerHost: String? = card.issuer.flatMap { URLComponents(string: $0)?.host }
+        var hosts: Set<String> = Set(card.interfaceHosts)
+        hosts.insert(cardHost)
+        if let issuerHost { hosts.insert(issuerHost) }
+        let slug: String = String(name.lowercased().map { $0.isLetter || $0.isNumber ? $0 : "_" })
+        let tool = MeshConnectionTool(name: "ask_" + slug, hash: card.hash)
+        let oauth: Bool = card.scheme == "oauth"
+        let redirect: String? = oauth ? "astraldeep.github.io" : nil
+        var found = MeshConnectionProposal(
+            proposal: "proposal-\(id)-\(counter)", connection: id, name: name, endpoint: url, local: false,
+            device: nil, scheme: card.scheme, issuer: card.issuer, issuerHost: issuerHost, redirectHost: redirect,
+            scopes: card.scopes, resource: nil, clientId: nil, tools: [tool], egress: hosts.sorted(),
+            flowHint: flow, replaces: replaces, expiresMs: nowMs + Self.proposalTTLMs, kind: "a2a")
+        var facts = Self.facts(card, url: url)
+        facts = MeshProposedCard(
+            url: facts.url, hash: facts.hash, origin: facts.origin, signer: facts.signer, signed: facts.signed,
+            extendedHash: card.extendedHash, extendedPending: replaces != nil && card.extendedHash != nil,
+            skills: facts.skills)
+        found.card = facts
+        return found
+    }
+
+    private static func checkKey(_ key: String) throws {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.utf8.count <= 4096 else { throw refused("connection.key_required") }
+    }
+
+    private static func checkRecipients(_ recipients: [String]?) throws {
+        if recipients?.isEmpty == true { throw refused("connection.recipients_empty") }
     }
 
     private static func redirectURI(_ redirect: MeshSignInRedirect) throws -> String {

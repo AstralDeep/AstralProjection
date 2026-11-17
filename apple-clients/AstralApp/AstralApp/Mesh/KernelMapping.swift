@@ -492,7 +492,16 @@ nonisolated enum KernelMapping {
             local: value.local, device: value.device, scheme: value.scheme, issuer: value.issuer,
             issuerHost: value.issuerHost, redirectHost: value.redirectHost, scopes: value.scopes,
             resource: value.resource, clientId: value.clientId, tools: value.tools.map(connectionTool),
-            egress: value.egress, flowHint: value.flowHint, replaces: value.replaces, expiresMs: value.expiresMs)
+            egress: value.egress, flowHint: value.flowHint, replaces: value.replaces, expiresMs: value.expiresMs,
+            kind: value.kind, card: value.card.map(proposedCard), keyHeader: value.keyHeader,
+            keyFormat: value.keyFormat, keyItem: value.keyItem, models: value.models,
+            keyRecipients: value.keyRecipients)
+    }
+
+    static func proposedCard(_ value: ConnectionCard) -> MeshProposedCard {
+        MeshProposedCard(
+            url: value.url, hash: value.hash, origin: value.origin, signer: value.signer, signed: value.signed,
+            extendedHash: value.extendedHash, extendedPending: value.extendedPending, skills: value.skills)
     }
 
     static func connectionState(_ value: ConnectionState) -> MeshConnectionState {
