@@ -66,6 +66,11 @@ nonisolated final class KernelHostSigner: AstralKernel.HostSigner, @unchecked Se
             }
         case .connection:
             built = try ConsentPrompt.connection(canonicalRecord: prompt.canonicalAction, signingInput: message)
+        case .contactVerify:
+            built = try ConsentPrompt.contact(canonicalRecord: prompt.canonicalAction, signingInput: message)
+        case .shareGrant:
+            built = try ConsentPrompt.share(
+                canonicalRecord: prompt.canonicalAction, signingInput: message, label: prompt.target)
         case .other:
             throw ConsentPromptError.invalidInput
         }

@@ -657,6 +657,88 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
 
     func phiStatus() throws -> MeshPhiStatus { try mapped { KernelMapping.phiStatus(try kernel.phiStatus()) } }
 
+    func proposeContactPhiDestination(mesh: String) throws -> MeshPhiProposal {
+        try mapped { KernelMapping.phiProposal(try kernel.proposeContactPhiDestination(mesh: mesh)) }
+    }
+
+    func createContactInvitation(name: String, ttlSeconds: UInt64) async throws -> MeshContactInvitation {
+        do {
+            return KernelMapping.contactInvitation(try await kernel.createContactInvitation(name: name, ttlS: ttlSeconds))
+        } catch { throw KernelMapping.error(error) }
+    }
+
+    func acceptContactInvitation(text: String, name: String) async throws -> MeshContactExchange {
+        do {
+            return KernelMapping.contactExchange(try await kernel.acceptContactInvitation(text: text, name: name))
+        } catch { throw KernelMapping.error(error) }
+    }
+
+    func startContactVerification(mesh: String) async throws -> MeshContactExchange {
+        do { return KernelMapping.contactExchange(try await kernel.startContactVerification(mesh: mesh)) } catch {
+            throw KernelMapping.error(error)
+        }
+    }
+
+    func cancelContactInvitation() { kernel.cancelContactInvitation() }
+
+    func pendingContactExchanges() throws -> [MeshContactExchange] {
+        try mapped { try kernel.pendingContactExchanges().map(KernelMapping.contactExchange) }
+    }
+
+    func verifyContact(exchangeId: String) throws -> MeshContact {
+        try mapped { KernelMapping.contact(try kernel.verifyContact(exchangeId: exchangeId)) }
+    }
+
+    func rejectContactExchange(exchangeId: String) throws {
+        try mapped { try kernel.rejectContactExchange(exchangeId: exchangeId) }
+    }
+
+    func contacts() throws -> [MeshContact] { try mapped { try kernel.contacts().map(KernelMapping.contact) } }
+
+    func removeContact(mesh: String) throws { try mapped { try kernel.removeContact(mesh: mesh) } }
+
+    func rememberContactDevice(mesh: String, address: String) throws {
+        try mapped { try kernel.rememberContactDevice(mesh: mesh, address: address) }
+    }
+
+    func proposeShare(chatId: String, contactMesh: String) throws -> MeshShareProposal {
+        try mapped { KernelMapping.shareProposal(try kernel.proposeShare(chatId: chatId, contactMesh: contactMesh)) }
+    }
+
+    func approveShare(_ proposal: MeshShareProposal) throws -> MeshShareInfo {
+        try mapped { KernelMapping.share(try kernel.approveShare(proposal: KernelMapping.shareProposal(proposal))) }
+    }
+
+    func revokeShare(id: String) throws { try mapped { try kernel.revokeShare(id: id) } }
+
+    func shares() throws -> [MeshShareInfo] { try mapped { try kernel.shares().map(KernelMapping.share) } }
+
+    func sharedWithMe() throws -> [MeshSharedItem] {
+        try mapped { try kernel.sharedWithMe().map(KernelMapping.sharedItem) }
+    }
+
+    func sharedChat(grant: String) throws -> MeshChatView {
+        try mapped { KernelChatMapper.mapShared(try kernel.sharedChat(grant: grant)) }
+    }
+
+    func refreshShared(grant: String) async throws -> MeshRefreshReport {
+        do { return KernelMapping.refreshReport(try await kernel.refreshShared(grant: grant)) } catch {
+            throw KernelMapping.error(error)
+        }
+    }
+
+    func refreshContactShares(mesh: String) async throws -> MeshRefreshReport {
+        do { return KernelMapping.refreshReport(try await kernel.refreshContactShares(mesh: mesh)) } catch {
+            throw KernelMapping.error(error)
+        }
+    }
+
+    func sharedAttachment(grant: String, event: String) async throws -> Data {
+        do { return try await kernel.sharedAttachment(grant: grant, event: event) } catch {
+            throw KernelMapping.error(error)
+        }
+    }
+
     func proposeConnection(endpoint: String, name: String, local: Bool) async throws -> MeshConnectionProposal {
         do {
             return KernelMapping.connectionProposal(
