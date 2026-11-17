@@ -106,10 +106,14 @@ final class PhoneCompanionRelayTests: XCTestCase {
     func testALongChatKeepsTheNewestLinesWithinTheBound() async throws {
         let r = await rig()
         defer { r.h.cleanUp() }
-        let messages = (0..<60).map {
-            MeshRuntimeHarness.message(
-                "m\($0)", parent: $0 == 0 ? nil : "m\($0 - 1)", author: $0 % 2 == 0 ? .owner : .assistant,
-                text: String(repeating: "word \($0) ", count: 20), at: TimeInterval($0))
+        var messages: [MeshChatMessage] = []
+        for index in 0..<60 {
+            let parent: String? = index == 0 ? nil : "m\(index - 1)"
+            let author: MeshAuthor = index % 2 == 0 ? .owner : .assistant
+            let text: String = String(repeating: "word \(index) ", count: 20)
+            messages.append(
+                MeshRuntimeHarness.message(
+                    "m\(index)", parent: parent, author: author, text: text, at: TimeInterval(index)))
         }
         let chat = r.h.kernel.seedChat(title: "Long", messages: messages)
         await r.h.runtime.refreshChats()
