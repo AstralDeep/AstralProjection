@@ -108,7 +108,8 @@ nonisolated enum KernelChatMapper {
                 eventId: message.id, parentId: parent, author: author(message.role), authorDevice: message.author,
                 text: message.text ?? "", createdAt: KernelMapping.date(message.clock),
                 delivery: message.status == .queued ? .queued : .recorded, surfaceIds: placed[message.id] ?? [],
-                attachments: message.attachments.map(KernelMapping.attachment))
+                attachments: message.attachments.map(KernelMapping.attachment),
+                confidentiality: message.labels.confidentiality, integrity: message.labels.integrity)
         }
         return Folded(messages: messages, surfaces: surfaces.map(\.surface))
     }

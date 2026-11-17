@@ -1,4 +1,4 @@
-// Drives the Settings control "Run a node on this Mac": it offers the pack with its size, downloads and installs it, supervises the node and starts the pairing into the owner's mesh.
+// Drives the Settings control "Run a node on this Mac": it offers the pack with its size, downloads and installs it, supervises the node and starts the pairing into the owner's mesh with no sign-in.
 // The app's Mac settings view binds to it, and the quit handler calls applicationWillTerminate so the node stops unless Keep running is on.
 
 #if os(macOS)
@@ -24,8 +24,6 @@
     public struct NodeHostEnvironment {
         public var root: URL
         public var available: Bool
-        public var issuer: String
-        public var clientId: String
         public var meshLabel: String
         public var defaults: UserDefaults
         public var transport: NodePackTransport
@@ -40,7 +38,7 @@
         public var pinnedDescriptorSha256: String?
 
         public init(
-            root: URL, available: Bool, issuer: String, clientId: String, meshLabel: String,
+            root: URL, available: Bool, meshLabel: String,
             defaults: UserDefaults = .standard, transport: NodePackTransport = URLSessionNodePackTransport(),
             launcher: NodeProcessLauncher = PosixNodeProcessLauncher(),
             probe: NodeHealthProbe = LoopbackNodeHealthProbe(),
@@ -55,8 +53,6 @@
         ) {
             self.root = root
             self.available = available
-            self.issuer = issuer
-            self.clientId = clientId
             self.meshLabel = meshLabel
             self.defaults = defaults
             self.transport = transport
@@ -191,7 +187,7 @@
             phase = .starting
             do {
                 try home.prepare(
-                    pack: installed.root, issuer: environment.issuer, clientId: environment.clientId,
+                    pack: installed.root,
                     meshLabel: environment.meshLabel, runScript: environment.runInstaller)
                 await begin(port: try environment.freePort(), adopting: nil)
             } catch {
@@ -223,14 +219,17 @@
             try? FileManager.default.removeItem(at: home.runRecord)
         }
 
-        public func requestPairing(ownerToken: () async throws -> String) async throws -> NodePairingResult {
+        public func requestPairing() async throws -> NodePairingResult {
             guard let port = currentPort, isRunning else { throw NodePairingError.meshUnavailable("node_not_running") }
             let client = try NodePairingClient(port: port, http: environment.http)
             let descriptor = try await client.descriptor()
             self.descriptor = descriptor
             guard descriptor.canJoinMesh else { throw NodePairingError.meshUnavailable("mesh_peer_unavailable") }
-            let token = try await ownerToken()
-            return try await client.pairingOffer(bearer: token, label: environment.meshLabel)
+            do {
+                return try await client.pairingOffer(secret: try home.readPairingSecret())
+            } catch NodePairingError.pairingSecretRequired {
+                return try await client.pairingOffer(secret: try home.readPairingSecret())
+            }
         }
 
         private func begin(port: Int, adopting handle: NodeProcessHandle?) async {
@@ -288,6 +287,27 @@
                 return nil
             }
             return record
+        }
+
+        public static func describePairing(_ error: Error) -> String? {
+            switch error as? NodePairingError {
+            case .pairingSecretUnavailable: return "The node has no pairing code yet. Wait a moment and try again."
+            case .pairingSecretRequired: return "The node's pairing code changed. Try again."
+            case .loopbackRequired: return "The node only pairs with a request from this Mac."
+            case .ownerMismatch: return "This node belongs to a different mesh."
+            case .rateLimited: return "Too many pairing attempts. Wait a minute and try again."
+            case .unknownDescriptorFormat: return "This node is too old. Update the node pack."
+            case .ownerBindingUnavailable: return "The node cannot read its owner yet. Try again in a moment."
+            case .profileInactive: return "This node is not set up for a personal mesh."
+            case .meshUnavailable(let code):
+                switch code {
+                case "node_not_running": return "Start the node first."
+                case "mesh_peer_unavailable": return "This node cannot join a mesh."
+                case "mesh_unavailable": return "The node's mesh is not ready yet. Try again in a moment."
+                default: return "The node cannot join a mesh yet (\(code))."
+                }
+            case .notLoopback, .refused, .unexpectedResponse, nil: return "The node refused the request."
+            }
         }
 
         static func describe(_ error: Error) -> String {

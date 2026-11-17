@@ -47,6 +47,25 @@ nonisolated enum KernelMapping {
         }
     }
 
+    static func callerTicket(_ value: AstralKernel.CallerTicket) -> MeshCallerTicket {
+        MeshCallerTicket(
+            id: value.id, text: value.text, label: value.label, nodeId: value.node, tools: value.tools,
+            issuedAt: date(ms: value.issuedMs), expiresAt: date(ms: value.expiresMs), revoked: value.revoked,
+            expired: value.expired)
+    }
+
+    static func callerRequest(_ value: MeshCallerRequest) -> AstralKernel.CallerRequest {
+        AstralKernel.CallerRequest(
+            authorization: value.authorization, proof: value.proof, method: value.method, target: value.target,
+            bodySha256: value.bodySha256, tool: value.tool)
+    }
+
+    static func verifiedCaller(_ value: AstralKernel.VerifiedCaller) -> MeshVerifiedCaller {
+        MeshVerifiedCaller(
+            id: value.id, meshId: value.mesh, deviceId: value.device, label: value.label, tool: value.tool,
+            tools: value.tools, expiresAt: date(ms: value.expiresMs))
+    }
+
     static func sync(_ peers: [SyncPeer], now: Date) -> MeshSyncState {
         MeshSyncState(
             devices: peers.map { peer in
@@ -296,9 +315,12 @@ nonisolated enum KernelMapping {
         }
     }
 
+    static func plainText(code: String) -> String? {
+        codeTexts.first { code.hasPrefix($0.0) }?.1
+    }
+
     static func failureText(code: String, fallback: String = "The mesh refused that request.") -> String {
-        for (prefix, text) in codeTexts where code.hasPrefix(prefix) { return text }
-        return fallback + " (" + code + ")"
+        plainText(code: code) ?? fallback + " (" + code + ")"
     }
 
     private static let codeTexts: [(String, String)] = [
@@ -339,6 +361,24 @@ nonisolated enum KernelMapping {
             "Use HTTPS, or HTTP on a loopback host. URLs cannot contain credentials, a query or a fragment; other private addresses are refused."
         ),
         ("allowance.", "This device has used its allowance for now."),
+        ("caller.wrong_minter", "Only a computer, phone or tablet in your mesh can issue caller tickets."),
+        ("caller.wrong_node", "Choose a node that belongs to your mesh."),
+        ("caller.no_catalog", "That node has not published its tools yet."),
+        ("caller.unknown_tool", "One of the chosen tools is not offered by that node."),
+        ("caller.malformed", "Check the label, tool list, holder key and lifetime."),
+        ("caller.proof_", "The caller's proof was refused."),
+        ("caller.mesh_mismatch", "That caller ticket belongs to a different mesh."),
+        ("caller.device_removed", "The device that issued this caller ticket is no longer in your mesh."),
+        ("caller.bad_signature", "This device could not sign the caller ticket."),
+        ("caller.not_yet_valid", "That caller ticket is not valid yet. Check this device's clock."),
+        ("caller.tool_changed", "A tool changed since the ticket was issued. Make a new ticket."),
+        ("caller.tool_unavailable", "That node cannot run one of the chosen tools."),
+        ("caller.replayed", "That caller request was already used."),
+        ("caller.revoked", "That caller ticket was revoked."),
+        ("caller.expired", "That caller ticket has expired."),
+        ("caller.stopped", "The mesh was stopped, so caller tickets are refused."),
+        ("caller.tool_not_covered", "That caller ticket does not cover this tool."),
+        ("caller.", "The caller ticket was refused."),
         ("gate.mesh_stopped", "The mesh was stopped, so this turn was refused."),
         ("gate.", "A safety check refused this step."),
         ("consent.declined", MeshKernelError.consentDenied.message),
@@ -381,30 +421,35 @@ nonisolated enum KernelMapping {
         ("store.", "This device could not read or write its mesh data."),
     ]
 
+    static func refusal(_ code: String) -> MeshKernelError {
+        .refused(code: code, message: failureText(code: code))
+    }
+
     static func error(_ error: Error) -> Error {
         switch error {
         case let known as MeshKernelError: return known
         case let kernel as KernelError:
             switch kernel {
             case .Denied(let code, _):
-                return code == "gate.mesh_stopped" ? MeshKernelError.stopped : MeshKernelError.consentDenied
+                if code == "gate.mesh_stopped" { return MeshKernelError.stopped }
+                return code.hasPrefix("caller.") ? refusal(code) : MeshKernelError.consentDenied
             case .InvalidInput(let code, _), .Verification(let code, _), .Network(let code, _), .Custody(let code, _),
                 .State(let code, _), .Mesh(let code, _):
-                return MeshKernelError.refused(failureText(code: code))
+                return refusal(code)
             case .Store(let code, _): return MeshKernelError.storage(failureText(code: code))
             }
         case let turns as TurnsError:
             if case .Failed(let code, _) = turns {
                 return code.hasPrefix("consent.declined")
                     ? MeshKernelError.consentDenied
-                    : MeshKernelError.refused(failureText(code: code))
+                    : refusal(code)
             }
             return turns
         case let runs as RunsFfiError:
             if case .Failed(let code, _) = runs {
                 return code.hasPrefix("signer.denied") || code.hasPrefix("consent.declined")
                     ? MeshKernelError.consentDenied
-                    : MeshKernelError.refused(failureText(code: code))
+                    : refusal(code)
             }
             return runs
         default: return error

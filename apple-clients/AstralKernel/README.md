@@ -13,4 +13,4 @@ The script writes `Artifacts/AstralKernelFFI.xcframework` and `Artifacts/Binding
 
 `Sources/AstralKernel` holds the thin Swift API (`KernelService`, `KernelNetworking`, `AstralKernelInfo`). `KernelService` opens a `Kernel` with host custody callbacks and republishes its change events as an `AsyncStream`. It re-exports the generated bindings.
 
-Tests run on macOS with `swift test` and on the iOS Simulator with `xcodebuild test -scheme AstralKernel -destination 'platform=iOS Simulator,name=<device>'`. They use loopback networking with relays disabled, software signers and a test token issuer, so they need no network, Keychain or identity provider.
+Tests run on macOS with `swift test` and on the iOS Simulator with `xcodebuild test -scheme AstralKernel -destination 'platform=iOS Simulator,name=<device>'`. They use loopback networking with relays disabled, software signers and no sign-in, so they need no network, Keychain or identity provider.

@@ -186,6 +186,29 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
 
     func removeDevice(memberId: String) throws { try mapped { try kernel.removeDevice(memberId: memberId) } }
 
+    func mintCallerTicket(
+        nodeId: String, holderKey: String, label: String, toolNames: [String], a2a: Bool, lifetimeSeconds: UInt64
+    ) throws -> MeshCallerTicket {
+        try mapped {
+            KernelMapping.callerTicket(
+                try kernel.mintCallerTicket(
+                    nodeId: nodeId, holderKey: holderKey, label: label, toolNames: toolNames, a2a: a2a,
+                    lifetimeS: lifetimeSeconds))
+        }
+    }
+
+    func callerTickets() throws -> [MeshCallerTicket] {
+        try mapped { try kernel.callerTickets().map(KernelMapping.callerTicket) }
+    }
+
+    func revokeCallerTicket(id: String) throws { try mapped { try kernel.revokeCallerTicket(id: id) } }
+
+    func verifyCallerRequest(_ request: MeshCallerRequest) throws -> MeshVerifiedCaller {
+        try mapped {
+            KernelMapping.verifiedCaller(try kernel.verifyCallerRequest(request: KernelMapping.callerRequest(request)))
+        }
+    }
+
     func raiseStop() throws { try mapped { _ = try kernel.raiseStop() } }
 
     func resumeStop() throws { try mapped { _ = try kernel.resumeStop() } }
@@ -210,6 +233,14 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
     func chat(chatId: String) throws -> MeshChatView {
         try mapped {
             let detail = try kernel.chat(chatId: chatId)
+            let bases = lock.withLock { queuedBases }
+            return KernelChatMapper.map(detail, unknown: kernel.unknownOutcomes(), queuedBases: bases)
+        }
+    }
+
+    func chatForDevice(chatId: String, deviceProfileJson: String) throws -> MeshChatView {
+        try mapped {
+            let detail = try kernel.chatForDevice(chatId: chatId, deviceProfileJson: deviceProfileJson)
             let bases = lock.withLock { queuedBases }
             return KernelChatMapper.map(detail, unknown: kernel.unknownOutcomes(), queuedBases: bases)
         }
@@ -399,7 +430,7 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
         let published = ((try? kernel.peerToolCatalog()) ?? []).map {
             MeshToolEntry(
                 name: $0.tool.name, summary: $0.tool.description, effect: KernelLocalTools.meshEffect($0.tool.effect),
-                deviceId: $0.device, grantName: $0.grantName,
+                deviceId: $0.device, grantName: $0.grantName, published: true,
                 annotations: MeshToolAnnotations(json: $0.tool.annotationsJson))
         }.filter { !seen.contains($0.id) }
         return mine + fixed + published
