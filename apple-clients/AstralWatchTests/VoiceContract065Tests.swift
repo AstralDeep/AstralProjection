@@ -102,7 +102,7 @@ final class VoiceContract065Tests: XCTestCase {
         await drain()
         bridge.stateChanged?(.failed("phone_mesh_binding_unavailable"))
         XCTAssertEqual(model.voiceReason, "phone_mesh_binding_unavailable")
-        XCTAssertEqual(model.voiceMessage, "Watch voice is unavailable until mesh-key binding is supported.")
+        XCTAssertEqual(model.voiceMessage, "Open the mesh this Watch belongs to on your iPhone.")
     }
 
     func testOwnerChangeRetiresPairedAudioAndReplayText() async throws {

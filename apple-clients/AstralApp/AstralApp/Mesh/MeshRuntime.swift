@@ -1444,12 +1444,12 @@ final class MeshRuntime {
     func publishMeshWakeRoute(_ context: MeshPushContext, route: MeshWakeRoute?) async -> Bool { false }
 
     func prepareWatchVoice(owner: CompanionVoiceOwner) async throws -> PairedWatchVoiceContext {
-        guard isReady, hasMesh, status.meshId == owner.meshId else {
-            throw MeshKernelError.unavailable("Open the mesh this Watch belongs to before starting Watch voice.")
-        }
+        let mismatch = MeshKernelError.unavailable("Open the mesh this Watch belongs to on your iPhone.")
+        guard isReady, hasMesh, status.meshId == owner.meshId else { throw mismatch }
         let principal = try await call { try $0.meshPrincipal() }
-        guard principal.meshId == owner.meshId else { throw MeshKernelError.meshKeyBindingUnavailable }
+        guard principal.meshId == owner.meshId, status.meshId == owner.meshId else { throw mismatch }
         let scope = try await prepareVoiceSession()
+        guard status.meshId == owner.meshId else { throw mismatch }
         guard let title = currentChat?.title, currentChat?.chatId == scope.chatId else {
             throw MeshKernelError.unavailable("Choose a chat before starting Watch voice.")
         }

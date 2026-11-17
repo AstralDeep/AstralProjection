@@ -89,7 +89,7 @@ final class MeshVoiceLinkTests: XCTestCase {
             _ = try await h.runtime.prepareWatchVoice(owner: watchOwner(meshId))
             XCTFail("a principal mismatch must be refused")
         } catch {
-            XCTAssertTrue(MeshRuntime.describe(error).contains("mesh-key binding"))
+            XCTAssertTrue(MeshRuntime.describe(error).contains("mesh this Watch belongs to"))
         }
         XCTAssertFalse(h.kernel.calls.contains { $0.name == "createChat" || $0.name == "sendMessage" })
     }

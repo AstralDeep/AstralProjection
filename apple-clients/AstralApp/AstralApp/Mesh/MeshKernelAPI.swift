@@ -24,7 +24,7 @@ nonisolated enum MeshKernelError: Error, Equatable, Sendable {
         switch self {
         case .unavailable(let reason): return reason
         case .refused(_, let message): return message
-        case .meshKeyBindingUnavailable: return "Watch voice is unavailable until mesh-key binding is supported."
+        case .meshKeyBindingUnavailable: return "Open the mesh this Watch belongs to on your iPhone."
         case .notFound: return "That item is no longer on this device."
         case .consentDenied: return "The approval was denied."
         case .stopped: return "The mesh is stopped."

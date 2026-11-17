@@ -14,7 +14,10 @@ public enum CompanionRelay {
     public static let maximumBytes = 8_192
     public static let maximumChats = 20
     public static let maximumMessageCharacters = 4_096
-    public static let maximumViewBytes = 6_144
+    public static let maximumViewBytes = 3_500
+    public static let maximumChatIdBytes = 128
+    public static let maximumTitleBytes = 120
+    public static let untitledChat = "Untitled chat"
 
     static let authorityMarkers = ["consent", "pair", "ticket", "approv", "grant", "authoriz", "delegat"]
 
@@ -42,12 +45,26 @@ public enum CompanionRelay {
         return value
     }
 
+    static func displayTitle(_ title: String) -> String {
+        var used = 0
+        var out = String.UnicodeScalarView()
+        for scalar in title.unicodeScalars {
+            let mapped: Unicode.Scalar = scalar == "\n" || scalar == "\t" ? " " : scalar
+            guard !CharacterSet.controlCharacters.contains(mapped) else { continue }
+            used += String(mapped).utf8.count
+            if used > maximumTitleBytes { break }
+            out.append(mapped)
+        }
+        let trimmed = String(out).trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? untitledChat : trimmed
+    }
+
     static func require(_ object: [String: Any], keys: Set<String>) throws {
         guard Set(object.keys) == keys else { throw CompanionRelayError.invalidPacket }
     }
 
     static func seal(_ object: [String: Any]) throws -> Data {
-        let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
         guard data.count <= maximumBytes else { throw CompanionRelayError.invalidPacket }
         return data
     }
@@ -74,18 +91,35 @@ public enum CompanionPhoneState: String, Equatable, Sendable {
 }
 
 public enum CompanionPhoneUpdate: Equatable, Sendable {
-    case chats(owner: CompanionVoiceOwner, chats: [CompanionChatSummary])
+    case chats(owner: CompanionVoiceOwner, chats: [CompanionChatSummary], omitted: Int)
     case chat(owner: CompanionVoiceOwner, chatId: String, title: String, view: String)
     case run(owner: CompanionVoiceOwner, chatId: String, state: CompanionRunState)
     case phone(owner: CompanionVoiceOwner, state: CompanionPhoneState)
+
+    public static func chatList(owner: CompanionVoiceOwner, chats: [CompanionChatSummary]) -> CompanionPhoneUpdate {
+        var rows: [CompanionChatSummary] = []
+        for chat in chats where rows.count < CompanionRelay.maximumChats {
+            guard companionVoiceText(chat.chatId, maximum: CompanionRelay.maximumChatIdBytes) else { continue }
+            rows.append(
+                CompanionChatSummary(chatId: chat.chatId, title: CompanionRelay.displayTitle(chat.title)))
+        }
+        while true {
+            let update = CompanionPhoneUpdate.chats(owner: owner, chats: rows, omitted: chats.count - rows.count)
+            if rows.isEmpty || (try? update.encoded()) != nil { return update }
+            rows.removeLast()
+        }
+    }
 
     public init(data: Data) throws {
         let (kind, object) = try CompanionRelay.decode(data)
         let owner = try CompanionRelay.owner(object)
         switch kind {
         case "chats":
-            try CompanionRelay.require(object, keys: ["kind", "owner", "chats"])
+            try CompanionRelay.require(object, keys: ["kind", "owner", "chats", "omitted"])
             guard let rows = object["chats"] as? [[String: Any]], rows.count <= CompanionRelay.maximumChats else {
+                throw CompanionRelayError.invalidPacket
+            }
+            guard let omitted = companionVoiceInteger(object["omitted"], range: 0...1_000_000) else {
                 throw CompanionRelayError.invalidPacket
             }
             self = .chats(
@@ -93,21 +127,21 @@ public enum CompanionPhoneUpdate: Equatable, Sendable {
                 chats: try rows.map {
                     try CompanionRelay.require($0, keys: ["chat_id", "title"])
                     return CompanionChatSummary(
-                        chatId: try CompanionRelay.text($0, "chat_id", maximum: 512),
-                        title: try CompanionRelay.text($0, "title", maximum: 1_024))
-                })
+                        chatId: try CompanionRelay.text($0, "chat_id", maximum: CompanionRelay.maximumChatIdBytes),
+                        title: try CompanionRelay.text($0, "title", maximum: CompanionRelay.maximumTitleBytes))
+                }, omitted: omitted)
         case "chat":
             try CompanionRelay.require(object, keys: ["kind", "owner", "chat_id", "title", "view"])
             let view = try CompanionRelay.text(object, "view", maximum: CompanionRelay.maximumViewBytes)
             self = .chat(
-                owner: owner, chatId: try CompanionRelay.text(object, "chat_id", maximum: 512),
-                title: try CompanionRelay.text(object, "title", maximum: 1_024), view: view)
+                owner: owner, chatId: try CompanionRelay.text(object, "chat_id", maximum: CompanionRelay.maximumChatIdBytes),
+                title: try CompanionRelay.text(object, "title", maximum: CompanionRelay.maximumTitleBytes), view: view)
         case "run":
             try CompanionRelay.require(object, keys: ["kind", "owner", "chat_id", "state"])
             guard let raw = object["state"] as? String, let state = CompanionRunState(rawValue: raw) else {
                 throw CompanionRelayError.invalidPacket
             }
-            self = .run(owner: owner, chatId: try CompanionRelay.text(object, "chat_id", maximum: 512), state: state)
+            self = .run(owner: owner, chatId: try CompanionRelay.text(object, "chat_id", maximum: CompanionRelay.maximumChatIdBytes), state: state)
         case "phone":
             try CompanionRelay.require(object, keys: ["kind", "owner", "state"])
             guard let raw = object["state"] as? String, let state = CompanionPhoneState(rawValue: raw) else {
@@ -121,10 +155,12 @@ public enum CompanionPhoneUpdate: Equatable, Sendable {
 
     public func encoded() throws -> Data {
         switch self {
-        case .chats(let owner, let chats):
+        case .chats(let owner, let chats, let omitted):
             guard chats.count <= CompanionRelay.maximumChats else { throw CompanionRelayError.invalidPacket }
-            return try validated(
-                ["kind": "chats", "owner": owner.meshId, "chats": chats.map { ["chat_id": $0.chatId, "title": $0.title] }])
+            return try validated([
+                "kind": "chats", "owner": owner.meshId, "omitted": omitted,
+                "chats": chats.map { ["chat_id": $0.chatId, "title": $0.title] },
+            ])
         case .chat(let owner, let chatId, let title, let view):
             return try validated(
                 ["kind": "chat", "owner": owner.meshId, "chat_id": chatId, "title": title, "view": view])
@@ -165,15 +201,15 @@ public enum CompanionWatchRequest: Equatable, Sendable {
             self = .listChats(owner: owner)
         case "open_chat":
             try CompanionRelay.require(object, keys: ["kind", "owner", "chat_id"])
-            self = .openChat(owner: owner, chatId: try CompanionRelay.text(object, "chat_id", maximum: 512))
+            self = .openChat(owner: owner, chatId: try CompanionRelay.text(object, "chat_id", maximum: CompanionRelay.maximumChatIdBytes))
         case "send_message":
             try CompanionRelay.require(object, keys: ["kind", "owner", "chat_id", "text"])
             self = .sendMessage(
-                owner: owner, chatId: try CompanionRelay.text(object, "chat_id", maximum: 512),
+                owner: owner, chatId: try CompanionRelay.text(object, "chat_id", maximum: CompanionRelay.maximumChatIdBytes),
                 text: try CompanionRelay.text(object, "text", maximum: CompanionRelay.maximumMessageCharacters))
         case "stop_run":
             try CompanionRelay.require(object, keys: ["kind", "owner", "chat_id"])
-            self = .stopRun(owner: owner, chatId: try CompanionRelay.text(object, "chat_id", maximum: 512))
+            self = .stopRun(owner: owner, chatId: try CompanionRelay.text(object, "chat_id", maximum: CompanionRelay.maximumChatIdBytes))
         default:
             throw CompanionRelayError.unknownKind
         }

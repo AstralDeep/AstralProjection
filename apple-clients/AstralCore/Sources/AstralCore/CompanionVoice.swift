@@ -141,7 +141,7 @@ public struct CompanionVoiceActivation: Equatable, Sendable {
             "owner": owner.meshId, "mode": mode.rawValue,
         ]
         if let text { object["text"] = text }
-        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
     }
 }
 
@@ -165,7 +165,7 @@ public struct CompanionVoiceConversation: Equatable, Sendable {
     public func encoded() throws -> Data {
         guard companionVoiceText(chatId, maximum: 512), companionVoiceText(title, maximum: 1_024)
         else { throw CompanionVoiceError.invalidPacket }
-        return try JSONSerialization.data(withJSONObject: ["chat_id": chatId, "title": title], options: [.sortedKeys])
+        return try JSONSerialization.data(withJSONObject: ["chat_id": chatId, "title": title], options: [.sortedKeys, .withoutEscapingSlashes])
     }
 }
 
@@ -199,7 +199,7 @@ public struct CompanionVoiceSpeech: Equatable, Sendable {
         else { throw CompanionVoiceError.invalidPacket }
         return try JSONSerialization.data(
             withJSONObject: ["id": id.uuidString, "index": index, "text": text, "frames": frames],
-            options: [.sortedKeys])
+            options: [.sortedKeys, .withoutEscapingSlashes])
     }
 }
 
@@ -269,7 +269,7 @@ func companionVoiceText(_ value: String, maximum: Int) -> Bool {
         }
 }
 
-private func companionVoiceInteger(_ value: Any?, range: ClosedRange<Int>) -> Int? {
+func companionVoiceInteger(_ value: Any?, range: ClosedRange<Int>) -> Int? {
     guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
         number.doubleValue.isFinite, number.doubleValue.rounded() == number.doubleValue,
         number.doubleValue >= Double(range.lowerBound), number.doubleValue <= Double(range.upperBound)
@@ -277,8 +277,11 @@ private func companionVoiceInteger(_ value: Any?, range: ClosedRange<Int>) -> In
     return number.intValue
 }
 
+private let meshIdPrefix = "sha256:"
+private let meshIdHexCount = 64
+
 func companionMeshIdValid(_ value: String) -> Bool {
     let bytes = Array(value.utf8)
-    return bytes.count == 71 && bytes.prefix(7).elementsEqual("sha256:".utf8)
-        && bytes.dropFirst(7).allSatisfy { ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102) }
+    return bytes.count == meshIdPrefix.utf8.count + meshIdHexCount && bytes.prefix(meshIdPrefix.utf8.count).elementsEqual(meshIdPrefix.utf8)
+        && bytes.dropFirst(meshIdPrefix.utf8.count).allSatisfy { ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102) }
 }

@@ -19,10 +19,10 @@ final class CompanionRelayTests: XCTestCase {
 
     func testPhoneUpdatesRoundTripAndStayWithinTheMessageLimit() throws {
         let rows = (0..<CompanionRelay.maximumChats).map {
-            CompanionChatSummary(chatId: "chat-\($0)", title: String(repeating: "t", count: 200))
+            CompanionChatSummary(chatId: "chat-\($0)", title: String(repeating: "t", count: CompanionRelay.maximumTitleBytes))
         }
         let updates: [CompanionPhoneUpdate] = [
-            .chats(owner: owner, chats: rows),
+            .chats(owner: owner, chats: rows, omitted: 0),
             .chat(owner: owner, chatId: "c1", title: "Title", view: String(repeating: "v", count: CompanionRelay.maximumViewBytes)),
             .run(owner: owner, chatId: "c1", state: .running), .phone(owner: owner, state: .noMesh),
         ]
@@ -46,7 +46,7 @@ final class CompanionRelayTests: XCTestCase {
 
     func testUnknownKeysAreRefusedInEveryPacket() throws {
         let samples: [(Data, (Data) throws -> Void)] = [
-            (try CompanionPhoneUpdate.chats(owner: owner, chats: [.init(chatId: "a", title: "b")]).encoded(), { _ = try CompanionPhoneUpdate(data: $0) }),
+            (try CompanionPhoneUpdate.chats(owner: owner, chats: [.init(chatId: "a", title: "b")], omitted: 0).encoded(), { _ = try CompanionPhoneUpdate(data: $0) }),
             (try CompanionPhoneUpdate.chat(owner: owner, chatId: "a", title: "b", view: "{}").encoded(), { _ = try CompanionPhoneUpdate(data: $0) }),
             (try CompanionPhoneUpdate.run(owner: owner, chatId: "a", state: .idle).encoded(), { _ = try CompanionPhoneUpdate(data: $0) }),
             (try CompanionPhoneUpdate.phone(owner: owner, state: .ready).encoded(), { _ = try CompanionPhoneUpdate(data: $0) }),
@@ -64,7 +64,7 @@ final class CompanionRelayTests: XCTestCase {
             missing["owner"] = nil
             XCTAssertThrowsError(try decode(json(missing)))
         }
-        var nested = try object(CompanionPhoneUpdate.chats(owner: owner, chats: [.init(chatId: "a", title: "b")]).encoded())
+        var nested = try object(CompanionPhoneUpdate.chats(owner: owner, chats: [.init(chatId: "a", title: "b")], omitted: 0).encoded())
         nested["chats"] = [["chat_id": "a", "title": "b", "approved": true]]
         XCTAssertThrowsError(try CompanionPhoneUpdate(data: json(nested)))
     }
@@ -117,9 +117,10 @@ final class CompanionRelayTests: XCTestCase {
             ).encoded())
         XCTAssertThrowsError(
             try CompanionPhoneUpdate.chats(
-                owner: owner, chats: Array(repeating: .init(chatId: "a", title: "b"), count: CompanionRelay.maximumChats + 1)
+                owner: owner, chats: Array(repeating: .init(chatId: "a", title: "b"), count: CompanionRelay.maximumChats + 1),
+                omitted: 0
             ).encoded())
-        var tooMany = try object(CompanionPhoneUpdate.chats(owner: owner, chats: []).encoded())
+        var tooMany = try object(CompanionPhoneUpdate.chats(owner: owner, chats: [], omitted: 0).encoded())
         tooMany["chats"] = Array(repeating: ["chat_id": "a", "title": "b"], count: CompanionRelay.maximumChats + 1)
         XCTAssertThrowsError(try CompanionPhoneUpdate(data: json(tooMany)))
     }
@@ -131,5 +132,79 @@ final class CompanionRelayTests: XCTestCase {
         var phone = try object(CompanionPhoneUpdate.phone(owner: owner, state: .ready).encoded())
         phone["state"] = 3
         XCTAssertThrowsError(try CompanionPhoneUpdate(data: json(phone)))
+    }
+
+    func testTwentyRowsAtTheCapsFitAndKeepEveryRow() throws {
+        let rows = (0..<CompanionRelay.maximumChats).map {
+            CompanionChatSummary(
+                chatId: String(format: "%03d", $0) + String(repeating: "i", count: CompanionRelay.maximumChatIdBytes - 3),
+                title: String(repeating: "t", count: CompanionRelay.maximumTitleBytes))
+        }
+        let update = CompanionPhoneUpdate.chatList(owner: owner, chats: rows)
+        guard case .chats(_, let kept, let omitted) = update else { return XCTFail("not a chat list") }
+        XCTAssertEqual(kept, rows)
+        XCTAssertEqual(omitted, 0)
+        XCTAssertLessThanOrEqual(try update.encoded().count, CompanionRelay.maximumBytes)
+    }
+
+    func testWorstCaseEscapedRowsKeepTheNewestThatFitAndCountTheRest() throws {
+        let rows = (0..<30).map { _ in
+            CompanionChatSummary(
+                chatId: String(repeating: "\"", count: CompanionRelay.maximumChatIdBytes),
+                title: String(repeating: "\\", count: CompanionRelay.maximumTitleBytes))
+        }
+        let update = CompanionPhoneUpdate.chatList(owner: owner, chats: rows)
+        guard case .chats(_, let kept, let omitted) = update else { return XCTFail("not a chat list") }
+        XCTAssertFalse(kept.isEmpty)
+        XCTAssertLessThan(kept.count, CompanionRelay.maximumChats)
+        XCTAssertEqual(kept, Array(rows.prefix(kept.count)))
+        XCTAssertEqual(omitted, rows.count - kept.count)
+        let data = try update.encoded()
+        XCTAssertLessThanOrEqual(data.count, CompanionRelay.maximumBytes)
+        XCTAssertEqual(try CompanionPhoneUpdate(data: data), update)
+    }
+
+    func testEmptyOrUnprintableTitlesGetAPlaceholderInsteadOfRefusingTheList() throws {
+        let update = CompanionPhoneUpdate.chatList(
+            owner: owner,
+            chats: [
+                .init(chatId: "a", title: ""), .init(chatId: "b", title: "\u{0}\u{7}"),
+                .init(chatId: "c", title: "Line\nbreak"), .init(chatId: "", title: "no id"),
+            ])
+        guard case .chats(_, let kept, let omitted) = update else { return XCTFail("not a chat list") }
+        XCTAssertEqual(kept.map(\.title), [CompanionRelay.untitledChat, CompanionRelay.untitledChat, "Line break"])
+        XCTAssertEqual(omitted, 1)
+        XCTAssertEqual(try CompanionPhoneUpdate(data: update.encoded()), update)
+    }
+
+    func testLongMultibyteTitlesAreTruncatedWithinTheByteCap() {
+        let title = CompanionRelay.displayTitle(String(repeating: "\u{1F600}", count: 100))
+        XCTAssertLessThanOrEqual(title.utf8.count, CompanionRelay.maximumTitleBytes)
+        XCTAssertFalse(title.isEmpty)
+    }
+
+    func testWorstCaseEscapedViewStaysWithinThePacketLimit() throws {
+        for character in ["\"", "\\", "\n", "\t"] {
+            let update = CompanionPhoneUpdate.chat(
+                owner: owner, chatId: String(repeating: character == "\n" ? "a" : character, count: CompanionRelay.maximumChatIdBytes),
+                title: String(repeating: character == "\n" ? "a" : character, count: CompanionRelay.maximumTitleBytes),
+                view: String(repeating: character, count: CompanionRelay.maximumViewBytes))
+            let data = try update.encoded()
+            XCTAssertLessThanOrEqual(data.count, CompanionRelay.maximumBytes, character)
+            XCTAssertEqual(try CompanionPhoneUpdate(data: data), update)
+        }
+    }
+
+    func testSlashesAreNotEscaped() throws {
+        let data = try CompanionPhoneUpdate.chat(owner: owner, chatId: "a", title: "b", view: "{\"u\":\"a/b\"}").encoded()
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("\\/"))
+    }
+
+    func testOmittedMustBeABoundedInteger() throws {
+        var packet = try object(CompanionPhoneUpdate.chats(owner: owner, chats: [], omitted: 2).encoded())
+        for bad: Any in [-1, true, 1_000_001, "2", 1.5] {
+            packet["omitted"] = bad
+            XCTAssertThrowsError(try CompanionPhoneUpdate(data: json(packet)), "\(bad)")
+        }
     }
 }
