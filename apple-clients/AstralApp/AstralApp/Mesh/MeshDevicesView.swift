@@ -66,6 +66,14 @@ struct MeshDevicesView: View {
                     Text(MeshPresentation.syncLine(mesh.syncSummary))
                 #endif
             }
+            Section {
+                NavigationLink {
+                    MeshPhiAdoptionCard()
+                } label: {
+                    Label("PHI group", systemImage: "person.2.badge.key")
+                }
+                .accessibilityIdentifier("mesh.devices.phi")
+            }
             MeshSafetySection()
         }
         .formStyle(.grouped)

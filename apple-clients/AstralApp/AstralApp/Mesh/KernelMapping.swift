@@ -305,6 +305,9 @@ nonisolated enum KernelMapping {
             case "repeat_stop": return [event(chat, turn, .failed("The assistant repeated itself, so it was stopped."))]
             case "max_rounds": return [event(chat, turn, .failed("The assistant reached its step limit."))]
             case "fork": return []
+            case _ where isPhiRefusal(code ?? reason):
+                let refused = code ?? reason
+                return [event(chat, turn, .refused(code: refused, message: failureText(code: refused)))]
             default:
                 return [
                     event(
@@ -314,6 +317,10 @@ nonisolated enum KernelMapping {
                 ]
             }
         }
+    }
+
+    static func isPhiRefusal(_ code: String) -> Bool {
+        code.hasPrefix("phi.") || code == "flow.phi_to_model" || code == "flow.phi_to_service"
     }
 
     static func plainText(code: String) -> String? {

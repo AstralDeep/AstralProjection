@@ -106,6 +106,12 @@ struct MeshConnectionRowActions: View {
                 NavigationLink("Review") { MeshConnectionReviewView(connectionId: facts.id) }
                     .accessibilityIdentifier(MeshConnectionID.review(facts.id))
             }
+            if facts.holdsPhi {
+                NavigationLink("Approve for PHI") {
+                    MeshPhiDestinationCard(request: .connection(id: facts.id, usage: "service"))
+                }
+                .accessibilityIdentifier("mesh.connection.phi." + facts.id)
+            }
             Spacer()
             Button("Remove", role: .destructive, action: remove)
                 .accessibilityIdentifier(MeshConnectionID.remove(facts.id))

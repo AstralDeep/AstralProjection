@@ -433,6 +433,7 @@ nonisolated enum MeshTurnEvent: Equatable, Sendable {
     case finished
     case interrupted
     case failed(String)
+    case refused(code: String, message: String)
 }
 
 nonisolated struct MeshTurnProgress: Equatable, Sendable {

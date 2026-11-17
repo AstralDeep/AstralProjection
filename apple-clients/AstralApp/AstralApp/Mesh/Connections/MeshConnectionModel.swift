@@ -165,8 +165,10 @@ nonisolated struct MeshConnectionRowFacts: Equatable, Identifiable, Sendable {
     let otherLines: [String]
     let unavailableLine: String?
     let needsReview: Bool
+    let holdsPhi: Bool
 
     init(_ connection: MeshConnection) {
+        holdsPhi = connection.flow == "phi"
         id = connection.id
         name = connection.name
         host = URLComponents(string: connection.endpoint)?.host ?? connection.endpoint

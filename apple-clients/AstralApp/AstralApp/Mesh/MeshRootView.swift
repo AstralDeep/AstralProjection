@@ -79,6 +79,9 @@ struct MeshShell: View {
     @State private var destination: MeshDestination?
     @State private var selectedChat: String?
     @State private var selectedTab = 0
+    private var presentedPhi: Binding<MeshPhiOffer?> {
+        Binding(get: { mesh.presentingPhi }, set: { mesh.presentingPhi = $0 })
+    }
 
     init(start: MeshDestination? = nil) {
         #if DEBUG
@@ -93,10 +96,21 @@ struct MeshShell: View {
             .alert(
                 "Mesh", isPresented: Binding(get: { mesh.notice != nil }, set: { if !$0 { mesh.notice = nil } })
             ) {
-                Button("OK") { mesh.notice = nil }
+                if let offer = mesh.phiOffer {
+                    Button(offer.buttonTitle) {
+                        mesh.presentingPhi = offer
+                        mesh.notice = nil
+                    }
+                    .accessibilityIdentifier(MeshPhiID.offer)
+                }
+                Button("OK") {
+                    mesh.notice = nil
+                    mesh.dismissPhiOffer()
+                }
             } message: {
                 Text(mesh.notice ?? "")
             }
+            .sheet(item: presentedPhi) { offer in MeshPhiOfferSheet(offer: offer) }
             .task {
                 mesh.attachVoice(model.onDeviceVoice)
                 #if os(iOS)
