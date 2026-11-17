@@ -1006,7 +1006,7 @@
       "sourcePath": "apple-clients/AstralApp/AstralApp.xcodeproj/project.pbxproj",
       "sourceBlob": "9fb8c3b036fc1c2c9dfa6a822163f796aee0af78",
       "sourceMode": "100644",
-      "resultSha256": "6c9acf47ef7dbb92b0756f6668e076f6158334ebfbf6b79a4f145355d3ea2023",
+      "resultSha256": "ea9ade1e4beb2cc204e47fa16a35291fdb159c91abad79c665e24a61dadd83e9",
       "task": "T013/T102/T015/T007/T008/T010/T021/T001/T002",
       "reason": "Record the inherited 1.4 transformation and advance all ten Apple configurations to the 1.5 / build-61 source release candidate after App Store Connect confirmed iOS and macOS build 60; protected publication retains the monotonic store build override. Advance all ten Apple configurations to version 1.6 / build 62 for the existing App Store Connect 1.6 entries; rebuild the signed Release archives and keep export version management disabled. No app identities or runtime code change. Add an isolated simulator-only Watch navigation harness and UI-test target/scheme for real Work List, task, retry and disappearance verification. The original ten version/build configurations and shipped target dependencies remain unchanged; the four separately guarded test configurations are unsigned and excluded from archives. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Release 2026-09-27: advance all fourteen versioned Apple configurations to 1.7 / build 63 so Apple and Android share the 1.7 release number; run 62 (1.6) never uploaded. Prepare all fourteen Apple configurations as version 1.8 / build 67 after the owner confirmed the released 1.7 / build 66; retain every bundle identity and require protected publication to verify current store build collisions before upload. Integrate the explicit-consent direct-download Mac computer host with bounded existing-v1 messages, current-channel delivery and controller-only defaults for other distributions. Disable automatically injected debugger entitlements and testability in the signed DirectDownload host configuration; refuse debugger-enabled signatures at runtime. Advance Apple build numbers to 68 for the Mac transcript bubble repair while preserving registered identities and distribution gates. Advance all twenty-one Apple configurations to build 69 for the native Mac workbench copy cleanup, preserving bundle identities, signing and distribution gates. Advance all twenty-one Apple configurations to 1.9 / build 70 for macOS harness parity and add the exact Sparkle 2.10.1 package to the AstralApp target, linked and embedded for macOS only, preserving bundle identities, signing and distribution gates. Route Sparkle through the local AstralSparkle wrapper package, whose macOS-only conditional dependency keeps the binary xcframework out of iOS builds while macOS still embeds Sparkle.framework. Bundle the guidance, terminal, workspace and connections contract fixtures into the macOS unit-test target so settings snapshots never read the source tree. Complete owner/device/server-generation fenced mobile provider admission, conditional lifecycle cleanup, source navigation, registered UI presence and shared notification routing without a client-owned chrome catalog. Bind the qualified local mesh runtime, attachment presentation, on-device voice dependencies, protected key custody and stable localtest signing to the current committed Apple client bytes."
     },
@@ -1026,7 +1026,7 @@
       "sourceMode": "100644",
       "task": "T057/T061/T060/T037/T015/T006/T011/T016/T017/T020/T024/T025/T021/T026/T007/T008/T010/T261/T102/T262",
       "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence credential refresh, one-attempt sharing, revision-bound export and native save callbacks to the current presentation. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 native navigation: close Recent chats without rehydration, expose pending-surface Close, rearm every explicit Retry, and keep mandatory surfaces pinned; isolated fixture and regression coverage preserve current workspace state. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows. Feature 088 committed continuation: Bind Work reads to current account, socket and generation, validate complete responses, retire stale reads and preserve nonqueued send failures. Feature 088 private notes: preserve complete literal native guidance forms and server menu order; bind requests to the original connection and current owner surface, refuse replay, and retire values on navigation or uncertain completion. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Scoped viewport hydration retains the settled conversation and local interaction state while applying server-adapted layouts after correlated delivery. Suppress retired viewport admission refusals without touching a newer conversation. Fair CI 2026-09-27: pass a model-held canvas export timeout pair (production default unchanged at 5 seconds per WebKit callback and 25 seconds per render) so tests on loaded hosted simulators can supply longer WebKit bounds. Ordinary Apple settings parity: retain form defaults and labeled wire values, correlate current surface operations, preserve errors and saved-provider warnings, render accepted account palettes, support arbitrary color cancellation, and make dashboard and keyboard controls reachable. Accept only canonically shaped blank ordinary closes owned by the current account, socket, connection and request generation; preserve new same-surface drafts and private-surface fences. Keep normal Keychain bootstrap off the UI thread and reject canceled, retired-session, owner-changed or superseded authentication restoration. Renew the registered socket after normal credential rotation; fence awaited refresh and recovery to the current account, session and connection, retain local drafts, and never replay queries or writes. Preserve the canonical Advanced settings selection read across Retry and token renewal, recheck its current server-declared navigation authority, and refuse retired destinations without replaying private searches or writes. Bind temporary evidence modal replies to the current read, preserve literal text, and retire source content on navigation, timeout, account or connection changes. Owner safety controls: preserve shared stop/resume/verify vocabulary, exact offered revision and current owner/connection delivery without offline replay; add watch controls and conformance tests. Retire settled Safety controls after connection or owner changes and require an explicit correlated status read before further actions; expose read recovery after refusal or timeout without replaying writes. Complete shared mesh management and possession-bound enrollment using protected account/server device custody, current owner/session lifetimes, cookie-free member verification, and locked owning cryptographic dependencies. Preserve the exact validated account/server mesh key on first restored owner binding; retire it only for an actual owner/server change or explicit sign-out, and report queued or unconfirmed logout. Terminal monitor presentation: add the read-only terminal surface, sanitize ANSI/OSC/clipboard/link/control streams, validate only list-refresh-close controls, and keep the watch handoff content-free. Retire terminal reads and output on disconnect, authentication retirement, timeout, refresh and conversation transitions; reject replay and bind current-socket delivery to the exact conversation. Terminal panel presentation: add the server-owned terminal surface with governed keyboard, resize, interrupt and session-close controls, sanitize ANSI/OSC/clipboard/link/control streams, declare the closed interactive, read-only, watch-handoff and voice dispositions, and bind every client drift guard to the shared panel fixture. Integrate the explicit-consent direct-download Mac computer host with bounded existing-v1 messages, current-channel delivery and controller-only defaults for other distributions. Stamp native computer host frames with fresh correlation IDs and the exact captured registration generation while retaining current owner and socket checks. Bind offered conversation navigation to the accepted owner, connection, request and render source, and use normal chat hydration while preserving current workbench presentation and existing legacy dispatch. Refuse composer sends while a mandatory settings surface is up and keep the unsent draft. Announce approval waiting, turn failures, error banners and connection loss or restore through AccessibilityNotification. Complete owner/device/server-generation fenced mobile provider admission, conditional lifecycle cleanup, source navigation, registered UI presence and shared notification routing without a client-owned chrome catalog. Complete protected-session-cookie incarnation, real provider token lifecycle, conditional generation/revision admission and shared notification settings while keeping legacy authentication in-app only. Bind the explicit Work continuity control to closed server-issued bindings, current owner/session/connection checks, fresh read-only recovery after uncertainty, and matching client dispositions. Defer project folder selection until the chooser sheet dismissal callback and revalidate the original owner, server, connection, chat, navigation and selected-project intent before and after native selection. Fence Mac registration on the final server profile before replay, keep reconnect project presentation unavailable until negotiation, and route sidebar project creation through sheet dismissal. Keep unacknowledged Mac review decisions explicitly uncertain and cancellable, retain scoped single submission and actual results, and preserve prior non-Mac presentation behavior. Retire late computer review frames before presentation using current local bypass and bounded owner/connection/chat withdrawal tombstones. Confirm project-and-chat deletion through the authenticated lifecycle, retain unrelated navigation and local folders, and present a project-only sidebar with an empty-state prompt. Refresh known project-chat recency from authenticated history_list timestamps after committed activity without changing project membership. Preserve activity received during an in-flight catalog refresh without retiring its authoritative membership snapshot. Settle only the exact local approval submission after a matching canonical receipt, and report no-socket or refused current sends as unconfirmed without replay. Preserve the legacy non-Mac approval-decision path; on macOS require current chat-bound correlation, report missing context, and send decisions without queue replay. Implement same-socket Keycloak access-token renewal for active macOS UI sessions. Compare the refreshed server-custody token against the active registered identity and normalized authorization claims before persisting it; require a fresh JWT rotation only when the access token changes, and advance active socket credentials only after the matching generation-bound acknowledgement. Preserve owner/session/socket fences and never replay active work. Preserve nearest workspace component ownership through nested Apple renderer controls and bind invoke payloads to the current account, connection, chat and render without changing server authorization. Outcome-unknown reporting: the Mac host descriptor carries a fresh per-launch incarnation id and its retained command jobs with states, exit statuses and output sizes but never output content, disconnects keep running commands running instead of ending them so reconnect announces them as retained, the workbench shows the Outcome unknown card with per-job Inspect, single-intent Acknowledge and continue and Discard, a failed delivery keeps the card with Retry, a relaunch restores the stored summary only as a stale non-actionable banner bound to the account and incarnation, and every denial, retry and single-intent path is regression-tested.  Mac conversation turn actions: decode the per-message branch snapshot into ChatTurn, dispatch chat_fork, chat_regenerate and chat_branch_select intents and revised_turn_id edit-and-resend through the existing correlated chat pipeline, gate every action on signed-in connected non-running non-readonly state, offer the optional summarize-what-I'm-leaving choice before leaving a branch, keep refusals on the current branch without local chat records, and advertise chat_branches_v1 on macOS registration only. Feature turn_steer_v1 (AstralProjection issue: Mac composer mid-turn steer, queue and side questions): declare the turn_steer_v1 presentation contract with chat_steer/chat_queue_*/side_question actions and chat_steer_recorded/chat_steer_refused/chat_queue_updated/side_question_result push types, macOS-only dispositions and legacy behavior for every other client; consume the capability in AstralCore with drift guards and in the Mac AppModel/InputBar/Settings; refuse steers as approvals and keep the composer unchanged without the server advertisement. Bind the committed full-review requirement for Mac approvals the banner cannot show in full, with its approval card summary fields, chat deletion retirement guard and injectable REST transport seam, and the committed review-card display digest echo with one-line activity badges, to their current bytes. Require a full review sheet for Mac approvals whose card the banner cannot show uncut, echo the review card's display digest into approval decisions, offer conversation deletion as a confirmed pending request that reports failed deletes instead of failing silently, and allow a bounded REST transport override. Integrate and qualify the combined macOS conversation, outcome recovery, checkpoint and sandbox changes. Bind native Work and scheduled REST to the current owner/server; add opt-in, privacy-safe Mac notifications for long chat turns and approvals. Bind macOS server-custody refresh identity and authorization to the stored session before persistence, including before socket readiness, while retaining current-socket renewal checks. Preserve macOS server-custody continuity when a connection supersedes an in-flight refresh and classify temporary HTTP server or rate-limit failures without retiring credentials; retain definitive authentication and malformed-response denials. Retry temporary macOS credential refresh failures with bounded owner-and-connection-fenced backoff, retire stale callbacks, and restore normal expiry scheduling after recovery. Mac chat audit entry point: remove the unused native AuditView and its REST loader so the server-rendered audit surface stays the single audit source, add the chat audit entry to the chat menus and the Command-K palette sending chrome_open with the conversation filter, and add the AstralCore audit export bundle digest verifier with tamper regressions. Bind the qualified local mesh runtime, attachment presentation, on-device voice dependencies, protected key custody and stable localtest signing to the current committed Apple client bytes.",
-      "resultSha256": "a10dcc3b195827a825eb5a32efa5e09ad539a7bbe0951d12a22c77077060fafe"
+      "resultSha256": "d2b34a049e9aac62668d27e2b33e37df68cd8197e4b55ed8f09bc26f6e2c7937"
     },
     {
       "path": "apple-clients/AstralApp/AstralApp/AstralAppMain.swift",
@@ -1060,7 +1060,7 @@
       "sourcePath": "apple-clients/AstralApp/AstralApp/Theme.swift",
       "sourceBlob": "a0b812c252c910d3535d3092a40c29e20757341b",
       "sourceMode": "100644",
-      "task": "T060",
+      "task": "T060/T025",
       "reason": "Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility. Feature 088 native chart qualification: composite the macOS WebKit chart against its actual trusted numeric host backdrop, including translucent transcript bubbles, with dark/light pixel regressions. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Consolidate native typography in the shared appearance source.",
       "resultStatus": "removed"
     },
@@ -1141,7 +1141,7 @@
       "sourcePath": "apple-clients/AstralApp/AstralApp/WatchOverrideSync.swift",
       "sourceBlob": "44c99b726b1b5d1e03f6de873b7e17a3b2fd238d",
       "sourceMode": "100644",
-      "resultSha256": "b261ecd5605d2d30d28bf662868f7e15e82190dc8a78a6089f70a827e5ddc9bf",
+      "resultSha256": "4420005538458dd77b43739f3bec6411940f1cc3e682d426d6f5e48298c27c1f",
       "task": "T063",
       "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
     },
@@ -1674,16 +1674,16 @@
       "sourceMode": "100644",
       "task": "T057/T061/T060/T015/T019/T025",
       "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Apply the shared accepted-palette color scheme to watch content while native navigation supplies system-clock contrast.",
-      "resultSha256": "61967b2b2c1f33b304c493374ee52f165d4c4d36841ad88ff39caa3f328f0809"
+      "resultSha256": "a673d75a426fdc9e8ea5863d0f23c0f9501ea198cd5ad5966b17a89ed3fa165c"
     },
     {
       "path": "apple-clients/AstralWatch/ConversationResumeStore.swift",
       "sourcePath": "apple-clients/AstralWatch/ConversationResumeStore.swift",
       "sourceBlob": "bfcb805cd0068efbe5c1a1933cf83f67a67e85d9",
       "sourceMode": "100644",
-      "resultSha256": "213d9c7b8d3fefb3f30f051b57a8cae8fa34722e035c88d1f94739dd84f43e0d",
-      "task": "T063",
-      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+      "task": "T063/T025",
+      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27.",
+      "resultStatus": "removed"
     },
     {
       "path": "apple-clients/AstralWatch/Speaker.swift",
@@ -1699,9 +1699,9 @@
       "sourcePath": "apple-clients/AstralWatch/Views/DeviceLoginView.swift",
       "sourceBlob": "5b01c522b59d6bcf0c58ad4ceea18104d79ace74",
       "sourceMode": "100644",
-      "task": "T057/T061/T015",
+      "task": "T057/T061/T015/T025",
       "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures.",
-      "resultSha256": "d24dc328ad9609108bac4d637186e65e07f53d96f23fd8db142b066b84c154a2"
+      "resultStatus": "removed"
     },
     {
       "path": "apple-clients/AstralWatch/Views/WatchChatView.swift",
@@ -1710,16 +1710,16 @@
       "sourceMode": "100644",
       "task": "T057/T061/T015/T019/T025",
       "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Scoped viewport hydration retains the settled conversation and local interaction state while applying server-adapted layouts after correlated delivery. Fair CI 2026-09-27: lay out the wrist conversation in an eager stack; scrolling the lazy stack to its trailing Start here link re-laid it out without end and hung the catalog-to-chat UI test. Conserve wrist conversation space by collapsing redundant introductory copy under the negotiated stack presentation.",
-      "resultSha256": "bbf5cc2ecdbbe503b3a42ab3458e9ef0593311601c17ca3769c97d6ee99f0a49"
+      "resultSha256": "abe54252f13f9a401837ff1ec4ca9e371611a5b7d6d20decd3085b42604bcd18"
     },
     {
       "path": "apple-clients/AstralWatch/Views/WatchComponentView.swift",
       "sourcePath": "apple-clients/AstralWatch/Views/WatchComponentView.swift",
       "sourceBlob": "6877aa7a83db820af007e7b93e28c8b98d56c968",
       "sourceMode": "100644",
-      "task": "T057/T061/T037/T015",
+      "task": "T057/T061/T037/T015/T025",
       "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 Watch history: advertise the implemented history and loading primitives, retain owner-scoped decoding, and render existing passive detail text without adding artifact actions. Feature 088 committed continuation: Preserve complete literal Work evidence in the existing wrist primitive renderer. Feature 088 private notes: preserve complete literal native guidance forms and server menu order; bind requests to the original connection and current owner surface, refuse replay, and retire values on navigation or uncertain completion. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Owner safety controls: preserve shared stop/resume/verify vocabulary, exact offered revision and current owner/connection delivery without offline replay; add watch controls and conformance tests. Bind the explicit Work continuity control to closed server-issued bindings, current owner/session/connection checks, fresh read-only recovery after uncertainty, and matching client dispositions.",
-      "resultSha256": "0cec23b56ddf71f3001ae64add43eac79a7ace6a17dc80d2fc3f2ab80fbf2e1a"
+      "resultSha256": "414a1f0ded115b8411dfd43220cf90e5e4883df31b7956939a4d4d923a1b1b92"
     },
     {
       "path": "apple-clients/AstralWatch/Views/WatchHomeView.swift",
@@ -1728,7 +1728,7 @@
       "sourceMode": "100644",
       "task": "T057/T061/T060/T037/T015/T019/T025",
       "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 native history: consume owner-scoped canonical ROTE rows without altering canvas or speech, request history on established sockets, and preserve same-owner HTTP fallback through reconnect while rejecting stale account results. Feature 088 committed continuation: Present the shared Work menu action and real List navigation, task loading, retry, timeout and disappearance retirement. Feature 088 private notes: preserve complete literal native guidance forms and server menu order; bind requests to the original connection and current owner surface, refuse replay, and retire values on navigation or uncertain completion. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Bind the already implemented native History cleanup that removes decorative stars and leading icon slots while retaining navigation. Fair CI 2026-09-27: the Work surface waits on the model's Work read timeout instead of its own sleep; the timer still starts with the view task and retires on cancellation. Keep native watch navigation dark for system-clock contrast while accepted palette roles own its content. Preserve a static accessible Work loading state while the bounded request, timeout and cancellation remain active.",
-      "resultSha256": "29b94aa3d1fd6fa61748cda19595552605574b761335de21bbe8e9786953ec3f"
+      "resultSha256": "d5ddd9bd5280902d378405c0754d1cefe22aa32ac0664b1c436566c22d08800b"
     },
     {
       "path": "apple-clients/AstralWatch/WatchModel.swift",
@@ -1737,15 +1737,15 @@
       "sourceMode": "100644",
       "task": "T057/T061/T060/T037/T015/T020/T024/T025",
       "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 native history: consume owner-scoped canonical ROTE rows without altering canvas or speech, request history on established sockets, and preserve same-owner HTTP fallback through reconnect while rejecting stale account results. Feature 088 Watch history: advertise the implemented history and loading primitives, retain owner-scoped decoding, and render existing passive detail text without adding artifact actions. Feature 088 committed continuation: Consume only negotiated Watch Work menus and current complete responses, with bounded generation/account/socket lifetimes and no queued reads. Feature 088 private notes: preserve complete literal native guidance forms and server menu order; bind requests to the original connection and current owner surface, refuse replay, and retire values on navigation or uncertain completion. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Scoped viewport hydration retains the settled conversation and local interaction state while applying server-adapted layouts after correlated delivery. Suppress retired viewport admission refusals without touching a newer conversation. Fair CI 2026-09-27: run the unchanged ten-second Work read timeout on an injectable model clock (production default SuspendingClock, matching the former Task.sleep) so unit tests prove the duration without wall time. Watch credential rotation renews the physical registered socket with current owner, server, session and connection fences, single-flight broker refresh and actual-expiry validation. Late replies cannot persist or expose retired credentials; current default read recovery rechecks the fresh declaration and preserves canonical Advanced selection without replaying queries, writes or searches. Production Keychain and clock defaults are preserved; current loopback, unit and navigation fixtures bind the repair. Authorized recent-chat fallback rejects a retired server response and retires only its own loading state without disturbing a newer read. Normal REST and voice token providers bind the captured owner and server before and after awaiting renewal; explicit old-session teardown credentials retain their original scope. Owner safety controls: preserve shared stop/resume/verify vocabulary, exact offered revision and current owner/connection delivery without offline replay; add watch controls and conformance tests. Bind the explicit Work continuity control to closed server-issued bindings, current owner/session/connection checks, fresh read-only recovery after uncertainty, and matching client dispositions. Display the explicit unavailable mesh-key voice binding instead of proposing account sign-in.",
-      "resultSha256": "ba3dfb7c64e1ceb2d6586dc36484f198da041468930d049394e3b5b832d23283"
+      "resultSha256": "219eae00bf81fe048cd525000e82ea412d8bdc8a6a9fda906d64d8a008b0bdaa"
     },
     {
       "path": "apple-clients/AstralWatch/WatchOverrideSync.swift",
       "sourcePath": "apple-clients/AstralWatch/WatchOverrideSync.swift",
       "sourceBlob": "c6d2fe57e2e20c2747bf97cf6cb0aea1676127be",
       "sourceMode": "100644",
-      "resultSha256": "0ef5b3b036de96c61dd6c213f5ea44e944d97b98c2eaeaf19f0a4115fd5c0d9a",
-      "task": "T063",
+      "resultSha256": "434b98482132e352249d07422b96110b4a67942457ad541bdf52a49a29f6aad1",
+      "task": "T063/T025",
       "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
     },
     {
@@ -1753,7 +1753,7 @@
       "sourcePath": "apple-clients/AstralWatch/WatchTheme.swift",
       "sourceBlob": "0c7bf2e36c3336b88119765e71248912f7138d8f",
       "sourceMode": "100644",
-      "task": "T063",
+      "task": "T063/T025",
       "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Consolidate native typography in the shared appearance source.",
       "resultStatus": "removed"
     },
@@ -1762,8 +1762,8 @@
       "sourcePath": "apple-clients/AstralWatch/WatchVoiceBridge.swift",
       "sourceBlob": "5848941fc98c306b8167a7dcad344f82b5fa2698",
       "sourceMode": "100644",
-      "resultSha256": "c0fef904cf3ee20761d6d8278058a3b6d3534a180b98c7a0b3a0e3d48ad8289d",
-      "task": "T063",
+      "resultSha256": "780f651d9516505de8ab45c48e334738197a72222d55d5632809ea0690ce261b",
+      "task": "T063/T025",
       "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
     },
     {
@@ -1771,8 +1771,8 @@
       "sourcePath": "apple-clients/AstralWatch/WatchVoiceContracts.swift",
       "sourceBlob": "a1f2aaf0c39e5d527626377cc1a3c080a6279b3d",
       "sourceMode": "100644",
-      "resultSha256": "dddabc3eed2c30ec324550e743b9ad8293e0cc33ad512cc6cf075239867bdc9c",
-      "task": "T063",
+      "resultSha256": "842af27a7524f6c769a4e0bb14cf67bd5604eefae231cdc21e5adfb4f653b52e",
+      "task": "T063/T025",
       "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
     },
     {
@@ -1780,18 +1780,18 @@
       "sourcePath": "apple-clients/AstralWatch/WatchVoiceDeviceIdentity.swift",
       "sourceBlob": "10851679a22bd900eae15bda6655c15cc4f3b3d0",
       "sourceMode": "100644",
-      "resultSha256": "770bd9af9e312d7abc75a0715cc9cfe598738be358619cff7c5e0192273937fa",
-      "task": "T063",
-      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+      "task": "T063/T025",
+      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27.",
+      "resultStatus": "removed"
     },
     {
       "path": "apple-clients/AstralWatch/WatchVoiceREST.swift",
       "sourcePath": "apple-clients/AstralWatch/WatchVoiceREST.swift",
       "sourceBlob": "c69ef396e3858576a1602eba0a052eaf89bbcaac",
       "sourceMode": "100644",
-      "resultSha256": "f7b638c7c7924f4aae9a279f2bbadf1687ee53eb6a49496e335703721eda388e",
-      "task": "T063",
-      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+      "task": "T063/T025",
+      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27.",
+      "resultStatus": "removed"
     },
     {
       "path": "apple-clients/AstralWatchTests/Accessibility060Tests.swift",
@@ -1807,35 +1807,35 @@
       "sourcePath": "apple-clients/AstralWatchTests/ConversationContinuityTests.swift",
       "sourceBlob": "2c38f302840bb6bfc194be1663302201ad4d48c4",
       "sourceMode": "100644",
-      "resultSha256": "6bc90f19f1adb28ea8991db9a626dd958cc05954233fb70d9c1e90cf0bb5130f",
-      "task": "T063",
-      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+      "task": "T063/T025",
+      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27.",
+      "resultStatus": "removed"
     },
     {
       "path": "apple-clients/AstralWatchTests/ReleaseEvidenceTests.swift",
       "sourcePath": "apple-clients/AstralWatchTests/ReleaseEvidenceTests.swift",
       "sourceBlob": "88cd7b60560d52b1f42d377053e85846177fed52",
       "sourceMode": "100644",
-      "resultSha256": "80bc92daba59e0fd7545eadc5aff6975f7de062e445a98484874971ff3580cb4",
-      "task": "T063",
-      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Single-resume proof 2026-09-28: reconnect_resume proves one launch-and-reconnect lifecycle in which the fresh and resumed registrations both carry the persisted locator and the locator survives each disconnect, and reports trial_count 1 instead of twenty repetitions."
+      "task": "T063/T025",
+      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Single-resume proof 2026-09-28: reconnect_resume proves one launch-and-reconnect lifecycle in which the fresh and resumed registrations both carry the persisted locator and the locator survives each disconnect, and reports trial_count 1 instead of twenty repetitions.",
+      "resultStatus": "removed"
     },
     {
       "path": "apple-clients/AstralWatchTests/StatusLifecycleTests.swift",
       "sourcePath": "apple-clients/AstralWatchTests/StatusLifecycleTests.swift",
       "sourceBlob": "1f9ecafa99d8b375d258633c6803022910aa55f8",
       "sourceMode": "100644",
-      "resultSha256": "b2643e6e296908a6c3d7fad1ee9e2a7acd01939a43e166262b795d70f1b25c53",
-      "task": "T063",
-      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+      "task": "T063/T025",
+      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27.",
+      "resultStatus": "removed"
     },
     {
       "path": "apple-clients/AstralWatchTests/VoiceContract065Tests.swift",
       "sourcePath": "apple-clients/AstralWatchTests/VoiceContract065Tests.swift",
       "sourceBlob": "721867714043ef3d0615d6c57840d3fcd41f5b94",
       "sourceMode": "100644",
-      "resultSha256": "880b916baab85a8a20379c20e92cef32672bfc70ef8ab1f66c8ff90e356a462f",
-      "task": "T063/T015",
+      "resultSha256": "75c35d7c74ab7390fd0dbc4dd497077c35775f6dead9f8179b0849fdc0a5ca64",
+      "task": "T063/T015/T025",
       "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Verify the paired phone reports unsupported mesh-key binding without accepting an outside identity claim."
     },
     {
@@ -1843,8 +1843,8 @@
       "sourcePath": "apple-clients/AstralWatchTests/WatchVoiceBridge065Tests.swift",
       "sourceBlob": "f560d23c23adb9fea9dbbe66990f6ea844873919",
       "sourceMode": "100644",
-      "resultSha256": "536c86156a10eef0309a8822fe12ad9dde6ec41d52f66944e4bb61956a949821",
-      "task": "T063",
+      "resultSha256": "c918af50edc1985a0ca0135dcd36780d26d87fc3cc168b024c41c09bdf4e14b3",
+      "task": "T063/T025",
       "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
     },
     {
@@ -1906,7 +1906,7 @@
       "sourcePath": "backend/rote/__init__.py",
       "sourceBlob": "6174dd31d285076dfdc126ec3312f063d7d70059",
       "sourceMode": "100644",
-      "task": "T063",
+      "task": "T063/T025",
       "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Move unchanged ROTE ownership and its tests to AstralKernel python/rote in commit 1dd06b88f133761c0d4ee2eaa6ab732f5df445cc; Projection imports the exact base package rather than retaining a second implementation.",
       "resultStatus": "removed"
     },
@@ -1915,7 +1915,7 @@
       "sourcePath": "backend/rote/adapter.py",
       "sourceBlob": "ada87b7c601058cff8acbf9a62d11367406d0438",
       "sourceMode": "100644",
-      "task": "T017/T054/T015/T005/T023/T024",
+      "task": "T017/T054/T015/T005/T023/T024/T025",
       "reason": "Project normalized client-local speech facts into the closed ready or typed-fallback ROTE disposition. Feature 088 review: Adapt phone chart geometry by viewport capabilities and preserve every Plotly point in static table fallbacks. Feature 088 native checkpoint: preserve validated welcome role hints through capability adaptation without promoting ordinary identified results or bypassing effect gates. Feature 088 committed continuation: Add explicit Work adaptation that validates the closed complete read surface before enforcing existing host limits. Feature 088 private notes: negotiated exact owner-surface correlation, complete native form disposition, canonical menu, accessible labels and conditional fields; uncertain commands retry through a current read without retaining or replaying private values. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Preserve untyped settings action descriptors and payloads during adaptation while enforcing read-only policy and the shared interaction budget for buttons, form submissions and implicit color saves. Accepted server theme application remains display-only. Include form submissions and other actionable primitive fields in the shared host action budget: one declared counting rule now covers button actions, param_picker action entries, submit actions and submit message templates across the generic host limit traversal and the specialized guidance surface validation, and actionable file uploads consume budget and withdraw to the declared noninteractive fallback for read-only or over-budget devices. Host dispatch authorization is unchanged. Terminal monitor presentation: add the read-only terminal surface, sanitize ANSI/OSC/clipboard/link/control streams, validate only list-refresh-close controls, and keep the watch handoff content-free. Terminal panel presentation: add the server-owned terminal surface with governed keyboard, resize, interrupt and session-close controls, sanitize ANSI/OSC/clipboard/link/control streams, declare the closed interactive, read-only, watch-handoff and voice dispositions, and bind every client drift guard to the shared panel fixture. Move unchanged ROTE ownership and its tests to AstralKernel python/rote in commit 1dd06b88f133761c0d4ee2eaa6ab732f5df445cc; Projection imports the exact base package rather than retaining a second implementation.",
       "resultStatus": "removed"
     },
@@ -1924,7 +1924,7 @@
       "sourcePath": "backend/rote/capabilities.py",
       "sourceBlob": "f99b8e575640d0176bf855fbd6cf01cc5bde4790",
       "sourceMode": "100644",
-      "task": "T017/T015/T018/T019/T021",
+      "task": "T017/T015/T018/T019/T021/T025",
       "reason": "Normalize the strict client_local/v1 half-duplex capability vocabulary without inferring local readiness from client identity. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Negotiate the optional macOS workbench geometry through the declared device capability and shared protocol, preserving legacy profiles and controller dispositions. Move unchanged ROTE ownership and its tests to AstralKernel python/rote in commit 1dd06b88f133761c0d4ee2eaa6ab732f5df445cc; Projection imports the exact base package rather than retaining a second implementation.",
       "resultStatus": "removed"
     },
@@ -1933,7 +1933,7 @@
       "sourcePath": "backend/rote/fallback.py",
       "sourceBlob": "32e901e62c19a0a32f4465d5ac0f94bba0253745",
       "sourceMode": "100644",
-      "task": "T017",
+      "task": "T017/T025",
       "reason": "Classify local speech readiness with closed reasons and preserve an explicit typed fallback for every unavailable posture. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Move unchanged ROTE ownership and its tests to AstralKernel python/rote in commit 1dd06b88f133761c0d4ee2eaa6ab732f5df445cc; Projection imports the exact base package rather than retaining a second implementation.",
       "resultStatus": "removed"
     },
@@ -1942,7 +1942,7 @@
       "sourcePath": "backend/rote/lod.py",
       "sourceBlob": "6f0158ec7b28a62b9cd578c426e902c8d9797175",
       "sourceMode": "100644",
-      "task": "T063",
+      "task": "T063/T025",
       "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Move unchanged ROTE ownership and its tests to AstralKernel python/rote in commit 1dd06b88f133761c0d4ee2eaa6ab732f5df445cc; Projection imports the exact base package rather than retaining a second implementation.",
       "resultStatus": "removed"
     },
@@ -1951,7 +1951,7 @@
       "sourcePath": "backend/rote/objectives.py",
       "sourceBlob": "ee75305ae2bda689d75c08f5fac35ddced057814",
       "sourceMode": "100644",
-      "task": "T063",
+      "task": "T063/T025",
       "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Move unchanged ROTE ownership and its tests to AstralKernel python/rote in commit 1dd06b88f133761c0d4ee2eaa6ab732f5df445cc; Projection imports the exact base package rather than retaining a second implementation.",
       "resultStatus": "removed"
     },
@@ -1960,7 +1960,7 @@
       "sourcePath": "backend/rote/rote.py",
       "sourceBlob": "5a6b618640b472236ee36a71cf9c60ba91f35bc4",
       "sourceMode": "100644",
-      "task": "T060/T061/T015",
+      "task": "T060/T061/T015/T025",
       "reason": "Feature 088 component actions: expose a detached socket-scoped copy of original cached components so legacy viewport fallback rebuilds host-owned metadata after adaptation without mutating the cache. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Scoped viewport hydration retains the settled conversation and local interaction state while applying server-adapted layouts after correlated delivery. Complete shared mesh management and possession-bound enrollment using protected account/server device custody, current owner/session lifetimes, cookie-free member verification, and locked owning cryptographic dependencies. Enforce configured browser host action limits during adaptation and device updates while retaining canonical component identities. Move unchanged ROTE ownership and its tests to AstralKernel python/rote in commit 1dd06b88f133761c0d4ee2eaa6ab732f5df445cc; Projection imports the exact base package rather than retaining a second implementation.",
       "resultStatus": "removed"
     },
@@ -2051,7 +2051,7 @@
       "sourceBlob": "04835b43d44b749e3fda9922f0165b96d83305fc",
       "sourceMode": "100644",
       "resultStatus": "removed",
-      "task": "T045",
+      "task": "T045/T025",
       "reason": "Remove the Deep-coupled admin controller; Projection now exposes a pure supplied-state admin builder."
     },
     {
@@ -2060,7 +2060,7 @@
       "sourceBlob": "3fbf1e3a6db674cede1a7e03f3d202b2e0425de7",
       "sourceMode": "100644",
       "resultStatus": "removed",
-      "task": "T046",
+      "task": "T046/T025",
       "reason": "Remove the Deep-coupled agent controller; Projection now exposes a pure supplied-state agent builder."
     },
     {
@@ -2069,7 +2069,7 @@
       "sourceBlob": "078d3a928ddcb56c41341cec9313fe5d5e8a176f",
       "sourceMode": "100644",
       "resultStatus": "removed",
-      "task": "T046",
+      "task": "T046/T025",
       "reason": "Remove the Deep-coupled attachment controller; Projection now exposes a pure supplied-state attachment builder."
     },
     {
@@ -2078,7 +2078,7 @@
       "sourceBlob": "6b8e534550709ab6b4601a25166c36509ba55c28",
       "sourceMode": "100644",
       "resultStatus": "removed",
-      "task": "T045",
+      "task": "T045/T025",
       "reason": "Remove the Deep-coupled audit controller; Projection now exposes a pure supplied-state audit builder."
     },
     {
@@ -2087,7 +2087,7 @@
       "sourceBlob": "a157ed8cb3ed089f3d8fa28a00463b64186c7012",
       "sourceMode": "100644",
       "resultStatus": "removed",
-      "task": "T046",
+      "task": "T046/T025",
       "reason": "Remove the Deep-coupled authoring controller; Projection now exposes a pure supplied-state authoring builder."
     },
     {
@@ -2096,7 +2096,7 @@
       "sourceBlob": "1815f67a0a8ac93a9c16c2707da86141e78fd3cf",
       "sourceMode": "100644",
       "resultStatus": "removed",
-      "task": "T046",
+      "task": "T046/T025",
       "reason": "Remove the Deep-coupled draft controller; Projection now exposes a pure supplied-state draft builder."
     },
     {
@@ -2114,7 +2114,7 @@
       "sourceBlob": "dde73feaca92eaf74f49aeae86d0ead265d180e0",
       "sourceMode": "100644",
       "resultStatus": "removed",
-      "task": "T047",
+      "task": "T047/T025",
       "reason": "Remove the Deep-coupled user LLM controller; Projection now exposes a secret-free supplied-state builder."
     },
     {
@@ -2123,7 +2123,7 @@
       "sourceBlob": "c63818857c560a252c107579e50fcca28d7c6f40",
       "sourceMode": "100644",
       "resultStatus": "removed",
-      "task": "T047",
+      "task": "T047/T025",
       "reason": "Remove the Deep-coupled system LLM controller; Projection now exposes a secret-free supplied-state builder."
     },
     {
@@ -2132,7 +2132,7 @@
       "sourceBlob": "dd267ccbe57313519cb22b36889c966dec274a2a",
       "sourceMode": "100644",
       "resultStatus": "removed",
-      "task": "T047",
+      "task": "T047/T025",
       "reason": "Remove the Deep-coupled personalization controller; Projection now exposes pure profile, memory, skill, scheduler, and dreaming builders."
     },
     {
@@ -2141,7 +2141,7 @@
       "sourceBlob": "545b3da4b18f53be9ee668ec2bb555dbaa9a9c77",
       "sourceMode": "100644",
       "resultStatus": "removed",
-      "task": "T047",
+      "task": "T047/T025",
       "reason": "Remove the Deep-coupled pulse controller; Projection now exposes a pure supplied-state pulse builder."
     },
     {
@@ -2150,7 +2150,7 @@
       "sourceBlob": "d1722d515dd583ffd50e6caedc8a6657f80b2ae5",
       "sourceMode": "100644",
       "resultStatus": "removed",
-      "task": "T048",
+      "task": "T048/T025",
       "reason": "Remove the Deep-coupled remote execution controller; Projection now exposes a secret-free supplied-state inventory builder."
     },
     {
@@ -2159,7 +2159,7 @@
       "sourceBlob": "8899b43b01f963e99b4e59eed2a153d1dd28a11d",
       "sourceMode": "100644",
       "resultStatus": "removed",
-      "task": "T047",
+      "task": "T047/T025",
       "reason": "Remove the Deep-coupled theme controller; Projection now exposes a pure supplied-state theme builder."
     },
     {
@@ -2168,7 +2168,7 @@
       "sourceBlob": "7920007fffbfd17271dce4951b303e2689553678",
       "sourceMode": "100644",
       "resultStatus": "removed",
-      "task": "T045",
+      "task": "T045/T025",
       "reason": "Remove the Deep-coupled onboarding controller; Projection now exposes a pure supplied-state tour builder."
     },
     {
@@ -2177,7 +2177,7 @@
       "sourceBlob": "5e6034ac82a3975ec98f105efcacf816298d2b59",
       "sourceMode": "100644",
       "resultStatus": "removed",
-      "task": "T048",
+      "task": "T048/T025",
       "reason": "Remove the Deep-coupled timeline controller; Projection now exposes pure supplied-state workspace/history builders."
     },
     {
@@ -2249,7 +2249,7 @@
       "sourceBlob": "d15208de03cd1ad7c5199f0a0ce915fe841e4722",
       "sourceMode": "100644",
       "resultStatus": "removed",
-      "task": "T052",
+      "task": "T052/T025",
       "reason": "Open Sans is the web client's only typeface (089 FR-032); Inter is no longer loaded by anything."
     },
     {
@@ -2258,7 +2258,7 @@
       "sourceBlob": "585887339efd032b6b715466ae72d86e306bec79",
       "sourceMode": "100644",
       "resultStatus": "removed",
-      "task": "T052",
+      "task": "T052/T025",
       "reason": "Open Sans serves monospace-styled code as well (089 FR-032); JetBrains Mono is no longer loaded by anything."
     },
     {
@@ -2356,7 +2356,7 @@
       "sourcePath": "backend/tests/test_rote_dashboard_text.py",
       "sourceBlob": "ec46e52e1b4c17aab541161794c8b544fbffdcb3",
       "sourceMode": "100644",
-      "task": "T063",
+      "task": "T063/T025",
       "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Move unchanged ROTE ownership and its tests to AstralKernel python/rote in commit 1dd06b88f133761c0d4ee2eaa6ab732f5df445cc; Projection imports the exact base package rather than retaining a second implementation.",
       "resultStatus": "removed"
     },
@@ -2365,7 +2365,7 @@
       "sourcePath": "backend/tests/test_rote_identity_preservation.py",
       "sourceBlob": "f449aaffd443d052008889fccd55abeef195ca87",
       "sourceMode": "100644",
-      "task": "T063",
+      "task": "T063/T025",
       "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Move unchanged ROTE ownership and its tests to AstralKernel python/rote in commit 1dd06b88f133761c0d4ee2eaa6ab732f5df445cc; Projection imports the exact base package rather than retaining a second implementation.",
       "resultStatus": "removed"
     },
@@ -2374,7 +2374,7 @@
       "sourcePath": "backend/tests/test_rote_lod_adapt.py",
       "sourceBlob": "038bf349ba2deb6b268a67d689dcb79437273bf9",
       "sourceMode": "100644",
-      "task": "T063",
+      "task": "T063/T025",
       "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Move unchanged ROTE ownership and its tests to AstralKernel python/rote in commit 1dd06b88f133761c0d4ee2eaa6ab732f5df445cc; Projection imports the exact base package rather than retaining a second implementation.",
       "resultStatus": "removed"
     },
@@ -2383,7 +2383,7 @@
       "sourcePath": "backend/tests/test_voice_rote_capabilities_065.py",
       "sourceBlob": "958fd40e2e94bdd4bbfa4f3f856c437fd53648f9",
       "sourceMode": "100644",
-      "task": "T016",
+      "task": "T016/T025",
       "reason": "Cover strict half-duplex client-local capability normalization and fail-closed typed fallback before ROTE implementation. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Move unchanged ROTE ownership and its tests to AstralKernel python/rote in commit 1dd06b88f133761c0d4ee2eaa6ab732f5df445cc; Projection imports the exact base package rather than retaining a second implementation.",
       "resultStatus": "removed"
     },
@@ -3452,7 +3452,7 @@
           "sha256": "799ae5299deb2f0b3bd2e630aeb27dde9df923907514c0d055fe4ae8942dee95"
         }
       ],
-      "task": "T056/T015",
+      "task": "T056/T015/T025",
       "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes. Feature 088 Android CI now builds one dedicated opt-in coverage variant, runs all synthetic device scenarios against retained APKs, and preserves raw native JVM/device report evidence without changing normal debug/release behavior. Disable Gradle configuration caching only for opt-in coverage preparation, matching the qualified native coverage report invocation; normal debug/release configuration and all coverage gates remain unchanged. Use complete physical command lines for the emulator action\u00c3\u0192\u00c2\u00a2\u00c3\u00a2\u00e2\u20ac\u0161\u00c2\u00ac\u00c3\u00a2\u00e2\u20ac\u017e\u00c2\u00a2s line-oriented script execution, preserving the exact device/report arguments and gates. Fair CI 2026-09-27: cap build-test and the instrumented emulator lane at 30 minutes and the readiness diagnostic at 15. Rewrite the stale header comment's AstralDeep principle reference so it describes Projection Constitution Principle X. Acquire the exact official Linux emulator archive used by the previous passing hosted run through a size-and-SHA-256-locked owned fixture, preserve recognized package metadata and verify unchanged emulator identity around system-image installation; retain the complete single device/report lane and unconditional process and temporary-AVD cleanup without changing the job, boot or test budgets. Make native owner workflows report immutable-range applicability on every PR and main push, preserve every affected owner gate, and disclose existing per-test retry outcomes. Drop citations of the retired repository constitution; the stated rules are unchanged."
     },
     {
@@ -3467,7 +3467,7 @@
           "sha256": "cb1d8210a36babb575d8da86e122ce110cd95a1f98bcfc5c3d3c6da61884f295"
         }
       ],
-      "task": "T056/T015/T010/T024/T031/T033",
+      "task": "T056/T015/T010/T024/T031/T033/T025",
       "reason": "Keep active Apple CI read-only and trigger its exact platform matrix for both remote-v1 and client-local-v1 fixture changes. Feature 088 Apple coverage qualification: actual iOS Core plus app and UI observations are mandatory in the CI union; native workspace UI suites execute and failed attempts are retained. Release normalization separately requires authenticated staging evidence. Build fixed iOS build-for-testing Products and retain separate raw test lanes, compiler-domain witnesses and selected binary archives for CI coverage qualification; complete Products retention belongs to the protected producer. Quote the two literal test-action defaults so ShellCheck does not interpret them as command-output assignments; CI behavior and compiled client inputs are unchanged. Expand optional selector/domain arrays with Bash 3 nounset-compatible guards, preserving zero arguments on macOS and exact nonempty iOS arguments; execute the actual workflow steps with command recorders in regression tests. Require watch navigation alongside model tests and combine successful native result bundles before exporting coverage; retain both failure artifacts. Fair CI 2026-09-27: cap every Apple job at 30 minutes, select the single-relaunch continuity proof, and let a failed first-login suite fail its job instead of erasing the simulator and rerunning the whole suite; per-test retries remain. Fair CI 2026-09-27: refuse an existing result bundle with an explicit check, because a failing test in an && list does not stop a set -e step. Fair CI 2026-09-27: give each first-login UI test a 90-second default allowance (XCTest rounds it up to two minutes) instead of 180 seconds, keeping three per-test iterations. Fair CI 2026-09-27: write the first-login default test execution time allowance as 120, the value XCTest already rounds 90 up to, so the workflow states its effective allowance directly. Fair CI 2026-09-27: give the watch navigation UI run the first-login lane's per-test retries (three iterations, 120-second allowance) so an accessibility stall in one simulator attempt is retried on a fresh launch. Fair CI 2026-09-27: give the iOS and macOS app unit runs and the iOS AstralCore run the UI lanes' per-test retries (three iterations, 120-second default and 300-second maximum allowance) inside their single test run, so one flaky test is retried without rerunning the suite. Exercise the native settings checklist, numeric/provider controls and arbitrary color acceptance/rejection UI fixtures in the existing iOS first-login lane without changing its toolchain, retry policy or time budget. Retain native failed-test retries without test-repetition-relaunch-enabled, whose actual provider execution repeated the complete selected iOS suite; preserve selectors, time limits, one suite invocation, fail-closed failures, and coverage requirements. Make native owner workflows report immutable-range applicability on every PR and main push, preserve every affected owner gate, and disclose existing per-test retry outcomes. Retain the exact same-build macOS native binary and separate unit/UI domains for protected downstream reconstruction, preserving pinned toolchains, whole suites, bounded per-test retries and secret-free read-only qualification. Retain bounded raw summary/test command outputs, closed diagnostic stages and the selected same-build binary before metadata rejection so failed collection stays diagnosable without changing identity predicates or granting release authority. Qualify the standalone compiler helper under the existing pinned lint and core jobs with the unchanged locked Python closure and scoped raw evidence retention; its receipt adds no coverage-disposition authority. Build the complete source-bound iOS test Products once in a required bounded producer and transport the same-run binaries to the existing UI jobs, preserving all test selectors, coverage validation, retry policy and job budgets. Run restored iOS UI Products through their exact validated xctestrun specification, preserving Mac project execution, test selectors, coverage, retry policy and job budgets without rediscovering the iOS run from project state. Reuse complete source-bound Products for app unit and UI execution on both iOS and macOS. Each platform keeps its full test selectors, coverage checks and existing execution limits; a bounded macOS build producer removes duplicate compilation. Pin macOS execution to the validated arm64 binary slice rather than the runner host subtype."
     },
     {

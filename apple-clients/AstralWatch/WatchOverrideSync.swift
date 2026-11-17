@@ -1,5 +1,5 @@
-// Owns the Watch's one WatchConnectivity delegate for endpoint preferences and ephemeral voice with its paired phone.
-// Audio and transcripts use interactive packets only and never enter persistent application context.
+// Owns the Watch's one WatchConnectivity delegate: relay packets and phone state from its paired phone, plus ephemeral voice.
+// Audio and transcripts use interactive packets only, and WatchModel and WatchVoiceBridge consume what it classifies.
 
 import AstralCore
 import Foundation
@@ -8,21 +8,13 @@ import WatchConnectivity
 @MainActor
 final class WatchOverrideSync: NSObject, WCSessionDelegate, CompanionVoiceChannel {
     static let shared = WatchOverrideSync()
-    static let didChangeNotification = Notification.Name("AstralWatchServerOverrideDidChange")
+    static let phoneContextKey = "companion.phone"
+    static let chatsContextKey = "companion.chats"
+    var onRelay: (@MainActor @Sendable (Data) -> Void)?
+    var onContext: (@MainActor @Sendable (_ phone: Data?, _ chats: Data?) -> Void)?
+    var onRelayReachability: (@MainActor @Sendable (Bool) -> Void)?
     var onPacket: (@MainActor @Sendable (CompanionVoicePacket) async throws -> Void)?
     var onReachabilityChanged: (@MainActor @Sendable (Bool) -> Void)?
-    private let defaults: UserDefaults
-
-    init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-        super.init()
-    }
-
-    nonisolated static func resolvedServerBase(defaults: UserDefaults = .standard) -> URL {
-        let override = defaults.string(forKey: AstralConfig.serverOverrideDefaultsKey)
-        let resolved = AstralConfig.resolvedServerBaseURL(override: override)
-        return URL(string: resolved) ?? URL(string: AstralConfig.fallbackServerBaseURL)!
-    }
 
     var reachable: Bool {
         guard WCSession.isSupported() else { return false }
@@ -34,6 +26,26 @@ final class WatchOverrideSync: NSObject, WCSessionDelegate, CompanionVoiceChanne
         guard WCSession.isSupported() else { return }
         WCSession.default.delegate = self
         WCSession.default.activate()
+    }
+
+    func sendRelay(_ data: Data) async -> Bool {
+        guard reachable else { return false }
+        let completion = CompanionVoiceReply()
+        do {
+            try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    completion.install(continuation)
+                    WCSession.default.sendMessageData(data) { _ in
+                        completion.finish()
+                    } errorHandler: {
+                        completion.finish($0)
+                    }
+                }
+            } onCancel: {
+                completion.finish(CancellationError())
+            }
+            return true
+        } catch { return false }
     }
 
     func send(_ packet: CompanionVoicePacket) async throws {
@@ -63,10 +75,19 @@ final class WatchOverrideSync: NSObject, WCSessionDelegate, CompanionVoiceChanne
         _ session: WCSession, didReceiveMessageData data: Data,
         replyHandler: @escaping (Data) -> Void
     ) {
+        handleMessageData(data, replyHandler: replyHandler)
+    }
+
+    nonisolated func handleMessageData(_ data: Data, replyHandler: @escaping (Data) -> Void) {
         let response = CompanionVoiceInboundReply(replyHandler)
-        guard let packet = try? CompanionVoicePacket(data: data) else {
+        let packet: CompanionVoicePacket
+        switch WatchInbound.classify(data) {
+        case .relay(let relay):
             response.send(Data())
+            Task { @MainActor [weak self] in self?.onRelay?(relay) }
             return
+        case .voice(let voice):
+            packet = voice
         }
         Task { @MainActor [weak self] in
             guard let self, self.reachable, let handler = self.onPacket else {
@@ -90,30 +111,38 @@ final class WatchOverrideSync: NSObject, WCSessionDelegate, CompanionVoiceChanne
         Task { @MainActor [weak self] in
             guard let self else { return }
             if WCSession.default.activationState == .activated {
-                self.apply(
-                    WCSession.default.receivedApplicationContext[AstralConfig.serverOverrideDefaultsKey] as? String)
+                self.deliver(WCSession.default.receivedApplicationContext)
             }
-            self.onReachabilityChanged?(self.reachable)
+            self.notifyReachability()
         }
     }
 
     nonisolated func session(_ session: WCSession, didReceiveApplicationContext context: [String: Any]) {
-        let endpoint = context[AstralConfig.serverOverrideDefaultsKey] as? String
-        Task { @MainActor [weak self] in self?.apply(endpoint) }
+        let phone = context[Self.phoneContextKey] as? Data
+        let chats = context[Self.chatsContextKey] as? Data
+        Task { @MainActor [weak self] in self?.onContext?(phone, chats) }
     }
 
     nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            self.onReachabilityChanged?(self.reachable)
-        }
+        Task { @MainActor [weak self] in self?.notifyReachability() }
     }
 
-    private func apply(_ raw: String?) {
-        guard let endpoint = AstralConfig.usableEndpoint(raw),
-            endpoint != defaults.string(forKey: AstralConfig.serverOverrideDefaultsKey)
-        else { return }
-        defaults.set(endpoint, forKey: AstralConfig.serverOverrideDefaultsKey)
-        NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
+    private func notifyReachability() {
+        onReachabilityChanged?(reachable)
+        onRelayReachability?(reachable)
+    }
+
+    private func deliver(_ context: [String: Any]) {
+        onContext?(context[Self.phoneContextKey] as? Data, context[Self.chatsContextKey] as? Data)
+    }
+}
+
+enum WatchInbound {
+    case voice(CompanionVoicePacket)
+    case relay(Data)
+
+    static func classify(_ data: Data) -> WatchInbound {
+        if let packet = try? CompanionVoicePacket(data: data) { return .voice(packet) }
+        return .relay(data)
     }
 }

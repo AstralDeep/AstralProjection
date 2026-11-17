@@ -1,5 +1,5 @@
-// Checks Watch capability retirement, authenticated paired activation, lifecycle and audio privacy.
-// Hosted server voice controls never activate media or submit transcripts.
+// Checks paired voice activation on the phone's mesh id, lifecycle and audio privacy.
+// Voice never reaches a server and never submits a transcript from the watch.
 
 import AVFoundation
 import AstralCore
@@ -13,64 +13,15 @@ import XCTest
 final class VoiceContract065Tests: XCTestCase {
     private static let meshId = "sha256:" + String(repeating: "ab", count: 32)
 
-    func testRegistrationDoesNotAdvertiseHostedVoiceTransport() throws {
-        let model = WatchModel()
-        let first = try JSONValue.parse(Data(model.registrationFrame(token: "token", resumed: false).utf8))
-        let second = try JSONValue.parse(Data(model.registrationFrame(token: "token", resumed: true).utf8))
-        XCTAssertEqual(first["device"]?["voice_transport"]?.stringValue, "")
-        XCTAssertEqual(second["device"]?["voice_transport"]?.stringValue, "")
-        XCTAssertEqual(first["device_id"], second["device_id"])
-        XCTAssertNotEqual(first["connection_generation"], second["connection_generation"])
-        XCTAssertEqual(first["device"]?["full_duplex"]?.boolValue, false)
-    }
-
-    func testRetiredRESTNeverRequestsTokenOrCallsHTTPTransport() async throws {
-        let device = UUID().uuidString.lowercased()
-        let connection = UUID().uuidString.lowercased()
-        let raw = """
-            {"type":"voice_control_binding","schema_version":"1","device_id":"\(device)",
-            "connection_generation":"\(connection)","binding_id":"\(UUID().uuidString.lowercased())",
-            "binding":"synthetic-retired-binding-1234567890","expires_at":"2099-07-31T12:10:00Z"}
-            """
-        let binding = try XCTUnwrap(
-            WatchVoiceControlBinding(
-                frame: try XCTUnwrap(InboundFrame.parse(raw)), expectedDeviceId: device, expectedConnection: connection)
-        )
-        let client = WatchVoiceRESTClient(
-            serverBase: URL(string: "https://voice.example.test")!, deviceId: device,
-            connectionGeneration: connection, controlBinding: binding,
-            tokenProvider: {
-                XCTFail("retired voice requested credentials")
-                return nil
-            },
-            transport: { _ in
-                XCTFail("retired voice requested HTTP")
-                throw URLError(.notConnectedToInternet)
-            })
-        do {
-            _ = try await client.createSession(chatId: "chat", activationId: UUID().uuidString, permission: .authorized)
-            XCTFail("retired transport succeeded")
-        } catch { XCTAssertEqual(error as? WatchVoiceRESTError, .retired) }
-    }
-
-    func testHostedComposerAndSessionMessagesCannotActivatePairedVoice() throws {
-        let model = WatchModel()
-        let bridge = ContractWatchBridge()
-        model.voiceBridge = bridge
-        for type in ["composer_state", "voice_control_binding", "voice_session_state", "voice_turn_state"] {
-            model.handleFrame(InboundFrame(name: type, payload: .object(["type": .string(type)])))
-        }
-        XCTAssertNil(model.voiceComposer)
-        XCTAssertNil(model.voiceSession)
-        XCTAssertTrue(bridge.activations.isEmpty)
-    }
-
     func testExplicitActivationNeedsThePhoneMeshIdAndUsesPairedConversationOnly() async throws {
         let model = WatchModel()
         let bridge = ContractWatchBridge()
         model.voiceBridge = bridge
-        var sent: [String] = []
-        model.currentConnectionVoiceSendOverride = { sent.append($0) }
+        var sent: [Data] = []
+        model.requestSink = {
+            sent.append($0)
+            return true
+        }
         model.performPrimaryVoiceAction()
         await drain()
         XCTAssertTrue(bridge.activations.isEmpty)
@@ -250,13 +201,6 @@ private final class ContractWatchBridge: WatchVoiceBridgeControlling {
         transcript = onTranscript
         state = .ready
         onState(.ready)
-    }
-    func connect(
-        grant: WatchVoiceBridgeGrant, onState: @escaping @MainActor (WatchVoiceBridgeState) -> Void,
-        onTranscript: @escaping @MainActor (WatchVoiceTranscript) -> Void,
-        onPlayout: @escaping @MainActor (WatchVoicePlayoutObservation) -> Void
-    ) async throws {
-        throw CompanionVoiceError.rejected
     }
     func setCaptureEnabled(_ enabled: Bool) {}
     func interruptPlayback() {}
