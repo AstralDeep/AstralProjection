@@ -44,18 +44,50 @@ final class MeshVoiceLinkTests: XCTestCase {
         XCTAssertFalse(h.kernel.calls.contains { $0.name == "sendMessage" })
     }
 
-    private func watchOwner(_ subject: String = "watch-owner") throws -> CompanionVoiceOwner {
-        try XCTUnwrap(CompanionVoiceOwner(issuer: "https://issuer.example.test", subject: subject))
+    private func watchOwner(_ meshId: String) throws -> CompanionVoiceOwner {
+        try XCTUnwrap(CompanionVoiceOwner(meshId: meshId))
     }
 
-    func testAccountlessMeshCannotStartIssuerBoundWatchVoice() async throws {
+    func testWatchVoiceBindsToTheOpenMeshAndItsChat() async throws {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        let meshId = try XCTUnwrap(h.runtime.status.meshId)
+        h.kernel.setMeshPrincipal(MeshVerifiedPrincipal(meshId: meshId))
+        let owner = try watchOwner(meshId)
+        let context = try await h.runtime.prepareWatchVoice(owner: owner)
+        XCTAssertEqual(context.owner, owner)
+        XCTAssertEqual(context.chatId, h.runtime.currentChat?.chatId)
+        let current = await h.runtime.watchVoiceContextCurrent(context)
+        XCTAssertTrue(current)
+        _ = await h.runtime.newChat(title: "Another chat")
+        let stale = await h.runtime.watchVoiceContextCurrent(context)
+        XCTAssertFalse(stale)
+    }
+
+    func testWatchVoiceForAnotherMeshIsRefusedBeforeAnyChatIsTouched() async throws {
         let h = MeshRuntimeHarness()
         defer { h.cleanUp() }
         await h.runtime.open()
         h.kernel.setMeshPrincipal(MeshVerifiedPrincipal(meshId: h.runtime.status.meshId!))
         do {
-            _ = try await h.runtime.prepareWatchVoice(owner: watchOwner())
-            XCTFail("Watch needs a mesh-key binding")
+            _ = try await h.runtime.prepareWatchVoice(owner: watchOwner("sha256:" + String(repeating: "0", count: 64)))
+            XCTFail("another mesh's Watch must be refused")
+        } catch {
+            XCTAssertTrue(MeshRuntime.describe(error).contains("mesh this Watch belongs to"))
+        }
+        XCTAssertFalse(h.kernel.calls.contains { $0.name == "createChat" || $0.name == "sendMessage" })
+    }
+
+    func testWatchVoiceIsRefusedWhenTheKernelPrincipalDiffers() async throws {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        let meshId = try XCTUnwrap(h.runtime.status.meshId)
+        h.kernel.setMeshPrincipal(MeshVerifiedPrincipal(meshId: "sha256:" + String(repeating: "1", count: 64)))
+        do {
+            _ = try await h.runtime.prepareWatchVoice(owner: watchOwner(meshId))
+            XCTFail("a principal mismatch must be refused")
         } catch {
             XCTAssertTrue(MeshRuntime.describe(error).contains("mesh-key binding"))
         }

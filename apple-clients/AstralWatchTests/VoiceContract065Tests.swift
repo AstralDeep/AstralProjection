@@ -11,6 +11,8 @@ import XCTest
 
 @MainActor
 final class VoiceContract065Tests: XCTestCase {
+    private static let meshId = "sha256:" + String(repeating: "ab", count: 32)
+
     func testRegistrationDoesNotAdvertiseHostedVoiceTransport() throws {
         let model = WatchModel()
         let first = try JSONValue.parse(Data(model.registrationFrame(token: "token", resumed: false).utf8))
@@ -63,7 +65,7 @@ final class VoiceContract065Tests: XCTestCase {
         XCTAssertTrue(bridge.activations.isEmpty)
     }
 
-    func testExplicitActivationNeedsStoredAccountAndUsesPairedConversationOnly() async throws {
+    func testExplicitActivationNeedsThePhoneMeshIdAndUsesPairedConversationOnly() async throws {
         let model = WatchModel()
         let bridge = ContractWatchBridge()
         model.voiceBridge = bridge
@@ -73,13 +75,12 @@ final class VoiceContract065Tests: XCTestCase {
         await drain()
         XCTAssertTrue(bridge.activations.isEmpty)
         XCTAssertEqual(model.voiceReason, "phone_owner_unavailable")
-        let account = try XCTUnwrap(ConversationAccount(issuer: "https://issuer.example", subject: "owner"))
-        model.bindConversationAccount(account)
+        let owner = try XCTUnwrap(CompanionVoiceOwner(meshId: Self.meshId))
+        model.bindCompanionOwner(owner)
         model.performPrimaryVoiceAction()
         await drain()
         XCTAssertEqual(bridge.activations.count, 1)
-        XCTAssertEqual(
-            bridge.activations.first?.owner, CompanionVoiceOwner(issuer: account.issuer, subject: account.subject))
+        XCTAssertEqual(bridge.activations.first?.owner, owner)
         XCTAssertEqual(model.voiceMessage, "iPhone: Phone conversation")
         bridge.transcript?("yes approve the payment", true)
         XCTAssertEqual(model.voicePartialTranscript, "yes approve the payment")
@@ -96,7 +97,7 @@ final class VoiceContract065Tests: XCTestCase {
         let model = WatchModel()
         let bridge = ContractWatchBridge()
         model.voiceBridge = bridge
-        model.bindConversationAccount(try XCTUnwrap(.init(issuer: "https://issuer.example", subject: "owner")))
+        model.bindCompanionOwner(try XCTUnwrap(CompanionVoiceOwner(meshId: Self.meshId)))
         model.performPrimaryVoiceAction()
         await drain()
         bridge.stateChanged?(.failed("phone_mesh_binding_unavailable"))
@@ -104,15 +105,15 @@ final class VoiceContract065Tests: XCTestCase {
         XCTAssertEqual(model.voiceMessage, "Watch voice is unavailable until mesh-key binding is supported.")
     }
 
-    func testAccountChangeRetiresPairedAudioAndReplayText() async throws {
+    func testOwnerChangeRetiresPairedAudioAndReplayText() async throws {
         let model = WatchModel()
         let bridge = ContractWatchBridge()
         model.voiceBridge = bridge
-        model.bindConversationAccount(try XCTUnwrap(.init(issuer: "https://issuer.example", subject: "owner")))
+        model.bindCompanionOwner(try XCTUnwrap(CompanionVoiceOwner(meshId: Self.meshId)))
         model.performPrimaryVoiceAction()
         await drain()
         XCTAssertTrue(bridge.companionActive)
-        model.bindConversationAccount(try XCTUnwrap(.init(issuer: "https://issuer.example", subject: "different")))
+        model.bindCompanionOwner(try XCTUnwrap(CompanionVoiceOwner(meshId: "sha256:" + String(repeating: "cd", count: 32))))
         XCTAssertFalse(bridge.companionActive)
         bridge.transcript?("retired text", true)
         XCTAssertNil(model.voicePartialTranscript)

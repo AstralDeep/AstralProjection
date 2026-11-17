@@ -1444,10 +1444,22 @@ final class MeshRuntime {
     func publishMeshWakeRoute(_ context: MeshPushContext, route: MeshWakeRoute?) async -> Bool { false }
 
     func prepareWatchVoice(owner: CompanionVoiceOwner) async throws -> PairedWatchVoiceContext {
-        throw MeshKernelError.meshKeyBindingUnavailable
+        guard isReady, hasMesh, status.meshId == owner.meshId else {
+            throw MeshKernelError.unavailable("Open the mesh this Watch belongs to before starting Watch voice.")
+        }
+        let principal = try await call { try $0.meshPrincipal() }
+        guard principal.meshId == owner.meshId else { throw MeshKernelError.meshKeyBindingUnavailable }
+        let scope = try await prepareVoiceSession()
+        guard let title = currentChat?.title, currentChat?.chatId == scope.chatId else {
+            throw MeshKernelError.unavailable("Choose a chat before starting Watch voice.")
+        }
+        return PairedWatchVoiceContext(owner: owner, chatId: scope.chatId, title: title, meshSession: scope.session)
     }
 
-    func watchVoiceContextCurrent(_ context: PairedWatchVoiceContext) async -> Bool { false }
+    func watchVoiceContextCurrent(_ context: PairedWatchVoiceContext) async -> Bool {
+        isReady && hasMesh && !status.stopped && status.meshId == context.owner.meshId
+            && wakeSession == context.meshSession && currentChatId == context.chatId
+    }
 
     func prepareVoiceSession() async throws -> MeshVoiceScope {
         guard isReady, hasMesh else {

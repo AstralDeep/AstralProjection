@@ -167,6 +167,7 @@ final class WatchModel {
     var voiceTerminalNotice: VoiceTerminalNotice?
     var voicePartialTranscript: String?
     var voiceActivationBusy = false
+    private(set) var companionOwner: CompanionVoiceOwner?
 
     var visibleVoiceControls: [WatchVoiceControl] {
         voiceComposer?.controls.filter(\.visible) ?? []
@@ -357,6 +358,13 @@ final class WatchModel {
         }
         conversationAccount = account
         activeChatId = conversationResumeStore.load(for: account)?.chatId
+    }
+
+    func bindCompanionOwner(_ owner: CompanionVoiceOwner?) {
+        guard companionOwner != owner else { return }
+        stopPairedVoice()
+        speaker.clear()
+        companionOwner = owner
     }
 
     func registrationFrame(token: String, resumed: Bool) -> String {
@@ -1949,12 +1957,10 @@ final class WatchModel {
     }
 
     private func beginPairedVoice(mode: CompanionVoiceActivation.Mode, text: String? = nil) {
-        guard voiceForegroundActive, let account = conversationAccount,
-            let owner = CompanionVoiceOwner(issuer: account.issuer, subject: account.subject)
-        else {
+        guard voiceForegroundActive, let owner = companionOwner else {
             voiceState = .unavailable
             voiceReason = "phone_owner_unavailable"
-            voiceMessage = "Use the same signed-in account on your Watch and iPhone."
+            voiceMessage = "Open your mesh on your iPhone."
             return
         }
         stopPairedVoice()
@@ -1970,7 +1976,7 @@ final class WatchModel {
                 try await self.voiceBridge.startCompanion(
                     activation,
                     onState: { [weak self] state in
-                        guard let self, self.companionVoiceAttempt == attempt, self.conversationAccount == account
+                        guard let self, self.companionVoiceAttempt == attempt, self.companionOwner == owner
                         else { return }
                         switch state {
                         case .connecting:
@@ -1998,13 +2004,13 @@ final class WatchModel {
                         }
                     },
                     onTranscript: { [weak self] text, final in
-                        guard let self, self.companionVoiceAttempt == attempt, self.conversationAccount == account
+                        guard let self, self.companionVoiceAttempt == attempt, self.companionOwner == owner
                         else { return }
                         self.voicePartialTranscript = text
                         self.voiceState = final ? .processing : .transcribing
                     },
                     onSpeaking: { [weak self] speaking in
-                        guard let self, self.companionVoiceAttempt == attempt, self.conversationAccount == account
+                        guard let self, self.companionVoiceAttempt == attempt, self.companionOwner == owner
                         else { return }
                         self.speaker.playbackChanged(speaking)
                         if speaking {
@@ -2014,7 +2020,7 @@ final class WatchModel {
                         }
                     })
             } catch {
-                guard self.companionVoiceAttempt == attempt, self.conversationAccount == account else { return }
+                guard self.companionVoiceAttempt == attempt, self.companionOwner == owner else { return }
                 self.voiceActivationBusy = false
                 self.voiceState = .unavailable
                 if self.voiceMessage == "Preparing voice on iPhone…" {

@@ -28,7 +28,7 @@ final class PairedWatchVoiceTests: XCTestCase {
             })
         let relay = PairedWatchVoiceRelay(controller: controller, channel: channel)
         relay.bind(prepare: { _ in throw MeshKernelError.meshKeyBindingUnavailable }, isCurrent: { _ in false })
-        let owner = CompanionVoiceOwner(issuer: "https://issuer.example", subject: "owner")!
+        let owner = CompanionVoiceOwner(meshId: "sha256:" + String(repeating: "ab", count: 32))!
         let packet = try CompanionVoicePacket(
             kind: .start, session: UUID(), sequence: 0, microseconds: 0,
             payload: CompanionVoiceActivation(owner: owner, mode: .conversation).encoded())
@@ -48,7 +48,7 @@ final class PairedWatchVoiceTests: XCTestCase {
         try await h.start()
         await h.wait(for: .ready, in: self)
         XCTAssertTrue(h.controller.isRunning)
-        let other = CompanionVoiceOwner(issuer: h.owner.issuer, subject: "different")!
+        let other = CompanionVoiceOwner(meshId: "sha256:" + String(repeating: "cd", count: 32))!
         let packet = try CompanionVoicePacket(
             kind: .start, session: UUID(), sequence: 0, microseconds: 0,
             payload: CompanionVoiceActivation(owner: other, mode: .conversation).encoded())
@@ -273,7 +273,7 @@ final class PairedWatchVoiceTests: XCTestCase {
                 return false
             })
         let relay = PairedWatchVoiceRelay(controller: controller, channel: channel)
-        let owner = CompanionVoiceOwner(issuer: "https://issuer.example", subject: "owner")!
+        let owner = CompanionVoiceOwner(meshId: "sha256:" + String(repeating: "ab", count: 32))!
         let context = PairedWatchVoiceContext(owner: owner, chatId: "phone-chat", title: "Phone", meshSession: UUID())
         let activation = CompanionVoiceActivation(owner: owner, mode: .conversation)
         let packet = try CompanionVoicePacket(
@@ -387,7 +387,7 @@ private final class PhoneCompanionHarness {
     let controller: OnDeviceVoiceController
     let link = FakeKernelLink()
     let channel = PhoneCompanionChannel()
-    let owner = CompanionVoiceOwner(issuer: "https://issuer.example", subject: "owner")!
+    let owner = CompanionVoiceOwner(meshId: "sha256:" + String(repeating: "ab", count: 32))!
     let session = UUID()
     var current = true
     var pauseCurrent: (@MainActor () async -> Void)?
