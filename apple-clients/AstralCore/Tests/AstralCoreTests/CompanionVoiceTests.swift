@@ -60,19 +60,36 @@ final class CompanionVoiceTests: XCTestCase {
         XCTAssertTrue(gate.accept(try packet(1, 11)))
     }
 
-    func testActivationUsesTheStoredAccountAndHasNoTokenOrApprovalField() throws {
-        let owner = try XCTUnwrap(CompanionVoiceOwner(issuer: "https://issuer.test/realm", subject: "owner-1"))
+    func testActivationUsesTheMeshIdAndHasNoTokenOrApprovalField() throws {
+        let owner = try XCTUnwrap(CompanionVoiceOwner(meshId: Self.meshId))
         let activation = CompanionVoiceActivation(owner: owner, mode: .conversation)
         XCTAssertEqual(CompanionVoiceActivation(data: try activation.encoded()), activation)
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: activation.encoded()) as? [String: Any])
         object["approved"] = true
         XCTAssertNil(CompanionVoiceActivation(data: try JSONSerialization.data(withJSONObject: object)))
-        XCTAssertNil(CompanionVoiceOwner(issuer: "", subject: "owner-1"))
-        XCTAssertNil(CompanionVoiceOwner(issuer: "issuer", subject: "owner\u{0}"))
+        object = try XCTUnwrap(JSONSerialization.jsonObject(with: activation.encoded()) as? [String: Any])
+        object["owner"] = ["issuer": "https://issuer.test", "subject": "owner-1"]
+        XCTAssertNil(CompanionVoiceActivation(data: try JSONSerialization.data(withJSONObject: object)))
+        object["owner"] = "sha256:" + String(repeating: "A", count: 64)
+        XCTAssertNil(CompanionVoiceActivation(data: try JSONSerialization.data(withJSONObject: object)))
     }
 
+    func testOwnerMustBeTheMeshIdForm() {
+        XCTAssertNotNil(CompanionVoiceOwner(meshId: Self.meshId))
+        for bad in [
+            "", "owner-1", "sha256:", "sha256:" + String(repeating: "a", count: 63),
+            "sha256:" + String(repeating: "a", count: 65), "sha256:" + String(repeating: "A", count: 64),
+            "sha256:" + String(repeating: "g", count: 64), "SHA256:" + String(repeating: "a", count: 64),
+            String(repeating: "a", count: 64), "sha256:" + String(repeating: "a", count: 63) + "\n",
+        ] {
+            XCTAssertNil(CompanionVoiceOwner(meshId: bad), bad)
+        }
+    }
+
+    static let meshId = "sha256:" + String(repeating: "ab12", count: 16)
+
     func testOnlyPlaybackModeMayCarryInitialText() throws {
-        let owner = try XCTUnwrap(CompanionVoiceOwner(issuer: "issuer", subject: "owner"))
+        let owner = try XCTUnwrap(CompanionVoiceOwner(meshId: Self.meshId))
         let playback = CompanionVoiceActivation(owner: owner, mode: .playback, text: "Read this sentence.")
         XCTAssertEqual(CompanionVoiceActivation(data: try playback.encoded()), playback)
         XCTAssertThrowsError(try CompanionVoiceActivation(owner: owner, mode: .conversation, text: "yes").encoded())

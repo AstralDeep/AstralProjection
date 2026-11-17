@@ -1,5 +1,5 @@
-// Owns the iPhone's one WatchConnectivity delegate for endpoint preferences and ephemeral paired-Watch voice.
-// Interactive PCM stays out of application context and background transfer queues.
+// Owns the iPhone's one WatchConnectivity delegate for endpoint preferences, ephemeral paired-Watch voice and the companion relay packets.
+// Interactive PCM stays out of application context and background transfer queues, and relay packets are carried verbatim for PhoneCompanionRelay.
 
 #if os(iOS)
     import AstralCore
@@ -7,11 +7,13 @@
     import WatchConnectivity
 
     @MainActor
-    final class WatchOverrideSync: NSObject, WCSessionDelegate, CompanionVoiceChannel {
+    final class WatchOverrideSync: NSObject, WCSessionDelegate, CompanionVoiceChannel, CompanionRelayChannel {
         static let shared = WatchOverrideSync()
         var onPacket: (@MainActor @Sendable (CompanionVoicePacket) async throws -> Void)?
         var onReachabilityChanged: (@MainActor @Sendable (Bool) -> Void)?
-        private var pending: String?
+        var onRelayRequest: (@MainActor @Sendable (Data) async -> Void)?
+        var onRelayReady: (@MainActor @Sendable () -> Void)?
+        private var context = WatchContextStore()
 
         var reachable: Bool {
             guard WCSession.isSupported() else { return false }
@@ -28,18 +30,40 @@
 
         func push(_ rawEndpoint: String?) {
             guard let endpoint = AstralConfig.usableEndpoint(rawEndpoint) else { return }
-            pending = endpoint
+            context.setEndpoint(endpoint)
             flush()
         }
 
-        private func flush() {
-            guard WCSession.isSupported(), let endpoint = pending else { return }
+        func publish(
+            _ update: Data, kind: String, latestState: Bool, completion: @escaping @MainActor (Bool) -> Void
+        ) {
+            guard WCSession.isSupported() else { return completion(false) }
+            var stored = false
+            if latestState, context.set(kind: kind, data: update) { stored = flush() }
+            guard reachable else { return completion(stored) }
+            WCSession.default.sendMessageData(
+                update,
+                replyHandler: { _ in Task { @MainActor in completion(true) } },
+                errorHandler: { _ in Task { @MainActor in completion(stored) } })
+        }
+
+        func withdraw(kind: String) {
+            context.remove(kind: kind)
+            flush()
+        }
+
+        @discardableResult
+        private func flush() -> Bool {
+            guard WCSession.isSupported(), context.dirty else { return false }
             let session = WCSession.default
-            guard session.activationState == .activated, session.isPaired, session.isWatchAppInstalled else { return }
+            guard session.activationState == .activated, session.isPaired, session.isWatchAppInstalled else {
+                return false
+            }
             do {
-                try session.updateApplicationContext([AstralConfig.serverOverrideDefaultsKey: endpoint])
-                pending = nil
-            } catch {}
+                try session.updateApplicationContext(context.snapshot)
+                context.markFlushed()
+                return true
+            } catch { return false }
         }
 
         func send(_ packet: CompanionVoicePacket) async throws {
@@ -70,8 +94,11 @@
             replyHandler: @escaping (Data) -> Void
         ) {
             let response = CompanionVoiceInboundReply(replyHandler)
-            guard let packet = try? CompanionVoicePacket(data: data) else {
-                response.send(Data())
+            guard case .voice(let packet) = WatchInbound.classify(data) else {
+                Task { @MainActor [weak self] in
+                    if let self, self.reachable, let handler = self.onRelayRequest { await handler(data) }
+                    response.send(Data())
+                }
                 return
             }
             Task { @MainActor [weak self] in
@@ -97,6 +124,7 @@
                 guard let self else { return }
                 self.flush()
                 self.onReachabilityChanged?(self.reachable)
+                if self.reachable { self.onRelayReady?() }
             }
         }
 
@@ -104,6 +132,7 @@
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.onReachabilityChanged?(self.reachable)
+                if self.reachable { self.onRelayReady?() }
             }
         }
 

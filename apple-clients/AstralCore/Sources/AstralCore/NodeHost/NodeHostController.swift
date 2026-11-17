@@ -1,4 +1,4 @@
-// Drives the Settings control "Run a node on this Mac": it offers the pack with its size, downloads and installs it, supervises the node and starts the pairing into the owner's mesh.
+// Drives the Settings control "Run a node on this Mac": it offers the pack with its size, downloads and installs it, supervises the node and starts the pairing into the owner's mesh with no sign-in.
 // The app's Mac settings view binds to it, and the quit handler calls applicationWillTerminate so the node stops unless Keep running is on.
 
 #if os(macOS)
@@ -24,8 +24,6 @@
     public struct NodeHostEnvironment {
         public var root: URL
         public var available: Bool
-        public var issuer: String
-        public var clientId: String
         public var meshLabel: String
         public var defaults: UserDefaults
         public var transport: NodePackTransport
@@ -40,7 +38,7 @@
         public var pinnedDescriptorSha256: String?
 
         public init(
-            root: URL, available: Bool, issuer: String, clientId: String, meshLabel: String,
+            root: URL, available: Bool, meshLabel: String,
             defaults: UserDefaults = .standard, transport: NodePackTransport = URLSessionNodePackTransport(),
             launcher: NodeProcessLauncher = PosixNodeProcessLauncher(),
             probe: NodeHealthProbe = LoopbackNodeHealthProbe(),
@@ -55,8 +53,6 @@
         ) {
             self.root = root
             self.available = available
-            self.issuer = issuer
-            self.clientId = clientId
             self.meshLabel = meshLabel
             self.defaults = defaults
             self.transport = transport
@@ -90,6 +86,7 @@
 
         public static let packURLKey = "node.pack.url"
         public static let keepRunningKey = "node.keepRunning"
+        public static let autoOfferedKey = "node.pack.autoOffered"
 
         public private(set) var phase: Phase
         public private(set) var descriptor: NodeDescriptor?
@@ -103,6 +100,7 @@
         @ObservationIgnored private var supervisor: NodeSupervisor?
         @ObservationIgnored private var installed: InstalledNodePack?
         @ObservationIgnored private var currentPort: Int?
+        @ObservationIgnored private var installTask: Task<Void, Never>?
 
         public init(environment: NodeHostEnvironment) {
             self.environment = environment
@@ -159,7 +157,33 @@
         }
 
         public func install() async {
-            guard case .offered(let offer) = phase else { return }
+            guard case .offered(let offer) = phase, installTask == nil else { return }
+            let task = Task { await self.performInstall(offer) }
+            installTask = task
+            await task.value
+            installTask = nil
+        }
+
+        public func cancelInstall() { installTask?.cancel() }
+
+        public func installOnFirstLaunch() async {
+            guard environment.available, environment.pinnedDescriptorSha256?.isEmpty == false,
+                !environment.defaultPackURL.isEmpty, installTask == nil,
+                !environment.defaults.bool(forKey: Self.autoOfferedKey)
+            else { return }
+            await refresh()
+            guard installed == nil, let url = URL(string: environment.defaultPackURL) else { return }
+            environment.defaults.set(true, forKey: Self.autoOfferedKey)
+            do {
+                phase = .offered(try await installer.fetchOffer(from: url))
+            } catch {
+                message = Self.describe(error)
+                return
+            }
+            await install()
+        }
+
+        private func performInstall(_ offer: NodePackOffer) async {
             await stop()
             phase = .downloading(fraction: 0)
             do {
@@ -168,6 +192,9 @@
                 }
                 installed = result
                 phase = .installed(version: result.version)
+            } catch is CancellationError {
+                message = "The download was cancelled."
+                phase = installed.map { .installed(version: $0.version) } ?? .notInstalled
             } catch {
                 message = Self.describe(error)
                 phase = installed.map { .installed(version: $0.version) } ?? .notInstalled
@@ -191,7 +218,7 @@
             phase = .starting
             do {
                 try home.prepare(
-                    pack: installed.root, issuer: environment.issuer, clientId: environment.clientId,
+                    pack: installed.root,
                     meshLabel: environment.meshLabel, runScript: environment.runInstaller)
                 await begin(port: try environment.freePort(), adopting: nil)
             } catch {
@@ -210,6 +237,7 @@
         }
 
         public func remove() async {
+            environment.defaults.set(true, forKey: Self.autoOfferedKey)
             await stop()
             try? await installer.remove()
             installed = nil
@@ -223,14 +251,17 @@
             try? FileManager.default.removeItem(at: home.runRecord)
         }
 
-        public func requestPairing(ownerToken: () async throws -> String) async throws -> NodePairingResult {
+        public func requestPairing() async throws -> NodePairingResult {
             guard let port = currentPort, isRunning else { throw NodePairingError.meshUnavailable("node_not_running") }
             let client = try NodePairingClient(port: port, http: environment.http)
             let descriptor = try await client.descriptor()
             self.descriptor = descriptor
             guard descriptor.canJoinMesh else { throw NodePairingError.meshUnavailable("mesh_peer_unavailable") }
-            let token = try await ownerToken()
-            return try await client.pairingOffer(bearer: token, label: environment.meshLabel)
+            do {
+                return try await client.pairingOffer(secret: try home.readPairingSecret())
+            } catch NodePairingError.pairingSecretRequired {
+                return try await client.pairingOffer(secret: try home.readPairingSecret())
+            }
         }
 
         private func begin(port: Int, adopting handle: NodeProcessHandle?) async {
@@ -256,6 +287,7 @@
             case .running(let pid, let port):
                 phase = .running(port: port)
                 writeRunRecord(NodeRunRecord(pid: pid, port: port, packVersion: version, startedAt: Date()))
+                Task { await installer.pruneSuperseded() }
                 Task { await refreshDescriptor(port: port) }
             case .backingOff(_, let seconds, _):
                 phase = .backingOff("The node stopped. Restarting in \(Int(seconds.rounded(.up))) s.")
@@ -288,6 +320,27 @@
                 return nil
             }
             return record
+        }
+
+        public static func describePairing(_ error: Error) -> String? {
+            switch error as? NodePairingError {
+            case .pairingSecretUnavailable: return "The node has no pairing code yet. Wait a moment and try again."
+            case .pairingSecretRequired: return "The node's pairing code changed. Try again."
+            case .loopbackRequired: return "The node only pairs with a request from this Mac."
+            case .ownerMismatch: return "This node belongs to a different mesh."
+            case .rateLimited: return "Too many pairing attempts. Wait a minute and try again."
+            case .unknownDescriptorFormat: return "This node is too old. Update the node pack."
+            case .ownerBindingUnavailable: return "The node cannot read its owner yet. Try again in a moment."
+            case .profileInactive: return "This node is not set up for a personal mesh."
+            case .meshUnavailable(let code):
+                switch code {
+                case "node_not_running": return "Start the node first."
+                case "mesh_peer_unavailable": return "This node cannot join a mesh."
+                case "mesh_unavailable": return "The node's mesh is not ready yet. Try again in a moment."
+                default: return "The node cannot join a mesh yet (\(code))."
+                }
+            case .notLoopback, .refused, .unexpectedResponse, nil: return "The node refused the request."
+            }
         }
 
         static func describe(_ error: Error) -> String {

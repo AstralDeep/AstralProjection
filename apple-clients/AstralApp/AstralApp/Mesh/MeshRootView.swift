@@ -113,6 +113,7 @@ struct MeshShell: View {
                             guard let runtime else { return false }
                             return await runtime.watchVoiceContextCurrent(context)
                         })
+                    model.watchRelay.bind(runtime)
                 #endif
             }
 
@@ -120,6 +121,7 @@ struct MeshShell: View {
                 #if os(iOS)
                     model.meshPush.unbind()
                     model.watchVoice.unbind()
+                    model.watchRelay.unbind()
                 #endif
                 mesh.detachVoice(model.onDeviceVoice)
             }
