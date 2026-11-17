@@ -152,9 +152,16 @@ def test_direct_download_host_keeps_store_identity_and_hardened_runtime() -> Non
     assert "ENABLE_TESTABILITY = NO;" in body
     assert '"ENABLE_APP_SANDBOX[sdk=macosx*]" = NO;' in body
     assert 'ASTRAL_DISTRIBUTION = "direct-download";' in body
-    assert "PROVISIONING_PROFILE_SPECIFIER" not in body
+    assert body.count("PROVISIONING_PROFILE_SPECIFIER") == 1
+    assert '"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "$(ASTRAL_PROFILE_DIRECT)";' in body
     entitlements = _plist("apple-clients/AstralApp/AstralApp-DirectDownload.entitlements")
-    assert entitlements == {"com.apple.security.device.audio-input": True}
+    assert entitlements == {
+        "com.apple.security.device.audio-input": True,
+        "com.apple.developer.associated-domains": [
+            "applinks:astraldeep.github.io",
+            "webcredentials:astraldeep.github.io",
+        ],
+    }
     scheme = ET.parse(ROOT / "apple-clients/AstralApp/AstralApp.xcodeproj/xcshareddata/xcschemes/AstralAppDirectDownload.xcscheme")
     for action in ("LaunchAction", "ProfileAction", "AnalyzeAction", "ArchiveAction"):
         assert scheme.find(action).get("buildConfiguration") == "DirectDownload"
