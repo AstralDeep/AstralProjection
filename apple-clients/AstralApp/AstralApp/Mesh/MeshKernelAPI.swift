@@ -453,6 +453,8 @@ nonisolated enum MeshKernelChange: Equatable, Sendable {
     case joinRequested(MeshJoinRequest)
     case pairingFailed(code: String)
     case connectionsChanged
+    case contactsChanged
+    case sharesChanged
 }
 
 nonisolated struct MeshKernelConfig: Sendable {
@@ -808,6 +810,119 @@ nonisolated struct MeshPhiStatus: Equatable, Sendable {
     let failed: UInt64
 }
 
+nonisolated struct MeshContactInvitation: Equatable, Sendable {
+    let text: String
+    let link: String
+    let expiresInSeconds: UInt64
+}
+
+nonisolated struct MeshContactExchange: Identifiable, Equatable, Sendable {
+    let id: String
+    let mesh: String
+    let name: String
+    let code: String
+    let codeQR: String
+    let devices: Int
+}
+
+nonisolated struct MeshContactNotice: Equatable, Sendable {
+    enum Kind: Equatable, Sendable { case deviceAdded, deviceRemoved, recoveryUsed, other }
+
+    let notice: String
+    let device: String?
+
+    var kind: Kind {
+        switch notice {
+        case "device_added": return .deviceAdded
+        case "device_removed": return .deviceRemoved
+        case "recovery_used": return .recoveryUsed
+        default: return .other
+        }
+    }
+}
+
+nonisolated enum MeshContactState: String, Equatable, Sendable {
+    case unverified, verified
+}
+
+nonisolated struct MeshContact: Identifiable, Equatable, Sendable {
+    let mesh: String
+    let name: String
+    let state: MeshContactState
+    let fingerprint: String
+    let devices: Int
+    let notices: [MeshContactNotice]
+    let reason: String?
+    var id: String { mesh }
+    var isVerified: Bool { state == .verified }
+}
+
+nonisolated struct MeshShareProposal: Equatable, Sendable {
+    let id: String
+    let chat: String
+    let title: String
+    let contact: String
+    let contactName: String
+    let verified: Bool
+    let labels: [String]
+    let phiNeeded: Bool
+    let phiDestination: Bool
+    let supersedes: String?
+    let refusal: String?
+}
+
+nonisolated enum MeshShareState: String, Equatable, Sendable {
+    case inEffect = "in_effect"
+    case waiting
+    case revoked
+}
+
+nonisolated struct MeshShareInfo: Identifiable, Equatable, Sendable {
+    let id: String
+    let chat: String
+    let title: String
+    let contact: String
+    let contactName: String
+    let phi: Bool
+    let phiWithheld: Bool
+    let state: MeshShareState
+
+    func revoked() -> MeshShareInfo {
+        MeshShareInfo(
+            id: id, chat: chat, title: title, contact: contact, contactName: contactName, phi: phi,
+            phiWithheld: phiWithheld, state: .revoked)
+    }
+}
+
+nonisolated enum MeshSharedState: String, Equatable, Sendable {
+    case ready
+    case needsVerification = "needs_verification"
+    case stopped
+}
+
+nonisolated struct MeshSharedItem: Identifiable, Equatable, Sendable {
+    let grant: String
+    let contact: String
+    let contactName: String
+    let chat: String
+    let title: String
+    let phi: Bool
+    let withheldPhi: Int
+    let withheldFields: Int
+    let withheldKeys: Int
+    let state: MeshSharedState
+    let events: Int
+    let updatedAt: Date
+    var id: String { grant }
+    var withheldAny: Bool { withheldPhi + withheldFields + withheldKeys > 0 }
+}
+
+nonisolated struct MeshRefreshReport: Equatable, Sendable {
+    let received: Int
+    let refused: Int
+    let stopped: [String]
+}
+
 nonisolated protocol MeshLocalTools: Sendable {
     func list() -> [MeshLocalToolSpec]
     func call(name: String, argumentsJSON: String, ticket: Data) throws -> String
@@ -934,6 +1049,28 @@ nonisolated protocol MeshKernel: Sendable {
     func approvePhiDestination(_ proposal: MeshPhiProposal) throws
     func revokePhiDestination(subject: String) throws
     func phiStatus() throws -> MeshPhiStatus
+    func proposeContactPhiDestination(mesh: String) throws -> MeshPhiProposal
+
+    func createContactInvitation(name: String, ttlSeconds: UInt64) async throws -> MeshContactInvitation
+    func acceptContactInvitation(text: String, name: String) async throws -> MeshContactExchange
+    func startContactVerification(mesh: String) async throws -> MeshContactExchange
+    func cancelContactInvitation()
+    func pendingContactExchanges() throws -> [MeshContactExchange]
+    func verifyContact(exchangeId: String) throws -> MeshContact
+    func rejectContactExchange(exchangeId: String) throws
+    func contacts() throws -> [MeshContact]
+    func removeContact(mesh: String) throws
+    func rememberContactDevice(mesh: String, address: String) throws
+
+    func proposeShare(chatId: String, contactMesh: String) throws -> MeshShareProposal
+    func approveShare(_ proposal: MeshShareProposal) throws -> MeshShareInfo
+    func revokeShare(id: String) throws
+    func shares() throws -> [MeshShareInfo]
+    func sharedWithMe() throws -> [MeshSharedItem]
+    func sharedChat(grant: String) throws -> MeshChatView
+    func refreshShared(grant: String) async throws -> MeshRefreshReport
+    func refreshContactShares(mesh: String) async throws -> MeshRefreshReport
+    func sharedAttachment(grant: String, event: String) async throws -> Data
 
     func mailboxState() throws -> MeshMailboxState
     func syncState() async throws -> MeshSyncState

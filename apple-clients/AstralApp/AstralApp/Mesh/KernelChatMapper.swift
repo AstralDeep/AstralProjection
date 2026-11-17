@@ -45,6 +45,15 @@ nonisolated enum KernelChatMapper {
             rendered: detail.rendered.compactMap(rendered), labels: labels, status: status)
     }
 
+    static func mapShared(_ view: AstralKernel.ChatView) -> MeshChatView {
+        let folded = fold(view, queuedBases: [:])
+        let labels = Set(view.messages.map(\.labels.confidentiality)).subtracting(["public", "private"]).sorted()
+        return MeshChatView(
+            chatId: view.chatId, title: view.title ?? "Chat", messages: folded.messages,
+            branches: branches(of: folded.messages), surfaces: folded.surfaces, rendered: [], labels: labels,
+            status: .idle)
+    }
+
     static func rendered(_ surface: AstralKernel.RenderedSurface) -> MeshRenderedSurface? {
         guard let value = try? JSONDecoder().decode(JSONValue.self, from: Data(surface.treeJson.utf8)),
             let tree = value.arrayValue, !tree.isEmpty

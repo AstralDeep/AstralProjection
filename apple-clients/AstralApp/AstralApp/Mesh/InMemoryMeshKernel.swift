@@ -16,6 +16,8 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     private let clock: @Sendable () -> Date
     let connectionBook: InMemoryConnections
     let phiBook = InMemoryPhi()
+    private(set) var contactBook: InMemoryContacts!
+    private var phiChats: Set<String> = []
     private var status: MeshStatus
     private var principalValue: MeshVerifiedPrincipal?
     private var wakeRouteValue: MeshWakeRoute?
@@ -91,13 +93,14 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
 
     init(
         listener: any MeshKernelListening, hasMesh: Bool = false, recoveryPending: Bool = false,
-        hardwareBacked: Bool = true,
+        hardwareBacked: Bool = true, meshId: String? = nil, hub: InMemoryContactHub = InMemoryContactHub(),
         clock: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.listener = listener
         self.clock = clock
         status = MeshStatus(
-            hasMesh: hasMesh && !recoveryPending, meshId: hasMesh ? "sha256:" + String(repeating: "a", count: 64) : nil,
+            hasMesh: hasMesh && !recoveryPending,
+            meshId: hasMesh ? meshId ?? "sha256:" + String(repeating: "a", count: 64) : nil,
             deviceId: hasMesh ? "sha256:" + String(repeating: "b", count: 64) : nil, recoveryPending: recoveryPending,
             stopped: false, hardwareBacked: hardwareBacked)
         allowanceValue = MeshAllowance(
@@ -106,7 +109,37 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
             deviceId: status.deviceId ?? "sha256:" + String(repeating: "b", count: 64), deviceLabel: "This device",
             now: clock)
         if hasMesh { members = [Self.thisDevice(status: status)] }
+        let listener = listener
+        contactBook = InMemoryContacts(
+            meshId: status.meshId ?? "sha256:" + String(repeating: "a", count: 64), hub: hub,
+            hooks: InMemoryContacts.Hooks(
+                consent: { [weak self] in try self?.consentGate() },
+                emit: { listener.onChange($0) },
+                chat: { [weak self] id in
+                    guard let self else { throw MeshKernelError.notFound }
+                    return try self.chatSnapshot(id)
+                },
+                chatHoldsPhi: { [weak self] id in self?.holdsPhi(id) ?? false },
+                phiAllowed: { [weak self] mesh in self?.phiBook.allowed(kind: .contact, target: mesh) ?? false },
+                removePhiDestination: { [weak self] mesh in try? self?.phiBook.revoke(subject: "contact:" + mesh) },
+                now: clock))
+        let book = contactBook
+        phiBook.verifiedContacts = { book?.verifiedMeshes() ?? [] }
     }
+
+    private func chatSnapshot(_ id: String) throws -> MeshChatView {
+        try lock.withLock {
+            guard let chat = chats[id] else { throw MeshKernelError.notFound }
+            return MeshChatView(
+                chatId: id, title: chat.title, messages: chat.messages, branches: branches(of: chat),
+                surfaces: chat.surfaces, rendered: [], labels: phiChats.contains(id) ? ["phi"] : [],
+                status: .idle)
+        }
+    }
+
+    private func holdsPhi(_ id: String) -> Bool { lock.withLock { phiChats.contains(id) } }
+
+    func markChatHoldsPhi(_ chatId: String) { lock.withLock { _ = phiChats.insert(chatId) } }
 
     var calls: [Call] { lock.withLock { log } }
 
@@ -1157,6 +1190,118 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     func phiStatus() throws -> MeshPhiStatus {
         try record("phiStatus")
         return phiBook.status()
+    }
+
+    func proposeContactPhiDestination(mesh: String) throws -> MeshPhiProposal {
+        try record("proposeContactPhiDestination", mesh)
+        try requireEnrolled()
+        guard let found = contactBook.contacts().first(where: { $0.mesh == mesh }), found.isVerified else {
+            throw KernelMapping.refusal("contact.unverified")
+        }
+        let source = try Self.phiSource(["source": "contact", "name": found.name, "mesh_id": mesh])
+        return try phiBook.propose(source: source, deviceId: localMember.memberId)
+    }
+
+    func createContactInvitation(name: String, ttlSeconds: UInt64) async throws -> MeshContactInvitation {
+        try record("createContactInvitation", name)
+        try requireEnrolled()
+        return try contactBook.createInvitation(name: name, ttl: ttlSeconds)
+    }
+
+    func acceptContactInvitation(text: String, name: String) async throws -> MeshContactExchange {
+        try record("acceptContactInvitation", text)
+        try requireEnrolled()
+        return try contactBook.accept(text: text, name: name)
+    }
+
+    func startContactVerification(mesh: String) async throws -> MeshContactExchange {
+        try record("startContactVerification", mesh)
+        try requireEnrolled()
+        return try contactBook.startVerification(mesh: mesh)
+    }
+
+    func cancelContactInvitation() {
+        lock.withLock { log.append(Call(name: "cancelContactInvitation", detail: "")) }
+        contactBook.cancelInvitation()
+    }
+
+    func pendingContactExchanges() throws -> [MeshContactExchange] {
+        try record("pendingContactExchanges")
+        return contactBook.pending()
+    }
+
+    func verifyContact(exchangeId: String) throws -> MeshContact {
+        try record("verifyContact", exchangeId)
+        try requireEnrolled()
+        return try contactBook.verify(exchangeId: exchangeId)
+    }
+
+    func rejectContactExchange(exchangeId: String) throws {
+        try record("rejectContactExchange", exchangeId)
+        try contactBook.reject(exchangeId: exchangeId)
+    }
+
+    func contacts() throws -> [MeshContact] {
+        try record("contacts")
+        return contactBook.contacts()
+    }
+
+    func removeContact(mesh: String) throws {
+        try record("removeContact", mesh)
+        try requireEnrolled()
+        try contactBook.remove(mesh: mesh)
+    }
+
+    func rememberContactDevice(mesh: String, address: String) throws {
+        try record("rememberContactDevice", mesh)
+    }
+
+    func proposeShare(chatId: String, contactMesh: String) throws -> MeshShareProposal {
+        try record("proposeShare", chatId + "|" + contactMesh)
+        try requireEnrolled()
+        return try contactBook.proposeShare(chat: chatId, contact: contactMesh)
+    }
+
+    func approveShare(_ proposal: MeshShareProposal) throws -> MeshShareInfo {
+        try record("approveShare", proposal.id)
+        try requireEnrolled()
+        return try contactBook.approveShare(proposal)
+    }
+
+    func revokeShare(id: String) throws {
+        try record("revokeShare", id)
+        try requireEnrolled()
+        try contactBook.revoke(id: id)
+    }
+
+    func shares() throws -> [MeshShareInfo] {
+        try record("shares")
+        return contactBook.shares()
+    }
+
+    func sharedWithMe() throws -> [MeshSharedItem] {
+        try record("sharedWithMe")
+        return contactBook.sharedWithMe()
+    }
+
+    func sharedChat(grant: String) throws -> MeshChatView {
+        try record("sharedChat", grant)
+        return try contactBook.sharedChat(grant: grant)
+    }
+
+    func refreshShared(grant: String) async throws -> MeshRefreshReport {
+        try record("refreshShared", grant)
+        return try contactBook.refresh(grant: grant)
+    }
+
+    func refreshContactShares(mesh: String) async throws -> MeshRefreshReport {
+        try record("refreshContactShares", mesh)
+        return try contactBook.refresh(contact: mesh)
+    }
+
+    func sharedAttachment(grant: String, event: String) async throws -> Data {
+        try record("sharedAttachment", grant + "|" + event)
+        return try contactBook.attachment(grant: grant, event: event)
     }
 
     private static func phiSource(_ object: [String: Any]) throws -> String {
