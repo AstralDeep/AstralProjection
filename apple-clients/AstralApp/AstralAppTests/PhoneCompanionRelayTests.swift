@@ -393,11 +393,18 @@ final class PhoneCompanionRelayTests: XCTestCase {
         let chatMade = await newChat(r, "Gone")
         let chat = try XCTUnwrap(chatMade)
         let id = try owner(r.h)
+        let reached = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
         r.h.kernel.sendGate = {
-            Task { @MainActor in await r.h.runtime.close() }
-            Thread.sleep(forTimeInterval: 0.2)
+            reached.signal()
+            release.wait()
         }
-        let outcome = await r.relay.handle(try request(.sendMessage(owner: id, chatId: chat, text: "late")))
+        let request = try request(.sendMessage(owner: id, chatId: chat, text: "late"))
+        let sending = Task { await r.relay.handle(request) }
+        await Task.detached { reached.wait() }.value
+        await r.h.runtime.close()
+        release.signal()
+        let outcome = await sending.value
         XCTAssertNotEqual(outcome, .served)
         XCTAssertTrue(r.channel.runStates.isEmpty && r.channel.chatViews.isEmpty)
     }
