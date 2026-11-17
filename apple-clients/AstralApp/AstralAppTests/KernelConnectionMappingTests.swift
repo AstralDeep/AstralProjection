@@ -117,10 +117,16 @@ final class KernelConnectionMappingTests: XCTestCase {
 
     func testProposalAndStateMapEveryField() {
         let proposal = ConnectionProposal(
-            proposal: "p", connection: Self.id, name: "Research", endpoint: "https://mcp.example/mcp", local: false,
+            proposal: "p", connection: Self.id, kind: "a2a", name: "Research",
+            endpoint: "https://mcp.example/mcp", local: false,
             device: nil, scheme: "oauth", issuer: "https://issuer.example", issuerHost: "issuer.example",
             redirectHost: "astraldeep.github.io", scopes: ["read"], resource: "https://mcp.example/mcp",
-            clientId: nil, tools: [], egress: ["issuer.example"], flowHint: "phi", replaces: Self.id, expiresMs: 77)
+            clientId: nil, tools: [], egress: ["issuer.example"], flowHint: "phi", replaces: Self.id, expiresMs: 77,
+            card: ConnectionCard(
+                url: "https://mcp.example/card", hash: "h", origin: "o", signer: "s", signed: true,
+                extendedHash: nil, extendedPending: false, skills: ["ask"]),
+            command: nil, args: [], envNames: [], keyHeader: "X-Key", keyFormat: "{key}", keyItem: "item",
+            models: ["m"], keyRecipients: ["d"])
         let mapped = KernelMapping.connectionProposal(proposal)
         XCTAssertEqual(mapped.proposal, "p")
         XCTAssertEqual(mapped.issuerHost, "issuer.example")
@@ -128,6 +134,11 @@ final class KernelConnectionMappingTests: XCTestCase {
         XCTAssertEqual(mapped.flowHint, "phi")
         XCTAssertEqual(mapped.replaces, Self.id)
         XCTAssertEqual(mapped.expiresMs, 77)
+        XCTAssertEqual(mapped.kind, "a2a")
+        XCTAssertEqual(mapped.card?.signer, "s")
+        XCTAssertEqual(mapped.keyHeader, "X-Key")
+        XCTAssertEqual(mapped.models, ["m"])
+        XCTAssertEqual(mapped.keyRecipients, ["d"])
         let state = KernelMapping.connectionState(
             ConnectionState(connection: Self.id, state: "signed_in", reason: nil, toolsPending: true))
         let expected = MeshConnectionState(connection: Self.id, state: "signed_in", reason: nil, toolsPending: true)

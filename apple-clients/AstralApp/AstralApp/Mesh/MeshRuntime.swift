@@ -1513,6 +1513,70 @@ final class MeshRuntime {
         try await call { try await $0.reviewConnection(id: id) }
     }
 
+    func proposeA2AConnection(cardURL: String, name: String, key: String?, recipients: [String]?) async throws
+        -> MeshConnectionProposal
+    {
+        try await call {
+            try await $0.proposeA2AConnection(cardURL: cardURL, name: name, key: key, recipients: recipients)
+        }
+    }
+
+    func proposeKeyConnection(endpoint: String, name: String, local: Bool, key: String, recipients: [String]?)
+        async throws -> MeshConnectionProposal
+    {
+        try await call {
+            try await $0.proposeKeyConnection(
+                endpoint: endpoint, name: name, local: local, key: key, recipients: recipients)
+        }
+    }
+
+    func proposeHttpApiConnection(_ draft: MeshHttpApiDraft) async throws -> MeshConnectionProposal {
+        try await call { try await $0.proposeHttpApiConnection(draft) }
+    }
+
+    func setConnectionKey(id: String, secrets: [MeshConnectionSecret], recipients: [String]?) async throws {
+        try await call { try $0.setConnectionKey(id: id, secrets: secrets, recipients: recipients) }
+    }
+
+    func saveModelConnection(baseURL: String, model: String, key: String, recipients: [String]?) async
+        -> MeshProviderInputError?
+    {
+        guard !savingProvider else { return .saving }
+        switch MeshProviderInput.validate(baseURL: baseURL, model: model, key: key, recipients: recipients) {
+        case .failure(let error):
+            return error
+        case .success(let config):
+            savingProvider = true
+            defer { savingProvider = false }
+            let session = wakeSession
+            let draft = MeshModelConnectionDraft(
+                name: URL(string: config.baseURL)?.host ?? "Model", endpoint: config.baseURL,
+                provider: Self.providerSlug(config.baseURL), models: [config.model], apiKeys: [config.apiKey],
+                recipients: config.recipients)
+            do {
+                let proposal = try await call { try await $0.proposeModelConnection(draft) }
+                _ = try await call {
+                    try $0.approveConnection(
+                        proposal: proposal.proposal, flow: "private", toolNames: [], clientId: nil)
+                }
+                guard isReady, wakeSession == session else {
+                    return .failed("The mesh session changed while saving the provider.")
+                }
+                await refreshProviders()
+                await refreshConnections()
+                return nil
+            } catch {
+                return .failed(Self.describe(error))
+            }
+        }
+    }
+
+    nonisolated static func providerSlug(_ baseURL: String) -> String {
+        let host: String = (URL(string: baseURL)?.host ?? "model").lowercased()
+        let mapped: String = String(host.map { $0.isLetter || $0.isNumber || $0 == "." || $0 == "-" ? $0 : "-" })
+        return String(mapped.prefix(48))
+    }
+
     func approveConnection(proposal: String, flow: String, toolNames: [String]) async throws -> MeshConnection {
         try await call {
             try $0.approveConnection(proposal: proposal, flow: flow, toolNames: toolNames, clientId: nil)

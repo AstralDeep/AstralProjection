@@ -83,6 +83,12 @@ public struct ExecLauncher: Sendable {
         }
     }
 
+    #if os(macOS)
+        public func openSession(_ loaded: ExecLoadedPolicy, argv: [String], env: [String: String]) -> ExecSession? {
+            ExecMacRun(launcher: self, loaded: loaded, argv: argv, env: env, stdin: nil).openSession()
+        }
+    #endif
+
     func runBlocking(_ loaded: ExecLoadedPolicy, argv: [String], env: [String: String], stdin: Data? = nil) -> ExecOutcome {
         #if os(macOS)
             return ExecMacRun(launcher: self, loaded: loaded, argv: argv, env: env, stdin: stdin).execute()
@@ -96,42 +102,56 @@ public struct ExecLauncher: Sendable {
 }
 
 #if os(macOS)
-    private struct ExecMacRun {
+    struct ExecMacRun {
         let launcher: ExecLauncher
         let loaded: ExecLoadedPolicy
         let argv: [String]
         let env: [String: String]
         let stdin: Data?
 
+        enum Prepared {
+            case ready(profilePath: String, environment: [String: String], marker: String)
+            case failed(ExecOutcome)
+        }
+
         func execute() -> ExecOutcome {
+            switch prepare() {
+            case .failed(let outcome): return outcome
+            case .ready(let profilePath, let environment, let marker):
+                defer { unlink(profilePath) }
+                return start(profilePath: profilePath, environment: environment, marker: marker)
+            }
+        }
+
+        func prepare() -> Prepared {
             let policy = loaded.policy
             let facts = launcher.facts?() ?? ExecBackends.probe()
             let selection: ExecSelection
             do {
                 selection = try ExecBackends.select(policy: policy, facts: facts, dataDirectory: loaded.dataDirectory)
             } catch {
-                return .launchFailed
+                return .failed(.launchFailed)
             }
             switch selection {
-            case .refused(let refusal): return ExecOutcome(code: refusal.code, refusal: refusal)
-            case .backend(.linux): return .launchFailed
+            case .refused(let refusal): return .failed(ExecOutcome(code: refusal.code, refusal: refusal))
+            case .backend(.linux): return .failed(.launchFailed)
             case .backend(.seatbelt): break
             }
             let marker = Self.newMarker()
-            guard let childEnvironment = childEnvironment(marker: marker), checkedArgv() else { return .launchFailed }
+            guard let childEnvironment = childEnvironment(marker: marker), checkedArgv() else { return .failed(.launchFailed) }
             let port: UInt16? = policy.hosts.isEmpty ? nil : launcher.proxyPort()
-            if !policy.hosts.isEmpty, port == nil { return .launchFailed }
+            if !policy.hosts.isEmpty, port == nil { return .failed(.launchFailed) }
             let profile: String
             do {
                 profile = try ExecSeatbeltProfile.render(policy, context: ExecSeatbeltContext(home: loaded.home, proxyPort: port))
             } catch {
-                return .launchFailed
+                return .failed(.launchFailed)
             }
-            guard let profilePath = Self.writeProfile(profile, dataDirectory: loaded.dataDirectory) else { return .launchFailed }
-            defer { unlink(profilePath) }
-            let environment =
-                childEnvironment.merging(Self.proxyEnvironment(port)) { _, proxied in proxied }
-            return start(profilePath: profilePath, environment: environment, marker: marker)
+            guard let profilePath = Self.writeProfile(profile, dataDirectory: loaded.dataDirectory) else {
+                return .failed(.launchFailed)
+            }
+            let environment = childEnvironment.merging(Self.proxyEnvironment(port)) { _, proxied in proxied }
+            return .ready(profilePath: profilePath, environment: environment, marker: marker)
         }
 
         static func newMarker() -> String {

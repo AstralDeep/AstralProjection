@@ -408,6 +408,17 @@ nonisolated enum KernelMapping {
         ("connection.step_up_limit", "This service keeps asking for more permissions. Check it and try again later."),
         ("connection.not_signed_in", "Sign in to this connection first."),
         ("connection.device_code_unavailable", "This device cannot sign in with a code."),
+        ("connection.key_required", "Paste a key to continue."),
+        ("connection.no_key", "This connection does not use a pasted key."),
+        ("connection.recipients_empty", "Select at least one device."),
+        ("a2a.card_changed", "The agent's card changed. Review it before using the agent."),
+        ("a2a.signer_changed", "A different signer now signs the agent's card. Review it."),
+        ("a2a.origin_changed", "The agent's card moved to another site. Review it."),
+        ("a2a.extended_changed", "The agent's extended card changed. Review it."),
+        ("a2a.extended_unreviewed", "The agent's extended card needs your review."),
+        ("a2a.interface_offsite", "The agent points to a site you did not approve."),
+        ("a2a.insecure_url", "Use an https address for the agent card."),
+        ("a2a.scheme_unsupported", "This agent signs in a way this device cannot use."),
         ("oauth.state_mismatch", "That sign-in did not match the one you started. It was refused."),
         ("connection.", "The connection could not be changed or was refused."),
         ("oauth.browser_failed", "The browser could not open the sign-in or it did not finish."),
@@ -492,7 +503,16 @@ nonisolated enum KernelMapping {
             local: value.local, device: value.device, scheme: value.scheme, issuer: value.issuer,
             issuerHost: value.issuerHost, redirectHost: value.redirectHost, scopes: value.scopes,
             resource: value.resource, clientId: value.clientId, tools: value.tools.map(connectionTool),
-            egress: value.egress, flowHint: value.flowHint, replaces: value.replaces, expiresMs: value.expiresMs)
+            egress: value.egress, flowHint: value.flowHint, replaces: value.replaces, expiresMs: value.expiresMs,
+            kind: value.kind, card: value.card.map(proposedCard), keyHeader: value.keyHeader,
+            keyFormat: value.keyFormat, keyItem: value.keyItem, models: value.models,
+            keyRecipients: value.keyRecipients)
+    }
+
+    static func proposedCard(_ value: ConnectionCard) -> MeshProposedCard {
+        MeshProposedCard(
+            url: value.url, hash: value.hash, origin: value.origin, signer: value.signer, signed: value.signed,
+            extendedHash: value.extendedHash, extendedPending: value.extendedPending, skills: value.skills)
     }
 
     static func connectionState(_ value: ConnectionState) -> MeshConnectionState {

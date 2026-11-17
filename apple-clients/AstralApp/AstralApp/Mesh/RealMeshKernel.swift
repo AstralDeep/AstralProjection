@@ -56,6 +56,13 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
                 await kernel.close()
                 throw error
             }
+            #if os(macOS)
+                let directory: String = config.dataDirectory.path
+                do { try kernel.setLauncher(launcher: MacStdioLauncher(dataDirectory: directory)) } catch {
+                    await kernel.close()
+                    throw error
+                }
+            #endif
             do { try kernel.setPhiPrompt(prompt: KernelPhiPrompt(phiPrompt)) } catch {
                 await kernel.close()
                 throw error
@@ -655,6 +662,48 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
             return KernelMapping.connectionProposal(
                 try await kernel.proposeConnection(endpoint: endpoint, name: name, local: local))
         } catch { throw KernelMapping.error(error) }
+    }
+
+    func proposeA2AConnection(cardURL: String, name: String, key: String?, recipients: [String]?) async throws
+        -> MeshConnectionProposal
+    {
+        do {
+            return KernelMapping.connectionProposal(
+                try await kernel.proposeA2aConnection(cardUrl: cardURL, name: name, key: key, recipients: recipients))
+        } catch { throw KernelMapping.error(error) }
+    }
+
+    func proposeKeyConnection(endpoint: String, name: String, local: Bool, key: String, recipients: [String]?)
+        async throws -> MeshConnectionProposal
+    {
+        do {
+            return KernelMapping.connectionProposal(
+                try await kernel.proposeKeyConnection(
+                    endpoint: endpoint, name: name, local: local, key: key, recipients: recipients))
+        } catch { throw KernelMapping.error(error) }
+    }
+
+    func proposeHttpApiConnection(_ draft: MeshHttpApiDraft) async throws -> MeshConnectionProposal {
+        let wire = HttpApiConnectionDraft(
+            name: draft.name, endpoint: draft.endpoint, header: draft.header, format: draft.format, key: draft.key,
+            recipients: draft.recipients, operations: [])
+        do {
+            return KernelMapping.connectionProposal(try await kernel.proposeHttpApiConnection(draft: wire))
+        } catch { throw KernelMapping.error(error) }
+    }
+
+    func proposeModelConnection(_ draft: MeshModelConnectionDraft) async throws -> MeshConnectionProposal {
+        do {
+            return KernelMapping.connectionProposal(
+                try await kernel.proposeModelConnection(
+                    name: draft.name, endpoint: draft.endpoint, provider: draft.provider, models: draft.models,
+                    apiKeys: draft.apiKeys, recipients: draft.recipients))
+        } catch { throw KernelMapping.error(error) }
+    }
+
+    func setConnectionKey(id: String, secrets: [MeshConnectionSecret], recipients: [String]?) throws {
+        let entries: [ConnectionKeyEntry] = secrets.map { ConnectionKeyEntry(name: $0.name, value: $0.value) }
+        try mapped { try kernel.setConnectionKey(id: id, secrets: entries, recipients: recipients) }
     }
 
     func reviewConnection(id: String) async throws -> MeshConnectionProposal {

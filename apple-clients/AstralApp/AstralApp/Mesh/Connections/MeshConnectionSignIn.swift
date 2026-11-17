@@ -36,6 +36,25 @@ typealias MeshWebAuthSessionFactory =
     @MainActor (_ url: URL, _ completion: @escaping @MainActor (Result<URL, MeshWebAuthFailure>) -> Void)
     -> any MeshWebAuthSession
 
+nonisolated enum MeshConnectionSignInRoute: Equatable, Sendable {
+    case browser
+    case key
+    case none
+    case unsupported
+
+    static let redirect: MeshSignInRedirect = .appLink
+
+    static func of(_ connection: MeshConnection) -> MeshConnectionSignInRoute {
+        guard connection.supportedHere else { return .unsupported }
+        switch connection.scheme {
+        case "oauth", "oidc", "openid", "openid-connect": return .browser
+        case "key": return .key
+        case nil, "none": return .none
+        default: return .unsupported
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class MeshConnectionSignIn {
@@ -85,7 +104,7 @@ final class MeshConnectionSignIn {
         phase = .starting
         let start: MeshSignInStart
         do {
-            start = try await service.beginConnectionSignIn(id: id, redirect: .appLink)
+            start = try await service.beginConnectionSignIn(id: id, redirect: MeshConnectionSignInRoute.redirect)
         } catch {
             phase = .failed(MeshRuntime.describe(error))
             return
