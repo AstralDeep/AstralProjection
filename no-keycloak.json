@@ -17,50 +17,6 @@
   ],
   "pending": [
     {
-      "path": "android-client/README.md",
-      "until": "task 15"
-    },
-    {
-      "path": "android-client/app/build.gradle.kts",
-      "until": "task 15"
-    },
-    {
-      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/AppConfig.kt",
-      "until": "task 15"
-    },
-    {
-      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/AstralApp.kt",
-      "until": "task 15"
-    },
-    {
-      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/MainActivity.kt",
-      "until": "task 15"
-    },
-    {
-      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/auth/KeycloakLogout.kt",
-      "until": "task 15"
-    },
-    {
-      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/auth/OidcAuth.kt",
-      "until": "task 15"
-    },
-    {
-      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/auth/OidcEndpoints.kt",
-      "until": "task 15"
-    },
-    {
-      "path": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/deployment/ClientDeploymentProfile.kt",
-      "until": "task 15"
-    },
-    {
-      "path": "android-client/docs/play-store-release.md",
-      "until": "task 15"
-    },
-    {
-      "path": "android-client/docs/push-notification-adapter.md",
-      "until": "task 15"
-    },
-    {
       "path": "windows-client/Launch-AstralDeep-Local.bat",
       "until": "task 16"
     },

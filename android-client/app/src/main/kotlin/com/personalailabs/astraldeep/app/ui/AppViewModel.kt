@@ -10,13 +10,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import com.personalailabs.astraldeep.app.AppConfig
 import com.personalailabs.astraldeep.app.auth.ConversationResumeStore
 import com.personalailabs.astraldeep.app.auth.ConversationResumeStore.AccountIdentity
 import com.personalailabs.astraldeep.app.auth.ConversationResumeStore.ClearReason
-import com.personalailabs.astraldeep.app.auth.MeshEnrollmentCustody
-import com.personalailabs.astraldeep.app.auth.MeshEnrollmentScope
-import com.personalailabs.astraldeep.app.auth.MeshKeyStorage
 import com.personalailabs.astraldeep.app.rest.AstralRest
 import com.personalailabs.astraldeep.app.rest.AuditEvent
 import com.personalailabs.astraldeep.app.transport.ConnectionState
@@ -273,8 +269,6 @@ class AppViewModel(
     private val rest: AstralRest,
     private val resumeStore: ConversationResumeStore? = null,
     private val voiceController: VoiceSessionController? = null,
-    private val meshStorage: MeshKeyStorage? = null,
-    private val meshServerBase: String = AppConfig.API_BASE,
 ) : ViewModel() {
     private data class PendingVoiceActivation(
         val action: String,
@@ -296,7 +290,6 @@ class AppViewModel(
     private var desiredViewport: DeviceCapabilities? = null
     private val viewportInteractions = mutableSetOf<Any>()
     private var token: String? = null
-    private var meshCustody: MeshEnrollmentCustody? = null
     private var meshOperation: Job? = null
     private var meshOperationEpoch = 0L
     private var device: DeviceCapabilities? = null
@@ -438,15 +431,7 @@ class AppViewModel(
         this.device = device
         val nextAccount = ConversationResumeStore.accountFromAccessToken(token)
         val previousAccount = account
-        val meshRetained =
-            if (previousAccount == null && nextAccount != null) {
-                val scope = runCatching { MeshEnrollmentScope(meshServerBase, nextAccount.issuer, nextAccount.subject) }.getOrNull()
-                if (scope == null) retireMeshCustody() else meshStorage?.retainOnlyMesh(scope.storageKey) ?: true
-            } else if (previousAccount != nextAccount) {
-                retireMeshCustody()
-            } else {
-                true
-            }
+        if (previousAccount != nextAccount) cancelMeshPresentation()
         if (previousAccount != nextAccount) workspaceEpoch++
         if (previousAccount != null && nextAccount != null && previousAccount != nextAccount) {
             viewModelScope.coroutineContext.cancelChildren()
@@ -463,9 +448,6 @@ class AppViewModel(
                 )
         } else if (_state.value.activeChatId == null && locatedChat != null) {
             _state.value = _state.value.copy(activeChatId = locatedChat)
-        }
-        if (!meshRetained) {
-            _state.update { it.copy(surfaceErrorMessage = "The protected device identity could not be restored. Retry sign-in.") }
         }
         session?.cancel()
         snapshotTimeout?.cancel()
@@ -936,86 +918,6 @@ class AppViewModel(
         dismissMeshIdentity()
     }
 
-    private fun retireMeshCustody(): Boolean {
-        cancelMeshPresentation()
-        val cleared = meshStorage?.retainOnlyMesh(null) ?: true
-        if (cleared) meshCustody = null
-        return cleared
-    }
-
-    private fun performMeshAction(
-        action: String,
-        payload: JsonObject,
-    ) {
-        val owner = account ?: return
-        val storage = meshStorage ?: return
-        if (meshOperation?.isActive == true) return
-        val scope = runCatching { MeshEnrollmentScope(meshServerBase, owner.issuer, owner.subject) }.getOrNull()
-        if (scope == null) {
-            _state.update {
-                it.copy(
-                    surfaceErrorMessage = "Connect securely before using device enrollment.",
-                    surfaceOutcomeRevision = it.surfaceOutcomeRevision + 1,
-                )
-            }
-            return
-        }
-        val epoch = workspaceEpoch
-        val operation = ++meshOperationEpoch
-        val connection = _state.value.connectionGeneration
-        val surface = _state.value.pendingSurface
-        val custody = meshCustody ?: MeshEnrollmentCustody(scope, storage).also { meshCustody = it }
-        if (!custody.scope.same(scope)) return
-
-        fun current(): Boolean =
-            meshOperationEpoch == operation && account == owner && workspaceEpoch == epoch &&
-                _state.value.connection == ConnectionState.Connected &&
-                _state.value.connectionGeneration == connection && _state.value.screen == Screen.Surface &&
-                _state.value.pendingSurfaceKey == "mesh" && _state.value.pendingSurface == surface && token != null
-        meshOperation =
-            viewModelScope.launch {
-                try {
-                    if (!current()) return@launch
-                    if (action == "chrome_mesh_redeem") {
-                        val fields = payload["fields"] as? JsonObject ?: return@launch
-                        if (payload.keys != setOf("fields") || fields.keys != setOf("link")) return@launch
-                        val link = (fields["link"] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return@launch
-                        custody.redeem(link, ::current)
-                        if (!current()) return@launch
-                        _state.update { it.copy(banner = "This device joined your mesh.", bannerKind = "info") }
-                        requestSettingsSurface("mesh", JsonObject(emptyMap()))
-                    } else {
-                        val identity = custody.publicIdentity(::current)
-                        if (!current()) return@launch
-                        if (action == "chrome_mesh_identity") {
-                            if (payload.isNotEmpty()) return@launch
-                            _state.update { it.copy(meshPublicIdentity = identity.toString()) }
-                        } else {
-                            val fields = payload["fields"] as? JsonObject ?: return@launch
-                            if (payload.keys != setOf("fields") ||
-                                fields.keys != setOf("label", "device_key", "scopes", "ttl_seconds")
-                            ) {
-                                return@launch
-                            }
-                            val prepared = JsonObject(fields + ("device_key" to JsonPrimitive(identity.toString())))
-                            sendEvent(action, buildJsonObject { put("fields", prepared) })
-                        }
-                    }
-                } catch (_: Exception) {
-                    if (current()) {
-                        _state.update {
-                            it.copy(
-                                surfaceErrorMessage = "Device enrollment was not completed. Check approval and retry.",
-                                surfaceOutcomeRevision = it.surfaceOutcomeRevision + 1,
-                            )
-                        }
-                    }
-                } finally {
-                    if (meshOperationEpoch == operation) meshOperation = null
-                }
-            }
-    }
-
     fun sendEvent(
         action: String,
         payload: JsonObject = JsonObject(emptyMap()),
@@ -1029,21 +931,13 @@ class AppViewModel(
             ) {
                 return
             }
-            val fields = payload["fields"] as? JsonObject
-            if (action in setOf("chrome_mesh_identity", "chrome_mesh_redeem") ||
-                action == "chrome_mesh_create" && (fields?.get("device_key") as? JsonPrimitive)?.contentOrNull == ""
-            ) {
-                performMeshAction(action, payload)
-                return
+            _state.update {
+                it.copy(
+                    surfaceErrorMessage = "Mesh devices are managed from the personal mesh.",
+                    surfaceOutcomeRevision = it.surfaceOutcomeRevision + 1,
+                )
             }
-            if (action == "chrome_mesh_create" &&
-                runCatching {
-                    MeshEnrollmentCustody.validatePublicIdentity((fields?.get("device_key") as? JsonPrimitive)?.contentOrNull ?: "")
-                }.isFailure
-            ) {
-                _state.update { it.copy(surfaceErrorMessage = "The public device identity is invalid.") }
-                return
-            }
+            return
         }
         val surface = (payload["surface"] as? JsonPrimitive)?.contentOrNull.orEmpty()
         if (action == "compose_prompt" || action == "chat_message" && _state.value.pendingSurfaceKey == "agent_intro") {
@@ -2376,7 +2270,7 @@ class AppViewModel(
     }
 
     fun clearConversationForSignOut(): Boolean {
-        val meshCleared = retireMeshCustody()
+        cancelMeshPresentation()
         cancelVoicePreparation()
         cancelViewportRefresh()
         workspaceEpoch++
@@ -2393,7 +2287,7 @@ class AppViewModel(
         attachSeq = 0
         seqState.clear()
         _state.value = UiState()
-        return cleared && meshCleared
+        return cleared
     }
 
     private fun isDefinitiveCurrentChatMiss(
@@ -3245,9 +3139,8 @@ class AppViewModel(
             rest: AstralRest,
             resumeStore: ConversationResumeStore? = null,
             voiceController: VoiceSessionController? = null,
-            meshStorage: MeshKeyStorage? = null,
         ) = viewModelFactory {
-            initializer { AppViewModel(client, rest, resumeStore, voiceController, meshStorage) }
+            initializer { AppViewModel(client, rest, resumeStore, voiceController) }
         }
     }
 

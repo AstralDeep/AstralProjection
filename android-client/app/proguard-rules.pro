@@ -17,5 +17,3 @@
 -dontwarn okio.**
 -dontwarn org.conscrypt.**
 
-# AppAuth (net.openid.appauth) uses reflection over its request/response models.
--keep class net.openid.appauth.** { *; }
