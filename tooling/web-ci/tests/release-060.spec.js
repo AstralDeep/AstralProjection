@@ -1,4 +1,4 @@
-// Playwright release gate against a staged deployment: Keycloak sign-in, chat, reload and resume,
+// Playwright release gate against a staged deployment: chat, reload and resume,
 // agent authoring and lifecycle, and accessibility; emits platform evidence and coverage for
 // release-runner.mjs.
 
@@ -285,21 +285,12 @@ async function installWireObserver(page) {
     agentLifecycle: [],
     chatStatuses: [],
     operationStatuses: [],
-    registerTokens: [],
     snapshots: [],
     socketCloses: 0,
     socketOpens: 0,
   };
   page.on("websocket", (socket) => {
     observed.socketOpens += 1;
-    socket.on("framesent", ({ payload }) => {
-      try {
-        const frame = JSON.parse(payload);
-        if (frame.type === "register_ui") observed.registerTokens.push(frame.token);
-      } catch {
-        // Non-JSON frames are never registrations.
-      }
-    });
     socket.on("close", () => { observed.socketCloses += 1; });
     socket.on("framereceived", ({ payload }) => {
       let frame;
@@ -357,59 +348,6 @@ async function installWireObserver(page) {
     }
   });
   return observed;
-}
-
-
-async function seedPriorPrincipalDecoy(page, baseUrl) {
-  const staleToken = `x.${Buffer.from(JSON.stringify({
-    iss: "https://stale.invalid/realms/Astral",
-    sub: "prior-principal",
-  })).toString("base64url")}.x`;
-  const origin = new URL(baseUrl).origin;
-  await page.addInitScript(({ expectedOrigin, value }) => {
-    if (location.origin === expectedOrigin) {
-      sessionStorage.setItem("astraldeep.token", value);
-    }
-  }, { expectedOrigin: origin, value: staleToken });
-  return staleToken;
-}
-
-
-function jwtSubject(token) {
-  const payload = token.split(".")[1];
-  if (!payload) return null;
-  return JSON.parse(Buffer.from(payload, "base64url").toString("utf8")).sub ?? null;
-}
-
-
-async function verifyCurrentSessionOwnsWebSocket(page, wire, staleToken) {
-  const session = await page.evaluate(async () => {
-    const response = await fetch("/auth/session", { credentials: "same-origin" });
-    return response.json();
-  });
-  expect(session.authenticated).toBe(true);
-  await expect.poll(() => wire.registerTokens.length, { timeout: 30_000 }).toBeGreaterThan(0);
-  expect(wire.registerTokens[0]).toBe(session.access_token);
-  expect(wire.registerTokens[0]).not.toBe(staleToken);
-  expect(jwtSubject(wire.registerTokens[0])).toBe(session.user_id);
-}
-
-
-async function signInThroughKeycloak(page, baseUrl, username, password) {
-  const started = performance.now();
-  await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
-  const usernameField = page.locator('input[name="username"]');
-  await usernameField.waitFor({ state: "visible", timeout: 30_000 });
-  expect(new URL(page.url()).origin).not.toBe(new URL(baseUrl).origin);
-  await usernameField.fill(username);
-  await page.locator('input[name="password"]').fill(password);
-  await page.locator('button[type="submit"], input[type="submit"]').first().click();
-  await page.waitForURL((url) => url.origin === new URL(baseUrl).origin, { timeout: 60_000 });
-  await expect(page.locator("#astral-input")).toBeVisible({ timeout: 30_000 });
-  const leakedStorage = await page.evaluate(() => [...Object.keys(localStorage), ...Object.keys(sessionStorage)]
-    .filter((key) => /(?:access|refresh)[_-]?token|password|secret/iu.test(key)));
-  expect(leakedStorage).toEqual([]);
-  return { durationMs: performance.now() - started, leakedStorageKeys: leakedStorage.length };
 }
 
 
@@ -546,7 +484,7 @@ async function verifyAccessibility(page) {
 }
 
 
-test("real Keycloak candidate browser release flow", async ({ context, page }) => {
+test("candidate browser release flow", async ({ context, page }) => {
   test.setTimeout(15 * 60 * 1000);
   const baseUrl = normalizeBaseUrl(requiredEnvironment("ASTRAL_RELEASE_BASE_URL"));
   const candidateSha = requiredEnvironment("ASTRAL_RELEASE_CANDIDATE_SHA");
@@ -563,7 +501,6 @@ test("real Keycloak candidate browser release flow", async ({ context, page }) =
   }
   expect(await context.cookies()).toEqual([]);
   const wire = await installWireObserver(page);
-  const stalePriorPrincipalToken = await seedPriorPrincipalDecoy(page, baseUrl);
   await page.coverage.startJSCoverage({ reportAnonymousScripts: false, resetOnNavigation: false });
   const startedAt = new Date().toISOString();
   const rawRoot = resolve(dirname(output), "web-raw");
@@ -594,23 +531,8 @@ test("real Keycloak candidate browser release flow", async ({ context, page }) =
     return artifact;
   };
 
-  const signIn = await signInThroughKeycloak(
-    page,
-    baseUrl,
-    requiredEnvironment("ASTRAL_RELEASE_USERNAME"),
-    requiredEnvironment("ASTRAL_RELEASE_PASSWORD"),
-  );
-  await verifyCurrentSessionOwnsWebSocket(page, wire, stalePriorPrincipalToken);
-  const signInArtifact = await writeRaw("sign_in", {
-    authenticatedOrigin: new URL(page.url()).origin,
-    durationMs: Math.round(signIn.durationMs),
-    freshContext: true,
-    leakedStorageKeys: signIn.leakedStorageKeys,
-    method: "keycloak_ui_authorization_code_pkce",
-    sharedTabStaleTokenRejected: true,
-    websocketPrincipalMatchesCookieSession: true,
-  });
-  const signInScreenshot = await writeScreenshot("sign_in");
+  await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
+  await expect(page.locator("#astral-input")).toBeVisible({ timeout: 30_000 });
 
   const chat = await runRenderedChat(page);
   const chatArtifact = await writeRaw("rendered_chat", {
@@ -693,10 +615,6 @@ test("real Keycloak candidate browser release flow", async ({ context, page }) =
     unavailable_reason: null,
     unavailability_observation: null,
     checks: [
-      passedCheck("sign_in", signIn.durationMs, [signInArtifact, signInScreenshot], [
-        measurement("sign_in_duration_ms", "maximum", Math.round(signIn.durationMs), "milliseconds", 1, "lte", 180_000),
-        measurement("credential_storage_leaks", "total", signIn.leakedStorageKeys, "count", 1, "eq", 0),
-      ]),
       passedCheck("rendered_chat", chat.durationMs, [chatArtifact, chatScreenshot], [
         measurement("rendered_chat_duration_ms", "maximum", Math.round(chat.durationMs), "milliseconds", 1, "lte", 900_000),
         measurement("transcript_characters", "total", chat.transcript.length, "count", 1, "gte", 1),

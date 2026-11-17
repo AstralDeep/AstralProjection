@@ -1,0 +1,137 @@
+{
+  "exclude": [
+    "specs/**",
+    "**/tests/**",
+    "backend/tests/**",
+    "scripts/tests/**",
+    "sdk/tests/**",
+    "**/*Tests/**",
+    "**/*UITests/**",
+    "**/src/test/**",
+    "**/src/androidTest/**",
+    "docs/superpowers/**",
+    "provenance/**",
+    ".gitleaksignore",
+    "no-keycloak.json",
+    "apple-clients/ManualQA/**"
+  ],
+  "pending": [
+    {
+      "path": "android-client/README.md",
+      "until": "task 15"
+    },
+    {
+      "path": "android-client/app/build.gradle.kts",
+      "until": "task 15"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/AppConfig.kt",
+      "until": "task 15"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/AstralApp.kt",
+      "until": "task 15"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/MainActivity.kt",
+      "until": "task 15"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/auth/KeycloakLogout.kt",
+      "until": "task 15"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/auth/OidcAuth.kt",
+      "until": "task 15"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/auth/OidcEndpoints.kt",
+      "until": "task 15"
+    },
+    {
+      "path": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/deployment/ClientDeploymentProfile.kt",
+      "until": "task 15"
+    },
+    {
+      "path": "android-client/docs/play-store-release.md",
+      "until": "task 15"
+    },
+    {
+      "path": "android-client/docs/push-notification-adapter.md",
+      "until": "task 15"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralApp/AppModel.swift",
+      "until": "task 13"
+    },
+    {
+      "path": "apple-clients/AstralApp/Info.plist",
+      "until": "task 13"
+    },
+    {
+      "path": "apple-clients/AstralApp/WatchInfo.plist",
+      "until": "task 13"
+    },
+    {
+      "path": "apple-clients/AstralApp/WatchNavigationHarnessInfo.plist",
+      "until": "task 13"
+    },
+    {
+      "path": "apple-clients/AstralCore/Sources/AstralCore/Configuration.swift",
+      "until": "task 14"
+    },
+    {
+      "path": "apple-clients/Config/Base.xcconfig",
+      "until": "task 13"
+    },
+    {
+      "path": "apple-clients/Config/Release.xcconfig",
+      "until": "task 13"
+    },
+    {
+      "path": "apple-clients/MAC-COMPUTER-HOST.md",
+      "until": "task 14"
+    },
+    {
+      "path": "apple-clients/README.md",
+      "until": "task 14"
+    },
+    {
+      "path": "windows-client/Launch-AstralDeep-Local.bat",
+      "until": "task 16"
+    },
+    {
+      "path": "windows-client/README.md",
+      "until": "task 16"
+    },
+    {
+      "path": "windows-client/astral_client/app.py",
+      "until": "task 16"
+    },
+    {
+      "path": "windows-client/astral_client/auth.py",
+      "until": "task 16"
+    },
+    {
+      "path": "windows-client/astral_client/deployment.py",
+      "until": "task 16"
+    },
+    {
+      "path": "windows-client/astral_client/rest.py",
+      "until": "task 16"
+    },
+    {
+      "path": "windows-client/deployment/local-backend-profile.json",
+      "until": "task 16"
+    },
+    {
+      "path": "windows-client/deployment/release-profile.json",
+      "until": "task 16"
+    },
+    {
+      "path": "workflows-disabled/build-windows-candidate.yml",
+      "until": "T8.6",
+      "bound_by": "workflows-disabled/release-windows.yml"
+    }
+  ]
+}

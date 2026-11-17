@@ -90,7 +90,7 @@ keystore, and Play operator session are not repository secrets.
 | Apple test bundles | Existing `com.personalailabs.astraldeep.*tests` identifiers |
 
 The Play Console application, App Store Connect Universal Purchase record,
-provisioning profiles, certificates, and Keycloak registrations stay attached
+provisioning profiles, and certificates stay attached
 to these identities. A repository rename or redirect proves none of them.
 
 ## Build-number observations and required live checks
