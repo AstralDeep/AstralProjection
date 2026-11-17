@@ -39,7 +39,7 @@
 
         func testTopicNavigationUsesOnlyCurrentEnabledServerActions() throws {
             let model = AppModel(
-                tokenStore: InMemoryTokenStore(), defaults: UserDefaults(suiteName: UUID().uuidString)!)
+                defaults: UserDefaults(suiteName: UUID().uuidString)!)
             model.signedIn = true
             model.connected = true
             model.screen = .surface

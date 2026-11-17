@@ -20,7 +20,7 @@
             let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
             addTeardownBlock { UserDefaults().removePersistentDomain(forName: suite) }
             let model = AppModel(
-                conversationResumeStore: ConversationResumeStore(defaults: defaults), tokenStore: InMemoryTokenStore(),
+                conversationResumeStore: ConversationResumeStore(defaults: defaults),
                 defaults: defaults, computerHost: host, processActivity: RecordingActivityScheduler())
             model.signedIn = true
             model.connected = true

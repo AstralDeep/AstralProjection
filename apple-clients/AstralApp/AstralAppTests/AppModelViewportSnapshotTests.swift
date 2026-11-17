@@ -31,7 +31,7 @@ final class AppModelViewportSnapshotTests: XCTestCase {
     }
 
     private func model(initialSnapshot: Bool = true) -> (AppModel, Frames) {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.bindConversationAccount(ConversationAccount(issuer: "https://test.invalid", subject: "viewport-owner")!)
         model.signedIn = true
         model.connected = true
@@ -405,7 +405,7 @@ final class AppModelViewportSnapshotTests: XCTestCase {
     }
 
     func testInitialViewportWithoutSettledSnapshotNeverClaimsFailedSavedContent() async {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.signedIn = true
         model.connected = true
         model.bindConversationAccount(ConversationAccount(issuer: "https://test.invalid", subject: "initial-owner")!)

@@ -24,7 +24,7 @@ final class NestedComponentActionTests: XCTestCase {
     private func ready() -> AppModel {
         let suite = "NestedComponentActionTests.\(UUID().uuidString)"
         suites.append(suite)
-        let model = AppModel(tokenStore: InMemoryTokenStore(), defaults: UserDefaults(suiteName: suite)!)
+        let model = AppModel(defaults: UserDefaults(suiteName: suite)!)
         model.signedIn = true
         model.connected = true
         model.bindConversationAccount(ConversationAccount(issuer: "https://iam.test", subject: "owner")!)

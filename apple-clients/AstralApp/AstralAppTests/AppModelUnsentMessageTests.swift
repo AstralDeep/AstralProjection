@@ -32,7 +32,7 @@ final class AppModelUnsentMessageTests: XCTestCase {
         let model = AppModel(
             conversationResumeStore: ConversationResumeStore(defaults: defaults),
             unsentMessageStore: store,
-            tokenStore: InMemoryTokenStore(), defaults: defaults)
+            defaults: defaults)
         model.bindConversationAccount(account ?? self.account)
         model.signedIn = true
         model.connected = true

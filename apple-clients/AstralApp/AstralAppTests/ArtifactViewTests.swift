@@ -169,7 +169,7 @@ final class ArtifactViewTests: XCTestCase {
 
     #if os(macOS)
         private func mount(_ json: String, width: CGFloat) throws -> (NSWindow, NSHostingView<AnyView>) {
-            let model = AppModel(tokenStore: InMemoryTokenStore())
+            let model = AppModel()
             let theme = ThemeStore()
             let view = NSHostingView(
                 rootView: AnyView(

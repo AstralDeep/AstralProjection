@@ -15,8 +15,7 @@ final class WorkspaceAction088Tests: XCTestCase {
     private func ready() -> AppModel {
         let defaults = UserDefaults(suiteName: "WorkspaceAction088.\(UUID().uuidString)")!
         let model = AppModel(
-            conversationResumeStore: ConversationResumeStore(defaults: defaults),
-            tokenStore: InMemoryTokenStore())
+            conversationResumeStore: ConversationResumeStore(defaults: defaults))
         model.signedIn = true
         model.bindConversationAccount(ConversationAccount(issuer: "https://iam.test", subject: "one")!)
         model.activeChatId = chat

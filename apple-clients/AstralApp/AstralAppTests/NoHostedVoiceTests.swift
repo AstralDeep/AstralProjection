@@ -90,7 +90,7 @@ private final class VoiceHarness {
         self.onDevice = onDevice
         self.hosted = hosted
         model = AppModel(
-            tokenStore: InMemoryTokenStore(), defaults: UserDefaults(suiteName: suite)!,
+            defaults: UserDefaults(suiteName: suite)!,
             voiceController: hosted, onDeviceVoiceController: onDevice)
     }
 
@@ -222,7 +222,7 @@ final class NoHostedVoiceTests: XCTestCase {
     }
 
     func testRegistrationDoesNotAdvertiseHostedMedia() throws {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         let value = try JSONValue.parse(Data(model.registrationFrame(token: "token", resumed: false).utf8))
         XCTAssertEqual(value["device"]?["voice_transport"]?.stringValue, "")
         XCTAssertEqual(HostedVoiceRequestRecorder.requests, [])
@@ -244,7 +244,7 @@ final class NoHostedVoiceTests: XCTestCase {
         let hosted = AppleVoiceSessionController(api: api, media: media)
         let onDevice = OnDeviceVoiceController(store: nil)
         let model = AppModel(
-            tokenStore: InMemoryTokenStore(), voiceController: hosted, onDeviceVoiceController: onDevice)
+            voiceController: hosted, onDeviceVoiceController: onDevice)
         await model.activateVoice()
         XCTAssertFalse(onDevice.isRunning)
         XCTAssertEqual(api.startCount + api.takeoverCount + api.startLocalCount + api.endCount, 0)

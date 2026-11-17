@@ -212,7 +212,7 @@ final class SettingsControlTests: XCTestCase {
     }
 
     private func model() -> AppModel {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.signedIn = true
         return model
     }

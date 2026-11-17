@@ -225,7 +225,7 @@
         ) async throws -> (AppModel, ProjectDeletionTestServer) {
             let server = ProjectDeletionTestServer(status: status)
             let model = AppModel(
-                conversationResumeStore: resumeStore, tokenStore: InMemoryTokenStore(),
+                conversationResumeStore: resumeStore,
                 defaults: UserDefaults(suiteName: UUID().uuidString)!)
             model.projects.bind(
                 scope: "owner/server",

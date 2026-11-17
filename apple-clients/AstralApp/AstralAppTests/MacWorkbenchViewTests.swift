@@ -907,7 +907,7 @@
                 defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
                 let model = AppModel(
                     conversationResumeStore: ConversationResumeStore(defaults: defaults),
-                    tokenStore: InMemoryTokenStore(), defaults: defaults)
+                    defaults: defaults)
                 model.signedIn = true
                 model.connected = true
                 model.bindConversationAccount(
@@ -969,7 +969,7 @@
             defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
             let model = AppModel(
                 conversationResumeStore: ConversationResumeStore(defaults: defaults),
-                tokenStore: InMemoryTokenStore(), defaults: defaults)
+                defaults: defaults)
             model.signedIn = true
             model.connected = true
             model.bindConversationAccount(
@@ -1034,7 +1034,7 @@
             defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
             let model = AppModel(
                 conversationResumeStore: ConversationResumeStore(defaults: defaults),
-                tokenStore: InMemoryTokenStore(), defaults: defaults)
+                defaults: defaults)
             model.activeChatId = "reading-chat"
             model.turns = (0..<40).map {
                 .init(
@@ -1071,7 +1071,7 @@
             defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
             let model = AppModel(
                 conversationResumeStore: ConversationResumeStore(defaults: defaults),
-                tokenStore: InMemoryTokenStore(), defaults: defaults)
+                defaults: defaults)
             model.activeChatId = "bubble-chat"
             model.turns = [
                 .init(id: "question", role: "user", text: "Short question"),
@@ -1304,7 +1304,7 @@
             defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
             let model = AppModel(
                 conversationResumeStore: ConversationResumeStore(defaults: defaults),
-                tokenStore: InMemoryTokenStore(), defaults: defaults, computerHost: computer.host)
+                defaults: defaults, computerHost: computer.host)
             model.signedIn = true
             model.connected = true
             model.chromeMenu = try XCTUnwrap(ChromeMenuModel.fromJSON(fixture("chrome-console")))
@@ -1552,7 +1552,7 @@
             let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
             let model = AppModel(
                 conversationResumeStore: ConversationResumeStore(defaults: defaults),
-                tokenStore: InMemoryTokenStore(), defaults: defaults, computerHost: host)
+                defaults: defaults, computerHost: host)
             model.signedIn = true
             model.connected = true
             model.bindConversationAccount(

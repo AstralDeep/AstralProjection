@@ -176,7 +176,7 @@
         }
 
         func testSignedOutWorkCenterDoesNotIssueRequests() async {
-            let model = AppModel(tokenStore: InMemoryTokenStore())
+            let model = AppModel()
             model.restTransportOverride = { _ in
                 XCTFail("signed-out Work must not issue requests")
                 return (200, Data())

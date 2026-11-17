@@ -35,7 +35,7 @@ final class GuidanceRenderer088Tests: XCTestCase {
             let suite = "GuidanceRenderer088.\(UUID().uuidString)"
             let defaults = UserDefaults(suiteName: suite)!
             defer { defaults.removePersistentDomain(forName: suite) }
-            let model = AppModel(tokenStore: InMemoryTokenStore(), defaults: defaults)
+            let model = AppModel(defaults: defaults)
             let theme = ThemeStore()
             let actual = try image(
                 ComponentView(component: component).environment(model).environment(theme).environment(
@@ -89,7 +89,7 @@ final class GuidanceRenderer088Tests: XCTestCase {
             let suite = "GuidanceRenderer088.instructions.\(UUID().uuidString)"
             let defaults = UserDefaults(suiteName: suite)!
             defer { defaults.removePersistentDomain(forName: suite) }
-            let model = AppModel(tokenStore: InMemoryTokenStore(), defaults: defaults)
+            let model = AppModel(defaults: defaults)
             let theme = ThemeStore()
             let notes = try image(
                 ComponentView(component: component).environment(model).environment(theme).environment(

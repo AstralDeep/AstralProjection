@@ -10,7 +10,7 @@ import XCTest
 @MainActor
 final class WorkspacePresentationTests: XCTestCase {
     func testHistorySurfaceUpdatesOnlyHistoryDuringAnActiveConversation() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         XCTAssertTrue(model.beginConversationConnection(connection))
         XCTAssertTrue(model.openConversationRequest(chatId: chat, requestGeneration: request, purpose: .commit))
         model.workspaceStarted = true
@@ -44,7 +44,7 @@ final class WorkspacePresentationTests: XCTestCase {
             "frame_sequence",
         ] {
             for value in ["null", "{}", "1", #""foreign""#] {
-                let model = AppModel(tokenStore: InMemoryTokenStore())
+                let model = AppModel()
                 model.history = [ChatSummary(json: .object(["id": .string("kept")]))!]
                 model.handleFrame(
                     InboundFrame.parse(
@@ -59,7 +59,7 @@ final class WorkspacePresentationTests: XCTestCase {
     }
 
     func testLegacyHistoryFallbackAndUnscopedEmptyHistoryLeaveCanvasUntouched() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         let original = AstralComponent(type: "text", raw: .object(["content": .string("Canvas")]))
         model.canvas = [original]
         model.handleFrame(
@@ -106,7 +106,7 @@ final class WorkspacePresentationTests: XCTestCase {
             ("failed", "88888888-8888-4888-8888-888888888888", request, false),
             ("failed", connection, "88888888-8888-4888-8888-888888888888", false),
         ] {
-            let model = AppModel(tokenStore: InMemoryTokenStore())
+            let model = AppModel()
             XCTAssertTrue(model.beginConversationConnection(connection))
             XCTAssertTrue(model.openConversationRequest(chatId: chat, requestGeneration: request, purpose: .commit))
             let error = state == "completed" ? "null" : #"{"code":"operation_failed","message":"Attempt ended"}"#
@@ -127,7 +127,7 @@ final class WorkspacePresentationTests: XCTestCase {
     }
 
     func testAdmissionRefusalReleasesOnlyItsOwnPendingCommit() throws {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         XCTAssertTrue(model.beginConversationConnection(connection))
         XCTAssertTrue(model.openConversationRequest(chatId: chat, requestGeneration: request, purpose: .hydration))
         var sent: JSONValue?
@@ -147,7 +147,7 @@ final class WorkspacePresentationTests: XCTestCase {
     }
 
     func testNewChatKeepsUsedRequestGenerationReplayProtection() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         XCTAssertTrue(model.beginConversationConnection(connection))
         XCTAssertTrue(model.openConversationRequest(chatId: chat, requestGeneration: request, purpose: .commit))
         model.newChat()
@@ -169,7 +169,7 @@ final class WorkspacePresentationTests: XCTestCase {
     }
 
     func testRegisteredConnectionAndNewChatAcceptOnlyEphemeralWelcome() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         XCTAssertTrue(model.beginConversationConnection(connection))
         model.handleFrame(welcomeFrame)
         XCTAssertEqual(model.visibleCanvas, welcomeFrame.renderComponents)
@@ -192,7 +192,7 @@ final class WorkspacePresentationTests: XCTestCase {
     }
 
     func testWelcomeCannotBypassHydrationOrTransientScopeValidation() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         XCTAssertTrue(model.beginConversationConnection(connection))
         for scopeKey in [
             "chat_id", "connection_generation", "request_generation", "base_render_revision", "frame_sequence",
@@ -224,7 +224,7 @@ final class WorkspacePresentationTests: XCTestCase {
         ]))!
 
     func testSendAndLateWelcomeRemainWorkUntilNewChat() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.canvas = [welcome]
         XCTAssertFalse(model.workspaceStarted)
         model.sendChat("First request")
@@ -245,7 +245,7 @@ final class WorkspacePresentationTests: XCTestCase {
     }
 
     func testDraftAndBackgroundArmStayForSameOwnerReconnectAndClearOnOwnerChange() async {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         let first = ConversationAccount(issuer: "https://iam.example.test", subject: "first")!
         let second = ConversationAccount(issuer: "https://iam.example.test", subject: "second")!
         model.bindConversationAccount(first)
@@ -264,7 +264,7 @@ final class WorkspacePresentationTests: XCTestCase {
     }
 
     func testBackgroundArmAppliesToExactlyOneSendAndKeepsComposerAvailable() throws {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         var sent: [JSONValue] = []
         model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
         model.runInBackground = true
@@ -281,7 +281,7 @@ final class WorkspacePresentationTests: XCTestCase {
     }
 
     func testDeniedAndEmptySendDoNotConsumeBackgroundArm() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.runInBackground = true
         model.sendChat(" \n ")
         XCTAssertTrue(model.runInBackground)
@@ -294,7 +294,7 @@ final class WorkspacePresentationTests: XCTestCase {
 
     func testDelayedDownloadAfterOwnerChangeOrSignOutIsRemoved() async throws {
         for signOut in [false, true] {
-            let model = AppModel(tokenStore: InMemoryTokenStore())
+            let model = AppModel()
             model.signedIn = true
             model.bindConversationAccount(ConversationAccount(issuer: "https://iam.test", subject: "one")!)
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -325,7 +325,7 @@ final class WorkspacePresentationTests: XCTestCase {
     }
 
     func testSameOwnerDownloadSurvivesReconnectButCancellationRemovesFile() async throws {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.signedIn = true
         let account = ConversationAccount(issuer: "https://iam.test", subject: "one")!
         model.bindConversationAccount(account)
@@ -353,7 +353,7 @@ final class WorkspacePresentationTests: XCTestCase {
 
     func testAuditAndAgentsRouteThroughServerOwnedSurface() throws {
         for surface in ["audit", "agents"] {
-            let model = AppModel(tokenStore: InMemoryTokenStore())
+            let model = AppModel()
             var sent: JSONValue?
             model.outboundTap = { sent = try! JSONValue.parse(Data($0.utf8)) }
             model.openSurface(surface, params: .object(["event_type": .string("denied")]))

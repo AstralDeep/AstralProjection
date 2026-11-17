@@ -498,7 +498,7 @@ final class CanvasCapture088Tests: XCTestCase {
     private func model() -> AppModel {
         let defaults = UserDefaults(suiteName: "CanvasCapture088.\(UUID().uuidString)")!
         let model = AppModel(
-            conversationResumeStore: ConversationResumeStore(defaults: defaults), tokenStore: InMemoryTokenStore(),
+            conversationResumeStore: ConversationResumeStore(defaults: defaults),
             defaults: defaults)
         model.signedIn = true
         model.activeChatId = "synthetic"

@@ -39,12 +39,27 @@ public struct MeshSurfaceRequest: Equatable, Sendable {
                 Self.text(fields["ttl_seconds"], maximum: 16),
                 let raw = fields["device_key"]?.stringValue, raw.utf8.count <= 2048,
                 let key = try? JSONValue.parse(Data(raw.utf8)),
-                (try? MeshEnrollmentCustody.validatePublicIdentity(key)) != nil
+                Self.isPublicIdentity(key)
             else { return nil }
         default: return nil
         }
         self.action = action
         self.payload = payload
+    }
+
+    private static func isPublicIdentity(_ identity: JSONValue) -> Bool {
+        guard Set(identity.objectValue?.keys.map { $0 } ?? []) == ["kty", "crv", "x"],
+            identity["kty"] == .string("OKP"), identity["crv"] == .string("Ed25519"),
+            let raw = identity["x"]?.stringValue
+        else { return false }
+        var padded = raw.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        while padded.count % 4 != 0 { padded += "=" }
+        guard raw.range(of: "^[A-Za-z0-9_-]+$", options: .regularExpression) != nil,
+            let data = Data(base64Encoded: padded), data.count == 32
+        else { return false }
+        let canonical = data.base64EncodedString().replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        return canonical == raw
     }
 
     public init?(frameText: String) {

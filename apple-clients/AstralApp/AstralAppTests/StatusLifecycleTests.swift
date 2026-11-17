@@ -29,7 +29,7 @@ final class StatusLifecycleTests: XCTestCase {
     }
 
     private func preparedModel() -> AppModel {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         XCTAssertTrue(model.beginConversationConnection(connection))
         XCTAssertTrue(
             model.openConversationRequest(
@@ -84,7 +84,7 @@ final class StatusLifecycleTests: XCTestCase {
     }
 
     func testGenericErrorPrefersSafeProviderErrorClassOverOuterEnvelopeCode() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.handleFrame(
             inbound(
                 """
@@ -99,7 +99,7 @@ final class StatusLifecycleTests: XCTestCase {
     }
 
     func testSurfaceSendBeforeActiveChatCorrelatesThroughTerminalStatus() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         XCTAssertTrue(model.beginConversationConnection(connection))
         let sent = capturedFrame(model) {
             model.sendEvent(
@@ -152,7 +152,7 @@ final class StatusLifecycleTests: XCTestCase {
     }
 
     func testAdmissionRefusalClearsOnlyItsCorrelatedLocalSubmission() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         XCTAssertTrue(model.beginConversationConnection(connection))
         let first = capturedFrame(model) {
             model.sendEvent("discover_agents")
@@ -207,7 +207,7 @@ final class StatusLifecycleTests: XCTestCase {
     }
 
     func testDisconnectClearsPendingSurfaceGeneration() async {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         XCTAssertTrue(model.beginConversationConnection(connection))
         let sent = capturedFrame(model) {
             model.sendEvent("discover_agents")
@@ -225,7 +225,7 @@ final class StatusLifecycleTests: XCTestCase {
     }
 
     func testQueuedSurfaceDisconnectReconnectRestoresProjectionBeforeTerminal() async throws {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         XCTAssertTrue(model.beginConversationConnection(connection))
         var queued = ""
         model.outboundTap = { queued = $0 }
@@ -337,7 +337,7 @@ final class StatusLifecycleTests: XCTestCase {
     }
 
     func testTerminalSuccessDoesNotClearAnotherAcceptedOperation() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         XCTAssertTrue(model.beginConversationConnection(connection))
         let first = capturedFrame(model) { model.sendEvent("discover_agents") }
         let second = capturedFrame(model) { model.sendEvent("get_history") }
@@ -382,7 +382,7 @@ final class StatusLifecycleTests: XCTestCase {
     }
 
     func testTerminalSuccessPreservesAnotherLocallySubmittingOperation() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         XCTAssertTrue(model.beginConversationConnection(connection))
         let first = capturedFrame(model) { model.sendEvent("discover_agents") }
         let second = capturedFrame(model) { model.sendEvent("get_history") }
@@ -406,7 +406,7 @@ final class StatusLifecycleTests: XCTestCase {
     }
 
     func testTerminalFailureUsesBannerWithoutActivityStatus() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         XCTAssertTrue(model.beginConversationConnection(connection))
         let sent = capturedFrame(model) { model.sendEvent("discover_agents") }
         let requestGeneration = sent["request_generation"]!.stringValue!
@@ -430,7 +430,7 @@ final class StatusLifecycleTests: XCTestCase {
     }
 
     func testTerminalChatFailureRemovesSkeletonAndProgressPresentation() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         XCTAssertTrue(model.beginConversationConnection(connection))
         let sent = capturedFrame(model) { model.sendChat("hello") }
         let requestGeneration = sent["request_generation"]!.stringValue!

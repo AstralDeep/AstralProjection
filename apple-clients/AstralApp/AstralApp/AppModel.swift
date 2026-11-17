@@ -224,7 +224,7 @@ final class AppModel: NSObject {
                     configurePushNotifications()
                 #endif
                 clearActivity()
-                retireMeshCustody()
+                cancelMeshPresentation()
             }
             defaults.set(serverBaseText, forKey: "serverBase")
             #if os(iOS)
@@ -268,11 +268,8 @@ final class AppModel: NSObject {
     var initialConnectionFailed = false
     var surfaceFailureMessage: String?
     var meshPublicIdentity: String?
-    @ObservationIgnored private var meshCustody: MeshEnrollmentCustody?
     @ObservationIgnored private var meshOperation: Task<Void, Never>?
     @ObservationIgnored private var meshOperationEpoch = 0
-    @ObservationIgnored var meshKeyStorage: any MeshKeyStorage = KeychainMeshKeyStorage()
-    @ObservationIgnored var meshTransport: (URLRequest) async throws -> JSONValue = MeshEnrollmentHTTP.request
     private var ordinarySurfaceRequests: [String: OrdinarySurfaceRequest] = [:]
     private var ordinarySurfaceGeneration: String?
     var evidenceReadGeneration: String? { pendingSurfaceKey == "evidence" ? ordinarySurfaceGeneration : nil }
@@ -566,7 +563,6 @@ final class AppModel: NSObject {
         return acceptedOperationIsActive || turnActive || asyncDetached
     }
 
-    private let store: TokenStorage
     @ObservationIgnored private let credentialClock: @Sendable () -> Date
     @ObservationIgnored private var tokens: TokenSet?
     @ObservationIgnored private var ws: WSClient?
@@ -683,19 +679,10 @@ final class AppModel: NSObject {
         return token
     }
 
-    override convenience init() {
-        #if canImport(Security)
-            self.init(tokenStore: KeychainTokenStore())
-        #else
-            self.init(tokenStore: InMemoryTokenStore())
-        #endif
-    }
-
     init(
         conversationResumeStore: ConversationResumeStore = ConversationResumeStore(),
         outcomeUnknownStore: OutcomeUnknownStore = OutcomeUnknownStore(),
         unsentMessageStore: (any UnsentMessageStorage)? = nil,
-        tokenStore: TokenStorage,
         defaults: UserDefaults = .standard,
         webSocket: WSClient? = nil,
         voiceController: AppleVoiceSessionController? = nil,
@@ -719,10 +706,6 @@ final class AppModel: NSObject {
             self.meshPush = MeshPushCoordinator(
                 rest: AstralConfig.meshPushPublisherURL.flatMap { MeshPushRest(publisherURL: $0) })
         #endif
-        self.store = tokenStore
-        if tokenStore is InMemoryTokenStore {
-            meshKeyStorage = InMemoryMeshKeyStorage()
-        }
         self.credentialClock = credentialClock
         self.ws = webSocket
         self.initialWebSocket = webSocket
@@ -730,7 +713,7 @@ final class AppModel: NSObject {
         self.outcomeUnknownStore = outcomeUnknownStore
         self.unsentMessageStore =
             unsentMessageStore
-            ?? (tokenStore is KeychainTokenStore ? KeychainUnsentMessageStore() : InMemoryUnsentMessageStore())
+            ?? InMemoryUnsentMessageStore()
         self.defaults = defaults
         defaults.removeObject(forKey: "astral.unsentChatMessage.v1")
         #if os(macOS)
@@ -884,7 +867,7 @@ final class AppModel: NSObject {
                 }
             #endif
             if conversationAccount != nil {
-                retireMeshCustody()
+                cancelMeshPresentation()
             }
             retireOrdinarySurfaceRequests()
             parameterRequests = [:]
@@ -1895,7 +1878,7 @@ final class AppModel: NSObject {
         #if os(iOS)
             pushNotifications?.ownerSessionEnded(access: tokens?.accessToken)
         #endif
-        retireMeshCustody()
+        cancelMeshPresentation()
         // Local wipe must precede the async revoke call, before any suspension
         retireCredentialSession()
         let socket = ws
@@ -1956,7 +1939,7 @@ final class AppModel: NSObject {
             clearOutcomeUnknownCard()
         #endif
         clearActivity()
-        retireMeshCustody()
+        cancelMeshPresentation()
         retireCredentialSession()
         retireOrdinarySurfaceRequests()
         parameterRequests = [:]
@@ -5819,14 +5802,6 @@ final class AppModel: NSObject {
         meshPublicIdentity = nil
     }
 
-    private func retireMeshCustody() {
-        cancelMeshPresentation()
-        do { try meshKeyStorage.retainOnly(nil) } catch {
-            surfaceFailureMessage = "The local device identity could not be cleared. Retry sign-out."
-        }
-        meshCustody = nil
-    }
-
     private func meshActionOffered(_ action: String, payload: JSONValue) -> Bool {
         func matches(_ raw: JSONValue) -> Bool {
             raw["action"] == .string(action)
@@ -5845,74 +5820,6 @@ final class AppModel: NSObject {
             return component.children.contains(where: offered)
         }
         return pendingSurface?.components.contains(where: offered) == true
-    }
-
-    private func performMeshAction(_ action: String, payload: JSONValue) {
-        guard meshOperation == nil, let account = conversationAccount, let socket = ws,
-            let scope = try? MeshEnrollmentScope(server: serverBase, account: account)
-        else {
-            surfaceFailureMessage = "Connect securely before using device enrollment."
-            return
-        }
-        let owner = downloadOwner
-        let server = serverBase
-        let connection = continuity.connectionGeneration
-        let navigation = conversationNavigationGeneration
-        let surface = pendingSurface
-        let surfaceGeneration = ordinarySurfaceGeneration
-        meshOperationEpoch += 1
-        let operation = meshOperationEpoch
-        if let custody = meshCustody, custody.scope != scope {
-            retireMeshCustody()
-            return
-        }
-        let custody = meshCustody ?? MeshEnrollmentCustody(scope: scope, storage: meshKeyStorage)
-        meshCustody = custody
-        meshOperation = Task { [weak self] in
-            guard let self else { return }
-            defer { if self.meshOperationEpoch == operation { self.meshOperation = nil } }
-            @MainActor func current() -> Bool {
-                !Task.isCancelled && self.meshOperationEpoch == operation && self.downloadOwner == owner
-                    && self.serverBase == server && self.ws === socket
-                    && self.pendingSurface == surface && self.ordinarySurfaceGeneration == surfaceGeneration
-                    && self.connected && self.screen == .surface && self.pendingSurfaceKey == "mesh"
-                    && self.continuity.connectionGeneration == connection
-                    && self.conversationNavigationGeneration == navigation
-            }
-            guard await self.authenticatedSocketIsCurrent(socket, owner: owner, connection: connection), current()
-            else { return }
-            do {
-                if action == "chrome_mesh_redeem" {
-                    guard Set(payload.objectValue?.keys.map { $0 } ?? []) == ["fields"],
-                        let fields = payload["fields"]?.objectValue, Set(fields.keys) == ["link"],
-                        let link = fields["link"]?.stringValue
-                    else { throw MeshEnrollmentError.invalid }
-                    _ = try await custody.redeem(link: link, current: current, transport: self.meshTransport)
-                    guard current() else { return }
-                    self.errorBanner = "This device joined your mesh."
-                    self.bannerIsError = false
-                    self.openSurface("mesh")
-                } else {
-                    let identity = try custody.publicIdentity(current: current)
-                    guard current() else { return }
-                    if action == "chrome_mesh_identity" {
-                        guard payload.objectValue?.isEmpty == true else { throw MeshEnrollmentError.invalid }
-                        self.meshPublicIdentity = String(decoding: try identity.encoded(), as: UTF8.self)
-                    } else {
-                        guard Set(payload.objectValue?.keys.map { $0 } ?? []) == ["fields"],
-                            var fields = payload["fields"]?.objectValue,
-                            Set(fields.keys) == ["label", "device_key", "scopes", "ttl_seconds"]
-                        else { throw MeshEnrollmentError.invalid }
-                        fields["device_key"] = .string(String(decoding: try identity.encoded(), as: UTF8.self))
-                        self.sendEvent(action, .object(["fields": .object(fields)]))
-                    }
-                }
-            } catch {
-                if current() {
-                    self.surfaceFailureMessage = "Device enrollment was not completed. Check approval and retry."
-                }
-            }
-        }
     }
 
     func sendEvent(_ action: String, _ payload: JSONValue = .object([:])) {
@@ -7503,4 +7410,10 @@ private actor AppRegistrationResumeState {
         next = true
         return value
     }
+}
+
+private enum RefreshResult {
+    case ok(TokenSet)
+    case rejected(String)
+    case transient(String)
 }

@@ -35,7 +35,7 @@ final class AppModelTextOnlyCanvasTests: XCTestCase {
     }
 
     private func continuityModel() -> AppModel {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         XCTAssertTrue(
             model.beginConversationConnection(UUID().uuidString.lowercased()))
         return model
@@ -66,7 +66,7 @@ final class AppModelTextOnlyCanvasTests: XCTestCase {
     }
 
     func testLegacyComponentTurnStillCommitsItsComponents() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.canvas = [welcomeExamples]
         model.sendChat("chart it")
         reduce(model, resultUpsert)
@@ -77,7 +77,7 @@ final class AppModelTextOnlyCanvasTests: XCTestCase {
     }
 
     func testCloseSurfaceDismissesASettingsSurface() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.screen = .surface
         model.pendingSurfaceKey = "llm"
         model.pendingSurface = AppModel.SurfaceContent(
@@ -91,7 +91,7 @@ final class AppModelTextOnlyCanvasTests: XCTestCase {
     }
 
     func testCloseSurfaceRefusesWhileTheMandatoryGateIsPinned() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.screen = .surface
         model.pendingSurfaceKey = "llm"
         model.pendingSurface = AppModel.SurfaceContent(
@@ -105,7 +105,7 @@ final class AppModelTextOnlyCanvasTests: XCTestCase {
     }
 
     func testBlankChromeSurfaceClosesTheSurfaceAndLiftsThePin() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.screen = .surface
         model.pendingSurfaceKey = "llm"
         model.mandatorySurface = true

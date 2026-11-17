@@ -15,7 +15,7 @@ final class WebPrimitiveStyleTests: XCTestCase {
         _ json: String, viewport: CGFloat = 411, preset: String = "graphite",
         width: CGFloat = 320, textSize: DynamicTypeSize = .large, scale: CGFloat = 1
     ) throws -> CGImage {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         let theme = ThemeStore()
         theme.apply(preset: preset)
         let component = try XCTUnwrap(AstralComponent(json: JSONValue.parse(Data(json.utf8))))
@@ -162,7 +162,7 @@ final class WebPrimitiveStyleTests: XCTestCase {
         let code = try render(#"{"type":"code","content":"ok"}"#)
         assertRGB(try rgb(code, x: 300, y: code.height / 2), [35, 35, 40])
         #if os(macOS)
-            let model = AppModel(tokenStore: InMemoryTokenStore())
+            let model = AppModel()
             let theme = ThemeStore()
             let component = try XCTUnwrap(
                 AstralComponent(json: JSONValue.parse(Data(#"{"type":"code","content":"OK OK OK"}"#.utf8))))

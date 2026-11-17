@@ -39,7 +39,7 @@ final class WorkRenderer088Tests: XCTestCase {
             let interpreted = try png(WatchComponentView(component: component).environment(model))
         #else
             let model = AppModel(
-                tokenStore: InMemoryTokenStore(), defaults: UserDefaults(suiteName: "WorkRenderer088Tests.literal")!)
+                defaults: UserDefaults(suiteName: "WorkRenderer088Tests.literal")!)
             let theme = ThemeStore()
             let actual = try png(
                 ComponentView(component: component).environment(model).environment(theme).environment(
@@ -107,7 +107,7 @@ final class WorkRenderer088Tests: XCTestCase {
             let suite = "WorkRenderer088Tests.\(UUID().uuidString)"
             let defaults = UserDefaults(suiteName: suite)!
             defer { defaults.removePersistentDomain(forName: suite) }
-            let model = AppModel(tokenStore: InMemoryTokenStore(), defaults: defaults)
+            let model = AppModel(defaults: defaults)
             let theme = ThemeStore()
             model.signedIn = true
             model.connected = true

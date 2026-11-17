@@ -18,7 +18,7 @@ final class TerminalMonitorAppTests: XCTestCase {
         suites.append(suite)
         let model = AppModel(
             conversationResumeStore: ConversationResumeStore(defaults: defaults),
-            tokenStore: InMemoryTokenStore(), defaults: defaults)
+            defaults: defaults)
         model.signedIn = true
         model.connected = true
         return model

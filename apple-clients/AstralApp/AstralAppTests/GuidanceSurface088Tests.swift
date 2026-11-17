@@ -20,7 +20,7 @@ final class AppGuidanceSurface088Tests: XCTestCase {
         let defaults = UserDefaults(suiteName: suite)!
         let model = AppModel(
             conversationResumeStore: ConversationResumeStore(defaults: defaults),
-            tokenStore: InMemoryTokenStore(), defaults: defaults)
+            defaults: defaults)
         model.signedIn = true
         model.connected = true
         model.bindConversationAccount(ConversationAccount(issuer: "https://iam.example.test", subject: "owner")!)

@@ -1,4 +1,4 @@
-// Resolves the backend URL and realm from a runtime override, then Info.plist, then compiled-in fallbacks —
+// Resolves the backend URL from a runtime override, then Info.plist, then compiled-in fallbacks —
 // headless tests and a malformed override still resolve. Read throughout AppModel and the Views layer.
 
 import Foundation
@@ -14,13 +14,10 @@ public enum KeychainServices {
 
 public enum AstralConfig {
     static let serverBaseURLInfoKey = "ASTRALServerBaseURL"
-    static let keycloakAuthorityInfoKey = "ASTRALKeycloakAuthority"
 
     public static let serverOverrideDefaultsKey = "serverBase"
-    public static let authorityOverrideDefaultsKey = "authority"
 
     public static let fallbackServerBaseURL = "https://sandbox.ai.uky.edu"
-    public static let fallbackKeycloakAuthority = "https://iam.ai.uky.edu/realms/Astral"
 
     public static var serverBaseURL: String { resolvedServerBaseURL() }
 
@@ -31,8 +28,6 @@ public enum AstralConfig {
         return url
     }
 
-    public static var keycloakAuthority: String { resolvedKeycloakAuthority() }
-
     public static func resolvedServerBaseURL(
         bundle: Bundle = .main,
         override: String? = nil
@@ -41,16 +36,6 @@ public enum AstralConfig {
             override: override,
             infoValue: bundle.object(forInfoDictionaryKey: serverBaseURLInfoKey) as? String,
             fallback: fallbackServerBaseURL)
-    }
-
-    public static func resolvedKeycloakAuthority(
-        bundle: Bundle = .main,
-        override: String? = nil
-    ) -> String {
-        resolve(
-            override: override,
-            infoValue: bundle.object(forInfoDictionaryKey: keycloakAuthorityInfoKey) as? String,
-            fallback: fallbackKeycloakAuthority)
     }
 
     // Also rejects unsubstituted build placeholders like $(...)
@@ -70,11 +55,4 @@ public enum AstralConfig {
         else { return nil }
         return trimmed
     }
-
-    public static let iosClientId = "astral-mobile"
-    public static let macosClientId = "astral-desktop"
-    public static let watchClientId = "astral-watch"
-
-    public static let redirectScheme = "com.personalailabs.astraldeep"
-    public static let redirectURI = "com.personalailabs.astraldeep:/oauth2redirect"
 }

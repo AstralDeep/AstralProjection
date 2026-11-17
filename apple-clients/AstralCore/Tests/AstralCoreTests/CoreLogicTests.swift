@@ -1,42 +1,9 @@
-// Tests for PKCE verifier/challenge generation (RFC 7636 vector), the shared WSClient backoff/bounded-queue
+// Tests for the shared WSClient backoff/bounded-queue
 // reconnect contract, JSONValue parsing, and lenient inbound frame decoding.
 
 import XCTest
 
 @testable import AstralCore
-
-final class PKCETests: XCTestCase {
-    func testRFC7636AppendixBVector() {
-        let verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
-        XCTAssertEqual(
-            PKCE.challenge(for: verifier),
-            "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM")
-    }
-
-    func testVerifierShapeAndUniqueness() {
-        let a = PKCE.makeVerifier()
-        let b = PKCE.makeVerifier()
-        XCTAssertNotEqual(a, b)
-        XCTAssertEqual(a.count, 43)
-        XCTAssertFalse(a.contains("=") || a.contains("+") || a.contains("/"))
-    }
-
-    func testAuthorizeURLCarriesPKCE() {
-        let config = OIDCConfig(
-            authority: URL(string: "https://idp.example/realms/astral")!,
-            clientId: "astral-mobile",
-            redirectURI: "astraldeep://oauth2redirect")
-        let url = config.authorizeURL(state: "st", challenge: "ch")
-        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems!
-        func value(_ name: String) -> String? {
-            query.first { $0.name == name }?.value
-        }
-        XCTAssertEqual(value("code_challenge_method"), "S256")
-        XCTAssertEqual(value("code_challenge"), "ch")
-        XCTAssertEqual(value("client_id"), "astral-mobile")
-        XCTAssertEqual(value("response_type"), "code")
-    }
-}
 
 final class ReconnectContractTests: XCTestCase {
     func testBackoffLadderMatchesSharedContract() {
