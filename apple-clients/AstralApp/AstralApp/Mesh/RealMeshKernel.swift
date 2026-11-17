@@ -56,6 +56,13 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
                 await kernel.close()
                 throw error
             }
+            #if os(macOS)
+                let directory: String = config.dataDirectory.path
+                do { try kernel.setLauncher(launcher: MacStdioLauncher(dataDirectory: directory)) } catch {
+                    await kernel.close()
+                    throw error
+                }
+            #endif
             do { try kernel.setPhiPrompt(prompt: KernelPhiPrompt(phiPrompt)) } catch {
                 await kernel.close()
                 throw error
