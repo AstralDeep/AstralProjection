@@ -450,6 +450,7 @@ final class MeshRuntime {
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let now: @Sendable () -> Date
     @ObservationIgnored private let waitForTurnEntry: @Sendable () async -> Void
+    @ObservationIgnored let phiPrompts: MeshPhiPromptCenter
 
     private static let acknowledgedKey = "astral.mesh.v2.acknowledged-outcomes"
     private static let mailboxKey = "astral.mesh.v2.mailbox"
@@ -465,8 +466,10 @@ final class MeshRuntime {
         deviceKind: MeshDeviceKind,
         defaults: UserDefaults = .standard,
         now: @escaping @Sendable () -> Date = { Date() },
-        waitForTurnEntry: @escaping @Sendable () async -> Void = {}
+        waitForTurnEntry: @escaping @Sendable () async -> Void = {},
+        phiPrompts: MeshPhiPromptCenter? = nil
     ) {
+        self.phiPrompts = phiPrompts ?? MeshPhiPromptCenter()
         self.makeKernel = makeKernel
         self.makeKeys = makeKeys
         self.consent = consent
@@ -1200,11 +1203,13 @@ final class MeshRuntime {
         }
         importingAttachment = true
         let session = attachmentSession
+        let attended = phiPrompts.canShow
         defer { if attachmentSession == session { importingAttachment = false } }
         guard
             let attachment = await attempt({ kernel in
                 let input = try MeshAttachmentFile.read(url)
-                return try kernel.addAttachment(chatId: chatId, bytes: input.bytes, mime: input.mime, name: input.name)
+                return try kernel.addAttachment(
+                    chatId: chatId, bytes: input.bytes, mime: input.mime, name: input.name, attended: attended)
             })
         else { return false }
         guard attachmentSession == session else { return false }
@@ -1252,15 +1257,17 @@ final class MeshRuntime {
         defer { releaseReservation(chatId: chatId, id: reservation) }
         let attachments = attachmentDrafts[chatId, default: []].map(\.id)
         let continues = displayHead
+        let attended = !speaking && phiPrompts.canShow
         guard
             let eventId = await attempt(
                 allowRetired: true,
                 { kernel in
-                    if attachments.isEmpty {
+                    if attachments.isEmpty, !attended {
                         return try kernel.sendMessage(chatId: chatId, text: trimmed, continues: continues)
                     }
                     return try kernel.sendMessage(
-                        chatId: chatId, text: trimmed, continues: continues, attachments: attachments)
+                        chatId: chatId, text: trimmed, continues: continues, attachments: attachments,
+                        attended: attended)
                 })
         else { return false }
         guard isReady, wakeSession == session else { return true }

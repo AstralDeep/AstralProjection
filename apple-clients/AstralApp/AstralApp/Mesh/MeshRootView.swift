@@ -16,6 +16,11 @@ struct MeshRootView: View {
     @Environment(ThemeStore.self) private var theme
     @Environment(\.scenePhase) private var scenePhase
     private var p: AstralPalette { theme.palette }
+    private var phiPromptBinding: Binding<MeshPhiPromptRequest?> {
+        Binding(
+            get: { mesh.phiPrompts.pending },
+            set: { if $0 == nil { mesh.phiPrompts.answer(.treatAsPhi) } })
+    }
 
     var body: some View {
         content
@@ -30,6 +35,12 @@ struct MeshRootView: View {
                 .consentSheet(consent)
             }
             .consentSheet(consent)
+            .sheet(item: phiPromptBinding) { request in
+                MeshPhiPromptSheet(request: request, center: mesh.phiPrompts)
+            }
+            .onChange(of: scenePhase, initial: true) { _, phase in
+                mesh.phiPrompts.setForeground(phase == .active)
+            }
             .task(id: scenePhase) {
                 guard scenePhase == .active else { return }
                 #if os(iOS)
