@@ -91,7 +91,9 @@ nonisolated final class InMemoryContacts: @unchecked Sendable {
 
     func cancelInvitation() { lock.withLock { invitation = nil } }
 
-    func accept(text: String, name: String) throws -> MeshContactExchange {
+    func accept(text raw: String, name: String) throws -> MeshContactExchange {
+        let linkPrefix = "https://astraldeep.github.io/contact/#"
+        let text = raw.hasPrefix(linkPrefix) ? "astral-contact:v1:" + raw.dropFirst(linkPrefix.count) : raw
         let body = try Self.decode(text)
         guard let mesh = body["mesh"] as? String, let theirName = body["name"] as? String,
             let expires = body["expires_s"] as? Int

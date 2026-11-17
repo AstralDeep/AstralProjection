@@ -663,7 +663,8 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
 
     func createContactInvitation(name: String, ttlSeconds: UInt64) async throws -> MeshContactInvitation {
         do {
-            return KernelMapping.contactInvitation(try await kernel.createContactInvitation(name: name, ttlS: ttlSeconds))
+            let found = try await kernel.createContactInvitation(name: name, ttlS: ttlSeconds)
+            return KernelMapping.contactInvitation(found)
         } catch { throw KernelMapping.error(error) }
     }
 

@@ -44,6 +44,14 @@ struct MeshSettingsView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("mesh.settings.voice")
             }
+            Section("People") {
+                NavigationLink {
+                    MeshContactsView()
+                } label: {
+                    Label("Contacts", systemImage: "person.2")
+                }
+                .accessibilityIdentifier("mesh.settings.contacts")
+            }
             Section("Assistant") {
                 NavigationLink {
                     MeshModelProviderView()

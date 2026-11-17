@@ -17,6 +17,8 @@ nonisolated enum MeshQRCode {
 
 struct MeshQRCodeView: View {
     let text: String
+    var label = "Pairing QR code"
+    var identifier = "mesh.join.qr"
 
     var body: some View {
         if let image = MeshQRCode.image(for: text) {
@@ -27,8 +29,8 @@ struct MeshQRCodeView: View {
                 .padding(12)
                 .background(Color.white, in: RoundedRectangle(cornerRadius: AstralRadius.md))
                 .accessibilityElement()
-                .accessibilityLabel("Pairing QR code")
-                .accessibilityIdentifier("mesh.join.qr")
+                .accessibilityLabel(label)
+                .accessibilityIdentifier(identifier)
         }
     }
 }

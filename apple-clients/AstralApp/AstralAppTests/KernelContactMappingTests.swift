@@ -81,8 +81,10 @@ final class KernelContactMappingTests: XCTestCase {
         let refusals: [(Data, Data, ConsentKind)] = [
             (contact, signingInput(contact, kind: "share"), .contactVerify),
             (contact, signingInput(contact, kind: "contact", digest: head), .contactVerify),
-            (contactRecord(state: "unverified"), signingInput(contactRecord(state: "unverified"), kind: "contact"),
-                .contactVerify),
+            (
+                contactRecord(state: "unverified"), signingInput(contactRecord(state: "unverified"), kind: "contact"),
+                .contactVerify
+            ),
             (share, signingInput(share, kind: "contact"), .shareGrant),
             (shareRecord(kind: "edit"), signingInput(shareRecord(kind: "edit"), kind: "share"), .shareGrant),
             (Data(#"{"v":1}"#.utf8), signingInput(Data(#"{"v":1}"#.utf8), kind: "share"), .shareGrant),
@@ -159,7 +161,8 @@ final class KernelContactMappingTests: XCTestCase {
         XCTAssertEqual(KernelMapping.changes(.sharesChanged), [.sharesChanged])
         XCTAssertFalse(KernelMapping.isEnrollmentComplete(.sharesChanged))
         XCTAssertEqual(
-            KernelMapping.failureText(code: "contact.invite_expired"), "That invitation ran out of time. Ask for a new one.")
+            KernelMapping.failureText(code: "contact.invite_expired"),
+            "That invitation ran out of time. Ask for a new one.")
         XCTAssertEqual(
             KernelMapping.failureText(code: "share.contact_unverified"), "Verify this contact before sharing.")
         XCTAssertEqual(
