@@ -61,7 +61,7 @@
     nonisolated protocol MacComputerCommandSandboxing: Sendable {
         func prepare(
             jobId: String, plan: MacComputerCommandPlan, environment: [String: String], roots: [String],
-            exclusions: ComputerWorkspaceExclusions
+            exclusions: ComputerWorkspaceExclusions, listen: Bool
         ) async throws -> MacComputerSandboxLaunch
     }
 
@@ -246,9 +246,10 @@
 
         func prepare(
             jobId: String, plan: MacComputerCommandPlan, environment: [String: String], roots: [String],
-            exclusions: ComputerWorkspaceExclusions
+            exclusions: ComputerWorkspaceExclusions, listen: Bool = false
         ) async throws -> MacComputerSandboxLaunch {
             let configuration = configurationProvider()
+            let mode = configuration.executionMode
             let policy = ComputerEgressPolicy(configuration: configuration)
             if let variable = ComputerSandboxPolicy.leakedEnvironmentVariable(
                 environment, placeholders: configuration.placeholders)
@@ -275,7 +276,7 @@
             }
             let writeRoots = (roots.map(Self.canonical) + [Self.canonical(childDirectory)]).filter { !$0.isEmpty }
             let holder = MacComputerEgressDecisionSink()
-            var proxy: (any MacComputerEgressProxying)?
+            let proxy: any MacComputerEgressProxying
             do {
                 let created = try proxyFactory(
                     MacComputerEgressProxyRequest(jobId: jobId, policy: policy, secrets: secrets, sink: holder))
@@ -287,24 +288,14 @@
                 }
                 proxy = created
             } catch {
-                guard configuration.mode == .shadow else {
-                    let reason = (error as? ComputerHostError)?.message ?? String(describing: error)
-                    cleanup()
-                    throw ComputerHostError(
-                        "sandbox_refused", "The command egress proxy could not start: \(reason)")
-                }
-                sink(
-                    "command.sandbox_violation",
-                    [
-                        "job_id": .string(jobId), "source": .string("proxy"), "operation": .string("proxy"),
-                        "target": .string(jobId), "detail": .string("proxy_unavailable"), "blocked": .bool(false),
-                    ])
-                proxy = nil
+                let reason = (error as? ComputerHostError)?.message ?? String(describing: error)
+                cleanup()
+                throw ComputerHostError("sandbox_refused", "The command egress proxy could not start: \(reason)")
             }
             let profileInput = ComputerSandboxProfile.Input(
-                mode: configuration.mode, writeRoots: writeRoots, exclusions: exclusions.patterns, home: home(),
+                mode: mode, writeRoots: writeRoots, exclusions: exclusions.patterns, home: home(),
                 bundlePath: bundlePath(), supportIdentifier: "com.personalailabs.astraldeep",
-                proxyPort: proxy?.port)
+                proxyPort: proxy.port, listen: listen)
             let profile = ComputerSandboxProfile.generate(profileInput)
             let digest = ComputerSandboxProfile.digest(profile)
             let profilePath = profileDirectory + "/profile.sb"
@@ -313,36 +304,34 @@
                     atPath: profilePath, contents: Data(profile.utf8),
                     attributes: [.posixPermissions: 0o600])
             else {
-                proxy?.stop()
+                proxy.stop()
                 cleanup()
                 throw ComputerHostError("sandbox_refused", "The sandbox profile could not be written.")
             }
             do {
                 try await validator.validate(executable: Self.launcherPath, profilePath: profilePath)
             } catch let error as ComputerHostError {
-                proxy?.stop()
+                proxy.stop()
                 cleanup()
                 throw error
             } catch {
-                proxy?.stop()
+                proxy.stop()
                 cleanup()
                 throw ComputerHostError("sandbox_refused", String(describing: error))
             }
             var launchEnvironment = environment
-            if let port = proxy?.port {
-                let address = "http://127.0.0.1:\(port)"
-                for name in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"] {
-                    launchEnvironment[name] = address
-                }
-                for name in ["NO_PROXY", "no_proxy"] {
-                    launchEnvironment[name] = "127.0.0.1,localhost,::1"
-                }
+            let address = "http://127.0.0.1:\(proxy.port)"
+            for name in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"] {
+                launchEnvironment[name] = address
+            }
+            for name in ["NO_PROXY", "no_proxy"] {
+                launchEnvironment[name] = "127.0.0.1,localhost,::1"
             }
             launchEnvironment["TMPDIR"] = childDirectory
             let session = MacComputerJobSandbox(
-                jobId: jobId, mode: configuration.mode, digest: digest,
+                jobId: jobId, mode: mode, digest: digest,
                 domains: configuration.domains.map(\.value), placeholders: configuration.placeholders,
-                proxyPort: proxy?.port, proxy: proxy, directories: directories, sink: sink)
+                proxyPort: proxy.port, proxy: proxy, directories: directories, sink: sink)
             holder.target = session
             let wrapped = MacComputerCommandPlan(
                 executable: Self.launcherPath,

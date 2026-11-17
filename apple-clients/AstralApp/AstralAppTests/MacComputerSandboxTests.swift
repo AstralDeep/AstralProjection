@@ -7,6 +7,7 @@
     import CryptoKit
     import Darwin
     import XCTest
+    import os
     @testable import AstralDeep
 
     nonisolated final class MacComputerSandboxFakeProxy: MacComputerEgressProxying, @unchecked Sendable {
@@ -38,6 +39,16 @@
         func validate(executable: String, profilePath: String) async throws {
             _ = lock.withLock { recorded.append((executable, profilePath)) }
             if let failure { throw failure }
+        }
+    }
+
+    nonisolated final class MacComputerSandboxProfileCapture: MacComputerSandboxValidating, @unchecked Sendable {
+        private let lock = NSLock()
+        private var texts: [String] = []
+        var profiles: [String] { lock.withLock { texts } }
+        func validate(executable: String, profilePath: String) async throws {
+            let text = (try? String(contentsOfFile: profilePath, encoding: .utf8)) ?? ""
+            _ = lock.withLock { texts.append(text) }
         }
     }
 
@@ -185,27 +196,155 @@
             XCTAssertEqual(error, "sandbox_refused")
         }
 
-        func testShadowModeContinuesWithoutAProxyAndRecordsTheOutage() async throws {
+        func testStoredShadowConfigurationStillRunsEnforce() async throws {
             let root = try folder()
             let log = MacComputerSandboxEventLog()
             let validator = MacComputerSandboxRecordingValidator()
-            let proxy = MacComputerSandboxFakeProxy(failure: ComputerHostError("failed", "listener"))
-            let subject = controller(try configuration(mode: .shadow), log: log, validator: validator, proxy: proxy)
+            let subject = controller(try configuration(mode: .shadow), log: log, validator: validator)
             let plan = MacComputerCommandPlan(
                 executable: "/bin/echo", arguments: ["/bin/echo"], environment: ["HOME": "/Users/sam"],
                 directory: root, stdin: nil)
             let launch = try await subject.prepare(
                 jobId: "job-3", plan: plan, environment: plan.environment, roots: [root], exclusions: .defaults)
-            XCTAssertEqual(launch.session.mode, .shadow)
-            XCTAssertEqual(launch.session.json()["proxy_port"], .null)
-            XCTAssertNil(launch.plan.environment["HTTP_PROXY"])
-            let violation = try XCTUnwrap(log.named("command.sandbox_violation").first)
-            XCTAssertEqual(violation["detail"], .string("proxy_unavailable"))
-            XCTAssertEqual(violation["source"], .string("proxy"))
-            XCTAssertEqual(violation["blocked"], .bool(false))
+            XCTAssertEqual(launch.session.mode, .enforce)
+            XCTAssertEqual(launch.session.json()["mode"], .string("enforce"))
             let profile = try String(contentsOfFile: XCTUnwrap(validator.validations.first?.1), encoding: .utf8)
-            XCTAssertTrue(profile.contains("(allow default)"))
+            XCTAssertTrue(profile.contains("(deny default)"))
+            XCTAssertFalse(profile.contains("(allow default)"))
+            XCTAssertFalse(profile.contains("network-bind"))
             launch.session.close()
+            let failing = controller(
+                try configuration(mode: .shadow), log: log,
+                proxy: MacComputerSandboxFakeProxy(failure: ComputerHostError("failed", "listener")))
+            let error = await code {
+                _ = try await failing.prepare(
+                    jobId: "job-3b", plan: plan, environment: plan.environment, roots: [root],
+                    exclusions: .defaults)
+            }
+            XCTAssertEqual(error, "sandbox_refused")
+            XCTAssertTrue(log.named("command.sandbox_violation").isEmpty)
+        }
+
+        func testListenRequestReachesTheProfileOnlyWhenAsked() async throws {
+            let root = try folder()
+            let log = MacComputerSandboxEventLog()
+            let validator = MacComputerSandboxRecordingValidator()
+            let subject = controller(try configuration(), log: log, validator: validator)
+            let plan = MacComputerCommandPlan(
+                executable: "/bin/echo", arguments: ["/bin/echo"], environment: ["HOME": "/Users/sam"],
+                directory: root, stdin: nil)
+            for (index, listen) in [false, true].enumerated() {
+                let launch = try await subject.prepare(
+                    jobId: "job-listen-\(index)", plan: plan, environment: plan.environment, roots: [root],
+                    exclusions: .defaults, listen: listen)
+                let profile = try String(
+                    contentsOfFile: XCTUnwrap(validator.validations.last?.1), encoding: .utf8)
+                launch.session.close()
+                XCTAssertEqual(profile.contains("network-bind"), listen)
+            }
+        }
+
+        func testProxyHoldsTheSamePortOnBothLoopbackFamilies() throws {
+            let proxy = try MacComputerEgressProxy(
+                request: MacComputerEgressProxyRequest(
+                    jobId: UUID().uuidString,
+                    policy: ComputerEgressPolicy(mode: .enforce, domains: [], bindings: []), secrets: { _ in nil },
+                    sink: MacComputerEgressDecisionSink()))
+            try proxy.start()
+            defer { proxy.stop() }
+            for family in [AF_INET, AF_INET6] {
+                let descriptor = Darwin.socket(family, SOCK_STREAM, 0)
+                XCTAssertGreaterThanOrEqual(descriptor, 0)
+                defer { Darwin.close(descriptor) }
+                let result: Int32
+                if family == AF_INET {
+                    var address = sockaddr_in()
+                    address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+                    address.sin_family = sa_family_t(AF_INET)
+                    address.sin_port = proxy.port.bigEndian
+                    address.sin_addr.s_addr = inet_addr("127.0.0.1")
+                    result = withUnsafePointer(to: &address) {
+                        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                            Darwin.connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                        }
+                    }
+                } else {
+                    var address = sockaddr_in6()
+                    address.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
+                    address.sin6_family = sa_family_t(AF_INET6)
+                    address.sin6_port = proxy.port.bigEndian
+                    address.sin6_addr = in6addr_loopback
+                    result = withUnsafePointer(to: &address) {
+                        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                            Darwin.connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in6>.size))
+                        }
+                    }
+                }
+                XCTAssertEqual(result, 0, "family \(family)")
+            }
+        }
+
+        func testListenArgumentIsRefusedAndCommandsRunWithoutBindInboundOrResolverRights() async throws {
+            let root = try folder()
+            let capture = MacComputerSandboxProfileCapture()
+            let spawner = MacComputerFakeSpawner(script: { _, output, process in
+                output.finish(.stdout)
+                output.finish(.stderr)
+                process.exit(.exited(0))
+            })
+            let subject = controller(
+                try configuration(), log: MacComputerSandboxEventLog(), validator: capture,
+                proxy: MacComputerSandboxFakeProxy())
+            let commands = MacComputerCommands(
+                spawner: spawner, clock: MacComputerFakeClock { $0 >= 20 }, inherited: ["HOME": "/Users/sam"],
+                loginPath: { "/usr/bin:/bin" }, sandbox: subject)
+            let error = await code {
+                _ = try self.request(
+                    "run_command",
+                    ["argv": .array([.string("echo"), .string("hi")]), "cwd": .string(root), "listen": .bool(true)])
+            }
+            XCTAssertEqual(error, "out_of_range")
+            let plain = try request(
+                "run_command", ["argv": .array([.string("echo"), .string("hi")]), "cwd": .string(root)])
+            _ = try await commands.run(
+                plain, session: "11111111-1111-4111-8111-111111111111", roots: [root], authorize: {})
+            let profile = try XCTUnwrap(capture.profiles.first)
+            XCTAssertTrue(profile.contains("(deny default)"))
+            for denied in ["network-bind", "network-inbound", "mDNSResponder"] {
+                XCTAssertFalse(profile.contains(denied), denied)
+            }
+        }
+
+        func testProxyRetriesANewPortOnAnIPv6CollisionThenRefusesAfterThreeTries() throws {
+            let attempts = OSAllocatedUnfairLock(initialState: [UInt16]())
+            let sink = MacComputerEgressDecisionSink()
+            func make(collisions: Int) throws -> MacComputerEgressProxy {
+                attempts.withLock { $0 = [] }
+                return try MacComputerEgressProxy(
+                    request: MacComputerEgressProxyRequest(
+                        jobId: UUID().uuidString,
+                        policy: ComputerEgressPolicy(mode: .enforce, domains: [], bindings: []),
+                        secrets: { _ in nil }, sink: sink),
+                    holdIPv6: { port in
+                        let count = attempts.withLock { state -> Int in
+                            state.append(port)
+                            return state.count
+                        }
+                        return count <= collisions ? "Address already in use" : nil
+                    })
+            }
+            let recovering = try make(collisions: 2)
+            try recovering.start()
+            defer { recovering.stop() }
+            let seen = attempts.withLock { $0 }
+            XCTAssertEqual(seen.count, 3)
+            XCTAssertEqual(Set(seen).count, 3)
+            XCTAssertEqual(recovering.port, seen.last)
+            let failing = try make(collisions: 3)
+            XCTAssertThrowsError(try failing.start()) {
+                XCTAssertEqual(($0 as? ComputerHostError)?.code, "sandbox_refused")
+            }
+            XCTAssertEqual(attempts.withLock { $0.count }, 3)
         }
 
         func testEnforceModeRefusesWhenTheProxyCannotStart() async throws {
