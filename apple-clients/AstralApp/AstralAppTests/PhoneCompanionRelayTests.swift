@@ -13,13 +13,15 @@ private final class RecordingRelayChannel: CompanionRelayChannel {
     var sent: [(update: CompanionPhoneUpdate, latest: Bool)] = []
     var withdrawn: [String] = []
     var succeeds = true
+    var held: [@MainActor (Bool) -> Void] = []
+    var holdReplies = false
 
     func publish(_ update: Data, kind: String, latestState: Bool, completion: @escaping @MainActor (Bool) -> Void) {
         if let decoded = try? CompanionPhoneUpdate(data: update) {
             XCTAssertEqual(decoded.wireKind, kind)
             sent.append((decoded, latestState))
         }
-        completion(succeeds)
+        if holdReplies { held.append(completion) } else { completion(succeeds) }
     }
 
     func withdraw(kind: String) { withdrawn.append(kind) }
@@ -423,6 +425,25 @@ final class PhoneCompanionRelayTests: XCTestCase {
         XCTAssertEqual(r.channel.withdrawn.count, 2)
         r.relay.unbind()
         XCTAssertEqual(r.channel.withdrawn.count, 3)
+    }
+
+    func testALateReplyAfterAWithdrawDoesNotSuppressTheResend() async throws {
+        let r = await rig()
+        defer { r.h.cleanUp() }
+        _ = await newChat(r, "Listed")
+        r.channel.holdReplies = true
+        _ = await r.relay.handle(try request(.listChats(owner: try owner(r.h))))
+        let held = r.channel.held
+        XCTAssertFalse(held.isEmpty)
+        r.channel.holdReplies = false
+        await r.h.runtime.raiseStop()
+        await r.relay.refresh()
+        XCTAssertEqual(r.channel.withdrawn, ["chats"])
+        for reply in held { reply(true) }
+        await r.h.runtime.resume()
+        let before = r.channel.chatLists.count
+        await r.relay.refresh()
+        XCTAssertEqual(r.channel.chatLists.count, before + 1)
     }
 
     func testAFailedDeliveryIsRetriedAndASuccessfulOneIsNot() async throws {

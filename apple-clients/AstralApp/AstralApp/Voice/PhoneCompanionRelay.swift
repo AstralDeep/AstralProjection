@@ -192,13 +192,14 @@ final class PhoneCompanionRelay {
     private var engaged = false
     private var lastSent: [String: Data] = [:]
     private var generation = 0
+    private var epochs: [String: Int] = [:]
     private var refreshing: Task<Void, Never>?
 
     init(channel: any CompanionRelayChannel) {
         self.channel = channel
         channel.onRelayRequest = { [weak self] data in _ = await self?.handle(data) }
         channel.onRelayReady = { [weak self] in
-            self?.lastSent = [:]
+            self?.forgetDeliveries()
             self?.scheduleRefresh()
         }
     }
@@ -226,7 +227,7 @@ final class PhoneCompanionRelay {
         if let owner = lastOwner.flatMap(CompanionVoiceOwner.init(meshId:)) {
             deliver(.phone(owner: owner, state: .noMesh), latest: true, force: true)
         }
-        lastSent = [:]
+        forgetDeliveries()
     }
 
     func handle(_ data: Data) async -> PhoneCompanionOutcome {
@@ -301,8 +302,14 @@ final class PhoneCompanionRelay {
         }
     }
 
+    private func forgetDeliveries() {
+        lastSent = [:]
+        for kind in WatchContextStore.keys.keys.sorted() + ["chat", "run"] { epochs[kind, default: 0] += 1 }
+    }
+
     private func withdrawChats() {
         lastSent["chats"] = nil
+        epochs["chats", default: 0] += 1
         channel.withdraw(kind: "chats")
     }
 
@@ -360,8 +367,11 @@ final class PhoneCompanionRelay {
         guard let data = try? update.encoded() else { return false }
         let kind = update.wireKind
         if !force, lastSent[kind] == data { return true }
+        let token = generation
+        let epoch = epochs[kind, default: 0]
         channel.publish(data, kind: kind, latestState: latest) { [weak self] delivered in
-            if delivered { self?.lastSent[kind] = data }
+            guard delivered, let self, self.generation == token, self.epochs[kind, default: 0] == epoch else { return }
+            self.lastSent[kind] = data
         }
         return true
     }
