@@ -20,7 +20,7 @@ final class KernelConnectionMappingTests: XCTestCase {
         let issuer = scheme == "oauth" ? #""https://issuer.example""# : "null"
         let resource = scheme == "oauth" ? #""https://mcp.example/mcp""# : "null"
         let scopes = scheme == "oauth" ? #"["read"]"# : "[]"
-        let text =
+        let text: String =
             #"{"auth":{"client_id":null,"issuer":\#(issuer),"resource":\#(resource),"#
             + #""scheme":"\#(scheme)","scopes":\#(scopes)},"#
             + #""device":null,"egress":["issuer.example","mcp.example"],"endpoint":"https://mcp.example/mcp","#
@@ -30,7 +30,7 @@ final class KernelConnectionMappingTests: XCTestCase {
     }
 
     private func signingInput(for record: Data, kind: String = "connection", digest: String? = nil) -> Data {
-        let consent =
+        let consent: String =
             #"{"clock":{"ms":5,"n":0},"device":"\#(Self.device)","digest":"\#(digest ?? hash(record))","#
             + #""kind":"\#(kind)","v":1}"#
         return Data("astral.consent/v1\n".utf8) + Data(consent.utf8)

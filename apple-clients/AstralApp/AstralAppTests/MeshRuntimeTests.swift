@@ -22,8 +22,8 @@ final class MeshRuntimeTests: XCTestCase {
         let h = MeshRuntimeHarness()
         defer { h.cleanUp() }
         let endpoint = "https://docs.example/mcp"
-        h.kernel.connectionBook.registerServer(endpoint, .init())
         await h.runtime.open()
+        h.kernel.connectionBook.registerServer(endpoint, .init())
         XCTAssertTrue(h.runtime.connections.isEmpty)
         let proposal = try await h.kernel.proposeConnection(endpoint: endpoint, name: "Docs", local: false)
         let created = try h.kernel.approveConnection(

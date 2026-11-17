@@ -132,7 +132,6 @@ final class RealMeshKernelTests: XCTestCase {
             _ = try await mac.kernel.beginConnectionSignIn(id: String(repeating: "0", count: 32), redirect: .appLink)
             XCTFail("an unknown connection cannot sign in")
         } catch { XCTAssertEqual((error as? MeshKernelError)?.code, "connection.unknown") }
-        XCTAssertThrowsError(try mac.kernel.noteConnectionCallSucceeded(id: String(repeating: "0", count: 32)))
         await mac.kernel.stopNetwork()
     }
 

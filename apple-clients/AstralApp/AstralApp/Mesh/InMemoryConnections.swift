@@ -169,13 +169,18 @@ nonisolated final class InMemoryConnections: @unchecked Sendable {
                 id: "flow-\(counter)", connection: id, redirect: redirect, redirectURI: uri, state: "state-\(counter)",
                 expiresMs: current + Self.proposalTTLMs)
             flows[flow.id] = flow
-            let issuer = record.proposal.issuer ?? ""
-            let device = redirect == .deviceCode
+            let issuer: String = record.proposal.issuer ?? ""
+            guard redirect == .deviceCode else {
+                let authorization: String = issuer + "/authorize?state=" + flow.state
+                return MeshSignInStart(
+                    flow: flow.id, authorizationURL: authorization, redirectURI: uri, userCode: nil,
+                    verificationURI: nil, verificationURIComplete: nil, intervalSeconds: nil, expiresMs: flow.expiresMs)
+            }
+            let verification: String = issuer + "/device"
             return MeshSignInStart(
-                flow: flow.id, authorizationURL: device ? nil : issuer + "/authorize?state=" + flow.state,
-                redirectURI: uri, userCode: device ? "WDJB-MJHT" : nil,
-                verificationURI: device ? issuer + "/device" : nil, verificationURIComplete: nil,
-                intervalSeconds: device ? 5 : nil, expiresMs: flow.expiresMs)
+                flow: flow.id, authorizationURL: nil, redirectURI: uri, userCode: "WDJB-MJHT",
+                verificationURI: verification, verificationURIComplete: nil, intervalSeconds: 5,
+                expiresMs: flow.expiresMs)
         }
     }
 
@@ -271,14 +276,22 @@ nonisolated final class InMemoryConnections: @unchecked Sendable {
     ) -> MeshConnectionProposal {
         let host = URLComponents(string: endpoint)?.host ?? ""
         let issuerHost = server.issuer.flatMap { URLComponents(string: $0)?.host }
-        let egress = Set([host, issuerHost].compactMap { $0 }).sorted()
+        var hosts: Set<String> = [host]
+        if let issuerHost { hosts.insert(issuerHost) }
+        let egress: [String] = hosts.sorted()
+        let open = server.open
+        let scheme: String = open ? "none" : "oauth"
+        let redirectHost: String? = open ? nil : "astraldeep.github.io"
+        let resource: String? = open ? nil : endpoint
+        let tools: [MeshConnectionTool] = open ? server.tools : []
+        let device: String? = local ? deviceId : nil
+        let flowHint: String = record?.flow ?? "private"
+        let expires: UInt64 = nowMs + Self.proposalTTLMs
         return MeshConnectionProposal(
             proposal: "proposal-\(id)-\(counter)", connection: id, name: name, endpoint: endpoint, local: local,
-            device: local ? deviceId : nil, scheme: server.open ? "none" : "oauth", issuer: server.issuer,
-            issuerHost: issuerHost, redirectHost: server.open ? nil : "astraldeep.github.io", scopes: server.scopes,
-            resource: server.open ? nil : endpoint, clientId: record?.proposal.clientId,
-            tools: server.open ? server.tools : [], egress: egress, flowHint: record?.flow ?? "private",
-            replaces: replaces, expiresMs: nowMs + Self.proposalTTLMs)
+            device: device, scheme: scheme, issuer: server.issuer, issuerHost: issuerHost, redirectHost: redirectHost,
+            scopes: server.scopes, resource: resource, clientId: record?.proposal.clientId, tools: tools,
+            egress: egress, flowHint: flowHint, replaces: replaces, expiresMs: expires)
     }
 
     private func hold(_ proposal: MeshConnectionProposal, base: Int?) -> MeshConnectionProposal {
@@ -327,15 +340,19 @@ nonisolated final class InMemoryConnections: @unchecked Sendable {
             record.states[deviceId]
             ?? MeshConnectionDeviceState(
                 device: deviceId, label: deviceLabel, state: "not_signed_in", reason: nil, issuer: nil, atMs: 0)
+        let server: String = "c" + String(id.prefix(8))
+        let supported: Bool = !proposal.local || proposal.device == deviceId
+        let attention: String? = own.state == "needs_attention" ? own.reason : nil
+        let others: [MeshConnectionDeviceState] = record.states.values
+            .filter { $0.device != deviceId }
+            .sorted { $0.device < $1.device }
         return MeshConnection(
-            id: id, server: "c" + id.prefix(8), name: proposal.name, kind: "mcp-http", endpoint: proposal.endpoint,
+            id: id, server: server, name: proposal.name, kind: "mcp-http", endpoint: proposal.endpoint,
             local: proposal.local, device: proposal.device, scheme: proposal.scheme, issuer: proposal.issuer,
             scopes: record.scopes, clientId: clientId ?? proposal.clientId, flow: record.flow,
             egress: proposal.egress, tools: record.tools, approvedBy: deviceId, approvedByRemovedDevice: false,
-            unsupported: nil, supportedHere: !proposal.local || proposal.device == deviceId, thisDevice: own,
-            attention: own.state == "needs_attention" ? own.reason : nil,
-            otherDevices: record.states.values.filter { $0.device != deviceId }.sorted { $0.device < $1.device },
-            pendingTools: record.pendingTools)
+            unsupported: nil, supportedHere: supported, thisDevice: own, attention: attention,
+            otherDevices: others, pendingTools: record.pendingTools)
     }
 
     private static func redirectURI(_ redirect: MeshSignInRedirect) throws -> String {
