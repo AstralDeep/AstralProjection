@@ -219,6 +219,8 @@ nonisolated enum MeshConnectionID {
     static let proceed = "mesh.connections.continue"
     static let add = "mesh.connections.add"
     static let legacy = "mesh.connections.legacy"
+    static let banner = "mesh.connections.banner"
+    static let signInStatus = "mesh.connections.signin.status"
 
     static func fact(_ id: String) -> String { "mesh.connections.card.\(id)" }
     static func tool(_ name: String) -> String { "mesh.connections.tool.\(name)" }
@@ -226,5 +228,7 @@ nonisolated enum MeshConnectionID {
     static func row(_ id: String) -> String { "mesh.connections.row.\(id)" }
     static func review(_ id: String) -> String { "mesh.connections.review.\(id)" }
     static func remove(_ id: String) -> String { "mesh.connections.remove.\(id)" }
+    static func attention(_ id: String) -> String { "mesh.connections.attention.\(id)" }
+    static func signIn(_ id: String) -> String { "mesh.connections.signin.\(id)" }
     static func legacyRow(_ id: String) -> String { "mesh.connections.legacy.\(id)" }
 }

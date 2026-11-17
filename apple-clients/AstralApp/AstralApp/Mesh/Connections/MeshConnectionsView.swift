@@ -8,12 +8,14 @@ struct MeshConnectionsView: View {
     @Environment(ThemeStore.self) private var theme
     @State private var legacy = MeshLegacyServersModel()
     @State private var removing: MeshConnection?
+    @State private var signIn: MeshConnectionSignIn?
 
     var body: some View {
         List {
             Section {
                 ForEach(mesh.connections) { connection in
-                    MeshConnectionRow(connection: connection, remove: { removing = connection })
+                    MeshConnectionRow(
+                        connection: connection, signIn: signIn, remove: { removing = connection })
                 }
                 NavigationLink {
                     MeshConnectionAddView()
@@ -28,7 +30,12 @@ struct MeshConnectionsView: View {
         .meshReadableWidth()
         .background(theme.palette.bg)
         .navigationTitle("Connections")
-        .task { await legacy.load(from: mesh) }
+        .task {
+            if signIn == nil {
+                signIn = MeshConnectionSignIn(service: mesh, makeSession: MeshSystemWebAuth.factory)
+            }
+            await legacy.load(from: mesh)
+        }
         .confirmationDialog(
             "Remove this connection?", isPresented: removalShown, titleVisibility: .visible
         ) {
@@ -51,6 +58,7 @@ private extension MeshConnectionsView {
 
 struct MeshConnectionRow: View {
     let connection: MeshConnection
+    let signIn: MeshConnectionSignIn?
     let remove: () -> Void
 
     var body: some View {
@@ -66,7 +74,13 @@ struct MeshConnectionRow: View {
             if let line = facts.unavailableLine {
                 Text(line).font(ConsoleTypography.caption).foregroundStyle(.secondary)
             }
-            MeshConnectionRowActions(facts: facts, remove: remove)
+            if let attention = MeshConnectionAttentionFacts(connection) {
+                MeshConnectionAttentionBadge(facts: attention)
+            }
+            MeshConnectionSignInStatus(signIn: signIn, connectionId: facts.id)
+            MeshConnectionRowActions(
+                facts: facts, canSignIn: connection.supportedHere && connection.scheme == "oauth", signIn: signIn,
+                remove: remove)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(MeshConnectionID.row(facts.id))
@@ -75,10 +89,19 @@ struct MeshConnectionRow: View {
 
 struct MeshConnectionRowActions: View {
     let facts: MeshConnectionRowFacts
+    let canSignIn: Bool
+    let signIn: MeshConnectionSignIn?
     let remove: () -> Void
 
     var body: some View {
         HStack {
+            if canSignIn, let signIn {
+                Button(facts.hereLine == "Signed in here" ? "Sign in again" : "Sign in") {
+                    Task { await signIn.signIn(connection: facts.id) }
+                }
+                .disabled(signIn.isBusy)
+                .accessibilityIdentifier(MeshConnectionID.signIn(facts.id))
+            }
             if facts.needsReview {
                 NavigationLink("Review") { MeshConnectionReviewView(connectionId: facts.id) }
                     .accessibilityIdentifier(MeshConnectionID.review(facts.id))
@@ -112,6 +135,30 @@ struct MeshConnectionsLegacySection: View {
                 Label("Manage these servers", systemImage: "network")
             }
             .accessibilityIdentifier(MeshConnectionID.legacy)
+        }
+    }
+}
+
+struct MeshConnectionSignInStatus: View {
+    let signIn: MeshConnectionSignIn?
+    let connectionId: String
+
+    var body: some View {
+        if let signIn, signIn.connectionId == connectionId, let text = line(signIn.phase) {
+            Text(text)
+                .font(ConsoleTypography.caption)
+                .accessibilityIdentifier(MeshConnectionID.signInStatus)
+        }
+    }
+
+    private func line(_ phase: MeshConnectionSignIn.Phase) -> String? {
+        switch phase {
+        case .idle: return nil
+        case .starting, .waiting: return "Signing in..."
+        case .completing: return "Finishing..."
+        case .signedIn(let pending): return pending ? "Signed in. Review its tools to use them." : "Signed in."
+        case .cancelled: return "Sign-in cancelled."
+        case .failed(let text): return text
         }
     }
 }

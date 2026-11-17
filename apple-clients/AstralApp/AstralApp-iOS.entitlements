@@ -7,5 +7,10 @@
 	     for the App id in the developer portal before device builds can register. -->
 	<key>aps-environment</key>
 	<string>$(ASTRAL_APS_ENVIRONMENT)</string>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:astraldeep.github.io</string>
+		<string>webcredentials:astraldeep.github.io</string>
+	</array>
 </dict>
 </plist>
