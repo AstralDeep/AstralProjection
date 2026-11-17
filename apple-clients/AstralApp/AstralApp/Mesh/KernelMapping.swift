@@ -47,6 +47,25 @@ nonisolated enum KernelMapping {
         }
     }
 
+    static func callerTicket(_ value: AstralKernel.CallerTicket) -> MeshCallerTicket {
+        MeshCallerTicket(
+            id: value.id, text: value.text, label: value.label, nodeId: value.node, tools: value.tools,
+            issuedAt: date(ms: value.issuedMs), expiresAt: date(ms: value.expiresMs), revoked: value.revoked,
+            expired: value.expired)
+    }
+
+    static func callerRequest(_ value: MeshCallerRequest) -> AstralKernel.CallerRequest {
+        AstralKernel.CallerRequest(
+            authorization: value.authorization, proof: value.proof, method: value.method, target: value.target,
+            bodySha256: value.bodySha256, tool: value.tool)
+    }
+
+    static func verifiedCaller(_ value: AstralKernel.VerifiedCaller) -> MeshVerifiedCaller {
+        MeshVerifiedCaller(
+            id: value.id, meshId: value.mesh, deviceId: value.device, label: value.label, tool: value.tool,
+            tools: value.tools, expiresAt: date(ms: value.expiresMs))
+    }
+
     static func sync(_ peers: [SyncPeer], now: Date) -> MeshSyncState {
         MeshSyncState(
             devices: peers.map { peer in
@@ -339,6 +358,16 @@ nonisolated enum KernelMapping {
             "Use HTTPS, or HTTP on a loopback host. URLs cannot contain credentials, a query or a fragment; other private addresses are refused."
         ),
         ("allowance.", "This device has used its allowance for now."),
+        ("caller.wrong_minter", "Only a computer, phone or tablet in your mesh can issue caller tickets."),
+        ("caller.wrong_node", "Choose a node that belongs to your mesh."),
+        ("caller.no_catalog", "That node has not published its tools yet."),
+        ("caller.unknown_tool", "One of the chosen tools is not offered by that node."),
+        ("caller.malformed", "Check the label, tool list, holder key and lifetime."),
+        ("caller.revoked", "That caller ticket was revoked."),
+        ("caller.expired", "That caller ticket has expired."),
+        ("caller.stopped", "The mesh was stopped, so caller tickets are refused."),
+        ("caller.tool_not_covered", "That caller ticket does not cover this tool."),
+        ("caller.", "The caller ticket was refused."),
         ("gate.mesh_stopped", "The mesh was stopped, so this turn was refused."),
         ("gate.", "A safety check refused this step."),
         ("consent.declined", MeshKernelError.consentDenied.message),
@@ -387,7 +416,9 @@ nonisolated enum KernelMapping {
         case let kernel as KernelError:
             switch kernel {
             case .Denied(let code, _):
-                return code == "gate.mesh_stopped" ? MeshKernelError.stopped : MeshKernelError.consentDenied
+                if code == "gate.mesh_stopped" { return MeshKernelError.stopped }
+                return code.hasPrefix("caller.")
+                    ? MeshKernelError.refused(failureText(code: code)) : MeshKernelError.consentDenied
             case .InvalidInput(let code, _), .Verification(let code, _), .Network(let code, _), .Custody(let code, _),
                 .State(let code, _), .Mesh(let code, _):
                 return MeshKernelError.refused(failureText(code: code))

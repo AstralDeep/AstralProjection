@@ -108,6 +108,35 @@ final class RealMeshKernelTests: XCTestCase {
         await mac.kernel.stopNetwork()
     }
 
+    func testCallerTicketCallsRefuseWhatTheKernelRefuses() async throws {
+        let mac = try await open("Test Mac")
+        let id = "AAECAwQFBgcICQoLDA0ODw"
+        XCTAssertThrowsError(try mac.kernel.callerTickets()) {
+            XCTAssertEqual($0 as? MeshKernelError, .refused(KernelMapping.failureText(code: "mesh.not_enrolled")))
+        }
+        _ = try await createMesh(mac)
+        XCTAssertEqual(try mac.kernel.callerTickets(), [])
+        let holder = MeshCallerTicketLimits.holderPrefix + "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+        XCTAssertThrowsError(
+            try mac.kernel.mintCallerTicket(
+                nodeId: "sha256:" + String(repeating: "0", count: 64), holderKey: holder, label: "Script",
+                toolNames: ["current_datetime"], a2a: false, lifetimeSeconds: 60)
+        ) {
+            XCTAssertEqual($0 as? MeshKernelError, .refused(KernelMapping.failureText(code: "caller.wrong_node")))
+        }
+        XCTAssertThrowsError(try mac.kernel.revokeCallerTicket(id: "short")) {
+            XCTAssertEqual($0 as? MeshKernelError, .refused(KernelMapping.failureText(code: "caller.malformed")))
+        }
+        try mac.kernel.revokeCallerTicket(id: id)
+        try mac.kernel.revokeCallerTicket(id: id)
+        XCTAssertEqual(try mac.kernel.callerTickets(), [])
+        XCTAssertThrowsError(
+            try mac.kernel.verifyCallerRequest(
+                MeshCallerRequest(
+                    authorization: "forged", proof: nil, method: "POST", target: "/a2a", bodySha256: "d", tool: nil)))
+        await mac.kernel.stopNetwork()
+    }
+
     func testLocalCreationDenialDoesNotCreateMembership() async throws {
         let mac = try await open("Mac")
         mac.presenter.approve = false

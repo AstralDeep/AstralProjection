@@ -3,7 +3,7 @@
   "pack_format": 1,
   "kernel": {
     "repository": "https://github.com/AstralDeep/AstralKernel.git",
-    "commit": "c2c1cc43e7287cee230a809cdb1e358e10286f5a"
+    "commit": "583463312ca1fd44fad630525928f471866da422"
   },
   "deep": {
     "repository": "https://github.com/AstralDeep/AstralDeep.git",
