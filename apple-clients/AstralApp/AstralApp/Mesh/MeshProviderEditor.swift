@@ -21,8 +21,9 @@ final class MeshProviderEditor {
         saved = false
         defer { saving = false }
         let submitted = MeshModelProviderConfig(baseURL: baseURL, model: model, apiKey: key, recipients: recipients)
-        problem = await runtime.saveProvider(
-            baseURL: submitted.baseURL, model: submitted.model, key: submitted.apiKey, recipients: submitted.recipients)
+        problem = await runtime.saveModelConnection(
+            baseURL: submitted.baseURL, model: submitted.model, key: submitted.apiKey,
+            recipients: submitted.recipients)
         guard problem == nil, baseURL == submitted.baseURL, model == submitted.model,
             key == submitted.apiKey, recipients == submitted.recipients
         else { return }

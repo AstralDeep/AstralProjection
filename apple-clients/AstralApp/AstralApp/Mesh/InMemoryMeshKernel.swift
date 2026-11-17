@@ -963,6 +963,17 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         }
     }
 
+    private func addModelProvider(_ connection: MeshConnection, _ models: [String], _ recipients: [String]?) {
+        lock.withLock {
+            let own: String = status.deviceId ?? ""
+            providers.append(
+                MeshModelProvider(
+                    providerId: "model-" + connection.id.prefix(8), baseURL: connection.endpoint,
+                    model: models.first ?? "", hasKey: true, isDefault: providers.isEmpty, recipients: recipients,
+                    availableOnDevice: recipients?.contains(own) ?? true))
+        }
+    }
+
     func setModelProviderRecipients(name: String, recipients: [String]?) throws -> MeshModelProvider {
         try record("setModelProviderRecipients", name)
         providerSaveGate()
@@ -1158,6 +1169,42 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         return try connectionBook.propose(endpoint: endpoint, name: name, local: local)
     }
 
+    func proposeA2AConnection(cardURL: String, name: String, key: String?, recipients: [String]?) async throws
+        -> MeshConnectionProposal
+    {
+        try record("proposeA2AConnection", cardURL)
+        try requireEnrolled()
+        return try connectionBook.proposeA2A(cardURL: cardURL, name: name, key: key, recipients: recipients)
+    }
+
+    func proposeKeyConnection(endpoint: String, name: String, local: Bool, key: String, recipients: [String]?)
+        async throws -> MeshConnectionProposal
+    {
+        try record("proposeKeyConnection", endpoint)
+        try requireEnrolled()
+        return try connectionBook.proposeKey(
+            endpoint: endpoint, name: name, local: local, key: key, recipients: recipients)
+    }
+
+    func proposeHttpApiConnection(_ draft: MeshHttpApiDraft) async throws -> MeshConnectionProposal {
+        try record("proposeHttpApiConnection", draft.endpoint)
+        try requireEnrolled()
+        return try connectionBook.proposeHttpApi(draft)
+    }
+
+    func proposeModelConnection(_ draft: MeshModelConnectionDraft) async throws -> MeshConnectionProposal {
+        try record("proposeModelConnection", draft.endpoint)
+        try requireEnrolled()
+        return try connectionBook.proposeModel(draft)
+    }
+
+    func setConnectionKey(id: String, secrets: [MeshConnectionSecret], recipients: [String]?) throws {
+        try record("setConnectionKey", id)
+        try requireEnrolled()
+        try connectionBook.setKey(id: id, secrets: secrets, recipients: recipients)
+        listener.onChange(.connectionsChanged)
+    }
+
     func reviewConnection(id: String) async throws -> MeshConnectionProposal {
         try record("reviewConnection", id)
         try requireEnrolled()
@@ -1170,6 +1217,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         try record("approveConnection", proposal)
         try requireEnrolled()
         let value = try connectionBook.approve(proposal: proposal, flow: flow, toolNames: toolNames, clientId: clientId)
+        if let facts = connectionBook.modelFacts(of: value.id) { addModelProvider(value, facts.models, facts.recipients) }
         listener.onChange(.connectionsChanged)
         return value
     }

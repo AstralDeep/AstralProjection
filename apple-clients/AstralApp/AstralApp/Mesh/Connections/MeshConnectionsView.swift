@@ -23,6 +23,18 @@ struct MeshConnectionsView: View {
                     Label("Add a connection", systemImage: "plus")
                 }
                 .accessibilityIdentifier(MeshConnectionID.add)
+                NavigationLink {
+                    MeshConnectionKeyView(target: .server)
+                } label: {
+                    Label("Add a server with a key", systemImage: "key")
+                }
+                .accessibilityIdentifier(MeshConnectionID.addServerKey)
+                NavigationLink {
+                    MeshConnectionKeyView(target: .httpApi)
+                } label: {
+                    Label("Add an API with a key", systemImage: "key.horizontal")
+                }
+                .accessibilityIdentifier(MeshConnectionID.addHttpApi)
             }
             MeshConnectionsLegacySection(model: legacy)
         }
@@ -79,8 +91,8 @@ struct MeshConnectionRow: View {
             }
             MeshConnectionSignInStatus(signIn: signIn, connectionId: facts.id)
             MeshConnectionRowActions(
-                facts: facts, canSignIn: connection.supportedHere && connection.scheme == "oauth", signIn: signIn,
-                remove: remove)
+                facts: facts, canSignIn: connection.supportedHere && connection.scheme == "oauth",
+                canKey: connection.supportedHere && connection.scheme == "key", signIn: signIn, remove: remove)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(MeshConnectionID.row(facts.id))
@@ -90,6 +102,7 @@ struct MeshConnectionRow: View {
 struct MeshConnectionRowActions: View {
     let facts: MeshConnectionRowFacts
     let canSignIn: Bool
+    var canKey = false
     let signIn: MeshConnectionSignIn?
     let remove: () -> Void
 
@@ -101,6 +114,12 @@ struct MeshConnectionRowActions: View {
                 }
                 .disabled(signIn.isBusy)
                 .accessibilityIdentifier(MeshConnectionID.signIn(facts.id))
+            }
+            if canKey {
+                NavigationLink(facts.hereLine == "Signed in here" ? "Replace key" : "Add key") {
+                    MeshConnectionKeyView(target: .existing(connection: facts.id))
+                }
+                .accessibilityIdentifier(MeshConnectionID.replaceKey(facts.id))
             }
             if facts.needsReview {
                 NavigationLink("Review") { MeshConnectionReviewView(connectionId: facts.id) }

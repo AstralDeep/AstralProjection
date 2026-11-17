@@ -144,6 +144,10 @@ final class MeshConnectionAddModel {
         selectedTools = []
     }
 
+    func present(_ proposal: MeshConnectionProposal) {
+        show(proposal)
+    }
+
     private func show(_ proposal: MeshConnectionProposal) {
         let card = MeshConnectionCardFacts(proposal)
         facts = card
@@ -223,6 +227,12 @@ nonisolated enum MeshConnectionID {
     static let legacy = "mesh.connections.legacy"
     static let banner = "mesh.connections.banner"
     static let signInStatus = "mesh.connections.signin.status"
+    static let key = "mesh.connections.key"
+    static let keySave = "mesh.connections.key.save"
+    static let keyHeader = "mesh.connections.key.header"
+    static let keyFormat = "mesh.connections.key.format"
+    static let addServerKey = "mesh.connections.add.key"
+    static let addHttpApi = "mesh.connections.add.api"
 
     static func fact(_ id: String) -> String { "mesh.connections.card.\(id)" }
     static func tool(_ name: String) -> String { "mesh.connections.tool.\(name)" }
@@ -232,5 +242,6 @@ nonisolated enum MeshConnectionID {
     static func remove(_ id: String) -> String { "mesh.connections.remove.\(id)" }
     static func attention(_ id: String) -> String { "mesh.connections.attention.\(id)" }
     static func signIn(_ id: String) -> String { "mesh.connections.signin.\(id)" }
+    static func replaceKey(_ id: String) -> String { "mesh.connections.key.replace.\(id)" }
     static func legacyRow(_ id: String) -> String { "mesh.connections.legacy.\(id)" }
 }
