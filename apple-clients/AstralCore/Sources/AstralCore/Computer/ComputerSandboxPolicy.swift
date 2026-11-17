@@ -160,10 +160,6 @@ public struct ComputerSandboxConfiguration: Sendable, Equatable, Codable {
     public var executionMode: ComputerSandboxMode { .enforce }
 
     public var placeholders: [String] { bindings.map(\.placeholder) }
-
-    public func replacing(mode: ComputerSandboxMode) -> ComputerSandboxConfiguration? {
-        ComputerSandboxConfiguration(mode: mode, domains: domains, bindings: bindings)
-    }
 }
 
 public enum ComputerEgressAddressClass: String, Sendable, Equatable {
