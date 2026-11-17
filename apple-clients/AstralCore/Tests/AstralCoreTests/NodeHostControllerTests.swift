@@ -329,5 +329,113 @@
             XCTAssertEqual(controller.phase, .installed(version: "3.11.18-test"))
             XCTAssertFalse(FileManager.default.fileExists(atPath: home.appendingPathComponent("run.json").path))
         }
+
+        private struct StalledTransport: NodePackTransport {
+            func data(from url: URL, maxBytes: Int) async throws -> Data { try Data(contentsOf: url) }
+            func download(from url: URL, to destination: URL, progress: @escaping @Sendable (Int64, Int64) -> Void)
+                async throws
+            {
+                try await Task.sleep(nanoseconds: 60_000_000_000)
+            }
+        }
+
+        private func pinnedEnvironment(_ built: BuiltPack, transport: NodePackTransport = FileTransport())
+            throws -> NodeHostEnvironment
+        {
+            var result = environment(transport: transport)
+            result.defaultPackURL = built.descriptorURL.absoluteString
+            result.pinnedDescriptorSha256 = NodePackTestSupport.sha(try Data(contentsOf: built.descriptorURL))
+            return result
+        }
+
+        func testTheFirstLaunchDownloadsThePinnedPackOnceAndNeverAfterARemoval() async throws {
+            let built = try NodePackTestSupport.build()
+            let controller = NodeHostController(environment: try pinnedEnvironment(built))
+            await controller.installOnFirstLaunch()
+            XCTAssertEqual(controller.phase, .installed(version: "3.11.18-test"))
+            XCTAssertTrue(defaults.bool(forKey: NodeHostController.autoOfferedKey))
+
+            await controller.remove()
+            await controller.installOnFirstLaunch()
+            XCTAssertEqual(controller.phase, .notInstalled)
+            let next = NodeHostController(environment: try pinnedEnvironment(built))
+            await next.installOnFirstLaunch()
+            XCTAssertEqual(next.phase, .notInstalled)
+        }
+
+        func testTheFirstLaunchDownloadNeedsAPinAnAddressAndAnAvailableBuild() async throws {
+            let built = try NodePackTestSupport.build()
+            var unpinned = try pinnedEnvironment(built)
+            unpinned.pinnedDescriptorSha256 = nil
+            var unaddressed = try pinnedEnvironment(built)
+            unaddressed.defaultPackURL = ""
+            var unavailable = try pinnedEnvironment(built)
+            unavailable.available = false
+            for candidate in [unpinned, unaddressed, unavailable] {
+                let controller = NodeHostController(environment: candidate)
+                await controller.installOnFirstLaunch()
+                XCTAssertFalse(defaults.bool(forKey: NodeHostController.autoOfferedKey))
+                XCTAssertNotEqual(controller.phase, .installed(version: "3.11.18-test"))
+            }
+        }
+
+        func testAnUnreachableOrMismatchedFirstLaunchOfferExplainsAndDoesNotRetry() async throws {
+            let built = try NodePackTestSupport.build()
+            var wrongPin = try pinnedEnvironment(built)
+            wrongPin.pinnedDescriptorSha256 = String(repeating: "0", count: 64)
+            let controller = NodeHostController(environment: wrongPin)
+            await controller.installOnFirstLaunch()
+            XCTAssertEqual(controller.phase, .notInstalled)
+            XCTAssertEqual(controller.message, "The pack description does not match the pinned digest.")
+            XCTAssertTrue(defaults.bool(forKey: NodeHostController.autoOfferedKey))
+            await controller.installOnFirstLaunch()
+            let packs = root.appendingPathComponent("node/packs").path
+            XCTAssertNil(try? FileManager.default.contentsOfDirectory(atPath: packs))
+        }
+
+        func testAnInstalledPackIsNotDownloadedAgainOnFirstLaunch() async throws {
+            let built = try NodePackTestSupport.build()
+            let first = NodeHostController(environment: try pinnedEnvironment(built))
+            first.packURLText = built.descriptorURL.absoluteString
+            await first.lookUpOffer()
+            await first.install()
+            let second = NodeHostController(environment: try pinnedEnvironment(built, transport: StalledTransport()))
+            await second.installOnFirstLaunch()
+            XCTAssertEqual(second.phase, .installed(version: "3.11.18-test"))
+        }
+
+        func testTheFirstLaunchDownloadCanBeCancelled() async throws {
+            let built = try NodePackTestSupport.build()
+            let stalled = try pinnedEnvironment(built, transport: StalledTransport())
+            let controller = NodeHostController(environment: stalled)
+            let download = Task { await controller.installOnFirstLaunch() }
+            await waitFor(controller) { if case .downloading = $0 { return true } else { return false } }
+            controller.cancelInstall()
+            await download.value
+            XCTAssertEqual(controller.phase, .notInstalled)
+            XCTAssertEqual(controller.message, "The download was cancelled.")
+            XCTAssertTrue(defaults.bool(forKey: NodeHostController.autoOfferedKey))
+        }
+
+        func testTheOldPackIsRemovedOnlyAfterTheNewOneIsHealthy() async throws {
+            let launcher = FakeLauncher()
+            let controller = NodeHostController(environment: environment(launcher: launcher))
+            let packs = root.appendingPathComponent("node/packs").path
+            for version in ["one", "two"] {
+                let built = try NodePackTestSupport.build(version: version)
+                controller.packURLText = built.descriptorURL.absoluteString
+                await controller.lookUpOffer()
+                await controller.install()
+            }
+            XCTAssertEqual(Set(try FileManager.default.contentsOfDirectory(atPath: packs)), ["one", "two"])
+            await controller.start()
+            await waitFor(controller) { $0 == .running(port: 18_731) }
+            let deadline = Date().addingTimeInterval(5)
+            while Date() < deadline, try FileManager.default.contentsOfDirectory(atPath: packs).count > 1 {
+                try await Task.sleep(nanoseconds: 5_000_000)
+            }
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: packs), ["two"])
+            await controller.stop()
+        }
     }
 #endif

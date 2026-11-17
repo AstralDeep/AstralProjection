@@ -1,6 +1,7 @@
 // Runs one job's host-side loopback egress proxy on Network.framework: it applies the job's domain list and
 // destination classification to every CONNECT or absolute-form request, swaps bound placeholder tokens for
-// Keychain secrets on allowed upstreams, and reports every decision without ever recording bodies.
+// Keychain secrets on allowed upstreams, and reports every decision without ever recording bodies. It also holds the
+// same port on ::1 so no other process can listen where the sandbox profile allows outbound connections.
 
 #if os(macOS)
     import AstralCore
@@ -11,7 +12,10 @@
     nonisolated final class MacComputerEgressProxy: MacComputerEgressProxying, @unchecked Sendable {
         private let request: MacComputerEgressProxyRequest
         private let queue: DispatchQueue
-        private let listener: NWListener
+        private var listener: NWListener
+        private let holdIPv6Override: (@Sendable (UInt16) -> String?)?
+        static let portAttempts = 3
+        private var hold: DispatchSourceRead?
         private let gate = DispatchSemaphore(value: 0)
         private let lock = NSLock()
         private var tracked: [ObjectIdentifier: NWConnection] = [:]
@@ -20,13 +24,18 @@
         private var bound: UInt16 = 0
         private var stopped = false
 
-        init(request: MacComputerEgressProxyRequest) throws {
+        init(request: MacComputerEgressProxyRequest, holdIPv6: (@Sendable (UInt16) -> String?)? = nil) throws {
             self.request = request
+            holdIPv6Override = holdIPv6
             queue = DispatchQueue(label: "com.personalailabs.astraldeep.egress." + request.jobId)
+            listener = try Self.makeListener()
+        }
+
+        private static func makeListener() throws -> NWListener {
             let parameters = NWParameters.tcp
             parameters.requiredLocalEndpoint = NWEndpoint.hostPort(host: "127.0.0.1", port: .any)
             do {
-                listener = try NWListener(using: parameters)
+                return try NWListener(using: parameters)
             } catch {
                 throw ComputerHostError(
                     "sandbox_refused", "The command egress proxy listener could not be created.")
@@ -36,16 +45,39 @@
         var port: UInt16 { lock.withLock { bound } }
 
         func start() throws {
+            var lastReason = ""
+            for attempt in 0..<Self.portAttempts {
+                if attempt > 0 {
+                    let fresh = try Self.makeListener()
+                    lock.withLock {
+                        listener.stateUpdateHandler = nil
+                        listener.newConnectionHandler = nil
+                        listener.cancel()
+                        listener = fresh
+                    }
+                }
+                let port = try listenIPv4()
+                guard let reason = (holdIPv6Override ?? { self.holdIPv6(port: $0) })(port) else { return }
+                lastReason = reason
+            }
+            stop()
+            throw ComputerHostError(
+                "sandbox_refused", "The command egress proxy could not hold the IPv6 loopback port: \(lastReason)")
+        }
+
+        private func listenIPv4() throws -> UInt16 {
             lock.withLock {
                 self.ready = false
                 self.failure = nil
+                self.bound = 0
             }
-            listener.stateUpdateHandler = { [weak self] state in
-                guard let self else { return }
+            let current = lock.withLock { listener }
+            current.stateUpdateHandler = { [weak self, weak current] state in
+                guard let self, let current else { return }
                 switch state {
                 case .ready:
                     self.lock.withLock {
-                        self.bound = self.listener.port?.rawValue ?? 0
+                        self.bound = current.port?.rawValue ?? 0
                         self.ready = true
                     }
                     self.gate.signal()
@@ -57,10 +89,10 @@
                 default: break
                 }
             }
-            listener.newConnectionHandler = { [weak self] connection in
+            current.newConnectionHandler = { [weak self] connection in
                 self?.accept(connection)
             }
-            listener.start(queue: queue)
+            current.start(queue: queue)
             _ = gate.wait(timeout: .now() + 5)
             let (started, startFailure, listeningPort) = lock.withLock { (self.ready, self.failure, self.bound) }
             guard started, startFailure == nil, listeningPort != 0 else {
@@ -69,6 +101,43 @@
                     "sandbox_refused", "The command egress proxy did not start\(startFailure.map { ": \($0)" } ?? ".")."
                 )
             }
+            return listeningPort
+        }
+
+        private func holdIPv6(port: UInt16) -> String? {
+            let descriptor = Darwin.socket(AF_INET6, SOCK_STREAM, 0)
+            guard descriptor >= 0 else { return String(cString: strerror(errno)) }
+            guard fcntl(descriptor, F_SETFL, fcntl(descriptor, F_GETFL) | O_NONBLOCK) == 0 else {
+                let reason = String(cString: strerror(errno))
+                Darwin.close(descriptor)
+                return reason
+            }
+            var on: Int32 = 1
+            setsockopt(descriptor, IPPROTO_IPV6, IPV6_V6ONLY, &on, socklen_t(MemoryLayout<Int32>.size))
+            var address = sockaddr_in6()
+            address.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
+            address.sin6_family = sa_family_t(AF_INET6)
+            address.sin6_port = port.bigEndian
+            address.sin6_addr = in6addr_loopback
+            let bound = withUnsafePointer(to: &address) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    Darwin.bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in6>.size))
+                }
+            }
+            guard bound == 0, Darwin.listen(descriptor, 8) == 0 else {
+                let reason = String(cString: strerror(errno))
+                Darwin.close(descriptor)
+                return reason
+            }
+            let source = DispatchSource.makeReadSource(fileDescriptor: descriptor, queue: queue)
+            source.setEventHandler {
+                let peer = Darwin.accept(descriptor, nil, nil)
+                if peer >= 0 { Darwin.close(peer) }
+            }
+            source.setCancelHandler { Darwin.close(descriptor) }
+            source.resume()
+            lock.withLock { hold = source }
+            return nil
         }
 
         func stop() {
@@ -78,6 +147,8 @@
                 listener.stateUpdateHandler = nil
                 listener.newConnectionHandler = nil
                 listener.cancel()
+                hold?.cancel()
+                hold = nil
                 let all = Array(tracked.values)
                 tracked.removeAll()
                 return all

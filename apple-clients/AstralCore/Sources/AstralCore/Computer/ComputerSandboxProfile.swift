@@ -1,7 +1,7 @@
 // Generates the macOS Seatbelt (SBPL) profile text for one governed command job, purely from its inputs.
 // Enforce mode writes only inside granted roots and the per-job directory, keeps protected metadata read-only,
-// makes exclusions and keychains unreadable, and permits network only to the loopback egress proxy; shadow mode
-// compiles a fully permissive profile so the same launcher path stays validated without blocking.
+// makes exclusions and keychains unreadable, allows fork, and permits network only to the loopback egress proxy
+// unless the job asks to listen; shadow mode compiles a fully permissive profile that no governed command uses.
 
 import CryptoKit
 import Foundation
@@ -18,10 +18,11 @@ public enum ComputerSandboxProfile {
         public let bundlePath: String?
         public let supportIdentifier: String
         public let proxyPort: UInt16?
+        public let listen: Bool
 
         public init(
             mode: ComputerSandboxMode, writeRoots: [String], exclusions: [String], home: String,
-            bundlePath: String?, supportIdentifier: String, proxyPort: UInt16?
+            bundlePath: String?, supportIdentifier: String, proxyPort: UInt16?, listen: Bool = false
         ) {
             self.mode = mode
             self.writeRoots = writeRoots
@@ -30,6 +31,7 @@ public enum ComputerSandboxProfile {
             self.bundlePath = bundlePath
             self.supportIdentifier = supportIdentifier
             self.proxyPort = proxyPort
+            self.listen = listen
         }
     }
 
@@ -59,7 +61,7 @@ public enum ComputerSandboxProfile {
     }
 
     static func quote(_ value: String) -> String {
-        "\"" + value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
+        SeatbeltQuoting.quote(value)
     }
 
     static func regexLiteral(_ pattern: String) -> String {
@@ -188,6 +190,7 @@ public enum ComputerSandboxProfile {
             "(import \"system.sb\")",
             "",
             "(allow process-exec*)",
+            "(allow process-fork)",
             "(allow process-info*)",
             "(allow signal)",
             "(allow mach-lookup)",
@@ -199,6 +202,8 @@ public enum ComputerSandboxProfile {
         ]
         if let port = input.proxyPort {
             lines.append("(allow network-outbound (remote ip \"localhost:\(port)\"))")
+        }
+        if input.listen {
             lines.append("(allow network-outbound (remote unix-socket (literal \"/private/var/run/mDNSResponder\")))")
             lines.append("(allow network-bind (local ip \"localhost:*\"))")
             lines.append("(allow network-inbound (local ip \"localhost:*\"))")
