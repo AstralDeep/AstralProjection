@@ -13,9 +13,7 @@
         var onReachabilityChanged: (@MainActor @Sendable (Bool) -> Void)?
         var onRelayRequest: (@MainActor @Sendable (Data) async -> Void)?
         var onRelayReady: (@MainActor @Sendable () -> Void)?
-        private var context: [String: Any] = [:]
-        private var contextDirty = false
-        static let companionContextKeys = ["chats": "companion.chats", "phone": "companion.phone"]
+        private var context = WatchContextStore()
 
         var reachable: Bool {
             guard WCSession.isSupported() else { return false }
@@ -32,31 +30,40 @@
 
         func push(_ rawEndpoint: String?) {
             guard let endpoint = AstralConfig.usableEndpoint(rawEndpoint) else { return }
-            context[AstralConfig.serverOverrideDefaultsKey] = endpoint
-            contextDirty = true
+            context.setEndpoint(endpoint)
             flush()
         }
 
-        func publish(_ update: Data, latestState: Bool) {
-            guard WCSession.isSupported() else { return }
-            let object = try? JSONSerialization.jsonObject(with: update) as? [String: Any]
-            if latestState, let kind = object?["kind"] as? String, let key = Self.companionContextKeys[kind] {
-                context[key] = update
-                contextDirty = true
-                flush()
-            }
-            guard reachable else { return }
-            WCSession.default.sendMessageData(update, replyHandler: nil, errorHandler: nil)
+        func publish(
+            _ update: Data, kind: String, latestState: Bool, completion: @escaping @MainActor (Bool) -> Void
+        ) {
+            guard WCSession.isSupported() else { return completion(false) }
+            var stored = false
+            if latestState, context.set(kind: kind, data: update) { stored = flush() }
+            guard reachable else { return completion(stored) }
+            WCSession.default.sendMessageData(
+                update,
+                replyHandler: { _ in Task { @MainActor in completion(true) } },
+                errorHandler: { _ in Task { @MainActor in completion(stored) } })
         }
 
-        private func flush() {
-            guard WCSession.isSupported(), contextDirty else { return }
+        func withdraw(kind: String) {
+            context.remove(kind: kind)
+            flush()
+        }
+
+        @discardableResult
+        private func flush() -> Bool {
+            guard WCSession.isSupported(), context.dirty else { return false }
             let session = WCSession.default
-            guard session.activationState == .activated, session.isPaired, session.isWatchAppInstalled else { return }
+            guard session.activationState == .activated, session.isPaired, session.isWatchAppInstalled else {
+                return false
+            }
             do {
-                try session.updateApplicationContext(context)
-                contextDirty = false
-            } catch {}
+                try session.updateApplicationContext(context.snapshot)
+                context.markFlushed()
+                return true
+            } catch { return false }
         }
 
         func send(_ packet: CompanionVoicePacket) async throws {
@@ -87,7 +94,7 @@
             replyHandler: @escaping (Data) -> Void
         ) {
             let response = CompanionVoiceInboundReply(replyHandler)
-            guard let packet = try? CompanionVoicePacket(data: data) else {
+            guard case .voice(let packet) = WatchInbound.classify(data) else {
                 Task { @MainActor [weak self] in
                     if let self, self.reachable, let handler = self.onRelayRequest { await handler(data) }
                     response.send(Data())

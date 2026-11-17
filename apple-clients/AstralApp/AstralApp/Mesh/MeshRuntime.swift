@@ -1263,6 +1263,37 @@ final class MeshRuntime {
         return true
     }
 
+    func send(_ text: String, to chatId: String) async -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, isReady, hasMesh, !status.stopped, let meshId = status.meshId,
+            chats.contains(where: { $0.chatId == chatId }), let reservation = reserveTurn(chatId: chatId)
+        else { return false }
+        let session = wakeSession
+        defer { releaseReservation(chatId: chatId, id: reservation) }
+        guard
+            let eventId = await attempt(
+                allowRetired: true,
+                { kernel in
+                    let head = MeshChatTree.defaultHead(of: try kernel.chat(chatId: chatId).messages)
+                    return try kernel.sendMessage(chatId: chatId, text: trimmed, continues: head)
+                })
+        else { return false }
+        guard isReady, wakeSession == session, status.meshId == meshId, !status.stopped else { return false }
+        if currentChatId == chatId {
+            selectedHead = eventId
+            headPinned = false
+            await reloadChat(chatId)
+            guard isReady, wakeSession == session, status.meshId == meshId else { return false }
+        }
+        startTurn(
+            chatId: chatId, reservation: reservation,
+            interrupt: { kernel, chat in try kernel.interruptMessage(chatId: chat, messageId: eventId) },
+            steer: { kernel, chat, text in try kernel.steerMessage(chatId: chat, messageId: eventId, text: text) },
+            cancelPending: { kernel, chat in try await kernel.cancelPendingMessage(chatId: chat, messageId: eventId) },
+            run: { try await $0.runMessage(chatId: chatId, messageId: eventId) })
+        return true
+    }
+
     func steer(_ text: String) async -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
@@ -1474,8 +1505,7 @@ final class MeshRuntime {
         guard companionMeshId != nil, !status.stopped, chats.contains(where: { $0.chatId == chatId }) else {
             return false
         }
-        if currentChatId != chatId { await openChat(chatId) }
-        return await send(text)
+        return await send(text, to: chatId)
     }
 
     func companionStop(chatId: String) async {

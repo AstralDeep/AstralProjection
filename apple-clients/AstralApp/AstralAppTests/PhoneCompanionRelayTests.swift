@@ -11,10 +11,18 @@ private final class RecordingRelayChannel: CompanionRelayChannel {
     var onRelayRequest: (@MainActor @Sendable (Data) async -> Void)?
     var onRelayReady: (@MainActor @Sendable () -> Void)?
     var sent: [(update: CompanionPhoneUpdate, latest: Bool)] = []
+    var withdrawn: [String] = []
+    var succeeds = true
 
-    func publish(_ update: Data, latestState: Bool) {
-        if let decoded = try? CompanionPhoneUpdate(data: update) { sent.append((decoded, latestState)) }
+    func publish(_ update: Data, kind: String, latestState: Bool, completion: @escaping @MainActor (Bool) -> Void) {
+        if let decoded = try? CompanionPhoneUpdate(data: update) {
+            XCTAssertEqual(decoded.wireKind, kind)
+            sent.append((decoded, latestState))
+        }
+        completion(succeeds)
     }
+
+    func withdraw(kind: String) { withdrawn.append(kind) }
 
     var chatLists: [(CompanionVoiceOwner, [CompanionChatSummary], Int)] {
         sent.compactMap { if case .chats(let o, let c, let n) = $0.update { return (o, c, n) } else { return nil } }
@@ -115,6 +123,7 @@ final class PhoneCompanionRelayTests: XCTestCase {
         defer { r.h.cleanUp() }
         let created = await r.h.runtime.newChat(title: "Wrist")
         let chat = try XCTUnwrap(created)
+        _ = await r.relay.handle(try request(.openChat(owner: try owner(r.h), chatId: chat)))
         let outcome = await r.relay.handle(
             try request(.sendMessage(owner: try owner(r.h), chatId: chat, text: "Summarize labs")))
         XCTAssertEqual(outcome, .served)
@@ -129,6 +138,7 @@ final class PhoneCompanionRelayTests: XCTestCase {
         let outcome = await r.relay.handle(
             try request(.sendMessage(owner: try owner(r.h), chatId: "chat-that-is-not-here", text: "hello")))
         XCTAssertEqual(outcome, .failed)
+        XCTAssertEqual(r.channel.runStates.last, .failed)
         XCTAssertFalse(r.h.kernel.calls.contains { $0.name == "sendMessage" })
     }
 
@@ -241,25 +251,217 @@ final class PhoneCompanionRelayTests: XCTestCase {
         XCTAssertTrue(r.channel.chatViews.last?.view.contains("update me") == true)
     }
 
-    func testChatTextDropsToolAuthorsAndUntrustedSurfaces() {
+    private func labeled(
+        _ id: String, parent: String?, author: MeshAuthor, text: String, at: TimeInterval,
+        confidentiality: String = "private", integrity: String = "owner", surfaces: [String] = []
+    ) -> MeshChatMessage {
+        var message = MeshRuntimeHarness.message(
+            id, parent: parent, author: author, text: text, at: at, surfaces: surfaces)
+        message.confidentiality = confidentiality
+        message.integrity = integrity
+        return message
+    }
+
+    private func surface(_ id: String, untrusted: Bool = false, texts: [String]) -> MeshRenderedSurface {
+        MeshRenderedSurface(
+            surfaceId: id, tree: texts.map { .object(["type": .string("text"), "text": .string($0)]) },
+            untrusted: untrusted, rejected: [])
+    }
+
+    func testRestrictedMessagesAndSurfacesNeverReachTheWatchBytes() async throws {
+        let r = await rig()
+        defer { r.h.cleanUp() }
+        let messages = [
+            labeled("m1", parent: nil, author: .owner, text: "hello there", at: 1),
+            labeled("m2", parent: "m1", author: .assistant, text: "PHI-SECRET-TEXT", at: 2, confidentiality: "phi"),
+            labeled("m3", parent: "m2", author: .assistant, text: "SECRET-TEXT", at: 3, confidentiality: "secret"),
+            labeled("m4", parent: "m3", author: .assistant, text: "plain answer", at: 4, surfaces: ["priv"]),
+            labeled(
+                "m5", parent: "m4", author: .assistant, text: "second answer", at: 5, confidentiality: "public",
+                integrity: "untrusted", surfaces: ["hostile"]),
+            labeled(
+                "m6", parent: "m5", author: .assistant, text: "third answer", at: 6, confidentiality: "public",
+                surfaces: ["flagged", "good"]),
+        ]
+        let chat = r.h.kernel.seedChat(title: "Labels", messages: messages)
+        r.h.kernel.setRendered(
+            chatId: chat,
+            [
+                surface("priv", texts: ["PRIVATE-SURFACE-TEXT"]),
+                surface("hostile", texts: ["HOSTILE-SURFACE-TEXT"]),
+                surface("flagged", untrusted: true, texts: ["UNTRUSTED-SURFACE-TEXT"]),
+                surface("good", texts: ["first line", "second line"]),
+            ])
+        await r.h.runtime.refreshChats()
+        _ = await r.relay.handle(try request(.openChat(owner: try owner(r.h), chatId: chat)))
+        let view = try XCTUnwrap(r.channel.chatViews.last).view
+        for banned in ["PHI-SECRET", "SECRET-TEXT", "PRIVATE-SURFACE", "HOSTILE-SURFACE", "UNTRUSTED-SURFACE"] {
+            XCTAssertFalse(view.contains(banned), banned)
+        }
+        XCTAssertTrue(view.contains(WatchChatText.placeholder))
+        XCTAssertTrue(view.contains("plain answer") && view.contains("third answer"))
+        XCTAssertFalse(view.contains("\(WatchChatText.placeholder)\n\(WatchChatText.placeholder)"))
+        let first = try XCTUnwrap(view.range(of: "first line"))
+        let second = try XCTUnwrap(view.range(of: "second line"))
+        XCTAssertLessThan(first.lowerBound, second.lowerBound)
+    }
+
+    func testOnlyTheCurrentBranchIsShown() {
         let view = MeshChatView(
             chatId: "c", title: "T",
             messages: [
-                MeshRuntimeHarness.message("a", parent: nil, author: .tool, text: "tool output", at: 1),
-                MeshRuntimeHarness.message("b", parent: "a", author: .owner, text: "line\u{0007}one", at: 2),
-            ],
-            branches: [], surfaces: [],
-            rendered: [
-                MeshRenderedSurface(
-                    surfaceId: "s", tree: [.object(["type": .string("text"), "text": .string("trusted note")])],
-                    untrusted: false, rejected: []),
-                MeshRenderedSurface(
-                    surfaceId: "u", tree: [.object(["text": .string("untrusted note")])], untrusted: true,
-                    rejected: []),
-            ],
-            labels: [], status: .idle)
+                labeled("a", parent: nil, author: .owner, text: "root", at: 1),
+                labeled("b", parent: "a", author: .assistant, text: "OLD-BRANCH", at: 2),
+                labeled("c", parent: "a", author: .assistant, text: "new branch", at: 3),
+            ], branches: [], surfaces: [], rendered: [], labels: [], status: .idle)
         let text = WatchChatText.make(view)
-        XCTAssertEqual(text, "You: line one\ntrusted note")
-        XCTAssertEqual(WatchChatText.title("  \n "), CompanionRelay.untitledChat)
+        XCTAssertEqual(text, "You: root\nAstral: new branch")
+    }
+
+    func testTextNeverStartsWithAPartialLine() {
+        let messages = (0..<40).map {
+            labeled(
+                "m\($0)", parent: $0 == 0 ? nil : "m\($0 - 1)", author: .owner,
+                text: "line-\($0)-" + String(repeating: "x", count: 150), at: TimeInterval($0))
+        }
+        let view = MeshChatView(
+            chatId: "c", title: "T", messages: messages, branches: [], surfaces: [], rendered: [], labels: [],
+            status: .idle)
+        let text = WatchChatText.make(view)
+        XCTAssertLessThanOrEqual(text.utf8.count, CompanionRelay.maximumViewBytes)
+        XCTAssertTrue(text.hasPrefix("You: line-"))
+        XCTAssertTrue(text.hasSuffix(String(repeating: "x", count: 150)))
+    }
+
+    func testCleanedTextIsAlwaysAcceptedByTheEncoder() throws {
+        let nasty = "a\u{200E}b\u{202E}c\u{200B}d\u{0007}e\u{FEFF}f\ng\th"
+        let id = "sha256:" + String(repeating: "ab", count: 32)
+        let owner = try XCTUnwrap(CompanionVoiceOwner(meshId: id))
+        let view = MeshChatView(
+            chatId: "c", title: nasty,
+            messages: [labeled("a", parent: nil, author: .owner, text: nasty, at: 1)],
+            branches: [], surfaces: [], rendered: [], labels: [], status: .idle)
+        let update = CompanionPhoneUpdate.chat(
+            owner: owner, chatId: "c", title: WatchChatText.title(nasty), view: WatchChatText.make(view))
+        XCTAssertNoThrow(try update.encoded())
+        XCTAssertEqual(WatchChatText.clean(nasty, maximumBytes: 200), "a b c d e f g h")
+    }
+
+    func testASendToAnotherChatLeavesThePhonesCurrentChatAlone() async throws {
+        let r = await rig()
+        defer { r.h.cleanUp() }
+        let first = await r.h.runtime.newChat(title: "First")
+        let target = try XCTUnwrap(first)
+        let second = await r.h.runtime.newChat(title: "Second")
+        let current = try XCTUnwrap(second)
+        XCTAssertEqual(r.h.runtime.currentChatId, current)
+        let outcome = await r.relay.handle(
+            try request(.sendMessage(owner: try owner(r.h), chatId: target, text: "for first")))
+        XCTAssertEqual(outcome, .served)
+        XCTAssertEqual(r.h.runtime.currentChatId, current)
+        await r.h.runtime.settle()
+        XCTAssertTrue(try r.h.kernel.chat(chatId: target).messages.contains { $0.text == "for first" })
+        XCTAssertFalse(try r.h.kernel.chat(chatId: current).messages.contains { $0.text == "for first" })
+    }
+
+    func testInterleavedSendsEachLandInTheirOwnChat() async throws {
+        let r = await rig()
+        defer { r.h.cleanUp() }
+        let aMade = await newChat(r, "A")
+        let a = try XCTUnwrap(aMade)
+        let bMade = await newChat(r, "B")
+        let b = try XCTUnwrap(bMade)
+        let id = try owner(r.h)
+        let one = try request(.sendMessage(owner: id, chatId: a, text: "to A"))
+        let two = try request(.sendMessage(owner: id, chatId: b, text: "to B"))
+        async let first = r.relay.handle(one)
+        async let second = r.relay.handle(two)
+        let outcomes = await [first, second]
+        XCTAssertEqual(outcomes, [.served, .served])
+        await r.h.runtime.settle()
+        XCTAssertTrue(try r.h.kernel.chat(chatId: a).messages.contains { $0.text == "to A" })
+        XCTAssertTrue(try r.h.kernel.chat(chatId: b).messages.contains { $0.text == "to B" })
+        XCTAssertFalse(try r.h.kernel.chat(chatId: a).messages.contains { $0.text == "to B" })
+        XCTAssertFalse(try r.h.kernel.chat(chatId: b).messages.contains { $0.text == "to A" })
+    }
+
+    private func newChat(_ r: Rig, _ title: String) async -> String? { await r.h.runtime.newChat(title: title) }
+
+    func testAMeshChangeDuringASendDropsTheReply() async throws {
+        let r = await rig()
+        defer { r.h.cleanUp() }
+        let chatMade = await newChat(r, "Gone")
+        let chat = try XCTUnwrap(chatMade)
+        let id = try owner(r.h)
+        r.h.kernel.sendGate = {
+            Task { @MainActor in await r.h.runtime.close() }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        let outcome = await r.relay.handle(try request(.sendMessage(owner: id, chatId: chat, text: "late")))
+        XCTAssertNotEqual(outcome, .served)
+        XCTAssertTrue(r.channel.runStates.isEmpty && r.channel.chatViews.isEmpty)
+    }
+
+    func testChatListsAreWithdrawnWhenTheStateLeavesReady() async throws {
+        let r = await rig()
+        defer { r.h.cleanUp() }
+        _ = await newChat(r, "Visible")
+        _ = await r.relay.handle(try request(.listChats(owner: try owner(r.h))))
+        XCTAssertTrue(r.channel.withdrawn.isEmpty)
+        await r.h.runtime.raiseStop()
+        await r.relay.refresh()
+        XCTAssertEqual(r.channel.withdrawn, ["chats"])
+        await r.h.runtime.close()
+        await r.relay.refresh()
+        XCTAssertEqual(r.channel.withdrawn.count, 2)
+        r.relay.unbind()
+        XCTAssertEqual(r.channel.withdrawn.count, 3)
+    }
+
+    func testAFailedDeliveryIsRetriedAndASuccessfulOneIsNot() async throws {
+        let r = await rig()
+        defer { r.h.cleanUp() }
+        r.channel.succeeds = false
+        await r.relay.refresh()
+        await r.relay.refresh()
+        XCTAssertEqual(r.channel.phoneStates.count, 2)
+        r.channel.succeeds = true
+        await r.relay.refresh()
+        await r.relay.refresh()
+        XCTAssertEqual(r.channel.phoneStates.count, 3)
+    }
+
+    func testTheContextStoreMergesAndWithdrawsEntries() {
+        var store = WatchContextStore()
+        XCTAssertFalse(store.dirty)
+        store.setEndpoint("https://example.test")
+        XCTAssertTrue(store.set(kind: "chats", data: Data("c".utf8)))
+        XCTAssertTrue(store.set(kind: "phone", data: Data("p".utf8)))
+        XCTAssertFalse(store.set(kind: "chat", data: Data("x".utf8)))
+        XCTAssertEqual(store.snapshot.count, 3)
+        store.markFlushed()
+        store.remove(kind: "chats")
+        XCTAssertTrue(store.dirty)
+        XCTAssertNil(store.snapshot["companion.chats"])
+        XCTAssertNotNil(store.snapshot["companion.phone"])
+        XCTAssertNotNil(store.snapshot[AstralConfig.serverOverrideDefaultsKey])
+        store.markFlushed()
+        store.remove(kind: "chats")
+        XCTAssertFalse(store.dirty)
+    }
+
+    func testInboundDataRoutesVoiceToVoiceAndEverythingElseToTheRelay() throws {
+        let id = "sha256:" + String(repeating: "ab", count: 32)
+        let owner = try XCTUnwrap(CompanionVoiceOwner(meshId: id))
+        let voice = try CompanionVoicePacket(
+            kind: .start, session: UUID(), sequence: 0, microseconds: 0,
+            payload: CompanionVoiceActivation(owner: owner, mode: .conversation).encoded())
+        guard case .voice = WatchInbound.classify(voice.encoded) else { return XCTFail("voice must route to voice") }
+        let relay = try CompanionWatchRequest.listChats(owner: owner).encoded()
+        guard case .relay(let data) = WatchInbound.classify(relay) else { return XCTFail("relay must route to relay") }
+        XCTAssertEqual(data, relay)
+        guard case .relay = WatchInbound.classify(Data("nonsense".utf8)) else {
+            return XCTFail("garbage is the relay's to refuse")
+        }
     }
 }

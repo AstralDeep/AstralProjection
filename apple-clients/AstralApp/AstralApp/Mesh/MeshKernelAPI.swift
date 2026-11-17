@@ -227,6 +227,8 @@ nonisolated struct MeshChatMessage: Identifiable, Equatable, Sendable {
     let delivery: MeshDelivery
     let surfaceIds: [String]
     var attachments: [MeshAttachment] = []
+    var confidentiality = "private"
+    var integrity = "owner"
     var id: String { eventId }
 }
 
