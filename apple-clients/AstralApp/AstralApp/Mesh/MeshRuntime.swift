@@ -391,6 +391,7 @@ final class MeshRuntime {
     private(set) var headPinned = false
     private(set) var turns: [String: MeshTurnState] = [:]
     private(set) var pendingConsents: [MeshPendingConsent] = []
+    private(set) var connections: [MeshConnection] = []
     private(set) var allowance: MeshAllowance?
     private(set) var providers: [MeshModelProvider] = []
     private(set) var savingProvider = false
@@ -599,7 +600,7 @@ final class MeshRuntime {
     }
 
     func refreshMailbox() async {
-        if let value = await attempt({ $0.mailboxState() }) { mailbox = value }
+        if let value = await attempt({ try $0.mailboxState() }) { mailbox = value }
     }
 
     private func storeMailbox(_ address: String?) {
@@ -635,7 +636,12 @@ final class MeshRuntime {
         turnTasks = [:]
         turnReservations = [:]
         supersededTurns = [:]
-        if let kernel { await Task.detached { await kernel.stopNetwork() }.value }
+        if let kernel {
+            await Task.detached {
+                await kernel.stopNetwork()
+                await kernel.close()
+            }.value
+        }
         kernel = nil
         phase = .closed
         status = .empty
@@ -650,6 +656,7 @@ final class MeshRuntime {
         importingAttachment = false
         members = []
         pendingConsents = []
+        connections = []
         runs = []
         proposals = []
         chatRequests = []
@@ -697,6 +704,7 @@ final class MeshRuntime {
         await refreshRequests()
         await refreshSync()
         await refreshConsents()
+        await refreshConnections()
         await refreshAllowance()
         await refreshProviders()
         await refreshRuns()
@@ -862,6 +870,10 @@ final class MeshRuntime {
             pendingConsents = value
             speechSink?.setRiskyActionPending(!value.isEmpty)
         }
+    }
+
+    func refreshConnections() async {
+        if let value = await attempt({ try $0.connections() }) { connections = value }
     }
 
     func refreshAllowance() async {
@@ -1802,6 +1814,8 @@ final class MeshRuntime {
             await apply(progress, session: session)
         case .allowanceChanged:
             await refreshAllowance()
+        case .connectionsChanged:
+            await refreshConnections()
         case .runProgress:
             await refreshRuns()
         case .joinRequested(let request):

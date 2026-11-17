@@ -267,6 +267,7 @@ nonisolated enum KernelMapping {
             case .offerSeen: return []
             }
         case .allowanceChanged: return [.allowanceChanged]
+        case .connectionsChanged: return [.connectionsChanged]
         case .turn(let progress): return turn(progress)
         }
     }
@@ -379,6 +380,16 @@ nonisolated enum KernelMapping {
         ("caller.stopped", "The mesh was stopped, so caller tickets are refused."),
         ("caller.tool_not_covered", "That caller ticket does not cover this tool."),
         ("caller.", "The caller ticket was refused."),
+        ("connection.keystore_unavailable", "This device cannot store sign-in credentials now. Unlock it and retry."),
+        ("connection.credential_unreadable", "The saved sign-in for this connection could not be read. Sign in again."),
+        ("connection.credential_unwritable", "The sign-in could not be saved on this device."),
+        ("connection.changed", "The connection changed after you reviewed it. Review it again."),
+        ("connection.egress_refused", "That address is outside what this connection may reach."),
+        ("connection.step_up_unreviewed", "Review and approve the extra permissions before signing in again."),
+        ("connection.flow_expired", "That sign-in ran out of time. Start it again."),
+        ("connection.flow_unknown", "That sign-in is no longer open. Start it again."),
+        ("connection.", "The connection could not be changed or was refused."),
+        ("oauth.", "The sign-in was refused or did not complete."),
         ("gate.mesh_stopped", "The mesh was stopped, so this turn was refused."),
         ("gate.", "A safety check refused this step."),
         ("consent.declined", MeshKernelError.consentDenied.message),
@@ -420,6 +431,73 @@ nonisolated enum KernelMapping {
         ("net.", "The network is not available."),
         ("store.", "This device could not read or write its mesh data."),
     ]
+
+    static func connectionTool(_ tool: ConnectionTool) -> MeshConnectionTool {
+        MeshConnectionTool(name: tool.name, hash: tool.hash)
+    }
+
+    static func connectionDevice(_ state: ConnectionDeviceState) -> MeshConnectionDeviceState {
+        MeshConnectionDeviceState(
+            device: state.device, label: state.label, state: state.state, reason: state.reason,
+            issuer: state.issuer, atMs: state.ms)
+    }
+
+    static func connection(_ info: ConnectionInfo) -> MeshConnection {
+        MeshConnection(
+            id: info.id, server: info.server, name: info.name, kind: info.kind, endpoint: info.endpoint,
+            local: info.local, device: info.device, scheme: info.scheme, issuer: info.issuer, scopes: info.scopes,
+            clientId: info.clientId, flow: info.flow, egress: info.egress, tools: info.tools.map(connectionTool),
+            approvedBy: info.approvedBy, approvedByRemovedDevice: info.approvedByRemovedDevice,
+            unsupported: info.unsupported, supportedHere: info.supportedHere,
+            thisDevice: connectionDevice(info.thisDevice), attention: info.attention,
+            otherDevices: info.otherDevices.map(connectionDevice), pendingTools: info.pendingTools?.map(connectionTool))
+    }
+
+    static func connectionProposal(_ value: ConnectionProposal) -> MeshConnectionProposal {
+        MeshConnectionProposal(
+            proposal: value.proposal, connection: value.connection, name: value.name, endpoint: value.endpoint,
+            local: value.local, device: value.device, scheme: value.scheme, issuer: value.issuer,
+            issuerHost: value.issuerHost, redirectHost: value.redirectHost, scopes: value.scopes,
+            resource: value.resource, clientId: value.clientId, tools: value.tools.map(connectionTool),
+            egress: value.egress, flowHint: value.flowHint, replaces: value.replaces, expiresMs: value.expiresMs)
+    }
+
+    static func connectionState(_ value: ConnectionState) -> MeshConnectionState {
+        MeshConnectionState(
+            connection: value.connection, state: value.state, reason: value.reason, toolsPending: value.toolsPending)
+    }
+
+    static func signInStart(_ value: SignInStart) -> MeshSignInStart {
+        MeshSignInStart(
+            flow: value.flow, authorizationURL: value.authorizationUrl, redirectURI: value.redirectUri,
+            userCode: value.userCode, verificationURI: value.verificationUri,
+            verificationURIComplete: value.verificationUriComplete, intervalSeconds: value.intervalS,
+            expiresMs: value.expiresMs)
+    }
+
+    static func signInPoll(_ value: SignInPoll) -> MeshSignInPoll {
+        switch value {
+        case .pending(let interval): return .pending(intervalSeconds: interval)
+        case .done(let state): return .done(connectionState(state))
+        }
+    }
+
+    static func signInRedirect(_ value: MeshSignInRedirect) -> SignInRedirect {
+        switch value {
+        case .appLink: return .appLink
+        case .loopback(let port): return .loopback(port: port)
+        case .loopbackV6(let port): return .loopbackV6(port: port)
+        case .pasted: return .pasted
+        case .deviceCode: return .deviceCode
+        }
+    }
+
+    static func stepUpPlan(_ value: StepUpPlan) -> MeshStepUpPlan {
+        switch value {
+        case .review(let scopes): return .review(scopes: scopes)
+        case .signIn(let scopes): return .signIn(scopes: scopes)
+        }
+    }
 
     static func refusal(_ code: String) -> MeshKernelError {
         .refused(code: code, message: failureText(code: code))

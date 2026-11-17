@@ -27,6 +27,33 @@ nonisolated final class ChangeLog: MeshKernelListening, @unchecked Sendable {
     func onChange(_ change: MeshKernelChange) { lock.withLock { values.append(change) } }
 }
 
+nonisolated final class MemoryHostKeystore: HostKeystore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var items: [String: Data] = [:]
+    var failure: HostKeystoreError?
+
+    func get(account: String) throws -> Data? {
+        try lock.withLock {
+            if let failure { throw failure }
+            return items[account]
+        }
+    }
+
+    func put(account: String, secret: Data) throws {
+        try lock.withLock {
+            if let failure { throw failure }
+            items[account] = secret
+        }
+    }
+
+    func remove(account: String) throws {
+        try lock.withLock {
+            if let failure { throw failure }
+            items[account] = nil
+        }
+    }
+}
+
 final class RealMeshKernelTests: XCTestCase {
     private struct Device {
         let kernel: RealMeshKernel
@@ -38,7 +65,8 @@ final class RealMeshKernelTests: XCTestCase {
 
     private func open(
         _ label: String, kind: MeshDeviceKind = .desktop,
-        peerTools: [MeshPeerTool] = [], mailbox: String? = nil, reusing: Device? = nil
+        peerTools: [MeshPeerTool] = [], mailbox: String? = nil, reusing: Device? = nil,
+        keystore: any HostKeystore = MemoryHostKeystore()
     ) async throws -> Device {
         let directory: URL
         let keys: DeviceKeys
@@ -66,7 +94,7 @@ final class RealMeshKernelTests: XCTestCase {
         let kernel = try await RealMeshKernel.open(
             config: config, network: network,
             signer: MeshHostSigner(keys: keys, presenter: presenter), model: FakeOnDeviceModel(),
-            tools: DeviceLocalTools(), listener: changes, peerTools: peerTools)
+            tools: DeviceLocalTools(), listener: changes, peerTools: peerTools, keystore: keystore)
         return Device(kernel: kernel, presenter: presenter, changes: changes, directory: directory, keys: keys)
     }
 
@@ -86,6 +114,41 @@ final class RealMeshKernelTests: XCTestCase {
             try await Task.sleep(nanoseconds: 100_000_000)
         }
         XCTFail("timed out waiting for \(what)")
+    }
+
+    func testConnectionCallsReachTheKernelAndKeepTheirCodes() async throws {
+        let mac = try await open("Test Mac")
+        _ = try await createMesh(mac)
+        XCTAssertTrue(try mac.kernel.connections().isEmpty)
+        do {
+            let endpoint = "http://public.example/mcp"
+            _ = try await mac.kernel.proposeConnection(endpoint: endpoint, name: "Docs", local: false)
+            XCTFail("a public endpoint without HTTPS must be refused")
+        } catch { XCTAssertEqual((error as? MeshKernelError)?.code, "connection.egress_refused") }
+        XCTAssertThrowsError(try mac.kernel.removeConnection(id: "not-an-id")) {
+            XCTAssertEqual(($0 as? MeshKernelError)?.code, "connection.malformed")
+        }
+        do {
+            _ = try await mac.kernel.beginConnectionSignIn(id: String(repeating: "0", count: 32), redirect: .appLink)
+            XCTFail("an unknown connection cannot sign in")
+        } catch { XCTAssertEqual((error as? MeshKernelError)?.code, "connection.unknown") }
+        XCTAssertThrowsError(try mac.kernel.noteConnectionCallSucceeded(id: String(repeating: "0", count: 32)))
+        await mac.kernel.stopNetwork()
+    }
+
+    func testAClosedKernelRefusesEveryCallInsteadOfAnswering() async throws {
+        let mac = try await open("Test Mac")
+        _ = try await createMesh(mac)
+        await mac.kernel.stopNetwork()
+        await mac.kernel.close()
+        do {
+            _ = try await mac.kernel.meshStatus()
+            XCTFail("a closed kernel must refuse")
+        } catch {}
+        XCTAssertThrowsError(try mac.kernel.connections())
+        XCTAssertThrowsError(try mac.kernel.mailboxState())
+        XCTAssertThrowsError(try mac.kernel.pendingConsents())
+        XCTAssertThrowsError(try mac.kernel.restoreMarker())
     }
 
     func testFreshKernelReportsNoMeshAndCreationYieldsRecoveryWordsAndAStatus() async throws {
@@ -474,7 +537,7 @@ final class RealMeshKernelTests: XCTestCase {
 
     func testAMailboxAddressIsCheckedAtOpenAndSurvivesAReopenOfTheSameMesh() async throws {
         let first = try await open("Mac")
-        let none = first.kernel.mailboxState()
+        let none = try first.kernel.mailboxState()
         XCTAssertFalse(none.configured)
         XCTAssertEqual(none.status, .disabled)
         _ = try await createMesh(first)
@@ -492,7 +555,7 @@ final class RealMeshKernelTests: XCTestCase {
             .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
         let second = try await open("Mac", mailbox: peerKey, reusing: first)
-        let state = second.kernel.mailboxState()
+        let state = try second.kernel.mailboxState()
         XCTAssertTrue(state.configured)
         XCTAssertNotEqual(state.status, .disabled)
         let status = try await second.kernel.meshStatus()
@@ -501,7 +564,7 @@ final class RealMeshKernelTests: XCTestCase {
         await second.kernel.stopNetwork()
 
         let third = try await open("Mac", reusing: first)
-        XCTAssertFalse(third.kernel.mailboxState().configured)
+        XCTAssertFalse(try third.kernel.mailboxState().configured)
         await third.kernel.stopNetwork()
     }
 

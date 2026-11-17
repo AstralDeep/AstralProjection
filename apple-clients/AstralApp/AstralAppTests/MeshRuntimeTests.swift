@@ -18,6 +18,26 @@ final class MeshRuntimeTests: XCTestCase {
         XCTAssertEqual(h.runtime.kernelVersion, "in-memory")
     }
 
+    func testConnectionChangesRefreshTheListAndCloseReleasesTheKernel() async throws {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        let endpoint = "https://docs.example/mcp"
+        h.kernel.connectionBook.registerServer(endpoint, .init())
+        await h.runtime.open()
+        XCTAssertTrue(h.runtime.connections.isEmpty)
+        let proposal = try await h.kernel.proposeConnection(endpoint: endpoint, name: "Docs", local: false)
+        let created = try h.kernel.approveConnection(
+            proposal: proposal.proposal, flow: "private", toolNames: [], clientId: nil)
+        await h.runtime.settle()
+        XCTAssertEqual(h.runtime.connections.map(\.id), [created.id])
+        try h.kernel.removeConnection(id: created.id)
+        await h.runtime.settle()
+        XCTAssertTrue(h.runtime.connections.isEmpty)
+        await h.runtime.close()
+        XCTAssertTrue(h.runtime.connections.isEmpty)
+        XCTAssertEqual(h.kernel.calls.suffix(2).map(\.name), ["stopNetwork", "close"])
+    }
+
     func testOpenFailureIsReportedAndRetryable() async {
         let h = MeshRuntimeHarness(factoryError: .unavailable("No runtime"))
         defer { h.cleanUp() }
