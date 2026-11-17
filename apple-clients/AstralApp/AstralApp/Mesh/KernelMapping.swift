@@ -321,6 +321,7 @@ nonisolated enum KernelMapping {
 
     static func isPhiRefusal(_ code: String) -> Bool {
         code.hasPrefix("phi.") || code == "flow.phi_to_model" || code == "flow.phi_to_service"
+            || code == "provider.no_candidate"
     }
 
     static func plainText(code: String) -> String? {
@@ -351,6 +352,7 @@ nonisolated enum KernelMapping {
         ("provider.unavailable_on_device", "This device no longer has access to this provider."),
         ("provider.not_found", "This provider is no longer available on this device."),
         ("credential.bad_recipients", "Select one or more current mesh devices."),
+        ("provider.no_candidate", "No model on this device can take this chat. Check the model provider."),
         ("provider.", "The model provider could not be reached or refused the request."),
         ("tool.name_ambiguous", "Multiple sources offer this tool name. Rename or remove one before using it."),
         ("mcp.version", "This server must support MCP 2026-07-28."),

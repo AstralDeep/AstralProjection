@@ -31,10 +31,11 @@ nonisolated enum MeshPhiOffer: Equatable, Hashable, Sendable, Identifiable {
         }
     }
 
-    static func offer(forCode code: String, defaultProvider: String?) -> MeshPhiOffer? {
+    static func offer(forCode code: String, defaultProvider: String?, chatHoldsPhi: Bool = false) -> MeshPhiOffer? {
         switch code {
         case "phi.group_not_ready", "phi.device_excluded": return .adoption
-        case "flow.phi_to_model":
+        case "provider.no_candidate" where !chatHoldsPhi: return nil
+        case "flow.phi_to_model", "provider.no_candidate":
             guard let defaultProvider else { return .destinations }
             return .destination(.provider(name: defaultProvider))
         case "flow.phi_to_service": return .destinations

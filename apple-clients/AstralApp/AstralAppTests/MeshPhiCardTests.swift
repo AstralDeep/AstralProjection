@@ -193,6 +193,10 @@ final class MeshPhiCardTests: XCTestCase {
         XCTAssertEqual(MeshPhiOffer.offer(forCode: "flow.phi_to_model", defaultProvider: nil), .destinations)
         XCTAssertEqual(MeshPhiOffer.offer(forCode: "flow.phi_to_service", defaultProvider: "x"), .destinations)
         XCTAssertNil(MeshPhiOffer.offer(forCode: "gate.mesh_stopped", defaultProvider: nil))
+        XCTAssertNil(MeshPhiOffer.offer(forCode: "provider.no_candidate", defaultProvider: "Clinic"))
+        XCTAssertEqual(
+            MeshPhiOffer.offer(forCode: "provider.no_candidate", defaultProvider: "Clinic", chatHoldsPhi: true),
+            .destination(.provider(name: "Clinic")))
         XCTAssertEqual(MeshPhiOffer.adoption.buttonTitle, "Set up PHI")
     }
 
