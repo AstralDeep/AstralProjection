@@ -157,7 +157,8 @@ nonisolated final class FoundationModelsOnDeviceModel: AstralOnDeviceModelWarmab
                             schema: $0.schema.dynamicSchema(name: "\(name).\($0.name)"),
                             isOptional: !$0.required)
                     })
-            case .string(let allowed):
+            case .string(let allowed, _, _):
+                // Foundation Models has no string length guide, so accepts enforces the bounds after generation.
                 if let allowed { return DynamicGenerationSchema(name: name, anyOf: allowed) }
                 return DynamicGenerationSchema(type: String.self)
             case .integer(let minimum, let maximum):
