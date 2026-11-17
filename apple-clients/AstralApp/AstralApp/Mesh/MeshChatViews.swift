@@ -428,6 +428,11 @@ struct MeshTurnActivityView: View {
                 if let failure = turn.failure {
                     Text(failure).font(ConsoleTypography.footnote).foregroundStyle(p.error)
                         .accessibilityIdentifier("mesh.turn.failure")
+                    if let offer = turn.phiOffer {
+                        Button(offer.buttonTitle) { mesh.presentingPhi = offer }
+                            .buttonStyle(.bordered)
+                            .accessibilityIdentifier(MeshPhiID.offer)
+                    }
                     if mesh.providers.isEmpty, !mesh.onDeviceModelAvailable {
                         Text("No model is set up. Add one in Settings.")
                             .font(ConsoleTypography.footnote).foregroundStyle(p.muted)

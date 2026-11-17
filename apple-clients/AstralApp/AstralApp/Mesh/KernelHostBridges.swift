@@ -44,6 +44,14 @@ nonisolated final class KernelHostSigner: AstralKernel.HostSigner, @unchecked Se
             guard built.effect == "roster.genesis" else { throw ConsentPromptError.invalidInput }
         case .other where prompt.title == "reveal_recovery" || prompt.title == "confirm_recovery":
             built = try ConsentPrompt.recovery(action: prompt.title, signingInput: message)
+        case .grantPhi, .revokePhi, .approvePhiDestination, .registerPhiApprover:
+            built = try ConsentPrompt.roster(signingInput: message)
+            let expected: [AstralKernel.ConsentKind: String] = [
+                .grantPhi: "roster.phi_grant", .revokePhi: "roster.phi_revoke",
+                .approvePhiDestination: "roster.phi_approve_destination",
+                .registerPhiApprover: "roster.phi_register_approver",
+            ]
+            guard built.effect == expected[prompt.kind] else { throw ConsentPromptError.invalidInput }
         case .toolEffect:
             if prompt.title == "run.takeover" {
                 built = try ConsentPrompt.takeover(canonicalAction: prompt.canonicalAction, signingInput: message)
@@ -81,8 +89,21 @@ nonisolated final class KernelHostSigner: AstralKernel.HostSigner, @unchecked Se
 
 nonisolated final class KernelOnDeviceModel: AstralKernel.OnDeviceModel, @unchecked Sendable {
     private let model: any AstralOnDeviceModel
+    static let defaultDeadline: Duration = .milliseconds(20_000)
 
-    init(_ model: any AstralOnDeviceModel) { self.model = model }
+    private let deadline: Duration
+    private let margin: Duration
+    private let backoff: Duration
+
+    init(
+        _ model: any AstralOnDeviceModel, deadline: Duration = KernelOnDeviceModel.defaultDeadline,
+        margin: Duration = .milliseconds(500), backoff: Duration = .milliseconds(50)
+    ) {
+        self.model = model
+        self.deadline = deadline
+        self.margin = margin
+        self.backoff = backoff
+    }
 
     func available() -> Bool { model.available() }
 
@@ -96,7 +117,13 @@ nonisolated final class KernelOnDeviceModel: AstralKernel.OnDeviceModel, @unchec
         let local = OnDeviceRequest(
             messages: messages, schemaJSON: request.jsonSchema, maxTokens: Int(request.maxTokens))
         let model = model
-        switch BlockingBridge.run({ await model.complete(local) }) {
+        let deadline = deadline
+        let backoff = backoff
+        let outcome = BlockingBridge.run(timeout: deadline + margin) {
+            await Self.complete(model, local, deadline: deadline, backoff: backoff)
+        }
+        guard let outcome else { throw HostCallError.Failed(message: "on_device.timeout") }
+        switch outcome {
         case .text(let text), .json(let text):
             return AstralKernel.OnDeviceResponse(text: text)
         case .refused:
@@ -105,6 +132,24 @@ nonisolated final class KernelOnDeviceModel: AstralKernel.OnDeviceModel, @unchec
             throw HostCallError.Failed(message: "on_device.unavailable: " + reason.rawValue)
         case .failed(let failure):
             throw HostCallError.Failed(message: "on_device." + failure.rawValue)
+        }
+    }
+}
+
+extension KernelOnDeviceModel {
+    // A busy model is waited for until the deadline, then reported as busy.
+    static func complete(
+        _ model: any AstralOnDeviceModel, _ request: OnDeviceRequest, deadline: Duration, backoff: Duration
+    ) async -> OnDeviceResponse {
+        let end = ContinuousClock.now + deadline
+        var delay = backoff
+        while true {
+            let response = await model.complete(request)
+            guard case .failed(.busy) = response else { return response }
+            guard ContinuousClock.now + delay < end else { return response }
+            try? await Task.sleep(for: delay)
+            if Task.isCancelled { return .failed(.cancelled) }
+            delay = min(delay * 2, .seconds(1))
         }
     }
 }
@@ -161,6 +206,16 @@ nonisolated final class KernelLocalTools: AstralKernel.LocalTools, @unchecked Se
     }
 }
 
+nonisolated final class KernelPhiPrompt: AstralKernel.HostPhiPrompt, @unchecked Sendable {
+    private let prompt: any MeshPhiPrompting
+
+    init(_ prompt: any MeshPhiPrompting) { self.prompt = prompt }
+
+    func ask(question: AstralKernel.PhiQuestion) throws -> AstralKernel.PhiAnswer {
+        KernelMapping.phiAnswer(prompt.ask(KernelMapping.phiQuestion(question)))
+    }
+}
+
 nonisolated final class KernelChangeBridge: AstralKernel.KernelListener, AstralKernel.RunListener, @unchecked Sendable {
     private let listener: any MeshKernelListening
     private let onEnrollment: @Sendable () -> Void
@@ -183,16 +238,23 @@ nonisolated final class KernelChangeBridge: AstralKernel.KernelListener, AstralK
 nonisolated enum BlockingBridge {
     private final class Slot<T: Sendable>: @unchecked Sendable {
         let semaphore = DispatchSemaphore(value: 0)
+        let lock = NSLock()
         var value: T?
     }
 
-    static func run<T: Sendable>(_ work: @escaping @Sendable () async -> T) -> T {
+    static func run<T: Sendable>(timeout: Duration, _ work: @escaping @Sendable () async -> T) -> T? {
         let slot = Slot<T>()
-        Task.detached {
-            slot.value = await work()
+        let task = Task.detached {
+            let value = await work()
+            slot.lock.withLock { slot.value = value }
             slot.semaphore.signal()
         }
-        slot.semaphore.wait()
-        return slot.value!
+        let parts = timeout.components
+        let seconds = Double(parts.seconds) + Double(parts.attoseconds) / 1e18
+        guard slot.semaphore.wait(timeout: .now() + seconds) == .success else {
+            task.cancel()
+            return nil
+        }
+        return slot.lock.withLock { slot.value }
     }
 }

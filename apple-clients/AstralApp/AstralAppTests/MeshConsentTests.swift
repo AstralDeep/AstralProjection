@@ -291,7 +291,7 @@ final class ConsentPromptBindingTests: XCTestCase {
         let native = AstralKernel.ConsentPrompt(
             kind: .other, title: "create_mesh", target: "untrusted display",
             canonicalAction: Data(), canonicalArguments: Data(), signingInput: input, digest: "ignored",
-            untrustedSources: [], labels: [], requiresBiometry: true)
+            untrustedSources: [], labels: [], requiresBiometry: true, batch: 1)
         XCTAssertEqual(try KernelHostSigner.display(for: native, message: input), prompt)
     }
 
@@ -417,7 +417,7 @@ final class ConsentPromptBindingTests: XCTestCase {
             let native = AstralKernel.ConsentPrompt(
                 kind: .other, title: "create_mesh", target: "ignored",
                 canonicalAction: Data(), canonicalArguments: Data(), signingInput: input, digest: "ignored",
-                untrustedSources: [], labels: [], requiresBiometry: true)
+                untrustedSources: [], labels: [], requiresBiometry: true, batch: 1)
             XCTAssertThrowsError(try signer.presenceSign(prompt: native, message: input))
         }
         XCTAssertTrue(presenter.prompts.isEmpty)

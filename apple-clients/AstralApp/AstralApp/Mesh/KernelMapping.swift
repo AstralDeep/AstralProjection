@@ -305,6 +305,9 @@ nonisolated enum KernelMapping {
             case "repeat_stop": return [event(chat, turn, .failed("The assistant repeated itself, so it was stopped."))]
             case "max_rounds": return [event(chat, turn, .failed("The assistant reached its step limit."))]
             case "fork": return []
+            case _ where isPhiRefusal(code ?? reason):
+                let refused = code ?? reason
+                return [event(chat, turn, .refused(code: refused, message: failureText(code: refused)))]
             default:
                 return [
                     event(
@@ -314,6 +317,11 @@ nonisolated enum KernelMapping {
                 ]
             }
         }
+    }
+
+    static func isPhiRefusal(_ code: String) -> Bool {
+        code.hasPrefix("phi.") || code == "flow.phi_to_model" || code == "flow.phi_to_service"
+            || code == "provider.no_candidate"
     }
 
     static func plainText(code: String) -> String? {
@@ -344,6 +352,7 @@ nonisolated enum KernelMapping {
         ("provider.unavailable_on_device", "This device no longer has access to this provider."),
         ("provider.not_found", "This provider is no longer available on this device."),
         ("credential.bad_recipients", "Select one or more current mesh devices."),
+        ("provider.no_candidate", "No model on this device can take this chat. Check the model provider."),
         ("provider.", "The model provider could not be reached or refused the request."),
         ("tool.name_ambiguous", "Multiple sources offer this tool name. Rename or remove one before using it."),
         ("mcp.version", "This server must support MCP 2026-07-28."),
@@ -405,6 +414,15 @@ nonisolated enum KernelMapping {
         ("oauth.wrong_callback", "The sign-in came back to an unexpected address. It was refused."),
         ("oauth.no_authorization_url", "The service gave no sign-in address."),
         ("oauth.", "The sign-in was refused or did not complete."),
+        ("phi.group_not_ready", "Set up PHI on your mesh first. Open the PHI settings to adopt it."),
+        ("phi.device_excluded", "This device is excluded from PHI. Use a device that is in the PHI group."),
+        ("phi_group.node_device", "A node cannot approve PHI destinations."),
+        ("phi_destination.on_device", "That place runs on this device, so it needs no approval."),
+        ("phi_destination.contact_unavailable", "Contacts cannot receive PHI yet."),
+        ("phi_destination.", "That destination cannot be approved for PHI."),
+        ("phi_group.", "The PHI group could not be changed."),
+        ("flow.phi_to_model", "PHI cannot go to this model until you approve it."),
+        ("flow.phi_to_service", "PHI cannot go to this service until you approve it."),
         ("gate.mesh_stopped", "The mesh was stopped, so this turn was refused."),
         ("gate.", "A safety check refused this step."),
         ("consent.declined", MeshKernelError.consentDenied.message),
@@ -511,6 +529,61 @@ nonisolated enum KernelMapping {
         switch value {
         case .review(let scopes): return .review(scopes: scopes)
         case .signIn(let scopes): return .signIn(scopes: scopes)
+        }
+    }
+
+    static func phiMember(_ value: AstralKernel.PhiMember) -> MeshPhiMember {
+        MeshPhiMember(
+            deviceId: value.deviceId, label: value.label, kind: deviceKind(value.kind),
+            state: MeshPhiState(rawValue: value.state) ?? .notApproved, approvedBy: value.approvedBy,
+            upgraded: value.upgraded, isThisDevice: value.isLocal)
+    }
+
+    static func phiGroup(_ value: AstralKernel.PhiGroupInfo) -> MeshPhiGroup {
+        MeshPhiGroup(
+            members: value.members.map(phiMember), localCode: value.localCode, rotateFirst: value.rotateFirst,
+            pending: value.pending, keeper: value.keeper)
+    }
+
+    static func phiDestinations(_ value: AstralKernel.PhiDestinations) -> MeshPhiDestinations {
+        MeshPhiDestinations(
+            group: phiGroup(value.group),
+            destinations: value.destinations.map { row in
+                MeshPhiDestination(
+                    subject: row.subject, form: MeshPhiDestinationForm(rawValue: row.form) ?? .invalid,
+                    target: row.target, status: MeshPhiDestinationStatus(rawValue: row.status) ?? .invalid,
+                    code: row.code, approvedBy: row.approvedBy)
+            })
+    }
+
+    static func phiProposal(_ value: AstralKernel.PhiDestinationProposal) -> MeshPhiProposal {
+        MeshPhiProposal(
+            kind: MeshPhiDestinationKind(rawValue: value.kind) ?? .service, target: value.target,
+            subject: value.subject, name: value.name, needsApproval: value.needsApproval,
+            facts: value.facts.compactMap { MeshPhiFact(rawValue: $0) }, source: value.source)
+    }
+
+    static func phiProposal(_ value: MeshPhiProposal) -> AstralKernel.PhiDestinationProposal {
+        AstralKernel.PhiDestinationProposal(
+            kind: value.kind.rawValue, target: value.target, subject: value.subject, name: value.name,
+            needsApproval: value.needsApproval, facts: value.facts.map(\.rawValue), source: value.source)
+    }
+
+    static func phiStatus(_ value: AstralKernel.PhiStatus) -> MeshPhiStatus {
+        MeshPhiStatus(
+            modelPresent: value.modelPresent, screened: value.screened, overBudget: value.overBudget,
+            failed: value.failed)
+    }
+
+    static func phiQuestion(_ value: AstralKernel.PhiQuestion) -> MeshPhiQuestion {
+        MeshPhiQuestion(
+            items: value.items.map { MeshPhiQuestionItem(source: $0.source, kind: $0.kind, excerpt: $0.excerpt) })
+    }
+
+    static func phiAnswer(_ value: MeshPhiAnswer) -> AstralKernel.PhiAnswer {
+        switch value {
+        case .send: return .send
+        case .treatAsPhi: return .treatAsPhi
         }
     }
 

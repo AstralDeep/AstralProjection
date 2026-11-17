@@ -198,6 +198,7 @@ nonisolated struct MeshTurnState: Equatable, Sendable {
     var awaitingConsent: String?
     var unknown: [MeshUnknownOutcome] = []
     var failure: String?
+    var phiOffer: MeshPhiOffer?
     var answeredOnDevice = false
     var interrupted = false
     var stopRequested = false
@@ -392,6 +393,8 @@ final class MeshRuntime {
     private(set) var turns: [String: MeshTurnState] = [:]
     private(set) var pendingConsents: [MeshPendingConsent] = []
     private(set) var connections: [MeshConnection] = []
+    var presentingPhi: MeshPhiOffer?
+    private(set) var phiOffer: MeshPhiOffer?
     private(set) var allowance: MeshAllowance?
     private(set) var providers: [MeshModelProvider] = []
     private(set) var savingProvider = false
@@ -447,6 +450,7 @@ final class MeshRuntime {
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let now: @Sendable () -> Date
     @ObservationIgnored private let waitForTurnEntry: @Sendable () async -> Void
+    @ObservationIgnored let phiPrompts: MeshPhiPromptCenter
 
     private static let acknowledgedKey = "astral.mesh.v2.acknowledged-outcomes"
     private static let mailboxKey = "astral.mesh.v2.mailbox"
@@ -462,8 +466,10 @@ final class MeshRuntime {
         deviceKind: MeshDeviceKind,
         defaults: UserDefaults = .standard,
         now: @escaping @Sendable () -> Date = { Date() },
-        waitForTurnEntry: @escaping @Sendable () async -> Void = {}
+        waitForTurnEntry: @escaping @Sendable () async -> Void = {},
+        phiPrompts: MeshPhiPromptCenter? = nil
     ) {
+        self.phiPrompts = phiPrompts ?? MeshPhiPromptCenter()
         self.makeKernel = makeKernel
         self.makeKeys = makeKeys
         self.consent = consent
@@ -1197,11 +1203,13 @@ final class MeshRuntime {
         }
         importingAttachment = true
         let session = attachmentSession
+        let attended = phiPrompts.canShow
         defer { if attachmentSession == session { importingAttachment = false } }
         guard
             let attachment = await attempt({ kernel in
                 let input = try MeshAttachmentFile.read(url)
-                return try kernel.addAttachment(chatId: chatId, bytes: input.bytes, mime: input.mime, name: input.name)
+                return try kernel.addAttachment(
+                    chatId: chatId, bytes: input.bytes, mime: input.mime, name: input.name, attended: attended)
             })
         else { return false }
         guard attachmentSession == session else { return false }
@@ -1249,15 +1257,17 @@ final class MeshRuntime {
         defer { releaseReservation(chatId: chatId, id: reservation) }
         let attachments = attachmentDrafts[chatId, default: []].map(\.id)
         let continues = displayHead
+        let attended = !speaking && phiPrompts.canShow
         guard
             let eventId = await attempt(
                 allowRetired: true,
                 { kernel in
-                    if attachments.isEmpty {
+                    if attachments.isEmpty, !attended {
                         return try kernel.sendMessage(chatId: chatId, text: trimmed, continues: continues)
                     }
                     return try kernel.sendMessage(
-                        chatId: chatId, text: trimmed, continues: continues, attachments: attachments)
+                        chatId: chatId, text: trimmed, continues: continues, attachments: attachments,
+                        attended: attended)
                 })
         else { return false }
         guard isReady, wakeSession == session else { return true }
@@ -1450,6 +1460,49 @@ final class MeshRuntime {
         } catch {
             return .failure(.failed(Self.describe(error)))
         }
+    }
+
+    func phiDestinations() async throws -> MeshPhiDestinations { try await call { try $0.phiDestinations() } }
+
+    func adoptPhiGroup() async throws -> MeshPhiGroup {
+        let group = try await call { try $0.adoptPhiGroup() }
+        phiOffer = nil
+        return group
+    }
+
+    func includePhiDevice(deviceId: String) async throws -> MeshPhiGroup {
+        try await call { try $0.includePhiDevice(deviceId: deviceId) }
+    }
+
+    func excludePhiDevice(deviceId: String) async throws -> MeshPhiGroup {
+        try await call { try $0.excludePhiDevice(deviceId: deviceId) }
+    }
+
+    func phiProposal(for request: MeshPhiDestinationRequest) async throws -> MeshPhiProposal {
+        try await call { kernel in
+            switch request {
+            case .provider(let name): return try kernel.proposeProviderPhiDestination(name: name)
+            case .legacyServer(let name): return try kernel.proposeLegacyPhiDestination(name: name)
+            case .connection(let id, let usage): return try kernel.proposeConnectionPhiDestination(id: id, usage: usage)
+            case .source(let source): return try kernel.proposePhiDestination(source: source)
+            }
+        }
+    }
+
+    func approvePhiDestination(_ proposal: MeshPhiProposal) async throws {
+        try await call { try $0.approvePhiDestination(proposal) }
+        phiOffer = nil
+    }
+
+    func revokePhiDestination(subject: String) async throws {
+        try await call { try $0.revokePhiDestination(subject: subject) }
+    }
+
+    func dismissPhiOffer() { phiOffer = nil }
+
+    func offerPhi(forCode code: String?) {
+        guard let code else { return }
+        phiOffer = MeshPhiOffer.offer(forCode: code, defaultProvider: providers.first { $0.isDefault }?.providerId)
     }
 
     func proposeConnection(endpoint: String, name: String, local: Bool) async throws -> MeshConnectionProposal {
@@ -1932,6 +1985,16 @@ final class MeshRuntime {
             state.notice = nil
             record(failure: reason, in: &state)
             if speaking { speakingChatId = nil }
+        case .refused(let code, let reason):
+            supersededTurns[progress.chatId, default: []].insert(progress.turnId)
+            state.running = false
+            state.stopRequested = false
+            state.notice = nil
+            record(failure: reason, in: &state)
+            state.phiOffer = MeshPhiOffer.offer(
+                forCode: code, defaultProvider: providers.first { $0.isDefault }?.providerId,
+                chatHoldsPhi: currentChat?.chatId == progress.chatId && currentChat?.labels.contains("phi") == true)
+            if speaking { speakingChatId = nil }
         }
         guard wakeSession == session, isReady else { return }
         turns[progress.chatId] = state
@@ -1962,6 +2025,7 @@ final class MeshRuntime {
         } catch {
             guard wakeSession == session, isReady else { return nil }
             notice = Self.describe(error)
+            offerPhi(forCode: (error as? MeshKernelError)?.code)
             return nil
         }
     }

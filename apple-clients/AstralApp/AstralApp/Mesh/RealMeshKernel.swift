@@ -38,6 +38,7 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
         config: MeshKernelConfig, network: NetworkConfig, signer: any AstralHostSigning,
         model: any AstralOnDeviceModel, tools: any MeshLocalTools, listener: any MeshKernelListening,
         peerTools: [MeshPeerTool] = [], keystore: any AstralKernel.HostKeystore = ConnectionKeychain(),
+        phiPrompt: any MeshPhiPrompting = MeshTreatAsPhiPrompt(),
         now: @escaping @Sendable () -> Date = { Date() }
     ) async throws -> RealMeshKernel {
         let late = Late()
@@ -52,6 +53,10 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
                 tools: KernelLocalTools(tools), listener: bridge,
                 peerTools: peerTools.map { PeerToolSpec(device: $0.deviceId, tool: KernelLocalTools.native($0.spec)) })
             do { try kernel.setKeystore(keystore: keystore) } catch {
+                await kernel.close()
+                throw error
+            }
+            do { try kernel.setPhiPrompt(prompt: KernelPhiPrompt(phiPrompt)) } catch {
                 await kernel.close()
                 throw error
             }
@@ -274,9 +279,13 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
         try sendMessage(chatId: chatId, text: text, continues: continues, attachments: [])
     }
 
-    func addAttachment(chatId: String, bytes: Data, mime: String, name: String) throws -> MeshAttachment {
+    func addAttachment(chatId: String, bytes: Data, mime: String, name: String, attended: Bool) throws
+        -> MeshAttachment
+    {
         try mapped {
-            KernelMapping.attachment(try kernel.addAttachment(chatId: chatId, bytes: bytes, mime: mime, name: name))
+            KernelMapping.attachment(
+                try kernel.addAttachmentAttended(
+                    chatId: chatId, bytes: bytes, mime: mime, name: name, attended: attended))
         }
     }
 
@@ -284,7 +293,9 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
         do { return try await kernel.fetchAttachment(handle: handle) } catch { throw KernelMapping.error(error) }
     }
 
-    func sendMessage(chatId: String, text: String, continues: String?, attachments: [String]) throws -> String {
+    func sendMessage(chatId: String, text: String, continues: String?, attachments: [String], attended: Bool) throws
+        -> String
+    {
         try mapped {
             var anchor: String?
             if let head = continues {
@@ -296,8 +307,8 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
                 case nil: throw MeshKernelError.refused("That message is not part of this chat yet.")
                 }
             }
-            let id = try kernel.sendMessageWithAttachments(
-                chatId: chatId, text: text, continues: anchor, attachments: attachments)
+            let id = try kernel.sendMessageAttended(
+                chatId: chatId, text: text, continues: anchor, attachments: attachments, attended: attended)
             if let anchor { lock.withLock { queuedBases[id] = anchor } }
             return id
         }
@@ -590,6 +601,54 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
     }
 
     func allowance() throws -> MeshAllowance { try mapped { KernelMapping.allowance(try kernel.allowance()) } }
+
+    func phiGroup() throws -> MeshPhiGroup { try mapped { KernelMapping.phiGroup(try kernel.phiGroup()) } }
+
+    func adoptPhiGroup() throws -> MeshPhiGroup { try mapped { KernelMapping.phiGroup(try kernel.adoptPhiGroup()) } }
+
+    func includePhiDevice(deviceId: String) throws -> MeshPhiGroup {
+        try mapped { KernelMapping.phiGroup(try kernel.includePhiDevice(deviceId: deviceId)) }
+    }
+
+    func excludePhiDevice(deviceId: String) throws -> MeshPhiGroup {
+        try mapped { KernelMapping.phiGroup(try kernel.excludePhiDevice(deviceId: deviceId)) }
+    }
+
+    func rotateStalePhiEpoch() throws -> Bool { try mapped { try kernel.rotateStalePhiEpoch() } }
+
+    func phiDestinations() throws -> MeshPhiDestinations {
+        try mapped { KernelMapping.phiDestinations(try kernel.phiDestinations()) }
+    }
+
+    func phiDestinationAllowed(kind: MeshPhiDestinationKind, target: String) -> Bool {
+        kernel.phiDestinationAllowed(kind: kind.rawValue, target: target)
+    }
+
+    func proposePhiDestination(source: String) throws -> MeshPhiProposal {
+        try mapped { KernelMapping.phiProposal(try kernel.proposePhiDestination(source: source)) }
+    }
+
+    func proposeProviderPhiDestination(name: String) throws -> MeshPhiProposal {
+        try mapped { KernelMapping.phiProposal(try kernel.proposeProviderPhiDestination(name: name)) }
+    }
+
+    func proposeLegacyPhiDestination(name: String) throws -> MeshPhiProposal {
+        try mapped { KernelMapping.phiProposal(try kernel.proposeLegacyPhiDestination(name: name)) }
+    }
+
+    func proposeConnectionPhiDestination(id: String, usage: String) throws -> MeshPhiProposal {
+        try mapped { KernelMapping.phiProposal(try kernel.proposeConnectionPhiDestination(id: id, usage: usage)) }
+    }
+
+    func approvePhiDestination(_ proposal: MeshPhiProposal) throws {
+        try mapped { try kernel.approvePhiDestination(proposal: KernelMapping.phiProposal(proposal)) }
+    }
+
+    func revokePhiDestination(subject: String) throws {
+        try mapped { try kernel.revokePhiDestination(subject: subject) }
+    }
+
+    func phiStatus() throws -> MeshPhiStatus { try mapped { KernelMapping.phiStatus(try kernel.phiStatus()) } }
 
     func proposeConnection(endpoint: String, name: String, local: Bool) async throws -> MeshConnectionProposal {
         do {
