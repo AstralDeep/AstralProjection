@@ -246,8 +246,7 @@ def run(pack_source: Path, keep: bool, log) -> Report:
         python = str(pack_python(pack))
         port = free_port()
         install = subprocess.run(
-            ["/bin/bash", str(pack / "app/scripts/node/install-personal-node.sh"), "--issuer", "https://issuer.invalid/realms/astral",
-             "--client-id", "astral-qualify", "--home", str(home)],
+            ["/bin/bash", str(pack / "app/scripts/node/install-personal-node.sh"), "--home", str(home)],
             env={"PATH": "/usr/bin:/bin", "HOME": str(home)}, capture_output=True, text=True)
         if install.returncode != 0:
             raise PackError("install-personal-node.sh failed: " + install.stdout[-200:] + install.stderr[-200:])

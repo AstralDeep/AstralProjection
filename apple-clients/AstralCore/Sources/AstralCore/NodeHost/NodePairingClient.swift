@@ -78,6 +78,8 @@
         case loopbackRequired
         case legacyOwner
         case ownerMismatch
+        case ownerBindingUnavailable
+        case profileInactive
         case rateLimited
         case refused(status: Int, code: String)
         case unexpectedResponse
@@ -140,6 +142,8 @@
             case "node.pairing_secret_required": return .pairingSecretRequired
             case NodePairingError.legacyOwnerCode: return .legacyOwner
             case "node.owner_mismatch": return .ownerMismatch
+            case "node.owner_binding_unavailable": return .ownerBindingUnavailable
+            case "node_profile_inactive": return .profileInactive
             case "node.pairing_rate_limited": return .rateLimited
             case "mesh_unavailable": return .meshUnavailable(code)
             default: return .refused(status: status, code: code)

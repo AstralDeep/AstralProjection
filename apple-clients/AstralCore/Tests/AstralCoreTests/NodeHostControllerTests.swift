@@ -30,8 +30,8 @@
             policy.startupChecks = 3
             let home = root.appendingPathComponent("node/home")
             return NodeHostEnvironment(
-                root: root.appendingPathComponent("node"), available: available, issuer: "https://iam.example/realms/a",
-                clientId: "astral-desktop", meshLabel: "Test Mac", defaults: defaults, transport: transport,
+                root: root.appendingPathComponent("node"), available: available,
+                meshLabel: "Test Mac", defaults: defaults, transport: transport,
                 launcher: launcher, probe: probe, http: http, policy: policy,
                 sleep: { _ in try await Task.sleep(nanoseconds: 2_000_000) },
                 freePort: { 18_731 },
@@ -169,7 +169,8 @@
             XCTAssertEqual(http.requests.dropFirst(before).map { $0.url?.path }, ["/api/node/descriptor"])
             XCTAssertEqual(try String(contentsOf: owner, encoding: .utf8), "oidc.0123456789abcdef.owner-1")
             XCTAssertTrue(controller.isRunning)
-            XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("node/home/run.json").path))
+            let runRecord = root.appendingPathComponent("node/home/run.json")
+            XCTAssertTrue(FileManager.default.fileExists(atPath: runRecord.path))
             await controller.stop()
             XCTAssertFalse(controller.hasLegacyOwner)
         }
@@ -188,7 +189,8 @@
             } catch { XCTAssertEqual(error as? NodePairingError, .legacyOwner) }
             XCTAssertTrue(controller.hasLegacyOwner)
             XCTAssertTrue(controller.isRunning)
-            XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("node/home/data/pairing-secret").path))
+            let secretFile = root.appendingPathComponent("node/home/data/pairing-secret")
+            XCTAssertTrue(FileManager.default.fileExists(atPath: secretFile.path))
             await controller.stop()
         }
 
@@ -225,13 +227,18 @@
             XCTAssertNil(describe(NodePairingError.legacyOwner))
             let errors: [NodePairingError] = [
                 .pairingSecretUnavailable, .pairingSecretRequired, .loopbackRequired, .ownerMismatch, .rateLimited,
-                .unknownDescriptorFormat, .meshUnavailable("mesh_unavailable"), .refused(status: 500, code: ""),
-                .unexpectedResponse, .notLoopback,
+                .unknownDescriptorFormat, .meshUnavailable("mesh_unavailable"), .meshUnavailable("node_not_running"),
+                .meshUnavailable("mesh_peer_unavailable"), .ownerBindingUnavailable, .profileInactive,
+                .refused(status: 500, code: ""), .unexpectedResponse, .notLoopback,
             ]
             let texts = errors.compactMap { describe($0) }
             XCTAssertEqual(texts.count, errors.count)
             XCTAssertEqual(Set(texts).count, errors.count - 2)
-            XCTAssertEqual(describe(NodePairingError.rateLimited), "Too many pairing attempts. Wait a minute and try again.")
+            XCTAssertEqual(describe(NodePairingError.meshUnavailable("node_not_running")), "Start the node first.")
+            XCTAssertEqual(
+                describe(NodePairingError.meshUnavailable("kernel_x")), "The node cannot join a mesh yet (kernel_x).")
+            XCTAssertEqual(
+                describe(NodePairingError.rateLimited), "Too many pairing attempts. Wait a minute and try again.")
             XCTAssertEqual(describe(CancellationError()), "The node refused the request.")
         }
 

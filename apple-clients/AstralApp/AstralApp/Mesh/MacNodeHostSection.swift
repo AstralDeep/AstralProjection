@@ -42,7 +42,7 @@
                     Button("Remove", role: .destructive) { Task { await controller.remove() } }
                 } message: {
                     Text(
-                        "The node stops and its program files are deleted. Its data and identity stay in the node folder."
+                        "The node stops and its program files are deleted. Its old sign-in account and its data stay in the node folder."
                     )
                 }
             }
@@ -86,11 +86,9 @@
                     LabeledContent("Mesh", value: mesh.state == "enrolled" ? "Joined" : "Not joined")
                         .accessibilityIdentifier("mesh.node.mesh-state")
                 }
-                if controller.hasLegacyOwner {
-                    MacNodeLegacyOwnerRow(remove: { confirmingRemoval = true })
-                } else {
-                    joinButton
-                }
+                MacNodeJoinArea(
+                    legacyOwner: controller.hasLegacyOwner, remove: { confirmingRemoval = true },
+                    join: { joinButton })
                 Toggle("Keep running after quit", isOn: Bindable(controller).keepRunning)
                     .accessibilityIdentifier("mesh.node.keep")
                 HStack {
@@ -158,16 +156,38 @@
         }
     }
 
+    enum MacNodeJoinState: Equatable {
+        case join, legacyOwner
+
+        init(legacyOwner: Bool) { self = legacyOwner ? .legacyOwner : .join }
+    }
+
+    struct MacNodeJoinArea<Join: View>: View {
+        let legacyOwner: Bool
+        let remove: () -> Void
+        @ViewBuilder let join: () -> Join
+
+        var body: some View {
+            switch MacNodeJoinState(legacyOwner: legacyOwner) {
+            case .legacyOwner: MacNodeLegacyOwnerRow(remove: remove)
+            case .join: join()
+            }
+        }
+    }
+
     struct MacNodeLegacyOwnerRow: View {
         @Environment(ThemeStore.self) private var theme
         let remove: () -> Void
 
         var body: some View {
             VStack(alignment: .leading, spacing: 8) {
-                Label("This node belongs to an old sign-in account and cannot join your mesh.", systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(theme.palette.warning)
-                    .accessibilityIdentifier("mesh.node.legacy-owner")
-                Text("Nothing was changed. Its data stays in the node folder.")
+                Label(
+                    "This node was set up with sign-in and cannot join your mesh.",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .foregroundStyle(theme.palette.warning)
+                .accessibilityIdentifier("mesh.node.legacy-owner")
+                Text("Removing the pack keeps the old account and its data in the node folder.")
                     .font(ConsoleTypography.footnote).foregroundStyle(theme.palette.muted)
                 Button("Remove node pack…", role: .destructive, action: remove)
                     .accessibilityIdentifier("mesh.node.legacy-remove")

@@ -24,7 +24,7 @@
         public var temporary: URL { root.appendingPathComponent("tmp", isDirectory: true) }
 
         public func prepare(
-            pack: URL, issuer: String, clientId: String, meshLabel: String,
+            pack: URL, meshLabel: String,
             runScript: @Sendable (URL, [String]) throws -> (status: Int32, output: String) = NodeHome.runInstaller
         ) throws {
             let fileManager = FileManager.default
@@ -34,7 +34,7 @@
             }
             let script = pack.appendingPathComponent("app/scripts/node/install-personal-node.sh")
             let result = try runScript(
-                script, ["--issuer", issuer, "--client-id", clientId, "--home", root.path])
+                script, ["--home", root.path])
             guard result.status == 0, fileManager.fileExists(atPath: envFile.path) else {
                 throw NodeHostError.homeSetupFailed(String(result.output.prefix(300)))
             }

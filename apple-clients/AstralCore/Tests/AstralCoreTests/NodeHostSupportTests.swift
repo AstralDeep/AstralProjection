@@ -26,18 +26,13 @@
         override func tearDownWithError() throws { try? FileManager.default.removeItem(at: root) }
 
         private func fakeInstaller(
-            _ home: NodeHome, content: String = "ASTRAL_NODE_PROFILE=personal\nKEYCLOAK_CLIENT_ID=x\n"
+            _ home: NodeHome, content: String = "ASTRAL_NODE_PROFILE=personal\n"
         )
             -> @Sendable (URL, [String]) throws -> (status: Int32, output: String)
         {
             { script, arguments in
                 XCTAssertTrue(script.path.hasSuffix("app/scripts/node/install-personal-node.sh"))
-                XCTAssertEqual(
-                    arguments,
-                    [
-                        "--issuer", "https://iam.example/realms/a", "--client-id", "astral-desktop", "--home",
-                        home.root.path,
-                    ])
+                XCTAssertEqual(arguments, ["--home", home.root.path])
                 try content.write(to: home.envFile, atomically: true, encoding: .utf8)
                 return (0, "ok")
             }
@@ -47,8 +42,7 @@
             let home = NodeHome(root: root.appendingPathComponent("home"))
             for _ in 0..<2 {
                 try home.prepare(
-                    pack: pack, issuer: "https://iam.example/realms/a", clientId: "astral-desktop",
-                    meshLabel: "Sam's Mac",
+                    pack: pack, meshLabel: "Sam's Mac",
                     runScript: fakeInstaller(home))
             }
             let env = try String(contentsOf: home.envFile, encoding: .utf8)
@@ -65,12 +59,12 @@
         func testAnExistingLabelIsKeptAndAMissingNewlineIsHandled() throws {
             let home = NodeHome(root: root.appendingPathComponent("home"))
             try home.prepare(
-                pack: pack, issuer: "https://iam.example/realms/a", clientId: "astral-desktop", meshLabel: "ignored",
+                pack: pack, meshLabel: "ignored",
                 runScript: fakeInstaller(home, content: "ASTRAL_NODE_MESH_LABEL=Mine"))
             XCTAssertEqual(try String(contentsOf: home.envFile, encoding: .utf8), "ASTRAL_NODE_MESH_LABEL=Mine")
             let other = NodeHome(root: root.appendingPathComponent("other"))
             try other.prepare(
-                pack: pack, issuer: "https://iam.example/realms/a", clientId: "astral-desktop", meshLabel: "Mac",
+                pack: pack, meshLabel: "Mac",
                 runScript: { _, _ in
                     try "A=1".write(to: other.envFile, atomically: true, encoding: .utf8)
                     return (0, "")
@@ -82,11 +76,11 @@
             let home = NodeHome(root: root.appendingPathComponent("home"))
             XCTAssertThrowsError(
                 try home.prepare(
-                    pack: pack, issuer: "i", clientId: "c", meshLabel: "m", runScript: { _, _ in (2, "boom") })
+                    pack: pack, meshLabel: "m", runScript: { _, _ in (2, "boom") })
             ) { XCTAssertEqual($0 as? NodeHostError, .homeSetupFailed("boom")) }
             XCTAssertThrowsError(
                 try home.prepare(
-                    pack: pack, issuer: "i", clientId: "c", meshLabel: "m", runScript: { _, _ in (0, "silent") })
+                    pack: pack, meshLabel: "m", runScript: { _, _ in (0, "silent") })
             ) { XCTAssertEqual($0 as? NodeHostError, .homeSetupFailed("silent")) }
         }
 
@@ -158,7 +152,9 @@
             XCTAssertEqual(joined, .alreadyJoined(meshId: "m1"))
             for body in [#"{"no":"state"}"#, #"{"state":"offer","code":"x","payload":""}"#, #"{"state":"other"}"#] {
                 http.responses = [(Data(body.utf8), 200)]
-                await assertThrows(NodePairingError.unexpectedResponse) { _ = try await client.pairingOffer(secret: "s") }
+                await assertThrows(NodePairingError.unexpectedResponse) {
+                    _ = try await client.pairingOffer(secret: "s")
+                }
             }
             http.responses = [(Data("x".utf8), 500)]
             await assertThrows(NodePairingError.unexpectedResponse) { _ = try await client.descriptor() }
@@ -181,7 +177,9 @@
                 (409, "node.owner_mismatch", .ownerMismatch),
                 (429, "node.pairing_rate_limited", .rateLimited),
                 (503, "mesh_unavailable", .meshUnavailable("mesh_unavailable")),
-                (503, "node.owner_binding_unavailable", .refused(status: 503, code: "node.owner_binding_unavailable")),
+                (503, "node.owner_binding_unavailable", .ownerBindingUnavailable),
+                (404, "node_profile_inactive", .profileInactive),
+                (500, "node.other", .refused(status: 500, code: "node.other")),
                 (500, "", .refused(status: 500, code: "")),
             ]
             for (status, code, expected) in cases {
@@ -226,7 +224,8 @@
             try write(String(repeating: "a", count: 300))
             XCTAssertThrowsError(try home.readPairingSecret())
             try FileManager.default.removeItem(at: file)
-            try FileManager.default.createSymbolicLink(at: file, withDestinationURL: root.appendingPathComponent("elsewhere"))
+            try FileManager.default.createSymbolicLink(
+                at: file, withDestinationURL: root.appendingPathComponent("elsewhere"))
             XCTAssertThrowsError(try home.readPairingSecret())
         }
 

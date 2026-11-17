@@ -18,11 +18,9 @@
             root: URL = MacNodeHostStore.defaultRoot()
         ) {
             let bundle = Bundle.main
-            // The pack's installer script still requires these two values, and a personal node ignores them.
             let environment = NodeHostEnvironment(
                 root: root, available: available,
-                issuer: AstralConfig.keycloakAuthority.trimmingCharacters(in: CharacterSet(charactersIn: "/")),
-                clientId: AstralConfig.macosClientId, meshLabel: (Host.current().localizedName ?? "Mac") + " node",
+                meshLabel: (Host.current().localizedName ?? "Mac") + " node",
                 defaults: defaults,
                 defaultPackURL: bundle.object(forInfoDictionaryKey: "ASTRALNodePackURL") as? String ?? "",
                 pinnedDescriptorSha256: bundle.object(forInfoDictionaryKey: "ASTRALNodePackSHA256") as? String)
