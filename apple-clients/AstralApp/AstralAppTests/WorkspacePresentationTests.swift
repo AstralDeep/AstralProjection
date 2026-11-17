@@ -311,7 +311,7 @@ final class WorkspacePresentationTests: XCTestCase {
             }
             while continuation == nil { await Task.yield() }
             if signOut {
-                await model.signOut(revokeRemote: false)
+                await model.signOut()
             } else {
                 model.bindConversationAccount(ConversationAccount(issuer: "https://iam.test", subject: "two")!)
             }

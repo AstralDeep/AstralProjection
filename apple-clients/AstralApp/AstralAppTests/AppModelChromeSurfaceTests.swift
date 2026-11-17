@@ -455,7 +455,7 @@ final class AppModelChromeSurfaceTests: XCTestCase {
         XCTAssertEqual(model.screen, .surface)
         XCTAssertNotNil(model.pendingSurface)
         XCTAssertTrue(model.bannerIsWarning)
-        await model.signOut(revokeRemote: false)
+        await model.signOut()
         XCTAssertNil(model.pendingSurface)
         XCTAssertEqual(model.pendingSurfaceKey, "")
         XCTAssertEqual(model.screen, .chat)
@@ -467,7 +467,7 @@ final class AppModelChromeSurfaceTests: XCTestCase {
     func testSignOutStaysAvailableWhileMandatory() async {
         let model = signedInModel()
         reduce(model, mandatoryLLM)
-        await model.signOut(revokeRemote: false)
+        await model.signOut()
         XCTAssertFalse(model.signedIn)
         XCTAssertFalse(model.mandatorySurface)
     }

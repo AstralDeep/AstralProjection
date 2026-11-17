@@ -5,7 +5,6 @@ import SwiftUI
 
 struct MeshOnboardingView: View {
     @Environment(MeshRuntime.self) private var mesh
-    @Environment(AppModeStore.self) private var modeStore
     @Environment(ThemeStore.self) private var theme
     @State private var recovering = false
     @State private var joining = false
@@ -88,9 +87,6 @@ struct MeshOnboardingView: View {
             Button("Recover my mesh") { recovering = true }
                 .disabled(busy)
                 .accessibilityIdentifier("mesh.recover")
-            Button("Sign in to a server") { modeStore.choose(.node) }
-                .disabled(busy)
-                .accessibilityIdentifier("mesh.node")
         }
         .buttonStyle(.borderless)
         .font(ConsoleTypography.subheadline)

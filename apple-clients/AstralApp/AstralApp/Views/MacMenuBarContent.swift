@@ -40,7 +40,7 @@
 
         var status: String {
             if updateRequired { return "Update required" }
-            if !signedIn { return "Sign in required" }
+            if !signedIn { return "Not connected" }
             if !connected { return "Disconnected" }
             if computerTaskActive { return computerPaused ? "Computer task paused" : "Computer task active" }
             return turnActive ? "Working" : "Ready"

@@ -1,106 +1,58 @@
-// Verifies that a signed-in node client can enter its personal mesh without retiring credentials or hiding active work.
+// Verifies the stored app mode: a value from an older server build opens mesh onboarding and stays byte for byte.
+// Choosing the mesh persists it, and nothing here writes or removes a server session store.
 
-import AstralCore
 import XCTest
 
 @testable import AstralDeep
 
 @MainActor
 final class MeshModeTransitionTests: XCTestCase {
-    func testIdleServerSessionCanEnterMeshAndKeepItsAuthenticationState() throws {
-        let (model, mode, defaults) = try makeState()
-        model.accountName = "Node owner"
-        XCTAssertTrue(mode.enterPersonalMesh(from: model))
-        XCTAssertTrue(mode.usesMesh)
-        XCTAssertEqual(AppModeStore(defaults: defaults).mode, .mesh)
-        XCTAssertTrue(model.signedIn)
-        XCTAssertEqual(model.accountName, "Node owner")
-    }
+    private static let key = "astral.app-mode.v2"
 
-    func testMandatorySurfaceAndActiveTurnKeepTheNodeSessionVisible() throws {
-        let (model, mode, defaults) = try makeState()
-        model.turnActive = true
-        XCTAssertFalse(mode.enterPersonalMesh(from: model))
-        XCTAssertEqual(mode.mode, .node)
-        model.turnActive = false
-        model.mandatorySurface = true
-        XCTAssertFalse(mode.enterPersonalMesh(from: model))
-        XCTAssertEqual(AppModeStore(defaults: defaults).mode, .node)
-        XCTAssertTrue(model.signedIn)
-    }
-
-    func testPendingApprovalCardKeepsTheNodeSessionVisibleAfterTheTurnEnds() throws {
-        let (model, mode, _) = try makeState()
-        model.connected = true
-        XCTAssertTrue(model.beginConversationConnection(UUID().uuidString.lowercased()))
-        model.activeChatId = "33333333-3333-4333-8333-333333333333"
-        let proposal = String(repeating: "ab", count: 16)
-        let buttons = [("Approve", "approve"), ("Decline", "decline")].map { label, decision in
-            JSONValue.object([
-                "type": .string("button"), "label": .string(label), "action": .string("remote_op_decision"),
-                "payload": .object(["proposal_id": .string(proposal), "decision": .string(decision)]),
-            ])
-        }
-        model.canvas = [
-            AstralComponent(
-                type: "card",
-                raw: .object([
-                    "type": .string("card"), "id": .string("au_approval_" + proposal),
-                    "title": .string("Confirm an action on this device"),
-                    "content": .array(
-                        [
-                            .object(["type": .string("text"), "content": .string("Open a reviewed page.")])
-                        ] + buttons),
-                ]))
-        ]
-        XCTAssertGreaterThan(model.waitingApprovals, 0)
-        XCTAssertFalse(model.turnActive)
-        XCTAssertFalse(model.mandatorySurface)
-        XCTAssertFalse(mode.enterPersonalMesh(from: model))
-        XCTAssertEqual(mode.mode, .node)
-    }
-
-    func testVoicePreparationAndCaptureKeepTheNodeSessionVisible() async throws {
-        let fixture = try await VoiceModelTestFixture.installed()
-        defer { try? FileManager.default.removeItem(at: fixture.root) }
-        var permission: CheckedContinuation<Bool, Never>?
-        let controller = OnDeviceVoiceController(
-            store: fixture.controller.store,
-            requestPermission: { await withCheckedContinuation { permission = $0 } },
-            makePipeline: { _, link in
-                VoicePipeline(audio: FakeDuplexAudio(), transcriber: FakeTranscriber(), fastPath: nil, link: link)
-            })
-        controller.connect(link: FakeKernelLink())
-        let (model, mode, _) = try makeState(voice: controller)
-        let start = Task { await controller.activate() }
-        defer {
-            permission?.resume(returning: false)
-            controller.stop()
-            start.cancel()
-        }
-        let preparing = await waitUntil { controller.isPreparing && permission != nil }
-        XCTAssertTrue(preparing)
-        guard preparing else { return }
-        XCTAssertFalse(mode.enterPersonalMesh(from: model))
-        XCTAssertEqual(mode.mode, .node)
-        permission?.resume(returning: true)
-        permission = nil
-        await start.value
-        XCTAssertTrue(controller.isRunning)
-        XCTAssertFalse(mode.enterPersonalMesh(from: model))
-        XCTAssertTrue(model.signedIn)
-        controller.stop()
-        XCTAssertTrue(mode.enterPersonalMesh(from: model))
-    }
-
-    private func makeState(voice: OnDeviceVoiceController? = nil) throws -> (AppModel, AppModeStore, UserDefaults) {
+    private func makeDefaults() throws -> UserDefaults {
         let suite = "MeshModeTransitionTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
-        let model = AppModel(tokenStore: InMemoryTokenStore(), defaults: defaults, onDeviceVoiceController: voice)
-        model.signedIn = true
-        let mode = AppModeStore(defaults: defaults)
-        mode.choose(.node)
-        return (model, mode, defaults)
+        return defaults
+    }
+
+    func testStoredNodeModeReadsAsNoChoiceAndKeepsItsBytes() throws {
+        let defaults = try makeDefaults()
+        defaults.set("node", forKey: Self.key)
+        defaults.set("https://node.example", forKey: "serverBase")
+        let store = AppModeStore(defaults: defaults)
+        XCTAssertNil(store.mode)
+        XCTAssertEqual(defaults.string(forKey: Self.key), "node")
+        XCTAssertEqual(defaults.string(forKey: "serverBase"), "https://node.example")
+    }
+
+    func testStoredMeshModeOpensAsMesh() throws {
+        let defaults = try makeDefaults()
+        defaults.set("mesh", forKey: Self.key)
+        XCTAssertEqual(AppModeStore(defaults: defaults).mode, .mesh)
+    }
+
+    func testChoosingTheMeshPersistsIt() throws {
+        let defaults = try makeDefaults()
+        let store = AppModeStore(defaults: defaults)
+        XCTAssertNil(store.mode)
+        store.choose(.mesh)
+        XCTAssertEqual(AppModeStore(defaults: defaults).mode, .mesh)
+        XCTAssertEqual(defaults.string(forKey: Self.key), "mesh")
+    }
+
+    func testNoSourceNamesTheServerSessionKeychainService() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("AstralApp", isDirectory: true)
+        let files = try XCTUnwrap(FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil))
+        var offenders: [String] = []
+        for case let url as URL in files where url.pathExtension == "swift" {
+            let text = try String(contentsOf: url, encoding: .utf8)
+            for forbidden in ["\"server-session\"", "ServerSession", "signIn()", "oauth2redirect", "Keycloak"]
+            where text.contains(forbidden) {
+                offenders.append(url.lastPathComponent + ": " + forbidden)
+            }
+        }
+        XCTAssertEqual(offenders, [])
     }
 }

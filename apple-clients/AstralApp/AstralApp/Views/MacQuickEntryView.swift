@@ -22,7 +22,7 @@
 
         var guidance: String {
             if updateRequired { return "Update AstralDeep before sending." }
-            if !signedIn { return "Sign in from the main window before sending." }
+            if !signedIn { return "Open the main window before sending." }
             if !connected { return "Reconnect before sending." }
             if locked { return "This conversation is read only." }
             if !projectReady { return "Choose a project chat in the main window first." }

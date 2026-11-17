@@ -83,7 +83,7 @@
             XCTAssertEqual(state().status, "Computer task active")
             XCTAssertEqual(state(computerPaused: true).status, "Computer task paused")
             XCTAssertEqual(state(connected: false).status, "Disconnected")
-            XCTAssertEqual(state(signedIn: false).status, "Sign in required")
+            XCTAssertEqual(state(signedIn: false).status, "Not connected")
             XCTAssertEqual(state(updateRequired: true).status, "Update required")
         }
     }

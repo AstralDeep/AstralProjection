@@ -61,32 +61,8 @@
       "until": "task 15"
     },
     {
-      "path": "apple-clients/AstralApp/AstralApp/AppModel.swift",
-      "until": "task 13"
-    },
-    {
-      "path": "apple-clients/AstralApp/Info.plist",
-      "until": "task 13"
-    },
-    {
-      "path": "apple-clients/AstralApp/WatchInfo.plist",
-      "until": "task 13"
-    },
-    {
-      "path": "apple-clients/AstralApp/WatchNavigationHarnessInfo.plist",
-      "until": "task 13"
-    },
-    {
       "path": "apple-clients/AstralCore/Sources/AstralCore/Configuration.swift",
       "until": "task 14"
-    },
-    {
-      "path": "apple-clients/Config/Base.xcconfig",
-      "until": "task 13"
-    },
-    {
-      "path": "apple-clients/Config/Release.xcconfig",
-      "until": "task 13"
     },
     {
       "path": "apple-clients/MAC-COMPUTER-HOST.md",

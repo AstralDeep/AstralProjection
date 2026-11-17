@@ -24,7 +24,7 @@ struct RootView: View {
     var body: some View {
         Group {
             if !model.signedIn {
-                SignInView()
+                MeshRootView()
             } else {
                 signedIn
             }
@@ -364,7 +364,6 @@ struct AstralTopBar: View {
             if !model.accountName.isEmpty {
                 Text(model.accountName)
             }
-            PersonalMeshModeButton()
             Text("Kernel \(AstralKernelInfo.version)").accessibilityIdentifier("settings-kernel-version")
             Button(role: .destructive) {
                 Task { await model.signOut() }
@@ -521,46 +520,6 @@ struct BannerBar: View {
         }
         .padding(.horizontal, 14).padding(.vertical, 8)
         .background(color.opacity(0.16))
-    }
-}
-
-struct SignInView: View {
-    @Environment(AppModel.self) var model
-    @Environment(ThemeStore.self) var theme
-    @Environment(AppModeStore.self) private var modeStore: AppModeStore?
-
-    var body: some View {
-        VStack(spacing: 28) {
-            Spacer()
-            Image("AstralDeepLogo")
-                .resizable().scaledToFit()
-                .frame(maxWidth: 320)
-                .accessibilityLabel("AstralDeep")
-            Spacer()
-            Button {
-                model.signIn()
-            } label: {
-                Label("Sign in with SSO", systemImage: "person.badge.key")
-                    .font(ConsoleTypography.headline)
-                    .frame(maxWidth: 320)
-                    .padding(.vertical, 6)
-            }
-            .buttonStyle(.borderedProminent)
-            .accessibilityLabel("Sign in with single sign-on")
-            if let modeStore {
-                Button("Use a personal mesh instead") { modeStore.choose(.mesh) }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(theme.palette.accent)
-                    .accessibilityIdentifier("signin.personal-mesh")
-            }
-            if let error = model.signInError {
-                Text(error).font(ConsoleTypography.footnote).foregroundStyle(theme.palette.error)
-                    .multilineTextAlignment(.center)
-            }
-            Spacer().frame(height: 48)
-        }
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

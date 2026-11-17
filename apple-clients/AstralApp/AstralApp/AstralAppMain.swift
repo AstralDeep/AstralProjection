@@ -49,11 +49,6 @@ struct AstralApp: App {
                 _modeStore = State(initialValue: fixture.mode)
                 _mesh = State(initialValue: fixture.runtime)
             } else {
-                if FirstLoginUITestFixture.requestedScenario() != nil {
-                    let mode = AppModeStore()
-                    mode.choose(.node)
-                    _modeStore = State(initialValue: mode)
-                }
                 _mesh = State(initialValue: MeshRuntimeBuilder.live(consent: coordinator))
             }
         #else
@@ -61,10 +56,9 @@ struct AstralApp: App {
         #endif
         #if os(iOS)
             let wakeRuntime = _mesh.wrappedValue
-            let wakeMode = _modeStore.wrappedValue
             let wake = MeshBackgroundWake(
-                authorized: { [weak wakeRuntime, weak wakeMode] in
-                    wakeMode?.usesMesh == true && wakeRuntime?.isReady == true
+                authorized: { [weak wakeRuntime] in
+                    wakeRuntime?.isReady == true
                         && wakeRuntime?.hasMesh == true && UIApplication.shared.isProtectedDataAvailable
                 },
                 synchronize: { [weak wakeRuntime] in
@@ -91,22 +85,14 @@ struct AstralApp: App {
     }
 
     @ViewBuilder private var gatedRoot: some View {
-        if modeStore.usesMesh {
-            MeshRootView()
-        } else {
-            nodeRoot
-        }
-    }
-
-    @ViewBuilder private var nodeRoot: some View {
-        #if os(macOS)
-            if let updateRequirement {
-                UpdateRequiredView(requirement: updateRequirement, coordinator: updates)
+        #if DEBUG
+            if FirstLoginUITestFixture.requestedScenario() != nil {
+                RootView()
             } else {
-                RootView().environment(\.astralUpdateCoordinator, updates)
+                MeshRootView()
             }
         #else
-            RootView()
+            MeshRootView()
         #endif
     }
 
@@ -147,16 +133,6 @@ struct AstralApp: App {
                             return
                         }
                     #endif
-                    if !unitTestHost, !modeStore.usesMesh { await model.bootstrap() }
-                }
-                .onChange(of: modeStore.mode) { _, mode in
-                    #if os(iOS)
-                        if mode != .mesh { meshWake?.cancel() }
-                    #endif
-                    #if os(macOS)
-                        guard updateRequirement == nil else { return }
-                    #endif
-                    if mode == .node, !unitTestHost { Task { await model.bootstrap() } }
                 }
                 .onChange(of: scenePhase) { _, phase in
                     switch phase {

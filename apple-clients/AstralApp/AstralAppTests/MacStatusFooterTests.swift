@@ -136,7 +136,7 @@
             XCTAssertEqual(model.llmUsage.sessionTokens, 3_660)
             XCTAssertEqual(model.llmUsage.contextTokens, 3_210)
             XCTAssertNil(model.errorBanner)
-            await model.signOut(revokeRemote: false)
+            await model.signOut()
             XCTAssertTrue(model.llmUsage.isEmpty)
         }
 

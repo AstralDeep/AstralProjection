@@ -1,10 +1,9 @@
-// iOS/macOS app model, a faithful port of Android's AppViewModel: PKCE sign-in, the WS session, and the full
+// iOS/macOS app model, a faithful port of Android's AppViewModel: the WS session, and the full
 // reduce() pipeline for conversation snapshots, canvas ops, and voice. Read by ChatView, RootView, and
 // Screens.swift.
 
 import AVFoundation
 import AstralCore
-import AuthenticationServices
 import Foundation
 import ImageIO
 import SwiftUI
@@ -226,7 +225,6 @@ final class AppModel: NSObject {
                 #endif
                 clearActivity()
                 retireMeshCustody()
-                retireServerSession()
             }
             defaults.set(serverBaseText, forKey: "serverBase")
             #if os(iOS)
@@ -234,32 +232,6 @@ final class AppModel: NSObject {
             #endif
         }
     }
-    var authorityText: String {
-        didSet {
-            if oldValue != authorityText {
-                #if os(macOS)
-                    releaseComputerBypass()
-                    retireProjectCatalog()
-                    macComputerHost.signedOut()
-                    macBrowser.bind(owner: nil)
-                #endif
-                #if os(iOS)
-                    configurePushNotifications()
-                #endif
-                clearActivity()
-                retireMeshCustody()
-                retireServerSession()
-            }
-            defaults.set(authorityText, forKey: "authority")
-        }
-    }
-
-    #if os(macOS)
-        let clientId = AstralConfig.macosClientId
-    #else
-        let clientId = AstralConfig.iosClientId
-    #endif
-    let redirectURI = AstralConfig.redirectURI
     let voiceDeviceId: String
     @ObservationIgnored let voice: AppleVoiceSessionController
     @ObservationIgnored let onDeviceVoice: OnDeviceVoiceController
@@ -597,16 +569,6 @@ final class AppModel: NSObject {
     private let store: TokenStorage
     @ObservationIgnored private let credentialClock: @Sendable () -> Date
     @ObservationIgnored private var tokens: TokenSet?
-    @ObservationIgnored private var serverSession: ServerSession?
-    @ObservationIgnored private var restoringServerSession: ServerSession?
-    @ObservationIgnored var serverSessionRetryBackoff = BackoffPolicy(base: 2, factor: 2, cap: 60)
-    @ObservationIgnored private var bootstrapRun: BootstrapRun?
-    @ObservationIgnored private var serverCustodyRequired = false
-    @ObservationIgnored var serverSessionStorage: any MeshKeyStorage = KeychainMeshKeyStorage(
-        service: KeychainServices.name("server-session"))
-    @ObservationIgnored var serverSessionTransport: @Sendable (URLRequest) async throws -> ServerSessionReply = {
-        try await ServerSessionHTTP.request($0)
-    }
     @ObservationIgnored private var ws: WSClient?
     @ObservationIgnored private var wsBinding: (socket: WSClient, owner: DownloadOwner, server: URL)?
     @ObservationIgnored private var initialWebSocket: WSClient?
@@ -624,13 +586,11 @@ final class AppModel: NSObject {
     #endif
     @ObservationIgnored private var refreshedWithinMarginAccessToken: String?
     @ObservationIgnored private var wsTask: Task<Void, Never>?
-    @ObservationIgnored private var authSession: ASWebAuthenticationSession?
     @ObservationIgnored private var seqState: [String: Int] = [:]
     @ObservationIgnored private var attachSeq = 0
     @ObservationIgnored private var statusLifecycle = StatusLifecycleReducer()
     @ObservationIgnored private var refreshTask: Task<RefreshResult, Never>?
     @ObservationIgnored private var refreshTaskGeneration = -1
-    @ObservationIgnored private var refreshContext: CredentialRefreshContext?
     #if os(macOS)
         @ObservationIgnored private var uiAuthRefreshReadyContext: SocketAuthenticationContext?
         @ObservationIgnored private var uiAuthRefreshTask: Task<Bool, Never>?
@@ -703,11 +663,6 @@ final class AppModel: NSObject {
         URL(string: serverBaseText) ?? URL(string: AstralConfig.serverBaseURL)!
     }
 
-    var oidc: OIDCConfig? {
-        guard let authority = URL(string: authorityText), !authorityText.isEmpty else { return nil }
-        return OIDCConfig(authority: authority, clientId: clientId, redirectURI: redirectURI)
-    }
-
     var rest: RestClient {
         RestClient(
             serverBase: serverBase, tokenProvider: { [weak self] in await self?.freshAccessToken() },
@@ -767,7 +722,6 @@ final class AppModel: NSObject {
         self.store = tokenStore
         if tokenStore is InMemoryTokenStore {
             meshKeyStorage = InMemoryMeshKeyStorage()
-            serverSessionStorage = InMemoryMeshKeyStorage()
         }
         self.credentialClock = credentialClock
         self.ws = webSocket
@@ -801,18 +755,12 @@ final class AppModel: NSObject {
             voiceDeviceId = fresh
         }
         var storedBase = defaults.string(forKey: "serverBase") ?? ""
-        var storedAuthority = defaults.string(forKey: "authority") ?? ""
         // Equal to the default could be an old seeded value, not a real override
         if storedBase == AstralConfig.serverBaseURL {
             defaults.removeObject(forKey: "serverBase")
             storedBase = ""
         }
-        if storedAuthority == AstralConfig.keycloakAuthority {
-            defaults.removeObject(forKey: "authority")
-            storedAuthority = ""
-        }
         serverBaseText = storedBase.isEmpty ? AstralConfig.serverBaseURL : storedBase
-        authorityText = storedAuthority.isEmpty ? AstralConfig.keycloakAuthority : storedAuthority
         super.init()
         #if os(macOS)
             macComputerHost.bypassDidEnable = { [weak self] host in self?.withdrawLocalComputerReviews(host) }
@@ -879,11 +827,9 @@ final class AppModel: NSObject {
             pushNotifications?.ownerSessionEnded(access: tokens?.accessToken)
             let service = PushNotificationService(
                 identity: PushIdentity(deviceId: voiceDeviceId, label: "Astral phone"),
-                rest: PushRest(
-                    serverBase: serverBase,
-                    sessionHeaders: { [weak self] token in await self?.pushSessionHeaders(token) ?? [:] }),
+                rest: PushRest(serverBase: serverBase, sessionHeaders: { _ in [:] }),
                 tokenProvider: { [weak self] in await self?.freshAccessToken() },
-                incarnationProvider: { [weak self] token in self?.pushSessionIncarnation(token) }
+                incarnationProvider: { _ in nil }
             )
             service.setInAppPresent { [weak self] payload in self?.presentPushInApp(payload) }
             service.setSourceOpen { [weak self] source in
@@ -904,21 +850,6 @@ final class AppModel: NSObject {
             pushNotifications = service
             meshPush.authenticationChanged()
             trackPushConnection()
-        }
-
-        private func pushSessionIncarnation(_ access: String) -> String? {
-            guard let session = serverSession, session.scope.server == serverBase,
-                pushOwnerScope(serverBase: serverBase, accessToken: session.accessToken)
-                    == pushOwnerScope(serverBase: serverBase, accessToken: access),
-                session.cookieExpiresAt > credentialClock()
-            else { return nil }
-            return session.pushIncarnation
-        }
-
-        private func pushSessionHeaders(_ access: String) -> [String: String] {
-            guard pushSessionIncarnation(access) != nil, let session = serverSession, session.accessToken == access
-            else { return [:] }
-            return ["Cookie": session.cookie, "Origin": session.scope.server.absoluteString]
         }
 
         private func trackPushConnection() {
@@ -953,19 +884,7 @@ final class AppModel: NSObject {
                 }
             #endif
             if conversationAccount != nil {
-                if let session = serverSession,
-                    session.owner != account.subject || session.scope.issuer != account.issuer
-                {
-                    retireServerSession()
-                }
                 retireMeshCustody()
-            } else if serverSession?.owner == account.subject, serverSession?.scope.issuer == account.issuer {
-                do {
-                    let scope = try MeshEnrollmentScope(server: serverBase, account: account)
-                    try meshKeyStorage.retainOnly(scope.storageKey)
-                } catch {
-                    surfaceFailureMessage = "The protected device identity could not be restored. Retry sign-in."
-                }
             }
             retireOrdinarySurfaceRequests()
             parameterRequests = [:]
@@ -994,14 +913,6 @@ final class AppModel: NSObject {
         let owner: DownloadOwner
         let socket: WSClient?
         let conversation: String?
-    }
-
-    private struct CredentialRefreshContext {
-        let id = UUID()
-        let owner: DownloadOwner
-        let authentication: ASWebAuthenticationSession?
-        let authority: URL
-        let original: TokenSet
     }
 
     private struct SocketAuthenticationContext {
@@ -1631,290 +1542,6 @@ final class AppModel: NSObject {
         continuity.lastCommittedRenderRevision
     }
 
-    func bootstrap() async {
-        if let run = bootstrapRun, run.generation == sessionGeneration, !run.cancelled {
-            await run.wait()
-            return
-        }
-        // Every window shares this model and bootstraps on open; reconnecting would cut off a running turn.
-        guard wsTask == nil else { return }
-        bootstrapRun?.cancel()
-        let run = BootstrapRun(generation: sessionGeneration)
-        let owner = downloadOwner
-        let authentication = authSession
-        bootstrapRun = run
-        run.task = Task {
-            await restoreSession(generation: run.generation, owner: owner, authentication: authentication)
-            if bootstrapRun === run { bootstrapRun = nil }
-        }
-        await run.wait()
-    }
-
-    static func serverSessionRetryDelay(_ backoff: inout BackoffPolicy, jitter: Double = .random(in: 0.5...1))
-        -> UInt64
-    {
-        UInt64(backoff.next() * jitter * 1_000_000_000)
-    }
-
-    private func restoreSession(
-        generation: Int, owner: DownloadOwner, authentication: ASWebAuthenticationSession?
-    ) async {
-        if let oidc, let scope = try? ServerSessionScope(server: serverBase, oidc: oidc) {
-            var backoff = serverSessionRetryBackoff
-            restore: while true {
-                do {
-                    guard let data = try serverSessionStorage.load(scope.storageKey) else { break restore }
-                    let restored = try JSONDecoder().decode(ServerSession.self, from: data)
-                    guard restored.scope == scope, restored.cookieExpiresAt > credentialClock() else {
-                        throw ServerSessionError.retired
-                    }
-                    restoringServerSession = restored
-                    let refreshed = try await ServerSessionTransport(scope: scope, transport: serverSessionTransport)
-                        .refresh(restored)
-                    if restoringServerSession == restored { restoringServerSession = nil }
-                    guard !Task.isCancelled, generation == sessionGeneration, owner == downloadOwner,
-                        authentication === authSession, self.oidc?.authority == oidc.authority,
-                        (try? ServerSessionScope(server: serverBase, oidc: oidc)) == scope
-                    else { return }
-                    try serverSessionStorage.save(JSONEncoder().encode(refreshed), key: scope.storageKey)
-                    serverSession = refreshed
-                    serverCustodyRequired = true
-                    tokens = refreshed.tokenSet
-                    signInError = nil
-                    enterSignedIn(resumedSession: true)
-                    return
-                } catch ServerSessionError.unavailable {
-                    guard !Task.isCancelled, generation == sessionGeneration, owner == downloadOwner,
-                        authentication === authSession
-                    else { return }
-                    // No answer says nothing about the session: keep it, signed out, until the server confirms it.
-                    signInError = "The server can't be reached. Your sign-in is saved. Retrying…"
-                    try? await Task.sleep(nanoseconds: Self.serverSessionRetryDelay(&backoff))
-                    guard !Task.isCancelled, generation == sessionGeneration, owner == downloadOwner,
-                        authentication === authSession, !signedIn
-                    else { return }
-                } catch {
-                    guard !Task.isCancelled, generation == sessionGeneration, owner == downloadOwner,
-                        authentication === authSession
-                    else { return }
-                    retireServerSession()
-                    store.wipe()
-                    signInError = "The saved server session could not be resumed. Sign in again."
-                    return
-                }
-            }
-        }
-        let loaded = await Task.detached { [store] in store.load() }.value
-        guard !Task.isCancelled, generation == sessionGeneration, owner == downloadOwner,
-            authentication === authSession, let stored = loaded
-        else { return }
-        tokens = stored.tokenSet
-        enterSignedIn(resumedSession: true)
-        let resumedOwner = downloadOwner
-        if case .rejected = await refreshOutcome(), resumedOwner == downloadOwner {
-            await signOut(revokeRemote: false)
-        }
-    }
-
-    func signIn() {
-        guard let oidc else {
-            signInError = "Set the Keycloak realm URL first."
-            return
-        }
-        retireMeshCustody()
-        retireServerSession()
-        authSession?.cancel()
-        signInError = nil
-        let verifier = PKCE.makeVerifier()
-        let state = PKCE.makeVerifier()
-        let generation = sessionGeneration
-        let url = oidc.authorizeURL(state: state, challenge: PKCE.challenge(for: verifier))
-
-        let session = ASWebAuthenticationSession(url: url, callbackURLScheme: AstralConfig.redirectScheme) {
-            [weak self] callback, error in
-            guard let self else { return }
-            Task { @MainActor in
-                guard generation == self.sessionGeneration else { return }
-                if let error {
-                    self.signInError = error.localizedDescription
-                    return
-                }
-                guard let callback,
-                    let items = URLComponents(url: callback, resolvingAgainstBaseURL: false)?.queryItems,
-                    items.first(where: { $0.name == "state" })?.value == state,
-                    let code = items.first(where: { $0.name == "code" })?.value
-                else {
-                    self.signInError = "Sign-in was cancelled."
-                    return
-                }
-                await self.exchange(code: code, verifier: verifier, oidc: oidc)
-            }
-        }
-        session.presentationContextProvider = self
-        session.prefersEphemeralWebBrowserSession = false
-        authSession = session
-        session.start()
-    }
-
-    private func exchange(code: String, verifier: String, oidc: OIDCConfig) async {
-        let generation = sessionGeneration
-        let authentication = authSession
-        let server = serverBase
-        do {
-            let scope = try ServerSessionScope(server: server, oidc: oidc)
-            let transport = ServerSessionTransport(scope: scope, transport: serverSessionTransport)
-            let result = try await transport.exchange(code: code, verifier: verifier)
-            guard !Task.isCancelled, generation == sessionGeneration, authSession === authentication,
-                serverBase == server, self.oidc?.authority == oidc.authority
-            else { return }
-            try serverSessionStorage.retainOnly(scope.storageKey)
-            try serverSessionStorage.save(JSONEncoder().encode(result), key: scope.storageKey)
-            serverSession = result
-            serverCustodyRequired = true
-            tokens = result.tokenSet
-            store.wipe()
-            enterSignedIn(resumedSession: false)
-        } catch {
-            if generation == sessionGeneration, authSession === authentication, serverBase == server {
-                signInError = "The server could not establish this session. Start sign-in again."
-            }
-        }
-    }
-
-    private func retireServerSession(revokeRemote: Bool = true) {
-        let retired = serverSession ?? restoringServerSession
-        let retiredTransport = serverSessionTransport
-        #if os(iOS)
-            pushNotifications?.ownerSessionEnded(access: tokens?.accessToken)
-        #endif
-        sessionGeneration += 1
-        refreshTask?.cancel()
-        refreshTask = nil
-        refreshContext = nil
-        serverSession = nil
-        restoringServerSession = nil
-        do { try serverSessionStorage.retainOnly(nil) } catch {
-            signInError = "The protected server session could not be cleared. Retry sign-out."
-        }
-        if revokeRemote, let retired {
-            let captured = sessionGeneration
-            Task { [weak self] in
-                let outcome = try? await ServerSessionTransport(scope: retired.scope, transport: retiredTransport)
-                    .logoutOutcome(retired)
-                if outcome != .revoked {
-                    NSLog("AstralDeep previous server session retirement unconfirmed or queued")
-                    guard let self, self.sessionGeneration == captured, self.serverSession == nil,
-                        !self.signedIn, self.signInError == nil
-                    else { return }
-                    self.signInError =
-                        outcome == .queued
-                        ? "Previous server session revocation is queued."
-                        : "The server could not confirm previous session revocation."
-                }
-            }
-        }
-    }
-
-    private func refreshServerSession() async -> RefreshResult {
-        guard let session = serverSession, let oidc,
-            let scope = try? ServerSessionScope(server: serverBase, oidc: oidc), scope == session.scope
-        else { return .rejected("server session required") }
-        let generation = sessionGeneration
-        #if os(macOS)
-            let readySocketContext: SocketAuthenticationContext? = {
-                guard let ready = uiAuthRefreshReadyContext,
-                    ready.owner == downloadOwner, ready.socket === ws,
-                    ready.connection == continuity.connectionGeneration,
-                    ready.token == registeredAccessToken, tokens?.accessToken == ready.token,
-                    socketAuthenticationIsCurrent(ready)
-                else { return nil }
-                return ready
-            }()
-            let activeToken = readySocketContext.flatMap { _ in tokens }
-            let readyIdentity = activeToken.flatMap { UIAuthRefreshIdentity(token: $0) }
-            let storedIdentity = UIAuthRefreshIdentity(token: session.tokenSet)
-            guard let storedIdentity else {
-                return .rejected("registered server session identity is unavailable")
-            }
-            if readySocketContext != nil, readyIdentity == nil || storedIdentity != readyIdentity {
-                return .rejected("registered server session identity is unavailable")
-            }
-        #endif
-        do {
-            let transport = ServerSessionTransport(scope: scope, transport: serverSessionTransport)
-            let result = try await transport.refresh(session)
-            guard !Task.isCancelled, generation == sessionGeneration, serverSession == session,
-                self.oidc.map({ try? ServerSessionScope(server: serverBase, oidc: $0) }) == scope
-            else { return .transient("session changed") }
-            #if os(macOS)
-                if let ready = readySocketContext {
-                    guard socketAuthenticationIsCurrent(ready), ready.socket === ws,
-                        ready.connection == continuity.connectionGeneration,
-                        uiAuthRefreshReadyContext?.token == ready.token,
-                        registeredAccessToken == ready.token, tokens?.accessToken == ready.token
-                    else { return .transient("connection changed during server session refresh") }
-                }
-            #endif
-            guard result.scope == session.scope, result.owner == session.owner else {
-                return .rejected("server session identity changed")
-            }
-            #if os(macOS)
-                guard UIAuthRefreshIdentity(token: result.tokenSet) == storedIdentity else {
-                    surfaceFailureMessage = "Your sign-in changed. Sign in again to continue."
-                    return .rejected("server session refresh changed identity or authorization")
-                }
-                if readySocketContext != nil {
-                    guard let activeToken, let readyIdentity else {
-                        return .rejected("registered server session identity is unavailable")
-                    }
-                    let sameAccessToken = result.accessToken == activeToken.accessToken
-                    guard UIAuthRefreshIdentity(token: result.tokenSet) == readyIdentity,
-                        sameAccessToken
-                            || UIAuthRefreshIdentity.isValidRotation(
-                                from: activeToken, to: result.tokenSet, now: credentialClock())
-                    else {
-                        surfaceFailureMessage = "Your sign-in changed. Sign in again to continue."
-                        return .rejected("server session refresh changed identity or authorization")
-                    }
-                }
-            #endif
-            try serverSessionStorage.save(JSONEncoder().encode(result), key: scope.storageKey)
-            serverSession = result
-            return .ok(result.tokenSet)
-        } catch {
-            #if os(macOS)
-                guard !Task.isCancelled, generation == sessionGeneration, serverSession == session,
-                    self.oidc.map({ try? ServerSessionScope(server: serverBase, oidc: $0) }) == scope
-                else { return .transient("session changed") }
-                if let ready = readySocketContext {
-                    guard socketAuthenticationIsCurrent(ready), ready.socket === ws,
-                        ready.connection == continuity.connectionGeneration,
-                        uiAuthRefreshReadyContext?.token == ready.token,
-                        registeredAccessToken == ready.token, tokens?.accessToken == ready.token
-                    else { return .transient("connection changed during server session refresh") }
-                }
-            #endif
-            switch error {
-            case ServerSessionError.retired: return .rejected("server session expired")
-            case ServerSessionError.invalid: return .rejected("server session invalid")
-            default: return .transient("server session unavailable")
-            }
-        }
-    }
-
-    private func serverSocketHeaders(url: URL, owner: DownloadOwner, server: URL) async -> [String: String]? {
-        guard !Task.isCancelled, downloadOwner == owner, serverBase == server else { return nil }
-        guard serverCustodyRequired else { return [:] }
-        guard case .ok = await refreshOutcome(renewSocket: false),
-            !Task.isCancelled, downloadOwner == owner, serverBase == server
-        else { return nil }
-        guard let session = serverSession, let oidc,
-            let scope = try? ServerSessionScope(server: serverBase, oidc: oidc), scope == session.scope,
-            let token = tokens?.accessToken
-        else { return nil }
-        return try? session.socketHeaders(url: url, token: token, now: credentialClock())
-    }
-
     private func credentialNeedsRefresh(_ set: TokenSet) -> Bool {
         credentialHasExpired(set)
             || (refreshedWithinMarginAccessToken != set.accessToken && credentialIsWithinRefreshMargin(set))
@@ -1941,117 +1568,16 @@ final class AppModel: NSObject {
             if renewSocket { renewRegisteredSocket(ifChanged: current) }
             return .ok(current)
         }
-        guard let oidc, serverCustodyRequired || current.refreshToken != nil else {
-            return .rejected("no session renewal")
-        }
-        let context: CredentialRefreshContext
-        let attempt: Task<RefreshResult, Never>
-        if let inFlight = refreshTask, let active = refreshContext,
-            active.owner == downloadOwner, active.authentication === authSession,
-            active.authority == oidc.authority, refreshTaskGeneration == sessionGeneration
-        {
-            context = active
-            attempt = inFlight
-        } else {
-            refreshTask?.cancel()
-            context = CredentialRefreshContext(
-                owner: downloadOwner, authentication: authSession,
-                authority: oidc.authority, original: current)
-            if serverCustodyRequired {
-                attempt = Task { await self.refreshServerSession() }
-            } else {
-                attempt = Task { await RefreshStrategy.direct(oidc).attempt(refreshToken: current.refreshToken!) }
-            }
-            refreshTask = attempt
-            refreshTaskGeneration = sessionGeneration
-            refreshContext = context
-        }
-        let result = await attempt.value
-        guard !Task.isCancelled, context.owner == downloadOwner,
-            context.authentication === authSession, context.authority == self.oidc?.authority
-        else { return .transient("session changed") }
-        if case .ok(let set) = result {
-            guard set.conversationAccount == context.original.conversationAccount,
-                !context.owner.signedIn || set.conversationAccount == context.owner.account,
-                !credentialHasExpired(set)
-            else {
-                if refreshContext?.id == context.id {
-                    refreshTask = nil
-                    refreshContext = nil
-                }
-                return .rejected("refreshed credentials do not match the session")
-            }
-            guard tokens == context.original || tokens == set else { return .transient("session changed") }
-            #if os(macOS)
-                var installedOnCurrentSocket = false
-                if let registeredAccessToken, registeredAccessToken != set.accessToken,
-                    let ready = uiAuthRefreshReadyContext,
-                    ready.owner == downloadOwner, ready.socket === ws,
-                    ready.connection == continuity.connectionGeneration, ready.token == registeredAccessToken
-                {
-                    guard
-                        UIAuthRefreshIdentity.isValidRotation(
-                            from: context.original, to: set, now: credentialClock())
-                    else {
-                        if refreshContext?.id == context.id {
-                            refreshTask = nil
-                            refreshContext = nil
-                        }
-                        surfaceFailureMessage = "Your sign-in changed. Sign in again to continue."
-                        return .rejected("refreshed credentials changed identity or authorization")
-                    }
-                    let installed = await installRefreshedCredentialOnCurrentSocket(set, ready: ready)
-                    let installedByThisCall =
-                        registeredAccessToken == context.original.accessToken
-                        && tokens == context.original
-                    let installedByConcurrentRefresh = registeredAccessToken == set.accessToken && tokens == set
-                    guard installed, !Task.isCancelled, ready.owner == downloadOwner, ready.socket === ws,
-                        ready.connection == continuity.connectionGeneration,
-                        installedByThisCall || installedByConcurrentRefresh
-                    else {
-                        if refreshContext?.id == context.id {
-                            refreshTask = nil
-                            refreshContext = nil
-                        }
-                        return .transient("credential refresh was not confirmed on the current connection")
-                    }
-                    installedOnCurrentSocket = true
-                }
-            #endif
-            if refreshContext?.id == context.id {
-                refreshTask = nil
-                refreshContext = nil
-                tokens = set
-                refreshedWithinMarginAccessToken = credentialIsWithinRefreshMargin(set) ? set.accessToken : nil
-                if !serverCustodyRequired { store.save(StoredTokens(from: set)) }
-            }
-            #if os(macOS)
-                if installedOnCurrentSocket, let ready = uiAuthRefreshReadyContext,
-                    ready.owner == downloadOwner, ready.socket === ws,
-                    ready.connection == continuity.connectionGeneration,
-                    registeredAccessToken != set.accessToken
-                {
-                    registeredAccessToken = set.accessToken
-                    uiAuthRefreshReadyContext = SocketAuthenticationContext(
-                        owner: ready.owner, socket: ready.socket, connection: ready.connection, token: set.accessToken)
-                    scheduleUIAuthRefresh(for: set, context: uiAuthRefreshReadyContext!)
-                } else if let ready = uiAuthRefreshReadyContext,
-                    ready.owner == downloadOwner, ready.socket === ws,
-                    ready.connection == continuity.connectionGeneration,
-                    ready.token == set.accessToken, registeredAccessToken == set.accessToken
-                {
-                    scheduleUIAuthRefresh(for: set, context: ready)
-                } else if renewSocket {
-                    renewRegisteredSocket(ifChanged: set)
-                }
-            #else
-                if renewSocket { renewRegisteredSocket(ifChanged: set) }
-            #endif
-        } else if refreshContext?.id == context.id {
-            refreshTask = nil
-            refreshContext = nil
-        }
-        return result
+        return .rejected("no session renewal")
+    }
+
+    private func retireCredentialSession() {
+        #if os(iOS)
+            pushNotifications?.ownerSessionEnded(access: tokens?.accessToken)
+        #endif
+        sessionGeneration += 1
+        refreshTask?.cancel()
+        refreshTask = nil
     }
 
     private func freshAccessToken() async -> String? {
@@ -2084,7 +1610,7 @@ final class AppModel: NSObject {
         switch result {
         case .ok(let set): return set.accessToken == registeredAccessToken
         case .rejected:
-            await signOut(revokeRemote: false)
+            await signOut()
             return false
         case .transient: return false
         }
@@ -2098,11 +1624,11 @@ final class AppModel: NSObject {
         case .ok(let set) where set.accessToken != context.token:
             renewRegisteredSocket(ifChanged: set)
         case .ok, .rejected:
-            await signOut(revokeRemote: false)
+            await signOut()
         case .transient:
             #if os(macOS)
                 if surfaceFailureMessage == "Your sign-in changed. Sign in again to continue." {
-                    await signOut(revokeRemote: false)
+                    await signOut()
                 } else {
                     surfaceFailureMessage = "The session could not reconnect. Retry when the connection is available."
                 }
@@ -2142,10 +1668,9 @@ final class AppModel: NSObject {
         private func performUIAuthRefresh(
             _ request: UIAuthRefreshRequest, ready: SocketAuthenticationContext, taskID: UUID
         ) async -> Bool {
-            let authentication = authSession
             guard let socket = ws, socket === ready.socket, downloadOwner == ready.owner,
                 continuity.connectionGeneration == ready.connection, registeredAccessToken == ready.token,
-                tokens?.accessToken == ready.token, authSession === authentication
+                tokens?.accessToken == ready.token
             else { return false }
             uiAuthRefreshPendingRequestID = request.requestID
             let ack = await withCheckedContinuation { continuation in
@@ -2163,7 +1688,6 @@ final class AppModel: NSObject {
                         await MainActor.run {
                             self.socketAuthenticationIsCurrent(ready)
                                 && self.uiAuthRefreshTaskID == taskID
-                                && self.authSession === authentication
                         }
                     }
                     guard !sent else { return }
@@ -2174,8 +1698,7 @@ final class AppModel: NSObject {
             guard let ack, ack.accepted, ack.requestID == request.requestID,
                 ack.connectionGeneration == ready.connection,
                 uiAuthRefreshTaskID == taskID, ws === ready.socket, downloadOwner == ready.owner,
-                continuity.connectionGeneration == ready.connection, registeredAccessToken == ready.token,
-                authSession === authentication
+                continuity.connectionGeneration == ready.connection, registeredAccessToken == ready.token
             else {
                 if let ack, !ack.accepted {
                     surfaceFailureMessage = "Your sign-in changed. Sign in again to continue."
@@ -2249,11 +1772,11 @@ final class AppModel: NSObject {
                     guard !Task.isCancelled else { return }
                     if case .rejected = outcome {
                         self.surfaceFailureMessage = "Your sign-in expired. Sign in again to continue."
-                        await self.signOut(revokeRemote: false)
+                        await self.signOut()
                         return
                     } else if case .transient = outcome {
                         if self.surfaceFailureMessage == "Your sign-in changed. Sign in again to continue." {
-                            await self.signOut(revokeRemote: false)
+                            await self.signOut()
                             return
                         }
                         guard self.socketAuthenticationIsCurrent(context),
@@ -2357,7 +1880,7 @@ final class AppModel: NSObject {
         errorBanner = text
     }
 
-    func signOut(revokeRemote: Bool = true) async {
+    func signOut() async {
         #if os(macOS)
             retireUIAuthRefresh()
         #endif
@@ -2374,20 +1897,12 @@ final class AppModel: NSObject {
         #endif
         retireMeshCustody()
         // Local wipe must precede the async revoke call, before any suspension
-        let access = tokens?.accessToken
-        let refresh = tokens?.refreshToken
-        let custody = serverSession ?? restoringServerSession
-        retireServerSession(revokeRemote: false)
-        serverCustodyRequired = false
-        let logoutClient = RestClient(serverBase: serverBase) { access }
+        retireCredentialSession()
         let socket = ws
         if let account = conversationAccount {
             _ = conversationResumeStore.clear(.signOut, for: account)
         }
         sessionGeneration += 1
-        refreshTask?.cancel()
-        refreshTask = nil
-        refreshContext = nil
         registeredAccessToken = nil
         refreshedWithinMarginAccessToken = nil
         authenticationReadIntent = nil
@@ -2403,7 +1918,6 @@ final class AppModel: NSObject {
         surfaceFailureMessage = nil
         warningBannerText = nil
         screen = .chat
-        store.wipe()
         tokens = nil
         #if os(iOS)
             meshPush.authenticationChanged()
@@ -2432,20 +1946,7 @@ final class AppModel: NSObject {
         history = []
         historyTitle = "Recent chats"
 
-        let logoutGeneration = sessionGeneration
         await socket?.stop()
-        if revokeRemote, let custody {
-            let outcome = try? await ServerSessionTransport(scope: custody.scope, transport: serverSessionTransport)
-                .logoutOutcome(custody)
-            guard sessionGeneration == logoutGeneration, !signedIn, signInError == nil else { return }
-            if outcome == .queued {
-                signInError = "Signed out on this device. Server session revocation is queued."
-            } else if outcome != .revoked {
-                signInError = "Signed out on this device. The server could not confirm session revocation."
-            }
-        } else if revokeRemote, let refresh {
-            _ = try? await logoutClient.logout(clientId: clientId, refreshToken: refresh)
-        }
     }
 
     func clearConversationForAccountRemoval() {
@@ -2456,7 +1957,7 @@ final class AppModel: NSObject {
         #endif
         clearActivity()
         retireMeshCustody()
-        retireServerSession()
+        retireCredentialSession()
         retireOrdinarySurfaceRequests()
         parameterRequests = [:]
         if let account = conversationAccount {
@@ -2770,7 +2271,9 @@ final class AppModel: NSObject {
             ?? WSClient(
                 url: socketURL, liveness: socketLiveness,
                 requestHeaders: { [weak self] in
-                    await self?.serverSocketHeaders(url: socketURL, owner: socketOwner, server: socketServer)
+                    guard let self, await self.downloadOwner == socketOwner, await self.serverBase == socketServer
+                    else { return nil }
+                    return [:]
                 })
         initialWebSocket = nil
         let previous = ws.flatMap { $0 !== client ? $0 : nil }
@@ -2827,7 +2330,7 @@ final class AppModel: NSObject {
         switch result {
         case .ok(let set): return set.accessToken
         case .rejected:
-            await signOut(revokeRemote: false)
+            await signOut()
             return nil
         case .transient: return nil
         }
@@ -6459,25 +5962,8 @@ final class AppModel: NSObject {
                 ordinarySurfaceGeneration == nil, !paramPickerPending(action: action),
                 meshActionOffered(action, payload: payload)
             else { return }
-            guard serverSession?.owner == conversationAccount?.subject else {
-                surfaceFailureMessage = "Sign in again to confirm this server session before managing mesh devices."
-                return
-            }
-            if ["chrome_mesh_identity", "chrome_mesh_redeem"].contains(action)
-                || (action == "chrome_mesh_create" && payload["fields"]?["device_key"]?.stringValue?.isEmpty == true)
-            {
-                performMeshAction(action, payload: payload)
-                return
-            }
-            if action == "chrome_mesh_create" {
-                guard let raw = payload["fields"]?["device_key"]?.stringValue,
-                    let identity = try? JSONValue.parse(Data(raw.utf8)),
-                    (try? MeshEnrollmentCustody.validatePublicIdentity(identity)) != nil
-                else {
-                    surfaceFailureMessage = "The public device identity is invalid."
-                    return
-                }
-            }
+            surfaceFailureMessage = "Mesh devices are managed from the personal mesh."
+            return
         }
         if SafetySurfaceRequest.actions.contains(action) || payload["surface"]?.stringValue == "safety" {
             guard signedIn, connected, SafetySurfaceRequest(action: action, payload: payload) != nil else {
@@ -8005,35 +7491,6 @@ final class AppModel: NSObject {
     }
 }
 
-@MainActor private final class BootstrapRun {
-    let generation: Int
-    var task: Task<Void, Never>?
-    private var waiters = 0
-
-    init(generation: Int) {
-        self.generation = generation
-    }
-
-    var cancelled: Bool { task?.isCancelled == true }
-
-    func cancel() { task?.cancel() }
-
-    func wait() async {
-        guard let task else { return }
-        waiters += 1
-        await withTaskCancellationHandler {
-            await task.value
-        } onCancel: {
-            Task { @MainActor in self.leave() }
-        }
-    }
-
-    private func leave() {
-        waiters -= 1
-        if waiters == 0 { task?.cancel() }
-    }
-}
-
 private actor AppRegistrationResumeState {
     private var next: Bool
 
@@ -8045,19 +7502,5 @@ private actor AppRegistrationResumeState {
         let value = next
         next = true
         return value
-    }
-}
-
-extension AppModel: ASWebAuthenticationPresentationContextProviding {
-    nonisolated func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        MainActor.assumeIsolated {
-            #if os(macOS)
-                NSApplication.shared.mainWindow ?? ASPresentationAnchor()
-            #else
-                UIApplication.shared.connectedScenes
-                    .compactMap { ($0 as? UIWindowScene)?.keyWindow }
-                    .first ?? ASPresentationAnchor()
-            #endif
-        }
     }
 }

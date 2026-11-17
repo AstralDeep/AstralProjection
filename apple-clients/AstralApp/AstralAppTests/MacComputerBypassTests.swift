@@ -708,7 +708,7 @@
                 if quit {
                     model.computerApplicationWillTerminate()
                 } else {
-                    await model.signOut(revokeRemote: false)
+                    await model.signOut()
                 }
                 XCTAssertFalse(host.bypass, "quit \(quit)")
                 XCTAssertEqual(host.bypassSaved, quit, "quit \(quit)")

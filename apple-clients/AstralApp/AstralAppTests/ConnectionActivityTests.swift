@@ -59,7 +59,7 @@
             try await settle { scheduler.held.first?.options == [.userInitiatedAllowingIdleSystemSleep] }
             XCTAssertEqual(scheduler.held.count, 1)
             XCTAssertEqual(scheduler.began.count, 3)
-            await model.signOut(revokeRemote: false)
+            await model.signOut()
             try await settle { scheduler.held.isEmpty }
             XCTAssertEqual(scheduler.ended.count, 3)
             XCTAssertEqual(model.connectionActivity.level, .idle)
