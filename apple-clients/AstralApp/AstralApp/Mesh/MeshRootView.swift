@@ -16,6 +16,11 @@ struct MeshRootView: View {
     @Environment(ThemeStore.self) private var theme
     @Environment(\.scenePhase) private var scenePhase
     private var p: AstralPalette { theme.palette }
+    private var phiPromptBinding: Binding<MeshPhiPromptRequest?> {
+        Binding(
+            get: { mesh.phiPrompts.pending },
+            set: { if $0 == nil { mesh.phiPrompts.answer(.treatAsPhi) } })
+    }
 
     var body: some View {
         content
@@ -30,6 +35,12 @@ struct MeshRootView: View {
                 .consentSheet(consent)
             }
             .consentSheet(consent)
+            .sheet(item: phiPromptBinding) { request in
+                MeshPhiPromptSheet(request: request, center: mesh.phiPrompts)
+            }
+            .onChange(of: scenePhase, initial: true) { _, phase in
+                mesh.phiPrompts.setForeground(phase == .active)
+            }
             .task(id: scenePhase) {
                 guard scenePhase == .active else { return }
                 #if os(iOS)
@@ -79,6 +90,9 @@ struct MeshShell: View {
     @State private var destination: MeshDestination?
     @State private var selectedChat: String?
     @State private var selectedTab = 0
+    private var presentedPhi: Binding<MeshPhiOffer?> {
+        Binding(get: { mesh.presentingPhi }, set: { mesh.presentingPhi = $0 })
+    }
 
     init(start: MeshDestination? = nil) {
         #if DEBUG
@@ -93,10 +107,21 @@ struct MeshShell: View {
             .alert(
                 "Mesh", isPresented: Binding(get: { mesh.notice != nil }, set: { if !$0 { mesh.notice = nil } })
             ) {
-                Button("OK") { mesh.notice = nil }
+                if let offer = mesh.phiOffer {
+                    Button(offer.buttonTitle) {
+                        mesh.presentingPhi = offer
+                        mesh.notice = nil
+                    }
+                    .accessibilityIdentifier(MeshPhiID.offer)
+                }
+                Button("OK") {
+                    mesh.notice = nil
+                    mesh.dismissPhiOffer()
+                }
             } message: {
                 Text(mesh.notice ?? "")
             }
+            .sheet(item: presentedPhi) { offer in MeshPhiOfferSheet(offer: offer) }
             .task {
                 mesh.attachVoice(model.onDeviceVoice)
                 #if os(iOS)

@@ -1,0 +1,359 @@
+{
+ "filter_answer": [
+  {
+   "answer": "{\"findings\": [{\"kind\": \"name\", \"text\": \"Avery Quill\"}]}",
+   "chunk": "Note: Avery  Quill came in on March 3.\nCall 502-555-0123.",
+   "expect": {
+    "kinds": [
+     "name"
+    ],
+    "reason": null,
+    "verdict": "uncertain"
+   },
+   "id": "name_counts"
+  },
+  {
+   "answer": "{\"findings\": [{\"kind\": \"name\", \"text\": \"AVERY   QUILL\"}]}",
+   "chunk": "Note: Avery  Quill came in on March 3.\nCall 502-555-0123.",
+   "expect": {
+    "kinds": [
+     "name"
+    ],
+    "reason": null,
+    "verdict": "uncertain"
+   },
+   "id": "case_and_space_fold"
+  },
+  {
+   "answer": "{\"findings\": [{\"kind\": \"date\", \"text\": \"March 3\"}, {\"kind\": \"contact\", \"text\": \"502-555-0123\"}, {\"kind\": \"name\", \"text\": \"Avery\"}]}",
+   "chunk": "Note: Avery  Quill came in on March 3.\nCall 502-555-0123.",
+   "expect": {
+    "kinds": [
+     "contact",
+     "date",
+     "name"
+    ],
+    "reason": null,
+    "verdict": "uncertain"
+   },
+   "id": "several_kinds"
+  },
+  {
+   "answer": "{\"findings\": []}",
+   "chunk": "Note: Avery  Quill came in on March 3.\nCall 502-555-0123.",
+   "expect": {
+    "kinds": [],
+    "reason": null,
+    "verdict": "none"
+   },
+   "id": "empty_answer"
+  },
+  {
+   "answer": "{\"findings\": [{\"kind\": \"name\", \"text\": \"Bram Okonjo\"}]}",
+   "chunk": "Note: Avery  Quill came in on March 3.\nCall 502-555-0123.",
+   "expect": {
+    "kinds": [],
+    "reason": null,
+    "verdict": "none"
+   },
+   "id": "text_not_in_chunk"
+  },
+  {
+   "answer": "{\"findings\": [{\"kind\": \"other\", \"text\": \"   \"}]}",
+   "chunk": "Note: Avery  Quill came in on March 3.\nCall 502-555-0123.",
+   "expect": {
+    "kinds": [],
+    "reason": null,
+    "verdict": "none"
+   },
+   "id": "only_white_space"
+  },
+  {
+   "answer": "{\"findings\": [{\"kind\": \"name\", \"text\": \"Bram Okonjo\"}, {\"kind\": \"date\", \"text\": \"march 3\"}]}",
+   "chunk": "Note: Avery  Quill came in on March 3.\nCall 502-555-0123.",
+   "expect": {
+    "kinds": [
+     "date"
+    ],
+    "reason": null,
+    "verdict": "uncertain"
+   },
+   "id": "one_of_two_counts"
+  },
+  {
+   "answer": "{\"findings\": [{\"kind\": \"name\", \"text\": \"JOS\\u00c9 GARC\\u00cdA\"}]}",
+   "chunk": "Patient Jos\u00e9 Garc\u00eda seen today.",
+   "expect": {
+    "kinds": [
+     "name"
+    ],
+    "reason": null,
+    "verdict": "uncertain"
+   },
+   "id": "accented_name"
+  },
+  {
+   "answer": "{\"findings\": [{\"kind\": \"name\", \"text\": \"Jos\\u00e9 Garc\\u00eda\"}]}",
+   "chunk": "Patient Jose\u0301 Garci\u0301a seen today.",
+   "expect": {
+    "kinds": [
+     "name"
+    ],
+    "reason": null,
+    "verdict": "uncertain"
+   },
+   "id": "decomposed_chunk_precomposed_answer"
+  },
+  {
+   "answer": "{\"findings\": [{\"kind\": \"name\", \"text\": \"Jose\\u0301 Garci\\u0301a\"}]}",
+   "chunk": "Patient Jos\u00e9 Garc\u00eda seen today.",
+   "expect": {
+    "kinds": [
+     "name"
+    ],
+    "reason": null,
+    "verdict": "uncertain"
+   },
+   "id": "precomposed_chunk_decomposed_answer"
+  },
+  {
+   "answer": "{\"findings\": [{\"kind\": \"name\", \"text\": \"Jos\\u00e8 Garc\\u00eda\"}]}",
+   "chunk": "Patient Jos\u00e9 Garc\u00eda seen today.",
+   "expect": {
+    "kinds": [
+     "name"
+    ],
+    "reason": null,
+    "verdict": "uncertain"
+   },
+   "id": "other_accent_still_counts"
+  },
+  {
+   "answer": "{\"findings\": [{\"kind\": \"person\", \"text\": \"Avery Quill\"}]}",
+   "chunk": "Note: Avery  Quill came in on March 3.\nCall 502-555-0123.",
+   "expect": {
+    "kinds": [],
+    "reason": "detector_failed",
+    "verdict": "phi"
+   },
+   "id": "unknown_kind"
+  },
+  {
+   "answer": "{\"findings\": [{\"kind\": \"other\", \"text\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}]}",
+   "chunk": "Note: Avery  Quill came in on March 3.\nCall 502-555-0123.",
+   "expect": {
+    "kinds": [],
+    "reason": "detector_failed",
+    "verdict": "phi"
+   },
+   "id": "text_too_long"
+  },
+  {
+   "answer": "{\"findings\": [{\"kind\": \"other\", \"text\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}]}",
+   "chunk": "Note: Avery  Quill came in on March 3.\nCall 502-555-0123.",
+   "expect": {
+    "kinds": [],
+    "reason": null,
+    "verdict": "none"
+   },
+   "id": "text_at_limit"
+  },
+  {
+   "answer": "{\"findings\": [{\"kind\": \"other\", \"text\": \"\"}]}",
+   "chunk": "Note: Avery  Quill came in on March 3.\nCall 502-555-0123.",
+   "expect": {
+    "kinds": [],
+    "reason": "detector_failed",
+    "verdict": "phi"
+   },
+   "id": "text_empty"
+  },
+  {
+   "answer": "{\"findings\": [], \"note\": \"none\"}",
+   "chunk": "Note: Avery  Quill came in on March 3.\nCall 502-555-0123.",
+   "expect": {
+    "kinds": [],
+    "reason": "detector_failed",
+    "verdict": "phi"
+   },
+   "id": "extra_field"
+  },
+  {
+   "answer": "{\"findings\": [{\"kind\": \"name\", \"text\": \"Avery\", \"score\": 1}]}",
+   "chunk": "Note: Avery  Quill came in on March 3.\nCall 502-555-0123.",
+   "expect": {
+    "kinds": [],
+    "reason": "detector_failed",
+    "verdict": "phi"
+   },
+   "id": "finding_extra_field"
+  },
+  {
+   "answer": "{\"findings\": [{\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}]}",
+   "chunk": "Note: Avery  Quill came in on March 3.\nCall 502-555-0123.",
+   "expect": {
+    "kinds": [],
+    "reason": "detector_failed",
+    "verdict": "phi"
+   },
+   "id": "too_many"
+  },
+  {
+   "answer": "{\"findings\": [{\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}, {\"kind\": \"name\", \"text\": \"Avery\"}]}",
+   "chunk": "Note: Avery  Quill came in on March 3.\nCall 502-555-0123.",
+   "expect": {
+    "kinds": [
+     "name"
+    ],
+    "reason": null,
+    "verdict": "uncertain"
+   },
+   "id": "at_most"
+  },
+  {
+   "answer": "Sure, here are the findings.",
+   "chunk": "Note: Avery  Quill came in on March 3.\nCall 502-555-0123.",
+   "expect": {
+    "kinds": [],
+    "reason": "detector_failed",
+    "verdict": "phi"
+   },
+   "id": "not_json"
+  },
+  {
+   "answer": "{\"findings\": [], \"score\": 0.5}",
+   "chunk": "Note: Avery  Quill came in on March 3.\nCall 502-555-0123.",
+   "expect": {
+    "kinds": [],
+    "reason": "detector_failed",
+    "verdict": "phi"
+   },
+   "id": "float_value"
+  },
+  {
+   "answer": "{\"findings\": [], \"findings\": []}",
+   "chunk": "Note: Avery  Quill came in on March 3.\nCall 502-555-0123.",
+   "expect": {
+    "kinds": [],
+    "reason": "detector_failed",
+    "verdict": "phi"
+   },
+   "id": "duplicate_key"
+  },
+  {
+   "answer": "[]",
+   "chunk": "Note: Avery  Quill came in on March 3.\nCall 502-555-0123.",
+   "expect": {
+    "kinds": [],
+    "reason": "detector_failed",
+    "verdict": "phi"
+   },
+   "id": "not_an_object"
+  },
+  {
+   "answer": "{\"findings\": [{\"kind\": \"name\", \"text\": 7}]}",
+   "chunk": "Note: Avery  Quill came in on March 3.\nCall 502-555-0123.",
+   "expect": {
+    "kinds": [],
+    "reason": "detector_failed",
+    "verdict": "phi"
+   },
+   "id": "text_not_string"
+  }
+ ],
+ "filter_chunks": [
+  {
+   "expect": {
+    "chunk_bytes": [
+     9
+    ],
+    "screened_bytes": 9
+   },
+   "id": "short",
+   "text_repeat": {
+    "count": 3,
+    "tail": "",
+    "unit": "ab "
+   }
+  },
+  {
+   "expect": {
+    "chunk_bytes": [
+     4096,
+     4096,
+     1808
+    ],
+    "screened_bytes": 10000
+   },
+   "id": "three_chunks",
+   "text_repeat": {
+    "count": 3333,
+    "tail": "a",
+    "unit": "ab "
+   }
+  },
+  {
+   "expect": {
+    "chunk_bytes": [
+     4096,
+     4096,
+     4096,
+     4096
+    ],
+    "screened_bytes": 16384
+   },
+   "id": "over_budget",
+   "text_repeat": {
+    "count": 5000,
+    "tail": "",
+    "unit": "abcd"
+   }
+  },
+  {
+   "expect": {
+    "chunk_bytes": [
+     4095,
+     1905
+    ],
+    "screened_bytes": 6000
+   },
+   "id": "euro_boundary",
+   "text_repeat": {
+    "count": 2000,
+    "tail": "",
+    "unit": "\u20ac"
+   }
+  },
+  {
+   "expect": {
+    "chunk_bytes": [
+     4095,
+     4095,
+     4095,
+     4095,
+     3
+    ],
+    "screened_bytes": 16383
+   },
+   "id": "euro_over_budget",
+   "text_repeat": {
+    "count": 6000,
+    "tail": "",
+    "unit": "\u20ac"
+   }
+  },
+  {
+   "expect": {
+    "chunk_bytes": [],
+    "screened_bytes": 0
+   },
+   "id": "empty",
+   "text_repeat": {
+    "count": 0,
+    "tail": "",
+    "unit": ""
+   }
+  }
+ ],
+ "filter_digest": "sha256:037d6d809254d69ce4f2c8a8e56ff32e448d3e02f66a826e737a34fcaa76e104"
+}

@@ -88,6 +88,44 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
         return prompt
     }
 
+    static func connection(canonicalRecord: Data, signingInput: Data) throws -> ConsentPrompt {
+        let record = try object(
+            canonicalRecord,
+            fields: ["auth", "device", "egress", "endpoint", "flow", "id", "kind", "local", "name", "tools", "v"])
+        let consentData = try payload(signingInput, context: "astral.consent/v1")
+        let consentObject = try object(consentData, fields: ["v", "kind", "digest", "device", "clock"])
+        let consent = try JSONDecoder().decode(ActionConsent.self, from: consentData)
+        try checkClock(consentObject["clock"], value: consent.clock)
+        guard record["v"] as? Int == 1, let name = record["name"] as? String, !name.isEmpty,
+            let endpoint = record["endpoint"] as? String, !endpoint.isEmpty,
+            let flow = record["flow"] as? String, ["private", "phi"].contains(flow),
+            let auth = record["auth"] as? [String: Any],
+            Set(auth.keys) == ["client_id", "issuer", "resource", "scheme", "scopes"],
+            let scheme = auth["scheme"] as? String, ["oauth", "none"].contains(scheme),
+            let scopes = auth["scopes"] as? [String], let tools = record["tools"] as? [[String: Any]],
+            let egress = record["egress"] as? [String], consent.v == 1, consent.kind == "connection",
+            isID(consent.device), consent.digest == hashID(canonicalRecord)
+        else { throw ConsentPromptError.invalidInput }
+        let names = try tools.map { tool -> String in
+            guard Set(tool.keys) == ["hash", "name"], let name = tool["name"] as? String else {
+                throw ConsentPromptError.invalidInput
+            }
+            return name
+        }
+        var lines = ["Server: " + endpoint, "Sign-in: " + (scheme == "oauth" ? "OAuth" : "none")]
+        if let issuer = auth["issuer"] as? String { lines.append("Issuer: " + issuer) }
+        if !scopes.isEmpty { lines.append("Scopes: " + scopes.joined(separator: ", ")) }
+        lines.append("Data class: " + flow)
+        lines.append("Reaches: " + egress.joined(separator: ", "))
+        lines.append("Tools: " + (names.isEmpty ? "none listed" : names.joined(separator: ", ")))
+        var prompt = ConsentPrompt(
+            actionTitle: "Connect " + name, effect: "connection.approve", target: name + " at " + endpoint,
+            arguments: lines.joined(separator: "\n") + "\nRecord: " + String(decoding: canonicalRecord, as: UTF8.self),
+            digest: consent.digest, requiresBiometry: true)
+        prompt.signingInputHash = hash(signingInput)
+        return prompt
+    }
+
     static func isGrant(canonicalAction: Data) -> Bool {
         guard let value = try? JSONSerialization.jsonObject(with: canonicalAction) as? [String: Any] else {
             return false
@@ -161,6 +199,9 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
                 throw ConsentPromptError.invalidInput
             }
             target = (header.type == "stop" ? "Stop counter " : "Resume counter ") + String(counter)
+        case "phi_authority", "phi_approval":
+            let described = try phi(header.type, body: body)
+            return try phiPrompt(described, data: data, signingInput: signingInput)
         default:
             throw ConsentPromptError.invalidInput
         }
@@ -174,6 +215,59 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
         prompt.signingInputHash = hash(signingInput)
         return prompt
     }
+
+    private struct PhiChange {
+        let effect: String
+        let title: String
+        let target: String
+    }
+
+    private static let approvalFields: Set<String> = [
+        "kind", "institution", "subject_kind", "subject", "issued_s", "not_after_s", "sig",
+    ]
+
+    private static func phi(_ type: String, body: [String: Any]) throws -> PhiChange {
+        if type == "phi_authority" {
+            guard Set(body.keys) == ["action", "institution"], body["action"] as? String == "add",
+                let institution = body["institution"] as? [String: Any], Set(institution.keys) == ["key", "name"],
+                let name = institution["name"] as? String, name.hasPrefix(approverPrefix),
+                isID(String(name.dropFirst(approverPrefix.count)))
+            else { throw ConsentPromptError.invalidInput }
+            _ = try keyBytes(institution["key"], count: 65)
+            return PhiChange(
+                effect: "roster.phi_register_approver", title: "Let this device approve PHI places",
+                target: String(name.dropFirst(approverPrefix.count)))
+        }
+        guard let action = body["action"] as? String else { throw ConsentPromptError.invalidInput }
+        if action == "revoke" {
+            guard Set(body.keys) == ["action", "subject"], let subject = body["subject"] as? String, !subject.isEmpty
+            else { throw ConsentPromptError.invalidInput }
+            return PhiChange(effect: "roster.phi_revoke", title: "Take back a PHI approval", target: subject)
+        }
+        guard action == "grant", Set(body.keys) == ["action", "attestation"],
+            let statement = body["attestation"] as? [String: Any], Set(statement.keys) == approvalFields,
+            statement["kind"] as? String == "phi", let kind = statement["subject_kind"] as? String,
+            let subject = statement["subject"] as? String, !subject.isEmpty
+        else { throw ConsentPromptError.invalidInput }
+        switch kind {
+        case "device", "node":
+            return PhiChange(effect: "roster.phi_grant", title: "Let a device read PHI", target: subject)
+        case "endpoint":
+            return PhiChange(
+                effect: "roster.phi_approve_destination", title: "Let a place receive PHI", target: subject)
+        default: throw ConsentPromptError.invalidInput
+        }
+    }
+
+    private static func phiPrompt(_ change: PhiChange, data: Data, signingInput: Data) throws -> ConsentPrompt {
+        var prompt = ConsentPrompt(
+            actionTitle: change.title, effect: change.effect, target: change.target,
+            arguments: String(decoding: data, as: UTF8.self), digest: hashID(data), requiresBiometry: true)
+        prompt.signingInputHash = hash(signingInput)
+        return prompt
+    }
+
+    private static let approverPrefix = "astral-device:"
 
     func requiringBiometry(_ required: Bool) -> ConsentPrompt {
         guard required, !requiresBiometry else { return self }

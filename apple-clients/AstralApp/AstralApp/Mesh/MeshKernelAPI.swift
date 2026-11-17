@@ -433,6 +433,7 @@ nonisolated enum MeshTurnEvent: Equatable, Sendable {
     case finished
     case interrupted
     case failed(String)
+    case refused(code: String, message: String)
 }
 
 nonisolated struct MeshTurnProgress: Equatable, Sendable {
@@ -451,6 +452,7 @@ nonisolated enum MeshKernelChange: Equatable, Sendable {
     case runProgress(runId: String)
     case joinRequested(MeshJoinRequest)
     case pairingFailed(code: String)
+    case connectionsChanged
 }
 
 nonisolated struct MeshKernelConfig: Sendable {
@@ -556,6 +558,212 @@ nonisolated enum MeshToolScope {
     }
 }
 
+nonisolated struct MeshConnectionTool: Hashable, Sendable {
+    let name: String
+    let hash: String
+}
+
+nonisolated struct MeshConnectionDeviceState: Equatable, Sendable {
+    let device: String
+    let label: String
+    let state: String
+    let reason: String?
+    let issuer: String?
+    let atMs: UInt64
+}
+
+nonisolated struct MeshConnection: Identifiable, Equatable, Sendable {
+    let id: String
+    let server: String
+    let name: String
+    let kind: String
+    let endpoint: String
+    let local: Bool
+    let device: String?
+    let scheme: String?
+    let issuer: String?
+    let scopes: [String]
+    let clientId: String?
+    let flow: String
+    let egress: [String]
+    let tools: [MeshConnectionTool]
+    let approvedBy: String
+    let approvedByRemovedDevice: Bool
+    let unsupported: String?
+    let supportedHere: Bool
+    let thisDevice: MeshConnectionDeviceState
+    let attention: String?
+    let otherDevices: [MeshConnectionDeviceState]
+    let pendingTools: [MeshConnectionTool]?
+}
+
+nonisolated struct MeshConnectionProposal: Equatable, Sendable {
+    let proposal: String
+    let connection: String
+    let name: String
+    let endpoint: String
+    let local: Bool
+    let device: String?
+    let scheme: String
+    let issuer: String?
+    let issuerHost: String?
+    let redirectHost: String?
+    let scopes: [String]
+    let resource: String?
+    let clientId: String?
+    let tools: [MeshConnectionTool]
+    let egress: [String]
+    let flowHint: String
+    let replaces: String?
+    let expiresMs: UInt64
+}
+
+nonisolated struct MeshConnectionState: Equatable, Sendable {
+    let connection: String
+    let state: String
+    let reason: String?
+    let toolsPending: Bool
+}
+
+nonisolated struct MeshSignInStart: Equatable, Sendable, CustomStringConvertible, CustomDebugStringConvertible {
+    let flow: String
+    let authorizationURL: String?
+    let redirectURI: String
+    let userCode: String?
+    let verificationURI: String?
+    let verificationURIComplete: String?
+    let intervalSeconds: UInt64?
+    let expiresMs: UInt64
+
+    var description: String { "MeshSignInStart(flow: \(flow))" }
+    var debugDescription: String { description }
+}
+
+nonisolated enum MeshSignInPoll: Equatable, Sendable {
+    case pending(intervalSeconds: UInt64)
+    case done(MeshConnectionState)
+}
+
+nonisolated enum MeshSignInRedirect: Equatable, Sendable {
+    case appLink
+    case loopback(port: UInt16)
+    case loopbackV6(port: UInt16)
+    case pasted
+    case deviceCode
+}
+
+nonisolated enum MeshStepUpPlan: Equatable, Sendable {
+    case review(scopes: [String])
+    case signIn(scopes: [String])
+}
+
+nonisolated enum MeshPhiState: String, Equatable, Sendable {
+    case included, excluded, notUpgraded = "not_upgraded", notApproved = "not_approved"
+}
+
+nonisolated struct MeshPhiMember: Identifiable, Equatable, Sendable {
+    let deviceId: String
+    let label: String
+    let kind: MeshDeviceKind
+    let state: MeshPhiState
+    let approvedBy: String?
+    let upgraded: Bool
+    let isThisDevice: Bool
+    var id: String { deviceId }
+}
+
+nonisolated struct MeshPhiGroup: Equatable, Sendable {
+    let members: [MeshPhiMember]
+    let localCode: String?
+    let rotateFirst: Bool
+    let pending: [String]
+    let keeper: Bool
+
+    var isAdopted: Bool { members.contains { $0.isThisDevice && $0.state == .included } }
+}
+
+nonisolated enum MeshPhiDestinationForm: String, Equatable, Sendable {
+    case endpoint, local, contact, device, invalid, unsupported
+}
+
+nonisolated enum MeshPhiDestinationStatus: String, Equatable, Sendable {
+    case approved, revoked, expired, invalid, unsupported
+    case authorityRemoved = "authority_removed"
+    case legacyAuthority = "legacy_authority"
+    case approverRemoved = "approver_removed"
+    case deviceRemoved = "device_removed"
+    case contactMissing = "contact_missing"
+
+    var canApprove: Bool { self != .legacyAuthority && self != .unsupported && self != .invalid }
+}
+
+nonisolated struct MeshPhiDestination: Identifiable, Equatable, Sendable {
+    let subject: String
+    let form: MeshPhiDestinationForm
+    let target: String?
+    let status: MeshPhiDestinationStatus
+    let code: String?
+    let approvedBy: String?
+    var id: String { subject }
+}
+
+nonisolated struct MeshPhiDestinations: Equatable, Sendable {
+    let group: MeshPhiGroup
+    let destinations: [MeshPhiDestination]
+}
+
+nonisolated enum MeshPhiFact: String, Equatable, Sendable {
+    case notOwnerRun = "not_owner_run"
+    case leavesDevices = "leaves_devices"
+    case unseenHandling = "unseen_handling"
+}
+
+nonisolated enum MeshPhiDestinationKind: String, Equatable, Sendable {
+    case model, service, contact
+}
+
+nonisolated struct MeshPhiProposal: Equatable, Sendable {
+    let kind: MeshPhiDestinationKind
+    let target: String
+    let subject: String?
+    let name: String
+    let needsApproval: Bool
+    let facts: [MeshPhiFact]
+    let source: String
+}
+
+nonisolated struct MeshPhiQuestionItem: Equatable, Sendable, CustomStringConvertible, CustomDebugStringConvertible {
+    let source: String
+    let kind: String
+    let excerpt: String
+
+    var description: String { "MeshPhiQuestionItem(source: \(source), kind: \(kind))" }
+    var debugDescription: String { description }
+}
+
+nonisolated struct MeshPhiQuestion: Equatable, Sendable {
+    let items: [MeshPhiQuestionItem]
+}
+
+nonisolated enum MeshPhiAnswer: Equatable, Sendable {
+    case send, treatAsPhi
+}
+
+nonisolated protocol MeshPhiPrompting: Sendable {
+    func ask(_ question: MeshPhiQuestion) -> MeshPhiAnswer
+}
+
+nonisolated struct MeshTreatAsPhiPrompt: MeshPhiPrompting {
+    func ask(_ question: MeshPhiQuestion) -> MeshPhiAnswer { .treatAsPhi }
+}
+
+nonisolated struct MeshPhiStatus: Equatable, Sendable {
+    let modelPresent: Bool
+    let screened: UInt64
+    let overBudget: UInt64
+    let failed: UInt64
+}
+
 nonisolated protocol MeshLocalTools: Sendable {
     func list() -> [MeshLocalToolSpec]
     func call(name: String, argumentsJSON: String, ticket: Data) throws -> String
@@ -580,6 +788,7 @@ nonisolated protocol MeshKernel: Sendable {
     func stopNetwork() async
     func syncNow() async throws
     func version() -> String
+    func close() async
 
     func meshStatus() async throws -> MeshStatus
     func meshPrincipal() throws -> MeshVerifiedPrincipal
@@ -614,9 +823,11 @@ nonisolated protocol MeshKernel: Sendable {
     func chatForDevice(chatId: String, deviceProfileJson: String) throws -> MeshChatView
     func createChat(title: String) throws -> String
     func sendMessage(chatId: String, text: String, continues: String?) throws -> String
-    func addAttachment(chatId: String, bytes: Data, mime: String, name: String) throws -> MeshAttachment
+    func addAttachment(chatId: String, bytes: Data, mime: String, name: String, attended: Bool) throws
+        -> MeshAttachment
     func fetchAttachment(handle: String) async throws -> Data
-    func sendMessage(chatId: String, text: String, continues: String?, attachments: [String]) throws -> String
+    func sendMessage(chatId: String, text: String, continues: String?, attachments: [String], attended: Bool) throws
+        -> String
     func fork(chatId: String, eventId: String) throws -> String
     func act(surfaceId: String, componentId: String, capability: String, args: [String: JSONValue]) async throws
         -> MeshActResult
@@ -665,9 +876,38 @@ nonisolated protocol MeshKernel: Sendable {
     func approveRemoteMCPTool(_ tool: MeshRemoteMCPTool) async throws
     func revokeRemoteMCPTool(server: String, tool: String) throws
 
-    func mailboxState() -> MeshMailboxState
+    func phiGroup() throws -> MeshPhiGroup
+    func adoptPhiGroup() throws -> MeshPhiGroup
+    func includePhiDevice(deviceId: String) throws -> MeshPhiGroup
+    func excludePhiDevice(deviceId: String) throws -> MeshPhiGroup
+    func rotateStalePhiEpoch() throws -> Bool
+    func phiDestinations() throws -> MeshPhiDestinations
+    func phiDestinationAllowed(kind: MeshPhiDestinationKind, target: String) -> Bool
+    func proposePhiDestination(source: String) throws -> MeshPhiProposal
+    func proposeProviderPhiDestination(name: String) throws -> MeshPhiProposal
+    func proposeLegacyPhiDestination(name: String) throws -> MeshPhiProposal
+    func proposeConnectionPhiDestination(id: String, usage: String) throws -> MeshPhiProposal
+    func approvePhiDestination(_ proposal: MeshPhiProposal) throws
+    func revokePhiDestination(subject: String) throws
+    func phiStatus() throws -> MeshPhiStatus
+
+    func mailboxState() throws -> MeshMailboxState
     func syncState() async throws -> MeshSyncState
     func allowance() throws -> MeshAllowance
+
+    func proposeConnection(endpoint: String, name: String, local: Bool) async throws -> MeshConnectionProposal
+    func reviewConnection(id: String) async throws -> MeshConnectionProposal
+    func approveConnection(proposal: String, flow: String, toolNames: [String], clientId: String?) throws
+        -> MeshConnection
+    func removeConnection(id: String) throws
+    func connections() throws -> [MeshConnection]
+    func beginConnectionSignIn(id: String, redirect: MeshSignInRedirect) async throws -> MeshSignInStart
+    func completeConnectionSignIn(flow: String, redirectURL: String) async throws -> MeshConnectionState
+    func pollConnectionSignIn(flow: String) async throws -> MeshSignInPoll
+    func cancelConnectionSignIn(flow: String) throws
+    func refreshConnection(id: String) async throws -> MeshConnectionState
+    func connectionStepUp(id: String, challenge: [String]) throws -> MeshStepUpPlan
+    func noteConnectionCallSucceeded(id: String) throws
 
     func runs() async throws -> [MeshRun]
     func handOffRun(runId: String, memberId: String) async throws
@@ -675,6 +915,16 @@ nonisolated protocol MeshKernel: Sendable {
     func learningProposals() async throws -> [MeshProposal]
     func reviewProposal(id: String, adopt: Bool) async throws -> MeshEvaluation
     func undoAdoption(id: String) async throws
+}
+
+extension MeshKernel {
+    func sendMessage(chatId: String, text: String, continues: String?, attachments: [String]) throws -> String {
+        try sendMessage(chatId: chatId, text: text, continues: continues, attachments: attachments, attended: false)
+    }
+
+    func addAttachment(chatId: String, bytes: Data, mime: String, name: String) throws -> MeshAttachment {
+        try addAttachment(chatId: chatId, bytes: bytes, mime: mime, name: name, attended: false)
+    }
 }
 
 typealias MeshKernelFactory =

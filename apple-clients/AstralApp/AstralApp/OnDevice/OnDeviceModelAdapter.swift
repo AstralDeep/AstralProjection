@@ -45,6 +45,12 @@ nonisolated enum OnDeviceResponse: Equatable, Sendable {
     case failed(OnDeviceFailure)
 }
 
+nonisolated extension OnDeviceJSONSchema {
+    func checked(_ json: String) -> OnDeviceResponse {
+        accepts(json) ? .json(json) : .failed(.outputMismatchedSchema)
+    }
+}
+
 nonisolated enum OnDeviceModelAvailability: Equatable, Sendable {
     case available
     case unavailable(OnDeviceUnavailableReason)
@@ -157,7 +163,8 @@ nonisolated final class FoundationModelsOnDeviceModel: AstralOnDeviceModelWarmab
                             schema: $0.schema.dynamicSchema(name: "\(name).\($0.name)"),
                             isOptional: !$0.required)
                     })
-            case .string(let allowed):
+            case .string(let allowed, _, _):
+                // Foundation Models has no string length guide, so accepts enforces the bounds after generation.
                 if let allowed { return DynamicGenerationSchema(name: name, anyOf: allowed) }
                 return DynamicGenerationSchema(type: String.self)
             case .integer(let minimum, let maximum):
@@ -209,7 +216,7 @@ nonisolated final class FoundationModelsOnDeviceModel: AstralOnDeviceModelWarmab
                     let response = try await session.respond(
                         to: composed.prompt, schema: try schema.generationSchema(), options: options)
                     let json = response.content.jsonString
-                    return schema.accepts(json) ? .json(json) : .failed(.outputMismatchedSchema)
+                    return schema.checked(json)
                 }
                 let response = try await session.respond(to: composed.prompt, options: options)
                 return .text(response.content)

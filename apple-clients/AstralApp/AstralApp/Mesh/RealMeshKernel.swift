@@ -37,7 +37,9 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
     static func open(
         config: MeshKernelConfig, network: NetworkConfig, signer: any AstralHostSigning,
         model: any AstralOnDeviceModel, tools: any MeshLocalTools, listener: any MeshKernelListening,
-        peerTools: [MeshPeerTool] = [], now: @escaping @Sendable () -> Date = { Date() }
+        peerTools: [MeshPeerTool] = [], keystore: any AstralKernel.HostKeystore = ConnectionKeychain(),
+        phiPrompt: any MeshPhiPrompting = MeshTreatAsPhiPrompt(),
+        now: @escaping @Sendable () -> Date = { Date() }
     ) async throws -> RealMeshKernel {
         let late = Late()
         let bridge = KernelChangeBridge(listener: listener) { Task { await late.kernel?.enrolled() } }
@@ -50,6 +52,14 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
                 config: native, signer: KernelHostSigner(signer), model: KernelOnDeviceModel(model),
                 tools: KernelLocalTools(tools), listener: bridge,
                 peerTools: peerTools.map { PeerToolSpec(device: $0.deviceId, tool: KernelLocalTools.native($0.spec)) })
+            do { try kernel.setKeystore(keystore: keystore) } catch {
+                await kernel.close()
+                throw error
+            }
+            do { try kernel.setPhiPrompt(prompt: KernelPhiPrompt(phiPrompt)) } catch {
+                await kernel.close()
+                throw error
+            }
             if let profile = config.deviceProfileJSON { try? kernel.setDeviceProfile(deviceProfileJson: profile) }
             let opened = RealMeshKernel(
                 kernel: kernel, bridge: bridge, localTools: tools, peerTools: peerTools, now: now)
@@ -75,7 +85,7 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
     func version() -> String { kernel.version() }
 
     func startNetwork() async throws {
-        guard await kernel.meshStatus().state == .enrolled else { return }
+        guard try await enrolledStatus() != nil else { return }
         do { _ = try await kernel.startNetwork() } catch { throw KernelMapping.error(error) }
     }
 
@@ -87,11 +97,28 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
         await kernel.stopNetwork()
     }
 
+    func close() async {
+        lock.withLock {
+            ticker?.cancel()
+            ticker = nil
+        }
+        await kernel.close()
+    }
+
     func syncNow() async throws {
         do { try await kernel.syncNow() } catch { throw KernelMapping.error(error) }
     }
 
-    func meshStatus() async throws -> MeshStatus { KernelMapping.status(await kernel.meshStatus()) }
+    func meshStatus() async throws -> MeshStatus {
+        do { return KernelMapping.status(try await kernel.meshStatus()) } catch { throw KernelMapping.error(error) }
+    }
+
+    private func enrolledStatus() async throws -> AstralKernel.MeshStatus? {
+        do {
+            let status = try await kernel.meshStatus()
+            return status.state == .enrolled ? status : nil
+        } catch { throw KernelMapping.error(error) }
+    }
 
     func meshPrincipal() throws -> MeshVerifiedPrincipal {
         try mapped { KernelMapping.principal(try kernel.meshPrincipal()) }
@@ -234,7 +261,7 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
         try mapped {
             let detail = try kernel.chat(chatId: chatId)
             let bases = lock.withLock { queuedBases }
-            return KernelChatMapper.map(detail, unknown: kernel.unknownOutcomes(), queuedBases: bases)
+            return KernelChatMapper.map(detail, unknown: try kernel.unknownOutcomes(), queuedBases: bases)
         }
     }
 
@@ -242,7 +269,7 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
         try mapped {
             let detail = try kernel.chatForDevice(chatId: chatId, deviceProfileJson: deviceProfileJson)
             let bases = lock.withLock { queuedBases }
-            return KernelChatMapper.map(detail, unknown: kernel.unknownOutcomes(), queuedBases: bases)
+            return KernelChatMapper.map(detail, unknown: try kernel.unknownOutcomes(), queuedBases: bases)
         }
     }
 
@@ -252,9 +279,13 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
         try sendMessage(chatId: chatId, text: text, continues: continues, attachments: [])
     }
 
-    func addAttachment(chatId: String, bytes: Data, mime: String, name: String) throws -> MeshAttachment {
+    func addAttachment(chatId: String, bytes: Data, mime: String, name: String, attended: Bool) throws
+        -> MeshAttachment
+    {
         try mapped {
-            KernelMapping.attachment(try kernel.addAttachment(chatId: chatId, bytes: bytes, mime: mime, name: name))
+            KernelMapping.attachment(
+                try kernel.addAttachmentAttended(
+                    chatId: chatId, bytes: bytes, mime: mime, name: name, attended: attended))
         }
     }
 
@@ -262,7 +293,9 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
         do { return try await kernel.fetchAttachment(handle: handle) } catch { throw KernelMapping.error(error) }
     }
 
-    func sendMessage(chatId: String, text: String, continues: String?, attachments: [String]) throws -> String {
+    func sendMessage(chatId: String, text: String, continues: String?, attachments: [String], attended: Bool) throws
+        -> String
+    {
         try mapped {
             var anchor: String?
             if let head = continues {
@@ -274,8 +307,8 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
                 case nil: throw MeshKernelError.refused("That message is not part of this chat yet.")
                 }
             }
-            let id = try kernel.sendMessageWithAttachments(
-                chatId: chatId, text: text, continues: anchor, attachments: attachments)
+            let id = try kernel.sendMessageAttended(
+                chatId: chatId, text: text, continues: anchor, attachments: attachments, attended: attended)
             if let anchor { lock.withLock { queuedBases[id] = anchor } }
             return id
         }
@@ -309,7 +342,7 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
         } catch { throw KernelMapping.error(error) }
     }
 
-    func restoreMarker() -> Data? { kernel.restoreMarker() }
+    func restoreMarker() throws -> Data? { try mapped { try kernel.restoreMarker() } }
 
     func pendingOrdinaryMessages() async throws -> [MeshPendingMessage] {
         try mapped {
@@ -330,9 +363,9 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
     }
 
     func ordinaryResumeTargets() async throws -> [MeshResumeTarget] {
-        let status = await kernel.meshStatus()
-        guard status.state == .enrolled, !status.stopped else { return [] }
-        let excluded = Set(try await runs().map(\.chatId)).union(kernel.unknownOutcomes().map(\.chatId))
+        guard let status = try await enrolledStatus(), !status.stopped else { return [] }
+        let unknown = try mapped { try kernel.unknownOutcomes() }.map(\.chatId)
+        let excluded = Set(try await runs().map(\.chatId)).union(unknown)
         return try mapped {
             try kernel.listChats().compactMap { summary in
                 guard !excluded.contains(summary.chatId) else { return nil }
@@ -400,7 +433,7 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
     func interrupt(chatId: String) throws { try mapped { try kernel.interrupt(chatId: chatId) } }
 
     func pendingConsents() throws -> [MeshPendingConsent] {
-        kernel.pendingConsents().map { pending in
+        try mapped { try kernel.pendingConsents() }.map { pending in
             let arguments = Data(pending.argumentsJson.utf8)
             return MeshPendingConsent(
                 requestId: pending.requestId, chatId: pending.chatId, kind: .action,
@@ -559,7 +592,7 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
         try mapped { try kernel.revokeRemoteMcpTool(server: server, tool: tool) }
     }
 
-    func mailboxState() -> MeshMailboxState { KernelMapping.mailbox(kernel.mailboxState()) }
+    func mailboxState() throws -> MeshMailboxState { try mapped { KernelMapping.mailbox(try kernel.mailboxState()) } }
 
     func syncState() async throws -> MeshSyncState {
         do { return KernelMapping.sync(try await kernel.syncState(), now: now()) } catch {
@@ -568,6 +601,118 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
     }
 
     func allowance() throws -> MeshAllowance { try mapped { KernelMapping.allowance(try kernel.allowance()) } }
+
+    func phiGroup() throws -> MeshPhiGroup { try mapped { KernelMapping.phiGroup(try kernel.phiGroup()) } }
+
+    func adoptPhiGroup() throws -> MeshPhiGroup { try mapped { KernelMapping.phiGroup(try kernel.adoptPhiGroup()) } }
+
+    func includePhiDevice(deviceId: String) throws -> MeshPhiGroup {
+        try mapped { KernelMapping.phiGroup(try kernel.includePhiDevice(deviceId: deviceId)) }
+    }
+
+    func excludePhiDevice(deviceId: String) throws -> MeshPhiGroup {
+        try mapped { KernelMapping.phiGroup(try kernel.excludePhiDevice(deviceId: deviceId)) }
+    }
+
+    func rotateStalePhiEpoch() throws -> Bool { try mapped { try kernel.rotateStalePhiEpoch() } }
+
+    func phiDestinations() throws -> MeshPhiDestinations {
+        try mapped { KernelMapping.phiDestinations(try kernel.phiDestinations()) }
+    }
+
+    func phiDestinationAllowed(kind: MeshPhiDestinationKind, target: String) -> Bool {
+        kernel.phiDestinationAllowed(kind: kind.rawValue, target: target)
+    }
+
+    func proposePhiDestination(source: String) throws -> MeshPhiProposal {
+        try mapped { KernelMapping.phiProposal(try kernel.proposePhiDestination(source: source)) }
+    }
+
+    func proposeProviderPhiDestination(name: String) throws -> MeshPhiProposal {
+        try mapped { KernelMapping.phiProposal(try kernel.proposeProviderPhiDestination(name: name)) }
+    }
+
+    func proposeLegacyPhiDestination(name: String) throws -> MeshPhiProposal {
+        try mapped { KernelMapping.phiProposal(try kernel.proposeLegacyPhiDestination(name: name)) }
+    }
+
+    func proposeConnectionPhiDestination(id: String, usage: String) throws -> MeshPhiProposal {
+        try mapped { KernelMapping.phiProposal(try kernel.proposeConnectionPhiDestination(id: id, usage: usage)) }
+    }
+
+    func approvePhiDestination(_ proposal: MeshPhiProposal) throws {
+        try mapped { try kernel.approvePhiDestination(proposal: KernelMapping.phiProposal(proposal)) }
+    }
+
+    func revokePhiDestination(subject: String) throws {
+        try mapped { try kernel.revokePhiDestination(subject: subject) }
+    }
+
+    func phiStatus() throws -> MeshPhiStatus { try mapped { KernelMapping.phiStatus(try kernel.phiStatus()) } }
+
+    func proposeConnection(endpoint: String, name: String, local: Bool) async throws -> MeshConnectionProposal {
+        do {
+            return KernelMapping.connectionProposal(
+                try await kernel.proposeConnection(endpoint: endpoint, name: name, local: local))
+        } catch { throw KernelMapping.error(error) }
+    }
+
+    func reviewConnection(id: String) async throws -> MeshConnectionProposal {
+        do { return KernelMapping.connectionProposal(try await kernel.reviewConnection(id: id)) } catch {
+            throw KernelMapping.error(error)
+        }
+    }
+
+    func approveConnection(proposal: String, flow: String, toolNames: [String], clientId: String?) throws
+        -> MeshConnection
+    {
+        try mapped {
+            KernelMapping.connection(
+                try kernel.approveConnection(proposal: proposal, flow: flow, toolNames: toolNames, clientId: clientId))
+        }
+    }
+
+    func removeConnection(id: String) throws { try mapped { try kernel.removeConnection(id: id) } }
+
+    func connections() throws -> [MeshConnection] {
+        try mapped { try kernel.connections().map(KernelMapping.connection) }
+    }
+
+    func beginConnectionSignIn(id: String, redirect: MeshSignInRedirect) async throws -> MeshSignInStart {
+        do {
+            return KernelMapping.signInStart(
+                try await kernel.beginConnectionSignIn(id: id, redirect: KernelMapping.signInRedirect(redirect)))
+        } catch { throw KernelMapping.error(error) }
+    }
+
+    func completeConnectionSignIn(flow: String, redirectURL: String) async throws -> MeshConnectionState {
+        do {
+            return KernelMapping.connectionState(
+                try await kernel.completeConnectionSignIn(flow: flow, redirectUrl: redirectURL))
+        } catch { throw KernelMapping.error(error) }
+    }
+
+    func pollConnectionSignIn(flow: String) async throws -> MeshSignInPoll {
+        do { return KernelMapping.signInPoll(try await kernel.pollConnectionSignIn(flow: flow)) } catch {
+            throw KernelMapping.error(error)
+        }
+    }
+
+    func cancelConnectionSignIn(flow: String) throws { try mapped { try kernel.cancelConnectionSignIn(flow: flow) } }
+
+    func refreshConnection(id: String) async throws -> MeshConnectionState {
+        do { return KernelMapping.connectionState(try await kernel.refreshConnection(id: id)) } catch {
+            throw KernelMapping.error(error)
+        }
+    }
+
+    func connectionStepUp(id: String, challenge: [String]) throws -> MeshStepUpPlan {
+        try mapped { KernelMapping.stepUpPlan(try kernel.connectionStepUp(id: id, challenge: challenge)) }
+    }
+
+    func noteConnectionCallSucceeded(id: String) throws {
+        try mapped { try kernel.noteConnectionCallSucceeded(id: id) }
+    }
 
     func runs() async throws -> [MeshRun] {
         do { return try await activeRuns().runs().map(KernelMapping.run) } catch { throw KernelMapping.error(error) }
@@ -619,7 +764,7 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
     }
 
     private func resumeAndTick() async {
-        guard await kernel.meshStatus().state == .enrolled, let runs = try? activeRuns() else { return }
+        guard (try? await enrolledStatus()) != nil, let runs = try? activeRuns() else { return }
         _ = try? await runs.resumeRuns()
         lock.withLock {
             guard ticker == nil else { return }

@@ -267,6 +267,7 @@ nonisolated enum KernelMapping {
             case .offerSeen: return []
             }
         case .allowanceChanged: return [.allowanceChanged]
+        case .connectionsChanged: return [.connectionsChanged]
         case .turn(let progress): return turn(progress)
         }
     }
@@ -304,6 +305,9 @@ nonisolated enum KernelMapping {
             case "repeat_stop": return [event(chat, turn, .failed("The assistant repeated itself, so it was stopped."))]
             case "max_rounds": return [event(chat, turn, .failed("The assistant reached its step limit."))]
             case "fork": return []
+            case _ where isPhiRefusal(code ?? reason):
+                let refused = code ?? reason
+                return [event(chat, turn, .refused(code: refused, message: failureText(code: refused)))]
             default:
                 return [
                     event(
@@ -313,6 +317,11 @@ nonisolated enum KernelMapping {
                 ]
             }
         }
+    }
+
+    static func isPhiRefusal(_ code: String) -> Bool {
+        code.hasPrefix("phi.") || code == "flow.phi_to_model" || code == "flow.phi_to_service"
+            || code == "provider.no_candidate"
     }
 
     static func plainText(code: String) -> String? {
@@ -343,6 +352,7 @@ nonisolated enum KernelMapping {
         ("provider.unavailable_on_device", "This device no longer has access to this provider."),
         ("provider.not_found", "This provider is no longer available on this device."),
         ("credential.bad_recipients", "Select one or more current mesh devices."),
+        ("provider.no_candidate", "No model on this device can take this chat. Check the model provider."),
         ("provider.", "The model provider could not be reached or refused the request."),
         ("tool.name_ambiguous", "Multiple sources offer this tool name. Rename or remove one before using it."),
         ("mcp.version", "This server must support MCP 2026-07-28."),
@@ -379,6 +389,40 @@ nonisolated enum KernelMapping {
         ("caller.stopped", "The mesh was stopped, so caller tickets are refused."),
         ("caller.tool_not_covered", "That caller ticket does not cover this tool."),
         ("caller.", "The caller ticket was refused."),
+        ("connection.keystore_unavailable", "This device cannot store sign-in credentials now. Unlock it and retry."),
+        ("connection.credential_unreadable", "The saved sign-in for this connection could not be read. Sign in again."),
+        ("connection.credential_unwritable", "The sign-in could not be saved on this device."),
+        ("connection.changed", "The connection changed after you reviewed it. Review it again."),
+        ("connection.egress_refused", "That address is outside what this connection may reach."),
+        ("connection.step_up_unreviewed", "Review and approve the extra permissions before signing in again."),
+        ("connection.flow_expired", "That sign-in ran out of time. Start it again."),
+        ("connection.flow_unknown", "That sign-in is no longer open. Start it again."),
+        ("connection.os_too_old", "Signing in from the browser needs iOS 17.4 or macOS 14.4 or later."),
+        ("connection.iss_mismatch", "The sign-in site did not identify itself correctly. The sign-in was stopped."),
+        ("connection.iss_missing", "The sign-in site did not identify itself. The sign-in was stopped."),
+        ("connection.no_client_id", "This service needs a client ID before it can sign you in."),
+        ("connection.redirect_invalid", "That sign-in return address was refused."),
+        ("connection.local_elsewhere", "This local server can only be used on the device that added it."),
+        ("connection.no_sign_in", "This connection does not use a sign-in."),
+        ("connection.too_many_flows", "Too many sign-ins are open. Finish or cancel one first."),
+        ("connection.step_up_limit", "This service keeps asking for more permissions. Check it and try again later."),
+        ("connection.not_signed_in", "Sign in to this connection first."),
+        ("connection.device_code_unavailable", "This device cannot sign in with a code."),
+        ("oauth.state_mismatch", "That sign-in did not match the one you started. It was refused."),
+        ("connection.", "The connection could not be changed or was refused."),
+        ("oauth.browser_failed", "The browser could not open the sign-in or it did not finish."),
+        ("oauth.wrong_callback", "The sign-in came back to an unexpected address. It was refused."),
+        ("oauth.no_authorization_url", "The service gave no sign-in address."),
+        ("oauth.", "The sign-in was refused or did not complete."),
+        ("phi.group_not_ready", "Set up PHI on your mesh first. Open the PHI settings to adopt it."),
+        ("phi.device_excluded", "This device is excluded from PHI. Use a device that is in the PHI group."),
+        ("phi_group.node_device", "A node cannot approve PHI destinations."),
+        ("phi_destination.on_device", "That place runs on this device, so it needs no approval."),
+        ("phi_destination.contact_unavailable", "Contacts cannot receive PHI yet."),
+        ("phi_destination.", "That destination cannot be approved for PHI."),
+        ("phi_group.", "The PHI group could not be changed."),
+        ("flow.phi_to_model", "PHI cannot go to this model until you approve it."),
+        ("flow.phi_to_service", "PHI cannot go to this service until you approve it."),
         ("gate.mesh_stopped", "The mesh was stopped, so this turn was refused."),
         ("gate.", "A safety check refused this step."),
         ("consent.declined", MeshKernelError.consentDenied.message),
@@ -420,6 +464,128 @@ nonisolated enum KernelMapping {
         ("net.", "The network is not available."),
         ("store.", "This device could not read or write its mesh data."),
     ]
+
+    static func connectionTool(_ tool: ConnectionTool) -> MeshConnectionTool {
+        MeshConnectionTool(name: tool.name, hash: tool.hash)
+    }
+
+    static func connectionDevice(_ state: ConnectionDeviceState) -> MeshConnectionDeviceState {
+        MeshConnectionDeviceState(
+            device: state.device, label: state.label, state: state.state, reason: state.reason,
+            issuer: state.issuer, atMs: state.ms)
+    }
+
+    static func connection(_ info: ConnectionInfo) -> MeshConnection {
+        MeshConnection(
+            id: info.id, server: info.server, name: info.name, kind: info.kind, endpoint: info.endpoint,
+            local: info.local, device: info.device, scheme: info.scheme, issuer: info.issuer, scopes: info.scopes,
+            clientId: info.clientId, flow: info.flow, egress: info.egress, tools: info.tools.map(connectionTool),
+            approvedBy: info.approvedBy, approvedByRemovedDevice: info.approvedByRemovedDevice,
+            unsupported: info.unsupported, supportedHere: info.supportedHere,
+            thisDevice: connectionDevice(info.thisDevice), attention: info.attention,
+            otherDevices: info.otherDevices.map(connectionDevice), pendingTools: info.pendingTools?.map(connectionTool))
+    }
+
+    static func connectionProposal(_ value: ConnectionProposal) -> MeshConnectionProposal {
+        MeshConnectionProposal(
+            proposal: value.proposal, connection: value.connection, name: value.name, endpoint: value.endpoint,
+            local: value.local, device: value.device, scheme: value.scheme, issuer: value.issuer,
+            issuerHost: value.issuerHost, redirectHost: value.redirectHost, scopes: value.scopes,
+            resource: value.resource, clientId: value.clientId, tools: value.tools.map(connectionTool),
+            egress: value.egress, flowHint: value.flowHint, replaces: value.replaces, expiresMs: value.expiresMs)
+    }
+
+    static func connectionState(_ value: ConnectionState) -> MeshConnectionState {
+        MeshConnectionState(
+            connection: value.connection, state: value.state, reason: value.reason, toolsPending: value.toolsPending)
+    }
+
+    static func signInStart(_ value: SignInStart) -> MeshSignInStart {
+        MeshSignInStart(
+            flow: value.flow, authorizationURL: value.authorizationUrl, redirectURI: value.redirectUri,
+            userCode: value.userCode, verificationURI: value.verificationUri,
+            verificationURIComplete: value.verificationUriComplete, intervalSeconds: value.intervalS,
+            expiresMs: value.expiresMs)
+    }
+
+    static func signInPoll(_ value: SignInPoll) -> MeshSignInPoll {
+        switch value {
+        case .pending(let interval): return .pending(intervalSeconds: interval)
+        case .done(let state): return .done(connectionState(state))
+        }
+    }
+
+    static func signInRedirect(_ value: MeshSignInRedirect) -> SignInRedirect {
+        switch value {
+        case .appLink: return .appLink
+        case .loopback(let port): return .loopback(port: port)
+        case .loopbackV6(let port): return .loopbackV6(port: port)
+        case .pasted: return .pasted
+        case .deviceCode: return .deviceCode
+        }
+    }
+
+    static func stepUpPlan(_ value: StepUpPlan) -> MeshStepUpPlan {
+        switch value {
+        case .review(let scopes): return .review(scopes: scopes)
+        case .signIn(let scopes): return .signIn(scopes: scopes)
+        }
+    }
+
+    static func phiMember(_ value: AstralKernel.PhiMember) -> MeshPhiMember {
+        MeshPhiMember(
+            deviceId: value.deviceId, label: value.label, kind: deviceKind(value.kind),
+            state: MeshPhiState(rawValue: value.state) ?? .notApproved, approvedBy: value.approvedBy,
+            upgraded: value.upgraded, isThisDevice: value.isLocal)
+    }
+
+    static func phiGroup(_ value: AstralKernel.PhiGroupInfo) -> MeshPhiGroup {
+        MeshPhiGroup(
+            members: value.members.map(phiMember), localCode: value.localCode, rotateFirst: value.rotateFirst,
+            pending: value.pending, keeper: value.keeper)
+    }
+
+    static func phiDestinations(_ value: AstralKernel.PhiDestinations) -> MeshPhiDestinations {
+        MeshPhiDestinations(
+            group: phiGroup(value.group),
+            destinations: value.destinations.map { row in
+                MeshPhiDestination(
+                    subject: row.subject, form: MeshPhiDestinationForm(rawValue: row.form) ?? .invalid,
+                    target: row.target, status: MeshPhiDestinationStatus(rawValue: row.status) ?? .invalid,
+                    code: row.code, approvedBy: row.approvedBy)
+            })
+    }
+
+    static func phiProposal(_ value: AstralKernel.PhiDestinationProposal) -> MeshPhiProposal {
+        MeshPhiProposal(
+            kind: MeshPhiDestinationKind(rawValue: value.kind) ?? .service, target: value.target,
+            subject: value.subject, name: value.name, needsApproval: value.needsApproval,
+            facts: value.facts.compactMap { MeshPhiFact(rawValue: $0) }, source: value.source)
+    }
+
+    static func phiProposal(_ value: MeshPhiProposal) -> AstralKernel.PhiDestinationProposal {
+        AstralKernel.PhiDestinationProposal(
+            kind: value.kind.rawValue, target: value.target, subject: value.subject, name: value.name,
+            needsApproval: value.needsApproval, facts: value.facts.map(\.rawValue), source: value.source)
+    }
+
+    static func phiStatus(_ value: AstralKernel.PhiStatus) -> MeshPhiStatus {
+        MeshPhiStatus(
+            modelPresent: value.modelPresent, screened: value.screened, overBudget: value.overBudget,
+            failed: value.failed)
+    }
+
+    static func phiQuestion(_ value: AstralKernel.PhiQuestion) -> MeshPhiQuestion {
+        MeshPhiQuestion(
+            items: value.items.map { MeshPhiQuestionItem(source: $0.source, kind: $0.kind, excerpt: $0.excerpt) })
+    }
+
+    static func phiAnswer(_ value: MeshPhiAnswer) -> AstralKernel.PhiAnswer {
+        switch value {
+        case .send: return .send
+        case .treatAsPhi: return .treatAsPhi
+        }
+    }
 
     static func refusal(_ code: String) -> MeshKernelError {
         .refused(code: code, message: failureText(code: code))

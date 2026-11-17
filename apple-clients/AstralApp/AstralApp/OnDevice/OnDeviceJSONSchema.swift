@@ -17,7 +17,7 @@ nonisolated enum OnDeviceSchemaError: Error, Equatable {
 nonisolated indirect enum OnDeviceJSONSchema: Equatable, Sendable {
     case object([OnDeviceSchemaProperty])
     case alternatives([OnDeviceJSONSchema])
-    case string(allowed: [String]?)
+    case string(allowed: [String]?, minLength: Int?, maxLength: Int?)
     case integer(minimum: Int?, maximum: Int?)
     case number
     case boolean
@@ -32,7 +32,7 @@ nonisolated indirect enum OnDeviceJSONSchema: Equatable, Sendable {
 
     private static func parse(_ node: [String: Any], depth: Int = 0) throws -> OnDeviceJSONSchema {
         guard depth <= 32 else { throw OnDeviceSchemaError.unsupported("depth") }
-        if let value = node["const"] as? String { return .string(allowed: [value]) }
+        if let value = node["const"] as? String { return .string(allowed: [value], minLength: nil, maxLength: nil) }
         if let choices = node["anyOf"] as? [[String: Any]], !choices.isEmpty, choices.count <= 64 {
             return .alternatives(try choices.map { try parse($0, depth: depth + 1) })
         }
@@ -56,9 +56,11 @@ nonisolated indirect enum OnDeviceJSONSchema: Equatable, Sendable {
                 guard let values = allowed as? [String], !values.isEmpty else {
                     throw OnDeviceSchemaError.unsupported("enum")
                 }
-                return .string(allowed: values)
+                return .string(allowed: values, minLength: nil, maxLength: nil)
             }
-            return .string(allowed: nil)
+            return .string(
+                allowed: nil, minLength: (node["minLength"] as? NSNumber)?.intValue,
+                maxLength: (node["maxLength"] as? NSNumber)?.intValue)
         case "integer":
             return .integer(
                 minimum: (node["minimum"] as? NSNumber)?.intValue,
@@ -103,9 +105,10 @@ nonisolated indirect enum OnDeviceJSONSchema: Equatable, Sendable {
                 if !property.schema.accepts(value: child) { return false }
             }
             return true
-        case .string(let allowed):
+        case .string(let allowed, let minLength, let maxLength):
             guard let text = value as? String else { return false }
-            return allowed?.contains(text) ?? true
+            let length = text.unicodeScalars.count
+            return length >= (minLength ?? 0) && length <= (maxLength ?? Int.max) && (allowed?.contains(text) ?? true)
         case .integer(let minimum, let maximum):
             guard let number = value as? NSNumber, !Self.isBoolean(number),
                 number.doubleValue.rounded() == number.doubleValue

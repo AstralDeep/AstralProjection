@@ -52,6 +52,18 @@ struct MeshSettingsView: View {
                 }
                 .accessibilityIdentifier("mesh.settings.models")
                 NavigationLink {
+                    MeshConnectionsView()
+                } label: {
+                    Label("Connections", systemImage: "link")
+                }
+                .accessibilityIdentifier("mesh.settings.connections")
+                NavigationLink {
+                    MeshPhiDestinationsView()
+                } label: {
+                    Label("PHI", systemImage: "cross.case")
+                }
+                .accessibilityIdentifier("mesh.settings.phi")
+                NavigationLink {
                     MeshRemoteMCPView()
                 } label: {
                     Label("Remote MCP tools", systemImage: "network")
@@ -238,6 +250,10 @@ struct MeshModelProviderView: View {
                         }
                     }
                     .accessibilityIdentifier("mesh.models.provider.\(provider.providerId)")
+                    NavigationLink("Approve for PHI") {
+                        MeshPhiDestinationCard(request: .provider(name: provider.providerId))
+                    }
+                    .accessibilityIdentifier("mesh.models.phi.\(provider.providerId)")
                 }
             }
             Section("OpenAI-compatible provider") {
