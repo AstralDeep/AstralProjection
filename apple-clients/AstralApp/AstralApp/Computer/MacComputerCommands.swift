@@ -482,7 +482,8 @@
             if let sandbox {
                 do {
                     let launch = try await sandbox.prepare(
-                        jobId: jobId, plan: plan, environment: environment, roots: roots, exclusions: exclusions)
+                        jobId: jobId, plan: plan, environment: environment, roots: roots, exclusions: exclusions,
+                        listen: args["listen"]?.boolValue == true)
                     spawnPlan = launch.plan
                     sandboxSession = launch.session
                 } catch {

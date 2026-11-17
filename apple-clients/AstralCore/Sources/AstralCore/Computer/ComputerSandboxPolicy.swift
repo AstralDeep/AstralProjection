@@ -1,5 +1,6 @@
 // Owns the owner-visible command-sandbox policy: modes, egress domain lists, placeholder secret bindings,
 // destination classification, and the pure decisions the Mac launcher and its loopback egress proxy apply.
+// A stored shadow or absent mode is kept as written, and governed commands always execute in enforce mode.
 // ComputerSandboxProfile renders the Seatbelt text; the Mac host wires the live launcher and proxy around it.
 
 import Foundation
@@ -121,7 +122,7 @@ public struct ComputerSandboxConfiguration: Sendable, Equatable, Codable {
     public let domains: [ComputerEgressDomain]
     public let bindings: [ComputerEgressBinding]
 
-    public static let fallback = ComputerSandboxConfiguration(mode: .shadow, domains: [], bindings: [])!
+    public static let fallback = ComputerSandboxConfiguration(mode: .enforce, domains: [], bindings: [])!
 
     public init?(mode: ComputerSandboxMode, domains: [ComputerEgressDomain], bindings: [ComputerEgressBinding]) {
         guard domains.count <= ComputerEgressDomain.maximumCount,
@@ -137,7 +138,7 @@ public struct ComputerSandboxConfiguration: Sendable, Equatable, Codable {
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
-        let mode = try values.decodeIfPresent(ComputerSandboxMode.self, forKey: .mode) ?? .shadow
+        let mode = try values.decodeIfPresent(ComputerSandboxMode.self, forKey: .mode) ?? .enforce
         let domains = try values.decodeIfPresent([ComputerEgressDomain].self, forKey: .domains) ?? []
         let bindings = try values.decodeIfPresent([ComputerEgressBinding].self, forKey: .bindings) ?? []
         guard let configuration = ComputerSandboxConfiguration(mode: mode, domains: domains, bindings: bindings) else {
@@ -155,6 +156,8 @@ public struct ComputerSandboxConfiguration: Sendable, Equatable, Codable {
     public static func decoded(_ data: Data) -> ComputerSandboxConfiguration {
         (try? JSONDecoder().decode(ComputerSandboxConfiguration.self, from: data)) ?? fallback
     }
+
+    public var executionMode: ComputerSandboxMode { .enforce }
 
     public var placeholders: [String] { bindings.map(\.placeholder) }
 
@@ -448,7 +451,7 @@ public struct ComputerEgressPolicy: Sendable, Equatable {
     }
 
     public init(configuration: ComputerSandboxConfiguration) {
-        self.init(mode: configuration.mode, domains: configuration.domains, bindings: configuration.bindings)
+        self.init(mode: configuration.executionMode, domains: configuration.domains, bindings: configuration.bindings)
     }
 
     public func matchingRule(for host: String) -> String? {

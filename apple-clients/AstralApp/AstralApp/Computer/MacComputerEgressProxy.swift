@@ -1,6 +1,7 @@
 // Runs one job's host-side loopback egress proxy on Network.framework: it applies the job's domain list and
 // destination classification to every CONNECT or absolute-form request, swaps bound placeholder tokens for
-// Keychain secrets on allowed upstreams, and reports every decision without ever recording bodies.
+// Keychain secrets on allowed upstreams, and reports every decision without ever recording bodies. It also holds the
+// same port on ::1 so no other process can listen where the sandbox profile allows outbound connections.
 
 #if os(macOS)
     import AstralCore
@@ -12,6 +13,7 @@
         private let request: MacComputerEgressProxyRequest
         private let queue: DispatchQueue
         private let listener: NWListener
+        private var hold: DispatchSourceRead?
         private let gate = DispatchSemaphore(value: 0)
         private let lock = NSLock()
         private var tracked: [ObjectIdentifier: NWConnection] = [:]
@@ -69,6 +71,42 @@
                     "sandbox_refused", "The command egress proxy did not start\(startFailure.map { ": \($0)" } ?? ".")."
                 )
             }
+            if let reason = holdIPv6(port: listeningPort) {
+                stop()
+                throw ComputerHostError(
+                    "sandbox_refused", "The command egress proxy could not hold the IPv6 loopback port: \(reason)")
+            }
+        }
+
+        private func holdIPv6(port: UInt16) -> String? {
+            let descriptor = Darwin.socket(AF_INET6, SOCK_STREAM, 0)
+            guard descriptor >= 0 else { return String(cString: strerror(errno)) }
+            var on: Int32 = 1
+            setsockopt(descriptor, IPPROTO_IPV6, IPV6_V6ONLY, &on, socklen_t(MemoryLayout<Int32>.size))
+            var address = sockaddr_in6()
+            address.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
+            address.sin6_family = sa_family_t(AF_INET6)
+            address.sin6_port = port.bigEndian
+            address.sin6_addr = in6addr_loopback
+            let bound = withUnsafePointer(to: &address) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    Darwin.bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in6>.size))
+                }
+            }
+            guard bound == 0, Darwin.listen(descriptor, 8) == 0 else {
+                let reason = String(cString: strerror(errno))
+                Darwin.close(descriptor)
+                return reason
+            }
+            let source = DispatchSource.makeReadSource(fileDescriptor: descriptor, queue: queue)
+            source.setEventHandler {
+                let peer = Darwin.accept(descriptor, nil, nil)
+                if peer >= 0 { Darwin.close(peer) }
+            }
+            source.setCancelHandler { Darwin.close(descriptor) }
+            source.resume()
+            lock.withLock { hold = source }
+            return nil
         }
 
         func stop() {
@@ -78,6 +116,8 @@
                 listener.stateUpdateHandler = nil
                 listener.newConnectionHandler = nil
                 listener.cancel()
+                hold?.cancel()
+                hold = nil
                 let all = Array(tracked.values)
                 tracked.removeAll()
                 return all
