@@ -45,12 +45,14 @@ struct MeshChatListView: View {
 
     var body: some View {
         List(selection: $selection) {
+            if !mesh.sharedItems.isEmpty { sharedEntry }
             ForEach(mesh.chats) { chat in
                 MeshChatRow(chat: chat).tag(chat.chatId)
             }
         }
+        .task { await mesh.refreshSharedItems() }
         .overlay {
-            if mesh.chats.isEmpty {
+            if mesh.chats.isEmpty && mesh.sharedItems.isEmpty {
                 ContentUnavailableView {
                     Label("No chats yet", systemImage: "bubble.left.and.bubble.right")
                 } description: {
@@ -73,6 +75,17 @@ struct MeshChatListView: View {
                 .accessibilityIdentifier("mesh.chats.new")
             }
         }
+    }
+}
+
+extension MeshChatListView {
+    fileprivate var sharedEntry: some View {
+        NavigationLink {
+            MeshSharedWithMeView()
+        } label: {
+            Label("Shared with Me (\(mesh.sharedItems.count))", systemImage: "person.2.crop.square.stack")
+        }
+        .accessibilityIdentifier(MeshSharedID.entry)
     }
 }
 
