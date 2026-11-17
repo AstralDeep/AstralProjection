@@ -39,17 +39,21 @@ private struct MeshCallersScreen: View {
         .scrollContentBackground(.hidden)
         .background(p.bg)
         .navigationTitle("Caller Tickets")
-        .task { await runtime.refreshCallerTickets() }
+        .task {
+            await runtime.refreshRoster()
+            await runtime.refreshTools()
+            await runtime.refreshCallerTickets()
+        }
         .sheet(isPresented: $creating) { MeshCallerTicketEditor(runtime: runtime) }
         .confirmationDialog(
             "Revoke this ticket?",
             isPresented: Binding(get: { model.pendingRevoke != nil }, set: { if !$0 { model.cancelRevoke() } }),
-            titleVisibility: .visible
-        ) {
-            Button("Revoke", role: .destructive) { Task { await model.confirmRevoke() } }
+            titleVisibility: .visible, presenting: model.pendingRevoke
+        ) { ticket in
+            Button("Revoke", role: .destructive) { Task { await model.confirmRevoke(ticket) } }
             Button("Cancel", role: .cancel) { model.cancelRevoke() }
-        } message: {
-            Text("The caller can no longer use \(model.pendingRevoke?.label ?? "it"). This cannot be undone.")
+        } message: { ticket in
+            Text("The caller can no longer use \(ticket.label). This cannot be undone.")
         }
     }
 }
@@ -100,6 +104,11 @@ private struct MeshCallerRow: View {
                 }
             }
             .buttonStyle(.borderless)
+        }
+        .task(id: copied) {
+            guard copied else { return }
+            try? await Task.sleep(for: .seconds(2))
+            copied = false
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mesh.callers.row.\(ticket.id)")

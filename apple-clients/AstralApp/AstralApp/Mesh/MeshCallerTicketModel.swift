@@ -17,10 +17,16 @@ nonisolated enum MeshCallerHolderInput {
         case holder(String)
     }
 
+    private static func isBareSeed(_ token: Substring) -> Bool {
+        token.count == 43 && token.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }
+    }
+
     static func judge(_ raw: String) -> Verdict {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.isEmpty { return .empty }
-        if text.lowercased().contains("astral-caller-key") { return .privateKey }
+        if text.lowercased().contains("astral-caller-key") || text.split(whereSeparator: \.isWhitespace).contains(where: isBareSeed) {
+            return .privateKey
+        }
         guard text.hasPrefix(MeshCallerTicketLimits.holderPrefix) else { return .invalid }
         let body = text.dropFirst(MeshCallerTicketLimits.holderPrefix.count)
         guard body.count == 43, body.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") })
@@ -54,8 +60,13 @@ nonisolated enum MeshCallerLifetime: CaseIterable, Identifiable, Equatable, Send
 }
 
 nonisolated enum MeshCallerText {
+    static let generic = "The caller ticket could not be changed. Try again."
+    static let labelRefused = "The label cannot hold control or invisible characters."
+    static let labelTooLong = "Use 64 characters or fewer for the label."
+    static let tooManyTools = "Choose at most 32 tools."
+
     static func failure(_ error: MeshKernelError) -> String {
-        if let code = error.code { return KernelMapping.failureText(code: code) }
+        if let code = error.code { return KernelMapping.plainText(code: code) ?? generic }
         return error.message
     }
 }
@@ -76,6 +87,7 @@ final class MeshCallerTicketModel {
     private(set) var holderNotice: String?
     private(set) var chosenTools: Set<String> = []
     private(set) var phase = Phase.editing
+    private(set) var holderResetCount = 0
     var label = ""
     var a2a = false
     var lifetime = MeshCallerLifetime.week
@@ -89,10 +101,18 @@ final class MeshCallerTicketModel {
 
     var catalog: [String] {
         guard let nodeId else { return [] }
-        return Array(Set(runtime.toolEntries.filter { $0.deviceId == nodeId }.map(\.name))).sorted()
+        return Array(Set(runtime.toolEntries.filter { $0.deviceId == nodeId && $0.published }.map(\.name))).sorted()
     }
 
     var labelLength: Int { label.trimmingCharacters(in: .whitespacesAndNewlines).unicodeScalars.count }
+
+    var labelProblem: String? {
+        let scalars = label.trimmingCharacters(in: .whitespacesAndNewlines).unicodeScalars
+        if scalars.count > MeshCallerTicketLimits.maxLabelLength { return MeshCallerText.labelTooLong }
+        return scalars.contains(where: MeshCallerLabelClasses.refuses) ? MeshCallerText.labelRefused : nil
+    }
+
+    var toolProblem: String? { toolCount > MeshCallerTicketLimits.maxTools ? MeshCallerText.tooManyTools : nil }
 
     var toolCount: Int { chosenTools.count + (a2a ? 1 : 0) }
 
@@ -101,19 +121,25 @@ final class MeshCallerTicketModel {
     var canMint: Bool {
         guard nodeId != nil, phase != .minting else { return false }
         guard case .holder = holderVerdict else { return false }
-        return (1...MeshCallerTicketLimits.maxLabelLength).contains(labelLength)
-            && (1...MeshCallerTicketLimits.maxTools).contains(toolCount)
+        return labelLength >= 1 && labelProblem == nil && (1...MeshCallerTicketLimits.maxTools).contains(toolCount)
     }
 
     func updateHolder(_ text: String) {
         holderNotice = nil
         if MeshCallerHolderInput.judge(text) == .privateKey {
             holderLine = ""
+            holderResetCount += 1
             holderNotice = MeshCallerHolderInput.privateKeyMessage
             return
         }
         holderLine = text
         if case .invalid = holderVerdict { holderNotice = MeshCallerHolderInput.invalidMessage }
+    }
+
+    func refreshChoices() async {
+        await runtime.refreshRoster()
+        await runtime.refreshTools()
+        if nodeId == nil || !nodes.contains(where: { $0.memberId == nodeId }) { nodeId = nodes.first?.memberId }
     }
 
     func selectNode(_ id: String) {
@@ -160,9 +186,9 @@ final class MeshCallersModel {
 
     func cancelRevoke() { pendingRevoke = nil }
 
-    func confirmRevoke() async {
-        guard let ticket = pendingRevoke else { return }
+    func confirmRevoke(_ ticket: MeshCallerTicket) async {
         pendingRevoke = nil
+        guard !ticket.revoked else { return }
         if let error = await runtime.revokeCallerTicket(id: ticket.id) {
             failure = MeshCallerText.failure(error)
         } else {

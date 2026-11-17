@@ -422,7 +422,7 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
         let published = ((try? kernel.peerToolCatalog()) ?? []).map {
             MeshToolEntry(
                 name: $0.tool.name, summary: $0.tool.description, effect: KernelLocalTools.meshEffect($0.tool.effect),
-                deviceId: $0.device, grantName: $0.grantName,
+                deviceId: $0.device, grantName: $0.grantName, published: true,
                 annotations: MeshToolAnnotations(json: $0.tool.annotationsJson))
         }.filter { !seen.contains($0.id) }
         return mine + fixed + published

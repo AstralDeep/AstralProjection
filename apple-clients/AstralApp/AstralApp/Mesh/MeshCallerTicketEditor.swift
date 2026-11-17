@@ -24,6 +24,7 @@ struct MeshCallerTicketEditor: View {
             .scrollContentBackground(.hidden)
             .background(p.bg)
             .navigationTitle("New Caller Ticket")
+            .task { await model.refreshChoices() }
             #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -51,10 +52,15 @@ private struct MeshCallerEditForm: View {
                 @Bindable var bound = model
                 TextField("Label", text: $bound.label)
                     .accessibilityIdentifier("mesh.caller.editor.label")
+                if let problem = model.labelProblem {
+                    Text(problem).font(ConsoleTypography.footnote).foregroundStyle(p.error)
+                        .accessibilityIdentifier("mesh.caller.editor.label.notice")
+                }
                 TextField(
                     "Holder line",
                     text: Binding(get: { model.holderLine }, set: { model.updateHolder($0) }), axis: .vertical
                 )
+                .id(model.holderResetCount)
                 .autocorrectionDisabled()
                 .font(.system(.footnote, design: .monospaced))
                 .accessibilityIdentifier("mesh.caller.editor.holder")
@@ -123,7 +129,7 @@ private struct MeshCallerToolsSection: View {
         } header: {
             Text("Tools")
         } footer: {
-            Text("Choose at least one.")
+            Text(model.toolProblem ?? "Choose at least one.")
         }
     }
 }
@@ -167,6 +173,11 @@ private struct MeshCallerMintedForm: View {
                 Text("Give this ticket to the caller. It does nothing without the caller's key.")
             }
             Section { Button("Done", action: done).accessibilityIdentifier("mesh.caller.minted.done") }
+        }
+        .task(id: copied) {
+            guard copied else { return }
+            try? await Task.sleep(for: .seconds(2))
+            copied = false
         }
     }
 }

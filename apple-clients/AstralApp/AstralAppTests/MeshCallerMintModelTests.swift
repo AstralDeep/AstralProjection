@@ -33,7 +33,7 @@ final class MeshCallerMintModelTests: XCTestCase {
             h.kernel.setNodeCatalog(nodeId, tools: ["current_datetime", "read_notes"])
             h.kernel.setTools(
                 ["current_datetime", "read_notes"].map {
-                    MeshToolEntry(name: $0, summary: "", effect: .meshRead, deviceId: nodeId)
+                    MeshToolEntry(name: $0, summary: "", effect: .meshRead, deviceId: nodeId, published: true)
                 })
         }
         await h.runtime.refreshRoster()
@@ -139,7 +139,7 @@ final class MeshCallerMintModelTests: XCTestCase {
         XCTAssertEqual(model.phase, .editing)
     }
 
-    func testAMintingDeviceThatIsANodeIsRefused() async {
+    func testMintingForAnUnknownNodeIsRefusedWithPlainText() async {
         let h = await ready()
         defer { h.cleanUp() }
         let result = await h.runtime.mintCallerTicket(
@@ -161,10 +161,10 @@ final class MeshCallerMintModelTests: XCTestCase {
         XCTAssertEqual(list.pendingRevoke, ticket)
         XCTAssertFalse(h.kernel.calls.contains { $0.name == "revokeCallerTicket" })
         list.cancelRevoke()
-        await list.confirmRevoke()
+        XCTAssertNil(list.pendingRevoke)
         XCTAssertFalse(h.kernel.calls.contains { $0.name == "revokeCallerTicket" })
         list.askRevoke(ticket)
-        await list.confirmRevoke()
+        await list.confirmRevoke(ticket)
         XCTAssertNil(list.pendingRevoke)
         XCTAssertNil(list.failure)
         XCTAssertEqual(list.tickets.first?.revoked, true)
@@ -180,9 +180,113 @@ final class MeshCallerMintModelTests: XCTestCase {
             id: "bad", text: "t", label: "x", nodeId: nodeId, tools: [], issuedAt: Date(), expiresAt: Date(),
             revoked: false, expired: false)
         list.askRevoke(bogus)
-        await list.confirmRevoke()
+        await list.confirmRevoke(bogus)
         XCTAssertEqual(list.failure, "Check the label, tool list, holder key and lifetime.")
         list.dismissFailure()
         XCTAssertNil(list.failure)
+    }
+
+    func testRevokeStillRunsWhenTheDialogDismissedFirst() async {
+        let h = await ready()
+        defer { h.cleanUp() }
+        let minting = filled(h)
+        await minting.mint()
+        let list = MeshCallersModel(runtime: h.runtime)
+        let ticket = try! XCTUnwrap(list.tickets.first)
+        list.askRevoke(ticket)
+        list.cancelRevoke()
+        await list.confirmRevoke(ticket)
+        XCTAssertEqual(list.tickets.first?.revoked, true)
+    }
+
+    func testRefusedPrivateKeyBumpsTheFieldResetEachTime() async {
+        let h = await ready()
+        defer { h.cleanUp() }
+        let model = MeshCallerTicketModel(runtime: h.runtime)
+        let secret = MeshCallerHolderInput.keyPrefix + Self.encoded(Data(repeating: 9, count: 32))
+        model.updateHolder(secret)
+        model.updateHolder(secret)
+        XCTAssertEqual(model.holderResetCount, 2)
+        XCTAssertEqual(model.holderLine, "")
+    }
+
+    func testBareSeedIsRefusedLikeThePrivateKey() async {
+        let h = await ready()
+        defer { h.cleanUp() }
+        let model = MeshCallerTicketModel(runtime: h.runtime)
+        let seed = Self.encoded(Data(repeating: 5, count: 32))
+        XCTAssertEqual(seed.count, 43)
+        model.updateHolder(seed)
+        XCTAssertEqual(model.holderLine, "")
+        XCTAssertEqual(model.holderNotice, MeshCallerHolderInput.privateKeyMessage)
+        XCTAssertEqual(model.holderResetCount, 1)
+        model.updateHolder("here " + seed + "\n")
+        XCTAssertEqual(model.holderLine, "")
+        model.updateHolder(holderLine())
+        XCTAssertNotEqual(model.holderLine, "")
+    }
+
+    func testChoicesRefreshAndTheFirstNodeIsSelected() async {
+        let h = await ready()
+        defer { h.cleanUp() }
+        let model = MeshCallerTicketModel(runtime: h.runtime)
+        await model.refreshChoices()
+        XCTAssertEqual(model.nodeId, nodeId)
+        XCTAssertEqual(model.catalog, ["current_datetime", "read_notes"])
+    }
+
+    func testOnlyThePublishedCatalogIsOffered() async {
+        let h = await ready()
+        defer { h.cleanUp() }
+        h.kernel.setTools([
+            MeshToolEntry(name: "published_tool", summary: "", effect: .meshRead, deviceId: nodeId, published: true),
+            MeshToolEntry(name: "static_peer_tool", summary: "", effect: .meshRead, deviceId: nodeId),
+        ])
+        await h.runtime.refreshTools()
+        XCTAssertEqual(MeshCallerTicketModel(runtime: h.runtime).catalog, ["published_tool"])
+    }
+
+    func testMoreThanThirtyTwoToolsIsRefusedWithAMessage() async {
+        let h = await ready()
+        defer { h.cleanUp() }
+        let names = (0..<33).map { "tool_\($0)" }
+        h.kernel.setTools(
+            names.map { MeshToolEntry(name: $0, summary: "", effect: .meshRead, deviceId: nodeId, published: true) })
+        await h.runtime.refreshTools()
+        let model = filled(h)
+        names.forEach { model.setTool($0, chosen: true) }
+        XCTAssertEqual(model.toolProblem, MeshCallerText.tooManyTools)
+        XCTAssertFalse(model.canMint)
+    }
+
+    func testLabelWithInvisibleCharactersIsRefusedBeforeMint() async {
+        let h = await ready()
+        defer { h.cleanUp() }
+        let model = filled(h)
+        model.label = "bad\u{200D}label"
+        XCTAssertEqual(model.labelProblem, MeshCallerText.labelRefused)
+        XCTAssertFalse(model.canMint)
+        model.label = String(repeating: "a", count: 65)
+        XCTAssertEqual(model.labelProblem, MeshCallerText.labelTooLong)
+        model.label = "fine label"
+        XCTAssertNil(model.labelProblem)
+        XCTAssertTrue(model.canMint)
+    }
+
+    func testEveryCallerRefusalCodeHasPlainTextAndNoRawCodeLeaks() {
+        let codes = [
+            "caller.malformed", "caller.proof_malformed", "caller.mesh_mismatch", "caller.wrong_node",
+            "caller.device_removed", "caller.wrong_minter", "caller.bad_signature", "caller.stopped",
+            "caller.expired", "caller.not_yet_valid", "caller.revoked", "caller.proof_mismatch", "caller.proof_stale",
+            "caller.proof_bad_signature", "caller.replayed", "caller.tool_not_covered", "caller.tool_changed",
+            "caller.tool_unavailable", "caller.no_catalog", "caller.unknown_tool", "caller.future_code",
+        ]
+        for code in codes {
+            let text = MeshCallerText.failure(KernelMapping.refusal(code))
+            XCTAssertFalse(text.isEmpty, code)
+            XCTAssertFalse(text.contains("caller."), code)
+        }
+        XCTAssertEqual(
+            MeshCallerText.failure(.refused(code: "weird.code", message: "weird.code")), MeshCallerText.generic)
     }
 }

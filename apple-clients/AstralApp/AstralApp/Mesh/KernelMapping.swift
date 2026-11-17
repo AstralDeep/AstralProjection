@@ -315,9 +315,12 @@ nonisolated enum KernelMapping {
         }
     }
 
+    static func plainText(code: String) -> String? {
+        codeTexts.first { code.hasPrefix($0.0) }?.1
+    }
+
     static func failureText(code: String, fallback: String = "The mesh refused that request.") -> String {
-        for (prefix, text) in codeTexts where code.hasPrefix(prefix) { return text }
-        return fallback + " (" + code + ")"
+        plainText(code: code) ?? fallback + " (" + code + ")"
     }
 
     private static let codeTexts: [(String, String)] = [
@@ -363,6 +366,14 @@ nonisolated enum KernelMapping {
         ("caller.no_catalog", "That node has not published its tools yet."),
         ("caller.unknown_tool", "One of the chosen tools is not offered by that node."),
         ("caller.malformed", "Check the label, tool list, holder key and lifetime."),
+        ("caller.proof_", "The caller's proof was refused."),
+        ("caller.mesh_mismatch", "That caller ticket belongs to a different mesh."),
+        ("caller.device_removed", "The device that issued this caller ticket is no longer in your mesh."),
+        ("caller.bad_signature", "This device could not sign the caller ticket."),
+        ("caller.not_yet_valid", "That caller ticket is not valid yet. Check this device's clock."),
+        ("caller.tool_changed", "A tool changed since the ticket was issued. Make a new ticket."),
+        ("caller.tool_unavailable", "That node cannot run one of the chosen tools."),
+        ("caller.replayed", "That caller request was already used."),
         ("caller.revoked", "That caller ticket was revoked."),
         ("caller.expired", "That caller ticket has expired."),
         ("caller.stopped", "The mesh was stopped, so caller tickets are refused."),
