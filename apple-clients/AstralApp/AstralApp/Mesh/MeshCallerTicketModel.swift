@@ -24,12 +24,15 @@ nonisolated enum MeshCallerHolderInput {
     static func judge(_ raw: String) -> Verdict {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.isEmpty { return .empty }
-        if text.lowercased().contains("astral-caller-key") || text.split(whereSeparator: \.isWhitespace).contains(where: isBareSeed) {
+        if text.lowercased().contains("astral-caller-key")
+            || text.split(whereSeparator: \.isWhitespace).contains(where: isBareSeed)
+        {
             return .privateKey
         }
         guard text.hasPrefix(MeshCallerTicketLimits.holderPrefix) else { return .invalid }
         let body = text.dropFirst(MeshCallerTicketLimits.holderPrefix.count)
-        guard body.count == 43, body.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") })
+        let allowed: (Character) -> Bool = { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }
+        guard body.count == 43, body.allSatisfy(allowed)
         else { return .invalid }
         return .holder(text)
     }

@@ -1,10 +1,11 @@
 // Covers the caller ticket calls on the Mesh kernel API: the mapping between generated records and host types, and the in-memory kernel's refusals.
 // The real kernel's refusals are covered in RealMeshKernelTests against one enrolled loopback kernel.
 
-@testable import AstralDeep
 import AstralKernel
 import CryptoKit
 import XCTest
+
+@testable import AstralDeep
 
 final class MeshCallerTicketTests: XCTestCase {
     private let holder =

@@ -165,7 +165,8 @@ public struct CompanionVoiceConversation: Equatable, Sendable {
     public func encoded() throws -> Data {
         guard companionVoiceText(chatId, maximum: 512), companionVoiceText(title, maximum: 1_024)
         else { throw CompanionVoiceError.invalidPacket }
-        return try JSONSerialization.data(withJSONObject: ["chat_id": chatId, "title": title], options: [.sortedKeys, .withoutEscapingSlashes])
+        return try JSONSerialization.data(
+            withJSONObject: ["chat_id": chatId, "title": title], options: [.sortedKeys, .withoutEscapingSlashes])
     }
 }
 
@@ -282,6 +283,7 @@ private let meshIdHexCount = 64
 
 func companionMeshIdValid(_ value: String) -> Bool {
     let bytes = Array(value.utf8)
-    return bytes.count == meshIdPrefix.utf8.count + meshIdHexCount && bytes.prefix(meshIdPrefix.utf8.count).elementsEqual(meshIdPrefix.utf8)
+    return bytes.count == meshIdPrefix.utf8.count + meshIdHexCount
+        && bytes.prefix(meshIdPrefix.utf8.count).elementsEqual(meshIdPrefix.utf8)
         && bytes.dropFirst(meshIdPrefix.utf8.count).allSatisfy { ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102) }
 }

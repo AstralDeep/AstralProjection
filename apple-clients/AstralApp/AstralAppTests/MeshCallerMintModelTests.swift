@@ -55,7 +55,8 @@ final class MeshCallerMintModelTests: XCTestCase {
         XCTAssertEqual(MeshCallerHolderInput.judge(""), .empty)
         XCTAssertEqual(MeshCallerHolderInput.judge("astral-caller-holder:v2:" + line.suffix(43)), .invalid)
         XCTAssertEqual(MeshCallerHolderInput.judge(MeshCallerTicketLimits.holderPrefix + "short"), .invalid)
-        XCTAssertEqual(MeshCallerHolderInput.judge(MeshCallerTicketLimits.holderPrefix + line.suffix(43) + "="), .invalid)
+        XCTAssertEqual(
+            MeshCallerHolderInput.judge(MeshCallerTicketLimits.holderPrefix + line.suffix(43) + "="), .invalid)
         XCTAssertEqual(MeshCallerHolderInput.judge("just words"), .invalid)
     }
 
@@ -81,7 +82,8 @@ final class MeshCallerMintModelTests: XCTestCase {
         defer { h.cleanUp() }
         XCTAssertEqual(MeshCallerLifetime.allCases.map(\.title), ["1 hour", "1 day", "7 days", "30 days"])
         XCTAssertEqual(
-            MeshCallerLifetime.allCases.map(\.seconds), [3600, 86400, 604_800, MeshCallerTicketLimits.maxLifetimeSeconds])
+            MeshCallerLifetime.allCases.map(\.seconds),
+            [3600, 86400, 604_800, MeshCallerTicketLimits.maxLifetimeSeconds])
         XCTAssertEqual(MeshCallerTicketModel(runtime: h.runtime).lifetime, .week)
     }
 
@@ -254,7 +256,7 @@ final class MeshCallerMintModelTests: XCTestCase {
             names.map { MeshToolEntry(name: $0, summary: "", effect: .meshRead, deviceId: nodeId, published: true) })
         await h.runtime.refreshTools()
         let model = filled(h)
-        names.forEach { model.setTool($0, chosen: true) }
+        for name in names { model.setTool(name, chosen: true) }
         XCTAssertEqual(model.toolProblem, MeshCallerText.tooManyTools)
         XCTAssertFalse(model.canMint)
     }
