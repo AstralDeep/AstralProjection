@@ -244,10 +244,51 @@ final class WatchCompanionTests: XCTestCase {
         XCTAssertGreaterThan(files.count, 8)
         for file in files {
             let text = try String(contentsOf: file, encoding: .utf8)
-            for pattern in Self.forbidden {
-                XCTAssertFalse(text.contains(pattern), "\(file.lastPathComponent) names \(pattern)")
+            for pattern in Self.violations(in: text, fileName: file.lastPathComponent) {
+                XCTFail("\(file.lastPathComponent) names \(pattern)")
             }
         }
+    }
+
+    func testTheCleanupFileMayDeleteButNeverReadAddOrUpdate() {
+        let cleanup = "LegacyCredentialCleanup.swift"
+        XCTAssertEqual(Self.violations(in: "import Security\nSecItemDelete(q)\nkSecClass", fileName: cleanup), [])
+        for call in ["SecItemCopyMatching", "SecItemAdd", "SecItemUpdate", "URLSession", "KeychainTokenStore"] {
+            XCTAssertEqual(Self.violations(in: "x = \(call)(q)", fileName: cleanup), [call])
+        }
+        XCTAssertEqual(Self.violations(in: "SecItemDelete(q)", fileName: "WatchModel.swift"), ["SecItem"])
+    }
+
+    func testLaunchDeletesEveryLegacyItemQueryWithoutReadingOrNetwork() {
+        var deleted: [[String: Any]] = []
+        let ok = LegacyCredentialCleanup { query in
+            deleted.append(query as? [String: Any] ?? [:])
+            return errSecSuccess
+        }.run()
+        XCTAssertTrue(ok)
+        XCTAssertEqual(deleted.count, LegacyCredentialCleanup.queries.count)
+        for query in deleted {
+            XCTAssertEqual(query[kSecAttrService as String] as? String, "com.personalailabs.astraldeep.watch")
+            XCTAssertNil(query[kSecReturnData as String])
+            XCTAssertNil(query[kSecMatchLimit as String])
+        }
+    }
+
+    func testANotFoundResultIsSuccessAndAnyOtherFailureIsReported() {
+        XCTAssertTrue(LegacyCredentialCleanup { _ in errSecItemNotFound }.run())
+        XCTAssertFalse(LegacyCredentialCleanup { _ in errSecInteractionNotAllowed }.run())
+    }
+
+    private static let cleanupFile = "LegacyCredentialCleanup.swift"
+    private static let cleanupAllowed = [
+        "SecItem", "kSec", "import Security", "Keychain", "com.personalailabs.astraldeep.watch",
+    ]
+    private static let cleanupForbidden = ["SecItemAdd", "SecItemCopyMatching", "SecItemUpdate"]
+
+    static func violations(in text: String, fileName: String) -> [String] {
+        let isCleanup = fileName == cleanupFile
+        let kept = forbidden.filter { !(isCleanup && cleanupAllowed.contains($0)) }
+        return (kept + (isCleanup ? cleanupForbidden : [])).filter { text.contains($0) }
     }
 
     static let forbidden = [

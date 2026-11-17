@@ -44,8 +44,6 @@
 
         private static let descriptorJSON =
             #"{"format":"astral.node.descriptor/v2","node_id":"astral-node:1","capabilities":["mesh-peer"],"mesh":{"state":"not_enrolled","owner_binding":{"state":"setup_required","code":"mesh.not_enrolled"}}}"#
-        private static let legacyJSON =
-            #"{"format":"astral.node.descriptor/v2","node_id":"astral-node:1","capabilities":["mesh-peer"],"mesh":{"state":"not_enrolled","owner_binding":{"state":"refused","code":"node.legacy_owner"}}}"#
 
         private func writeSecret(_ text: String = "node-secret") throws {
             let data = root.appendingPathComponent("node/home/data")
@@ -153,29 +151,7 @@
             await controller.stop()
         }
 
-        func testALegacyOwnerIsReportedAndNothingIsRemovedOrOffered() async throws {
-            let http = FakeNodeHTTP()
-            let controller = try await runningController(http)
-            try writeSecret()
-            let owner = root.appendingPathComponent("node/home/data/owner")
-            try "oidc.0123456789abcdef.owner-1".write(to: owner, atomically: true, encoding: .utf8)
-            http.responses = [(Data(Self.legacyJSON.utf8), 200), (Data(Self.legacyJSON.utf8), 200)]
-            let before = http.requests.count
-            do {
-                _ = try await controller.requestPairing()
-                XCTFail("expected a refusal")
-            } catch { XCTAssertEqual(error as? NodePairingError, .legacyOwner) }
-            XCTAssertTrue(controller.hasLegacyOwner)
-            XCTAssertEqual(http.requests.dropFirst(before).map { $0.url?.path }, ["/api/node/descriptor"])
-            XCTAssertEqual(try String(contentsOf: owner, encoding: .utf8), "oidc.0123456789abcdef.owner-1")
-            XCTAssertTrue(controller.isRunning)
-            let runRecord = root.appendingPathComponent("node/home/run.json")
-            XCTAssertTrue(FileManager.default.fileExists(atPath: runRecord.path))
-            await controller.stop()
-            XCTAssertFalse(controller.hasLegacyOwner)
-        }
-
-        func testALegacyOwnerTheNodeRefusesLateIsRememberedAndKeepsItsData() async throws {
+        func testARetiredOwnerCodeIsAnOrdinaryRefusalThatKeepsTheNodeAndItsData() async throws {
             let http = FakeNodeHTTP()
             let controller = try await runningController(http)
             try writeSecret()
@@ -186,8 +162,7 @@
             do {
                 _ = try await controller.requestPairing()
                 XCTFail("expected a refusal")
-            } catch { XCTAssertEqual(error as? NodePairingError, .legacyOwner) }
-            XCTAssertTrue(controller.hasLegacyOwner)
+            } catch { XCTAssertEqual(error as? NodePairingError, .refused(status: 409, code: "node.legacy_owner")) }
             XCTAssertTrue(controller.isRunning)
             let secretFile = root.appendingPathComponent("node/home/data/pairing-secret")
             XCTAssertTrue(FileManager.default.fileExists(atPath: secretFile.path))
@@ -222,9 +197,8 @@
             await controller.stop()
         }
 
-        func testEachPairingRefusalHasItsOwnPlainStateAndTheLegacyOwnerHasNoNotice() {
+        func testEachPairingRefusalHasItsOwnPlainState() {
             let describe = NodeHostController.describePairing
-            XCTAssertNil(describe(NodePairingError.legacyOwner))
             let errors: [NodePairingError] = [
                 .pairingSecretUnavailable, .pairingSecretRequired, .loopbackRequired, .ownerMismatch, .rateLimited,
                 .unknownDescriptorFormat, .meshUnavailable("mesh_unavailable"), .meshUnavailable("node_not_running"),

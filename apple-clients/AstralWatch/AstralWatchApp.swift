@@ -10,6 +10,7 @@ struct AstralWatchApp: App {
     @State private var model = WatchModel()
 
     init() {
+        LegacyCredentialCleanup().run()
         ConsoleTypography.registerFonts()
     }
 
