@@ -23,6 +23,12 @@
         public var runRecord: URL { root.appendingPathComponent("run.json") }
         public var temporary: URL { root.appendingPathComponent("tmp", isDirectory: true) }
 
+        public static func launchAgentLabel(bundleIdentifier: String) -> String { bundleIdentifier + ".node" }
+
+        public static func launchAgentPlist(label: String, directory: URL) -> URL {
+            directory.appendingPathComponent(label + ".plist")
+        }
+
         public func prepare(
             pack: URL, meshLabel: String,
             runScript: @Sendable (URL, [String]) throws -> (status: Int32, output: String) = NodeHome.runInstaller
@@ -42,18 +48,18 @@
             try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: envFile.path)
         }
 
-        public func launchSpec(pack: URL, port: Int) -> NodeLaunchSpec {
+        public func launchSpec(pack: URL, port: Int, keepRunning: Bool = false) -> NodeLaunchSpec {
             NodeLaunchSpec(
                 executable: pack.appendingPathComponent("python/bin/python3.11"),
                 arguments: [
-                    "-I", pack.appendingPathComponent("launcher/astral_node_launch.py").path,
+                    "-I", "-B", pack.appendingPathComponent("launcher/astral_node_launch.py").path,
                     "--env-file", envFile.path, "--port", String(port), "--log-dir", logs.path,
                 ],
                 environment: [
                     "PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": root.path, "TMPDIR": temporary.path + "/",
                     "LANG": "en_US.UTF-8",
                 ],
-                workingDirectory: pack, launchLog: launchLog)
+                workingDirectory: pack, launchLog: launchLog, keepRunning: keepRunning)
         }
 
         public func readPairingSecret() throws -> String {

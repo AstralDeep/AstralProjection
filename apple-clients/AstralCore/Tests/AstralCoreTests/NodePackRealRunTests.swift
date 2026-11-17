@@ -1,4 +1,4 @@
-// Runs the real downloaded pack: it fetches the descriptor from the URL in ASTRAL_NODE_PACK_URL, installs the archive, starts the packed node, checks health, the mesh capability and the log, and stops it.
+// Runs the real downloaded pack, under launchd when ASTRAL_NODE_REAL_LAUNCHD is set: it fetches the descriptor from the URL in ASTRAL_NODE_PACK_URL, installs the archive, starts the packed node, checks health, the mesh capability and the log, and stops it.
 // It is skipped unless that variable names a locally served pack, so the gate stays deterministic.
 
 #if os(macOS)
@@ -27,9 +27,16 @@
             let defaults = UserDefaults(suiteName: "nodepack-realrun-\(UUID().uuidString)")!
             var policy = NodeSupervisorPolicy()
             policy.startupChecks = 240
+            let label = "com.personalailabs.astraldeep.realrun-\(UUID().uuidString.prefix(8)).node"
+            let underLaunchd = ProcessInfo.processInfo.environment["ASTRAL_NODE_REAL_LAUNCHD"] != nil
+            let launcher: NodeProcessLauncher =
+                underLaunchd
+                ? LaunchdNodeProcessLauncher(
+                    label: label, plist: root.appendingPathComponent("agents/\(label).plist"))
+                : PosixNodeProcessLauncher()
             let environment = NodeHostEnvironment(
                 root: root, available: true,
-                meshLabel: "Test Mac node", defaults: defaults, policy: policy)
+                meshLabel: "Test Mac node", defaults: defaults, launcher: launcher, policy: policy)
             let controller = NodeHostController(environment: environment)
             controller.packURLText = address
 

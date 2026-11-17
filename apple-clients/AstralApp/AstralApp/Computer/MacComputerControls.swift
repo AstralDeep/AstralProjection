@@ -155,24 +155,7 @@
                 }
                 if host.available {
                     Divider().overlay(palette.border)
-                    VStack(alignment: .leading, spacing: 10) {
-                        SettingsSectionTitle("Command sandbox")
-                        Text(
-                            "Approved commands run inside a generated macOS sandbox profile and reach the network "
-                                + "only through a local egress proxy for this Mac's allowed domains. Shadow mode "
-                                + "records violations without blocking; enforce mode blocks them."
-                        )
-                        .font(ConsoleTypography.caption).foregroundStyle(palette.muted)
-                        .fixedSize(horizontal: false, vertical: true)
-                        Toggle(
-                            "Block sandbox violations",
-                            isOn: Binding(get: { host.sandboxEnforce }, set: host.setSandboxEnforce)
-                        )
-                        .disabled(!host.available).accessibilityIdentifier("mac-computer-sandbox-enforce")
-                        Text(host.sandboxSummary)
-                            .font(ConsoleTypography.caption).foregroundStyle(palette.muted)
-                            .accessibilityIdentifier("mac-computer-sandbox-summary")
-                    }
+                    MacComputerSandboxNotice(summary: host.sandboxSummary)
                 }
             }
             .frame(minWidth: 480, idealWidth: 560, minHeight: 460, idealHeight: 620)
@@ -183,6 +166,25 @@
                 Label(label, systemImage: allowed ? "checkmark.circle" : "exclamationmark.circle")
                 Spacer()
                 Button(allowed ? "Review" : "Grant access", action: command.action(on: host)).disabled(!host.available)
+            }
+        }
+    }
+
+    struct MacComputerSandboxNotice: View {
+        static let text = "Commands now run confined."
+        let summary: String
+        @Environment(ThemeStore.self) private var theme: ThemeStore?
+        private var palette: AstralPalette { theme?.palette ?? .graphite }
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 10) {
+                SettingsSectionTitle("Command sandbox")
+                Text(Self.text)
+                    .font(ConsoleTypography.caption).foregroundStyle(palette.muted)
+                    .accessibilityIdentifier("mac-computer-sandbox-notice")
+                Text(summary)
+                    .font(ConsoleTypography.caption).foregroundStyle(palette.muted)
+                    .accessibilityIdentifier("mac-computer-sandbox-summary")
             }
         }
     }

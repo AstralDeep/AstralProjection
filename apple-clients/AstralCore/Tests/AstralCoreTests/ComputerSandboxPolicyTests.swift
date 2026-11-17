@@ -71,8 +71,8 @@
                 .fallback)
             XCTAssertEqual(
                 ComputerSandboxConfiguration.decoded(Data("{\"mode\":\"off\"}".utf8)), .fallback)
-            XCTAssertEqual(
-                ComputerSandboxConfiguration.decoded(Data("{\"mode\":\"shadow\"}".utf8)), .fallback)
+            XCTAssertEqual(ComputerSandboxConfiguration.decoded(Data("{}".utf8)), .fallback)
+            XCTAssertEqual(ComputerSandboxConfiguration.fallback.mode, .enforce)
             XCTAssertNil(
                 ComputerSandboxConfiguration(
                     mode: .enforce, domains: Array(repeating: domain("a.io")!, count: 2), bindings: []))
@@ -83,6 +83,21 @@
                 ComputerSandboxConfiguration(
                     mode: .shadow, domains: [],
                     bindings: Array(repeating: binding("ASTRAL_OKAY", "a.io", "s")!, count: 17)))
+        }
+
+        func testStoredShadowIsKeptByteForByteButExecutesEnforce() throws {
+            let stored = Data("{\"bindings\":[],\"domains\":[\"api.github.com\"],\"mode\":\"shadow\"}".utf8)
+            let decoded = ComputerSandboxConfiguration.decoded(stored)
+            XCTAssertEqual(decoded.mode, .shadow)
+            XCTAssertEqual(decoded.executionMode, .enforce)
+            XCTAssertEqual(ComputerEgressPolicy(configuration: decoded).mode, .enforce)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            XCTAssertEqual(try encoder.encode(decoded), stored)
+            let absent = ComputerSandboxConfiguration.decoded(Data("{\"domains\":[\"a.io\"]}".utf8))
+            XCTAssertEqual(absent.mode, .enforce)
+            XCTAssertEqual(absent.executionMode, .enforce)
+            XCTAssertEqual(ComputerSandboxConfiguration.decoded(Data("{\"mode\":\"enforce\"}".utf8)).executionMode, .enforce)
         }
 
         func testIPAddressParsingAndClassificationRefusesEveryNonPublicRoutableClass() throws {

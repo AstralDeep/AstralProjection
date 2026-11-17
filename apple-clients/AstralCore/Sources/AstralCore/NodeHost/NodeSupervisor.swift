@@ -11,15 +11,18 @@
         public let environment: [String: String]
         public let workingDirectory: URL
         public let launchLog: URL
+        public let keepRunning: Bool
 
         public init(
-            executable: URL, arguments: [String], environment: [String: String], workingDirectory: URL, launchLog: URL
+            executable: URL, arguments: [String], environment: [String: String], workingDirectory: URL,
+            launchLog: URL, keepRunning: Bool = false
         ) {
             self.executable = executable
             self.arguments = arguments
             self.environment = environment
             self.workingDirectory = workingDirectory
             self.launchLog = launchLog
+            self.keepRunning = keepRunning
         }
     }
 
@@ -31,8 +34,27 @@
         func kill()
     }
 
+    public struct NodeAdoption: Sendable {
+        public let handle: NodeProcessHandle
+        public let port: Int
+
+        public init(handle: NodeProcessHandle, port: Int) {
+            self.handle = handle
+            self.port = port
+        }
+    }
+
     public protocol NodeProcessLauncher: Sendable {
+        var ownsProcesses: Bool { get }
         func launch(_ spec: NodeLaunchSpec) throws -> NodeProcessHandle
+        func adoptable() -> NodeAdoption?
+        func teardown()
+    }
+
+    extension NodeProcessLauncher {
+        public var ownsProcesses: Bool { false }
+        public func adoptable() -> NodeAdoption? { nil }
+        public func teardown() {}
     }
 
     public protocol NodeHealthProbe: Sendable {

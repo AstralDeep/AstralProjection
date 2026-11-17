@@ -12,11 +12,12 @@
         private func input(
             mode: ComputerSandboxMode = .enforce, roots: [String] = ["/Users/sam/Work/Pi-Agent"],
             exclusions: [String] = ComputerWorkspaceExclusions.defaults.patterns, home: String = "/Users/sam",
-            bundle: String? = "/Applications/AstralDeep.app", port: UInt16? = 45678
+            bundle: String? = "/Applications/AstralDeep.app", port: UInt16? = 45678, listen: Bool = false
         ) -> ComputerSandboxProfile.Input {
             ComputerSandboxProfile.Input(
                 mode: mode, writeRoots: roots + ["/private/var/folders/job-temp"], exclusions: exclusions,
-                home: home, bundlePath: bundle, supportIdentifier: "com.personalailabs.astraldeep", proxyPort: port)
+                home: home, bundlePath: bundle, supportIdentifier: "com.personalailabs.astraldeep", proxyPort: port,
+                listen: listen)
         }
 
         func testEnforceProfileDeniesByDefaultAndAllowsOnlyGrantedWrites() {
@@ -31,11 +32,68 @@
             XCTAssertTrue(profile.contains(writeRule + "(subpath \"/private/var/folders/job-temp\"))"))
             XCTAssertFalse(profile.contains("(allow file-write* (subpath \"/Users/sam\"))"))
             XCTAssertTrue(profile.contains("(allow network-outbound (remote ip \"localhost:45678\"))"))
-            XCTAssertTrue(profile.contains("(allow network-bind (local ip \"localhost:*\"))"))
             XCTAssertEqual(
                 profile.components(separatedBy: "(allow network-outbound (remote ip").count - 1, 1)
-            XCTAssertTrue(profile.contains("(allow network-outbound (remote unix-socket"))
             XCTAssertFalse(profile.contains("(allow default)"))
+        }
+
+        func testEnforceProfileAllowsForkButNoListeningOrResolverSocketByDefault() {
+            let profile = ComputerSandboxProfile.generate(input())
+            XCTAssertTrue(profile.contains("(allow process-exec*)\n(allow process-fork)\n"))
+            XCTAssertFalse(profile.contains("network-bind"))
+            XCTAssertFalse(profile.contains("network-inbound"))
+            XCTAssertFalse(profile.contains("mDNSResponder"))
+            XCTAssertTrue(profile.contains("(allow network-outbound (remote ip \"localhost:45678\"))"))
+        }
+
+        func testListenInputAddsLoopbackBindInboundAndResolverSocket() {
+            let profile = ComputerSandboxProfile.generate(input(listen: true))
+            XCTAssertTrue(profile.contains("(allow network-bind (local ip \"localhost:*\"))"))
+            XCTAssertTrue(profile.contains("(allow network-inbound (local ip \"localhost:*\"))"))
+            XCTAssertTrue(
+                profile.contains(
+                    "(allow network-outbound (remote unix-socket (literal \"/private/var/run/mDNSResponder\")))"))
+            XCTAssertEqual(
+                profile.components(separatedBy: "(allow network-outbound (remote ip").count - 1, 1)
+        }
+
+        private func probe(_ script: String, listen: Bool) throws -> Int32 {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+            let pointer = try XCTUnwrap(realpath(directory.path, nil))
+            defer { free(pointer) }
+            let profilePath = directory.appendingPathComponent("profile.sb")
+            let profile = ComputerSandboxProfile.generate(
+                input(roots: [String(cString: pointer)], bundle: nil, port: nil, listen: listen))
+            try Data(profile.utf8).write(to: profilePath)
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: ComputerSandboxProfile.launcherPath)
+            process.arguments = ["-f", profilePath.path, "/usr/bin/perl", "-e", script]
+            process.standardError = Pipe()
+            process.standardOutput = Pipe()
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus
+        }
+
+        func testForkProbeSucceedsUnderTheEnforceProfile() throws {
+            let script = "my $p = fork(); defined $p or exit 3; exit 0 if !$p; waitpid($p, 0); exit 0"
+            XCTAssertEqual(try probe(script, listen: false), 0)
+        }
+
+        func testLoopbackListenProbeIsDeniedUnlessTheJobAsksToListen() throws {
+            let script =
+                "use IO::Socket::INET; IO::Socket::INET->new(Listen => 1, LocalAddr => '127.0.0.1', LocalPort => 0) or exit 3; exit 0"
+            XCTAssertEqual(try probe(script, listen: false), 3)
+            XCTAssertEqual(try probe(script, listen: true), 0)
+        }
+
+        func testResolverSocketProbeIsDeniedUnlessTheJobAsksToListen() throws {
+            let script =
+                "use IO::Socket::UNIX; IO::Socket::UNIX->new(Peer => '/private/var/run/mDNSResponder') or exit 3; exit 0"
+            XCTAssertEqual(try probe(script, listen: false), 3)
+            XCTAssertEqual(try probe(script, listen: true), 0)
         }
 
         func testEnforceProfileKeepsProtectedMetadataReadOnly() {

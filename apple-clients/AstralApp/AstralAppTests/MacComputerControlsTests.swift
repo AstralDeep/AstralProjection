@@ -68,6 +68,33 @@
                 host.signedOut()
             }
         }
+        private func identifiers(in object: Any?, matching id: String) -> Int {
+            guard let element = object as? NSObject else { return 0 }
+            var count = 0
+            if let identifier = element.value(forKey: "accessibilityIdentifier") as? String, identifier == id {
+                count += 1
+            }
+            let children = (element.value(forKey: "accessibilityChildren") as? [Any]) ?? []
+            for child in children { count += identifiers(in: child, matching: id) }
+            return count
+        }
+        func testSandboxNoticeRendersOnceAndLeavesStoredConfigurationUntouched() throws {
+            let store = defaults()
+            let stored = "{\"bindings\":[],\"domains\":[],\"mode\":\"shadow\"}"
+            store.set(stored, forKey: MacComputerSandboxController.configurationKey)
+            let host = MacComputerHost(
+                available: true, defaults: store, driver: MacComputerControlsTestDriver(),
+                monitor: MacComputerControlsTestMonitor(),
+                permissionProvider: { MacComputerPermissions(accessibility: false, screen: false, monitoring: false) },
+                desktopProbe: { true }, desktopRearm: { false }, system: MacComputerTestSystem())
+            defer { host.signedOut() }
+            let view = render(MacComputerControls(host: host))
+            XCTAssertEqual(identifiers(in: view, matching: "mac-computer-sandbox-notice"), 1)
+            XCTAssertEqual(MacComputerSandboxNotice.text, "Commands now run confined.")
+            XCTAssertFalse(host.sandboxSummary.contains("Shadow"))
+            XCTAssertEqual(store.string(forKey: MacComputerSandboxController.configurationKey), stored)
+            XCTAssertEqual(MacComputerSandboxController.configuration(from: store).executionMode, .enforce)
+        }
         func testControlsGroupPermissionsAndWorkspacesAndDrawOnlyTheLeadSentenceOfState() throws {
             for available in [false, true] {
                 let host = MacComputerHost(

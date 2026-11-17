@@ -19,7 +19,15 @@
         private var controller: NodeHostController { store.controller }
 
         var body: some View {
-            if controller.isAvailable {
+            if !controller.isAvailable {
+                Section {
+                    Text("This build is sandboxed, so it cannot run a node. Install the direct download to host one.")
+                        .font(ConsoleTypography.footnote).foregroundStyle(p.muted)
+                        .accessibilityIdentifier("mesh.node.unavailable")
+                } header: {
+                    Text("Node on this Mac")
+                }
+            } else {
                 Section {
                     state
                     if let message = notice ?? controller.message {
@@ -63,6 +71,7 @@
             case .downloading(let fraction):
                 ProgressView(value: fraction) { Text("Downloading the node") }
                     .accessibilityIdentifier("mesh.node.progress")
+                Button("Cancel") { controller.cancelInstall() }.accessibilityIdentifier("mesh.node.cancel")
             case .verifying:
                 ProgressView { Text("Checking and unpacking") }.accessibilityIdentifier("mesh.node.verifying")
             case .installed(let version):

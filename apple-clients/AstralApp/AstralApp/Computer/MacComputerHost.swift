@@ -691,30 +691,15 @@
         private func sandboxEvent(_ name: String, _ payload: [String: JSONValue]) {
             sendEvent(name, additional: payload)
         }
-        var sandboxEnforce: Bool {
-            MacComputerSandboxController.configuration(from: defaults).mode == .enforce
-        }
-        func setSandboxEnforce(_ value: Bool) {
-            guard
-                let updated = MacComputerSandboxController.configuration(from: defaults).replacing(
-                    mode: value ? .enforce : .shadow),
-                let data = try? JSONEncoder().encode(updated)
-            else { return }
-            defaults.set(String(decoding: data, as: UTF8.self), forKey: MacComputerSandboxController.configurationKey)
-        }
         var sandboxSummary: String {
             let configuration = MacComputerSandboxController.configuration(from: defaults)
-            let mode =
-                configuration.mode == .enforce
-                ? "Enforce mode blocks prohibited writes and egress."
-                : "Shadow mode records violations without blocking."
             let domains =
                 configuration.domains.count == 1
                 ? "1 allowed egress domain" : "\(configuration.domains.count) allowed egress domains"
             let bindings =
                 configuration.bindings.count == 1
                 ? "1 secret binding" : "\(configuration.bindings.count) secret bindings"
-            return mode + " " + domains + ", " + bindings + "."
+            return domains + ", " + bindings + "."
         }
         private func retryBypassRestore() {
             guard enabled, bypassRestorePending, bypassSaved, !bypass, workspaceNegotiated,
