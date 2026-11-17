@@ -1,8 +1,7 @@
-// Talks to the local node over loopback: it reads the public descriptor and asks the node for a mesh pairing offer with the owner's bearer token.
+// Talks to the local node over loopback: it reads the public v2 descriptor and asks for a mesh pairing offer with the pairing secret from the node's own data directory.
 // NodeHostController passes the offer's payload to the mesh runtime's existing add-a-device approval, so the node joins like any other device.
 
 #if os(macOS)
-    import CryptoKit
     import Foundation
 
     public protocol NodeHTTP: Sendable {
@@ -26,14 +25,26 @@
             public let meshId: String?
             public let memberId: String?
             public let requests: Bool?
+            public let ownerBinding: OwnerBinding?
+
+            public struct OwnerBinding: Decodable, Equatable, Sendable {
+                public let state: String?
+                public let code: String?
+            }
+
+            public var hasLegacyOwner: Bool { ownerBinding?.code == NodePairingError.legacyOwnerCode }
 
             enum CodingKeys: String, CodingKey {
                 case state, requests
                 case meshId = "mesh_id"
                 case memberId = "member_id"
+                case ownerBinding = "owner_binding"
             }
         }
 
+        public static let format = "astral.node.descriptor/v2"
+
+        public let format: String
         public let nodeId: String
         public let capabilities: [String]
         public let mesh: Mesh?
@@ -41,7 +52,7 @@
         public var canJoinMesh: Bool { capabilities.contains("mesh-peer") }
 
         enum CodingKeys: String, CodingKey {
-            case capabilities, mesh
+            case format, capabilities, mesh
             case nodeId = "node_id"
         }
     }
@@ -58,9 +69,19 @@
     }
 
     public enum NodePairingError: Error, Equatable, Sendable {
+        public static let legacyOwnerCode = "node.legacy_owner"
+
         case notLoopback
-        case unauthorized
-        case refused(status: Int, detail: String)
+        case unknownDescriptorFormat
+        case pairingSecretUnavailable
+        case pairingSecretRequired
+        case loopbackRequired
+        case legacyOwner
+        case ownerMismatch
+        case ownerBindingUnavailable
+        case profileInactive
+        case rateLimited
+        case refused(status: Int, code: String)
         case unexpectedResponse
         case meshUnavailable(String)
     }
@@ -85,51 +106,48 @@
             guard status == 200, data.count <= Self.maximumResponseBytes,
                 let descriptor = try? JSONDecoder().decode(NodeDescriptor.self, from: data)
             else { throw NodePairingError.unexpectedResponse }
+            guard descriptor.format == NodeDescriptor.format else { throw NodePairingError.unknownDescriptorFormat }
             return descriptor
         }
 
-        public func pairingOffer(bearer: String, label: String, ttlSeconds: Int = 300) async throws -> NodePairingResult
-        {
-            var request = URLRequest(url: base.appendingPathComponent("api/node/pairing"))
+        public func pairingOffer(secret: String) async throws -> NodePairingResult {
+            var request = URLRequest(url: base.appendingPathComponent("api/node/mesh/offer"))
             request.httpMethod = "POST"
             request.timeoutInterval = 15
-            request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            let placeholderKey = Curve25519.Signing.PrivateKey().publicKey.rawRepresentation
-            let body: [String: Any] = [
-                "label": label,
-                "device_key": ["kty": "OKP", "crv": "Ed25519", "x": Self.base64URL(placeholderKey)],
-                "scopes": [String](),
-                "ttl_seconds": ttlSeconds,
-            ]
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            request.setValue(secret, forHTTPHeaderField: "Astral-Pairing-Secret")
             let (data, status) = try await http.send(request)
             guard data.count <= Self.maximumResponseBytes else { throw NodePairingError.unexpectedResponse }
-            switch status {
-            case 200...299: break
-            case 401: throw NodePairingError.unauthorized
-            default:
-                let detail = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["detail"] as? String
-                throw NodePairingError.refused(status: status, detail: String((detail ?? "").prefix(120)))
-            }
-            guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                let mesh = object["mesh"] as? [String: Any], let state = mesh["state"] as? String
-            else { throw NodePairingError.unexpectedResponse }
-            if state == "offer" {
-                guard let code = mesh["code"] as? String, let payload = mesh["payload"] as? String,
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            guard (200...299).contains(status) else { throw Self.refusal(status: status, body: object) }
+            guard let state = object?["state"] as? String else { throw NodePairingError.unexpectedResponse }
+            switch state {
+            case "offer":
+                guard let code = object?["code"] as? String, let payload = object?["payload"] as? String,
                     !payload.isEmpty
                 else { throw NodePairingError.unexpectedResponse }
                 return .offer(
                     NodePairingOffer(
-                        code: code, payload: payload, expiresMs: (mesh["expires_ms"] as? NSNumber)?.int64Value))
+                        code: code, payload: payload, expiresMs: (object?["expires_ms"] as? NSNumber)?.int64Value))
+            case "enrolled":
+                return .alreadyJoined(meshId: object?["mesh_id"] as? String)
+            default:
+                throw NodePairingError.unexpectedResponse
             }
-            if let error = mesh["error"] as? String { throw NodePairingError.meshUnavailable(error) }
-            return .alreadyJoined(meshId: mesh["mesh_id"] as? String)
         }
 
-        static func base64URL(_ data: Data) -> String {
-            data.base64EncodedString().replacingOccurrences(of: "+", with: "-")
-                .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        private static func refusal(status: Int, body: [String: Any]?) -> NodePairingError {
+            let code = String(((body?["detail"] as? String) ?? "").prefix(80))
+            switch code {
+            case "node.loopback_required": return .loopbackRequired
+            case "node.pairing_secret_required": return .pairingSecretRequired
+            case NodePairingError.legacyOwnerCode: return .legacyOwner
+            case "node.owner_mismatch": return .ownerMismatch
+            case "node.owner_binding_unavailable": return .ownerBindingUnavailable
+            case "node_profile_inactive": return .profileInactive
+            case "node.pairing_rate_limited": return .rateLimited
+            case "mesh_unavailable": return .meshUnavailable(code)
+            default: return .refused(status: status, code: code)
+            }
         }
     }
 #endif

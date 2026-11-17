@@ -1,4 +1,4 @@
-// Tests that the Mac node host store offers nothing outside the direct-download build, keeps the node under Application Support and builds the owner sign-in nonce.
+// Tests that the Mac node host store offers nothing outside the direct-download build, keeps the node under Application Support and starts without any sign-in.
 
 #if os(macOS)
     import AstralCore

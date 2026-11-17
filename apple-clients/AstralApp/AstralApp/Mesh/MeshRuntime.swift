@@ -611,8 +611,7 @@ final class MeshRuntime {
     }
 
     private static func isMailboxRefusal(_ error: Error) -> Bool {
-        guard case MeshKernelError.refused(let text) = error else { return false }
-        return text == KernelMapping.failureText(code: "config.mailbox")
+        (error as? MeshKernelError)?.code == "config.mailbox"
     }
 
     func close() async {

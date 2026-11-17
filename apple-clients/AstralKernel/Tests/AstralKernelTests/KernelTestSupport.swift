@@ -39,8 +39,9 @@ struct TestDevice {
     let wrap: Data
     let marker: Data
     let label: String
+    let kind: DeviceKind
 
-    init(label: String, in testCase: XCTestCase, marker: UInt8) throws {
+    init(label: String, in testCase: XCTestCase, marker: UInt8, kind: DeviceKind = .desktop) throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(
             "astral-kernel-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -50,12 +51,13 @@ struct TestDevice {
         wrap = try newOperationsSecret()
         self.marker = Data(repeating: marker, count: 32)
         self.label = label
+        self.kind = kind
     }
 
     var config: KernelConfig {
         KernelConfig(
             dataDir: directory.path, operationsSecret: operations, wrapSecret: wrap, restoreMarker: marker,
-            deviceLabel: label, deviceKind: .desktop, network: KernelNetworking.loopback)
+            deviceLabel: label, deviceKind: kind, network: KernelNetworking.loopback)
     }
 
     func open(listener: KernelListener? = nil) throws -> KernelService {

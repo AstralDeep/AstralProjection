@@ -54,6 +54,36 @@ final class KernelPairingTests: XCTestCase {
         await b.kernel.stopNetwork()
     }
 
+    func testANodeJoinsThroughAnOfferWithNoWebSession() async throws {
+        let mac = try TestDevice(label: "mac", in: self, marker: 3)
+        let node = try TestDevice(label: "mac node", in: self, marker: 4, kind: .node)
+        let owner = try enrolled(mac)
+        let ownerStatus = try await owner.kernel.meshStatus()
+        XCTAssertEqual(ownerStatus.state, .enrolled)
+        _ = try await owner.kernel.startNetwork()
+
+        let joining = try node.open()
+        let beforeJoin = try await joining.kernel.meshStatus()
+        XCTAssertNotEqual(beforeJoin.state, .enrolled)
+        let offer = try await joining.kernel.createPairingOffer()
+        let preview = try owner.kernel.previewPairing(payload: offer.payload)
+        XCTAssertEqual(preview.label, "mac node")
+        XCTAssertEqual(preview.code, offer.code)
+        _ = try await owner.kernel.approvePairing(payload: offer.payload, historyGrant: .all)
+        XCTAssertEqual(mac.signer.seenPrompts.last?.kind, .rosterAdd)
+        XCTAssertTrue(node.signer.seenPrompts.isEmpty)
+
+        try await until("the node to join") { try joining.kernel.roster().members.count == 2 }
+        let members = try owner.kernel.roster().members
+        XCTAssertEqual(members.count, 2)
+        XCTAssertEqual(members.first { !$0.isLocal }?.kind, "node")
+        let joinedStatus = try await joining.kernel.meshStatus()
+        XCTAssertEqual(joinedStatus.state, .enrolled)
+        XCTAssertEqual(joinedStatus.meshId, ownerStatus.meshId)
+        await owner.kernel.stopNetwork()
+        await joining.kernel.stopNetwork()
+    }
+
     func testDeniedPresenceBlocksApprovalAndLeavesTheRosterAlone() async throws {
         let mac = try TestDevice(label: "mac", in: self, marker: 3)
         let phone = try TestDevice(label: "phone", in: self, marker: 4)

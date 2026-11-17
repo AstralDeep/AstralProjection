@@ -6,17 +6,24 @@ import Foundation
 
 nonisolated enum MeshKernelError: Error, Equatable, Sendable {
     case unavailable(String)
-    case refused(String)
+    case refused(code: String?, message: String)
     case notFound
     case meshKeyBindingUnavailable
     case consentDenied
     case stopped
     case storage(String)
 
+    static func refused(_ message: String) -> MeshKernelError { .refused(code: nil, message: message) }
+
+    var code: String? {
+        if case .refused(let code, _) = self { return code }
+        return nil
+    }
+
     var message: String {
         switch self {
         case .unavailable(let reason): return reason
-        case .refused(let reason): return reason
+        case .refused(_, let message): return message
         case .meshKeyBindingUnavailable: return "Watch voice is unavailable until mesh-key binding is supported."
         case .notFound: return "That item is no longer on this device."
         case .consentDenied: return "The approval was denied."

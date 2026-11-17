@@ -410,6 +410,10 @@ nonisolated enum KernelMapping {
         ("store.", "This device could not read or write its mesh data."),
     ]
 
+    static func refusal(_ code: String) -> MeshKernelError {
+        .refused(code: code, message: failureText(code: code))
+    }
+
     static func error(_ error: Error) -> Error {
         switch error {
         case let known as MeshKernelError: return known
@@ -417,25 +421,24 @@ nonisolated enum KernelMapping {
             switch kernel {
             case .Denied(let code, _):
                 if code == "gate.mesh_stopped" { return MeshKernelError.stopped }
-                return code.hasPrefix("caller.")
-                    ? MeshKernelError.refused(failureText(code: code)) : MeshKernelError.consentDenied
+                return code.hasPrefix("caller.") ? refusal(code) : MeshKernelError.consentDenied
             case .InvalidInput(let code, _), .Verification(let code, _), .Network(let code, _), .Custody(let code, _),
                 .State(let code, _), .Mesh(let code, _):
-                return MeshKernelError.refused(failureText(code: code))
+                return refusal(code)
             case .Store(let code, _): return MeshKernelError.storage(failureText(code: code))
             }
         case let turns as TurnsError:
             if case .Failed(let code, _) = turns {
                 return code.hasPrefix("consent.declined")
                     ? MeshKernelError.consentDenied
-                    : MeshKernelError.refused(failureText(code: code))
+                    : refusal(code)
             }
             return turns
         case let runs as RunsFfiError:
             if case .Failed(let code, _) = runs {
                 return code.hasPrefix("signer.denied") || code.hasPrefix("consent.declined")
                     ? MeshKernelError.consentDenied
-                    : MeshKernelError.refused(failureText(code: code))
+                    : refusal(code)
             }
             return runs
         default: return error
