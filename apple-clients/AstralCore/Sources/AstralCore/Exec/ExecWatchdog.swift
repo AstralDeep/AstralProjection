@@ -79,8 +79,8 @@ import Foundation
             if let first { known[root] = first.start }
         }
 
-        static func userProcessCount(_ table: ExecProcessTable = DarwinProcessTable()) -> Int {
-            ((try? table.pids(kind: DarwinProcessTable.uidOnly, info: UInt32(geteuid()))) ?? []).count
+        static func userProcessCount(_ table: ExecProcessTable = DarwinProcessTable()) throws -> Int {
+            try table.pids(kind: DarwinProcessTable.uidOnly, info: UInt32(geteuid())).count
         }
 
         private var groupIsOurs: Bool {

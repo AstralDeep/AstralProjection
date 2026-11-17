@@ -16,12 +16,10 @@ typedef struct {
     uint64_t process_limit;
 } astral_exec_limits;
 
-// Returns 0 with the child pid in *pid_out, or an errno value. A positive *step_out names the child step that failed.
 int astral_exec_spawn(
     const char *path, char *const argv[], char *const envp[], const char *cwd, int stdin_fd, int stdout_fd,
     int stderr_fd, const astral_exec_limits *limits, pid_t *pid_out, int *step_out);
 
-// 1 when this process runs inside an App Sandbox container or the probe fails, else 0.
 int astral_exec_app_sandboxed(void);
 
 #endif

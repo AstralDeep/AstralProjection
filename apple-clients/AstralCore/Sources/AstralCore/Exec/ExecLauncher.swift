@@ -51,18 +51,39 @@ public struct ExecLauncher: Sendable {
 
     let proxyPort: ProxyPort
     let facts: (@Sendable () -> ExecFacts)?
+    var userProcesses: @Sendable () throws -> Int = ExecLauncher.countUserProcesses
+
+    static let countUserProcesses: @Sendable () throws -> Int = {
+        #if os(macOS)
+            return try ExecWatch.userProcessCount()
+        #else
+            return 0
+        #endif
+    }
 
     public init(proxyPort: @escaping ProxyPort = { nil }) {
         self.proxyPort = proxyPort
         self.facts = nil
     }
 
-    init(proxyPort: @escaping ProxyPort = { nil }, facts: @escaping @Sendable () -> ExecFacts) {
+    init(
+        proxyPort: @escaping ProxyPort = { nil }, facts: (@Sendable () -> ExecFacts)?,
+        userProcesses: (@Sendable () throws -> Int)? = nil
+    ) {
         self.proxyPort = proxyPort
         self.facts = facts
+        if let userProcesses { self.userProcesses = userProcesses }
     }
 
-    public func run(_ loaded: ExecLoadedPolicy, argv: [String], env: [String: String], stdin: Data? = nil) -> ExecOutcome {
+    public func run(_ loaded: ExecLoadedPolicy, argv: [String], env: [String: String], stdin: Data? = nil) async -> ExecOutcome {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: runBlocking(loaded, argv: argv, env: env, stdin: stdin))
+            }
+        }
+    }
+
+    func runBlocking(_ loaded: ExecLoadedPolicy, argv: [String], env: [String: String], stdin: Data? = nil) -> ExecOutcome {
         #if os(macOS)
             return ExecMacRun(launcher: self, loaded: loaded, argv: argv, env: env, stdin: stdin).execute()
         #else
@@ -176,25 +197,28 @@ public struct ExecLauncher: Sendable {
 
         func start(profilePath: String, environment: [String: String], marker: String) -> ExecOutcome {
             let policy = loaded.policy
+            var processCount = 0
+            if policy.limits.processes > 1 {
+                guard let counted = try? launcher.userProcesses() else { return .launchFailed }
+                processCount = counted
+            }
             var outPipe: [Int32] = [-1, -1]
             var errPipe: [Int32] = [-1, -1]
             var inPipe: [Int32] = [-1, -1]
-            guard Self.makePipe(&outPipe), Self.makePipe(&errPipe) else { return .launchFailed }
             var childInput: Int32 = open("/dev/null", O_RDONLY | O_CLOEXEC)
-            if let stdin, !stdin.isEmpty {
-                guard Self.makePipe(&inPipe) else {
-                    Self.closeAll(outPipe + errPipe + [childInput])
-                    return .launchFailed
-                }
-                childInput = inPipe[0]
+            let needsInput = stdin.map { !$0.isEmpty } ?? false
+            guard childInput >= 0, Self.makePipe(&outPipe), Self.makePipe(&errPipe), !needsInput || Self.makePipe(&inPipe) else {
+                Self.closeAll(outPipe + errPipe + inPipe + [childInput])
+                return .launchFailed
             }
+            if needsInput { childInput = inPipe[0] }
             let wall = policy.wallMs
             var limits = astral_exec_limits(
                 file_bytes: UInt64(policy.limits.fileBytes), open_files: UInt64(policy.limits.openFiles), core_bytes: 0,
                 cpu_seconds: UInt64((wall + 999) / 1000 + 1), apply_process_limit: 0, process_limit: 0)
             if policy.limits.processes > 1 {
                 limits.apply_process_limit = 1
-                limits.process_limit = UInt64(ExecWatch.userProcessCount() + policy.limits.processes + ExecLauncher.processSlack)
+                limits.process_limit = UInt64(processCount + policy.limits.processes + ExecLauncher.processSlack)
             }
             let command = [ExecBackends.sandboxExecPath, "-f", profilePath, "--"] + argv
             let entries = environment.map { "\($0.key)=\($0.value)" }

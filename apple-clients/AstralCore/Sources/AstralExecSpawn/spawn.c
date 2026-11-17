@@ -42,12 +42,29 @@ static void fail(int status_fd, int step, int code) {
     _exit(127);
 }
 
+static int move_above_stdio(int fd) {
+    if (fd > 2) {
+        return fd;
+    }
+    int moved = fcntl(fd, F_DUPFD_CLOEXEC, 3);
+    close(fd);
+    return moved;
+}
+
 int astral_exec_spawn(
     const char *path, char *const argv[], char *const envp[], const char *cwd, int stdin_fd, int stdout_fd,
     int stderr_fd, const astral_exec_limits *limits, pid_t *pid_out, int *step_out) {
     int status[2];
     if (pipe(status) != 0) {
         return errno;
+    }
+    status[0] = move_above_stdio(status[0]);
+    status[1] = move_above_stdio(status[1]);
+    if (status[0] < 0 || status[1] < 0) {
+        int code = errno;
+        close(status[0]);
+        close(status[1]);
+        return code;
     }
     fcntl(status[0], F_SETFD, FD_CLOEXEC);
     fcntl(status[1], F_SETFD, FD_CLOEXEC);
@@ -63,6 +80,25 @@ int astral_exec_spawn(
         if (setsid() < 0) {
             fail(status[1], STEP_SESSION, errno);
         }
+        int table = getdtablesize();
+        int sources[3] = {stdin_fd, stdout_fd, stderr_fd};
+        for (int index = 0; index < 3; index++) {
+            int moved = fcntl(sources[index], F_DUPFD, 3);
+            if (moved < 0) {
+                fail(status[1], STEP_STDIO, errno);
+            }
+            sources[index] = moved;
+        }
+        for (int target = 0; target < 3; target++) {
+            if (dup2(sources[target], target) < 0) {
+                fail(status[1], STEP_STDIO, errno);
+            }
+        }
+        for (int fd = 3; fd < table; fd++) {
+            if (fd != status[1]) {
+                close(fd);
+            }
+        }
         if (set_limit(RLIMIT_CORE, limits->core_bytes) != 0 || set_limit(RLIMIT_FSIZE, limits->file_bytes) != 0
             || set_limit(RLIMIT_NOFILE, limits->open_files) != 0 || set_limit(RLIMIT_CPU, limits->cpu_seconds) != 0
             || (limits->apply_process_limit && set_limit(RLIMIT_NPROC, limits->process_limit) != 0)) {
@@ -77,15 +113,6 @@ int astral_exec_spawn(
         sigemptyset(&none);
         if (sigprocmask(SIG_SETMASK, &none, NULL) != 0) {
             fail(status[1], STEP_SIGNALS, errno);
-        }
-        if (dup2(stdin_fd, 0) < 0 || dup2(stdout_fd, 1) < 0 || dup2(stderr_fd, 2) < 0) {
-            fail(status[1], STEP_STDIO, errno);
-        }
-        int limit = getdtablesize();
-        for (int fd = 3; fd < limit; fd++) {
-            if (fd != status[1]) {
-                close(fd);
-            }
         }
         if (chdir(cwd) != 0) {
             fail(status[1], STEP_CHDIR, errno);
