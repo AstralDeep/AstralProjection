@@ -492,6 +492,7 @@ nonisolated struct MeshToolEntry: Identifiable, Equatable, Sendable {
     let effect: MeshToolEffect
     let deviceId: String?
     var grantName: String?
+    var published = false
     var annotations = MeshToolAnnotations()
     var scope: String { effect.scope }
     var grantTarget: String { grantName ?? name }

@@ -83,6 +83,12 @@ struct MeshSettingsView: View {
                     Label("Mailbox", systemImage: "tray")
                 }
                 .accessibilityIdentifier("mesh.settings.mailbox")
+                NavigationLink {
+                    MeshCallersView()
+                } label: {
+                    Label("Caller tickets", systemImage: "ticket")
+                }
+                .accessibilityIdentifier("mesh.settings.callers")
             }
             #if os(macOS)
                 MacNodeHostSection()
