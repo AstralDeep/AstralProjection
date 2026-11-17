@@ -14,6 +14,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     private let lock = NSLock()
     private let listener: any MeshKernelListening
     private let clock: @Sendable () -> Date
+    let connectionBook: InMemoryConnections
     private var status: MeshStatus
     private var principalValue: MeshVerifiedPrincipal?
     private var wakeRouteValue: MeshWakeRoute?
@@ -99,6 +100,9 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
             stopped: false, hardwareBacked: hardwareBacked)
         allowanceValue = MeshAllowance(
             share: .solo, periodEndsAt: nil, lines: [], modelTokensRemaining: nil, modelTokensLimit: nil, blocked: nil)
+        connectionBook = InMemoryConnections(
+            deviceId: status.deviceId ?? "sha256:" + String(repeating: "b", count: 64), deviceLabel: "This device",
+            now: clock)
         if hasMesh { members = [Self.thisDevice(status: status)] }
     }
 
@@ -108,6 +112,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     func syncNow() async throws { try record("syncNow") }
     func stopNetwork() async { lock.withLock { log.append(Call(name: "stopNetwork", detail: "")) } }
     func version() -> String { "in-memory" }
+    func close() async { lock.withLock { log.append(Call(name: "close", detail: "")) } }
 
     func meshStatus() async throws -> MeshStatus {
         try record("meshStatus")
@@ -1026,11 +1031,94 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         }
     }
 
+    func proposeConnection(endpoint: String, name: String, local: Bool) async throws -> MeshConnectionProposal {
+        try record("proposeConnection", endpoint)
+        try requireEnrolled()
+        return try connectionBook.propose(endpoint: endpoint, name: name, local: local)
+    }
+
+    func reviewConnection(id: String) async throws -> MeshConnectionProposal {
+        try record("reviewConnection", id)
+        try requireEnrolled()
+        return try connectionBook.review(id: id)
+    }
+
+    func approveConnection(proposal: String, flow: String, toolNames: [String], clientId: String?) throws
+        -> MeshConnection
+    {
+        try record("approveConnection", proposal)
+        try requireEnrolled()
+        let value = try connectionBook.approve(proposal: proposal, flow: flow, toolNames: toolNames, clientId: clientId)
+        listener.onChange(.connectionsChanged)
+        return value
+    }
+
+    func removeConnection(id: String) throws {
+        try record("removeConnection", id)
+        try connectionBook.remove(id: id)
+        listener.onChange(.connectionsChanged)
+    }
+
+    func connections() throws -> [MeshConnection] {
+        try record("connections")
+        return connectionBook.list()
+    }
+
+    func beginConnectionSignIn(id: String, redirect: MeshSignInRedirect) async throws -> MeshSignInStart {
+        try record("beginConnectionSignIn", id)
+        return try connectionBook.begin(id: id, redirect: redirect)
+    }
+
+    func completeConnectionSignIn(flow: String, redirectURL: String) async throws -> MeshConnectionState {
+        try record("completeConnectionSignIn", flow)
+        let value = try connectionBook.complete(flow: flow, redirectURL: redirectURL)
+        listener.onChange(.connectionsChanged)
+        return value
+    }
+
+    func pollConnectionSignIn(flow: String) async throws -> MeshSignInPoll {
+        try record("pollConnectionSignIn", flow)
+        let value = try connectionBook.poll(flow: flow)
+        if case .done = value { listener.onChange(.connectionsChanged) }
+        return value
+    }
+
+    func cancelConnectionSignIn(flow: String) throws {
+        try record("cancelConnectionSignIn", flow)
+        connectionBook.cancel(flow: flow)
+    }
+
+    func refreshConnection(id: String) async throws -> MeshConnectionState {
+        try record("refreshConnection", id)
+        let value = try connectionBook.refresh(id: id)
+        listener.onChange(.connectionsChanged)
+        return value
+    }
+
+    func connectionStepUp(id: String, challenge: [String]) throws -> MeshStepUpPlan {
+        try record("connectionStepUp", id)
+        let value = try connectionBook.stepUp(id: id, challenge: challenge)
+        listener.onChange(.connectionsChanged)
+        return value
+    }
+
+    func noteConnectionCallSucceeded(id: String) throws {
+        try record("noteConnectionCallSucceeded", id)
+        try connectionBook.noteCallSucceeded(id: id)
+    }
+
+    private func requireEnrolled() throws {
+        guard lock.withLock({ status.hasMesh }) else { throw KernelMapping.refusal("mesh.not_enrolled") }
+    }
+
     func setRemoteMCPTools(_ server: String, tools: [MeshRemoteMCPTool]) {
         lock.withLock { remoteMCPToolsValue[server] = tools }
     }
 
-    func mailboxState() -> MeshMailboxState { lock.withLock { mailboxValue } }
+    func mailboxState() throws -> MeshMailboxState {
+        try record("mailboxState")
+        return lock.withLock { mailboxValue }
+    }
 
     func setMailboxState(_ value: MeshMailboxState) { lock.withLock { mailboxValue = value } }
 

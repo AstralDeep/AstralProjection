@@ -451,6 +451,7 @@ nonisolated enum MeshKernelChange: Equatable, Sendable {
     case runProgress(runId: String)
     case joinRequested(MeshJoinRequest)
     case pairingFailed(code: String)
+    case connectionsChanged
 }
 
 nonisolated struct MeshKernelConfig: Sendable {
@@ -556,6 +557,105 @@ nonisolated enum MeshToolScope {
     }
 }
 
+nonisolated struct MeshConnectionTool: Hashable, Sendable {
+    let name: String
+    let hash: String
+}
+
+nonisolated struct MeshConnectionDeviceState: Equatable, Sendable {
+    let device: String
+    let label: String
+    let state: String
+    let reason: String?
+    let issuer: String?
+    let atMs: UInt64
+}
+
+nonisolated struct MeshConnection: Identifiable, Equatable, Sendable {
+    let id: String
+    let server: String
+    let name: String
+    let kind: String
+    let endpoint: String
+    let local: Bool
+    let device: String?
+    let scheme: String?
+    let issuer: String?
+    let scopes: [String]
+    let clientId: String?
+    let flow: String
+    let egress: [String]
+    let tools: [MeshConnectionTool]
+    let approvedBy: String
+    let approvedByRemovedDevice: Bool
+    let unsupported: String?
+    let supportedHere: Bool
+    let thisDevice: MeshConnectionDeviceState
+    let attention: String?
+    let otherDevices: [MeshConnectionDeviceState]
+    let pendingTools: [MeshConnectionTool]?
+}
+
+nonisolated struct MeshConnectionProposal: Equatable, Sendable {
+    let proposal: String
+    let connection: String
+    let name: String
+    let endpoint: String
+    let local: Bool
+    let device: String?
+    let scheme: String
+    let issuer: String?
+    let issuerHost: String?
+    let redirectHost: String?
+    let scopes: [String]
+    let resource: String?
+    let clientId: String?
+    let tools: [MeshConnectionTool]
+    let egress: [String]
+    let flowHint: String
+    let replaces: String?
+    let expiresMs: UInt64
+}
+
+nonisolated struct MeshConnectionState: Equatable, Sendable {
+    let connection: String
+    let state: String
+    let reason: String?
+    let toolsPending: Bool
+}
+
+nonisolated struct MeshSignInStart: Equatable, Sendable, CustomStringConvertible, CustomDebugStringConvertible {
+    let flow: String
+    let authorizationURL: String?
+    let redirectURI: String
+    let userCode: String?
+    let verificationURI: String?
+    let verificationURIComplete: String?
+    let intervalSeconds: UInt64?
+    let expiresMs: UInt64
+
+    var description: String { "MeshSignInStart(flow: \(flow))" }
+    var debugDescription: String { description }
+}
+
+nonisolated enum MeshSignInPoll: Equatable, Sendable {
+    case pending(intervalSeconds: UInt64)
+    case done(MeshConnectionState)
+}
+
+nonisolated enum MeshSignInRedirect: Equatable, Sendable {
+    case appLink
+    case loopback(port: UInt16)
+    case loopbackV6(port: UInt16)
+    case pasted
+    case deviceCode
+}
+
+nonisolated enum MeshStepUpPlan: Equatable, Sendable {
+    case review(scopes: [String])
+    case signIn(scopes: [String])
+}
+
 nonisolated protocol MeshLocalTools: Sendable {
     func list() -> [MeshLocalToolSpec]
     func call(name: String, argumentsJSON: String, ticket: Data) throws -> String
@@ -580,6 +680,7 @@ nonisolated protocol MeshKernel: Sendable {
     func stopNetwork() async
     func syncNow() async throws
     func version() -> String
+    func close() async
 
     func meshStatus() async throws -> MeshStatus
     func meshPrincipal() throws -> MeshVerifiedPrincipal
@@ -665,9 +766,23 @@ nonisolated protocol MeshKernel: Sendable {
     func approveRemoteMCPTool(_ tool: MeshRemoteMCPTool) async throws
     func revokeRemoteMCPTool(server: String, tool: String) throws
 
-    func mailboxState() -> MeshMailboxState
+    func mailboxState() throws -> MeshMailboxState
     func syncState() async throws -> MeshSyncState
     func allowance() throws -> MeshAllowance
+
+    func proposeConnection(endpoint: String, name: String, local: Bool) async throws -> MeshConnectionProposal
+    func reviewConnection(id: String) async throws -> MeshConnectionProposal
+    func approveConnection(proposal: String, flow: String, toolNames: [String], clientId: String?) throws
+        -> MeshConnection
+    func removeConnection(id: String) throws
+    func connections() throws -> [MeshConnection]
+    func beginConnectionSignIn(id: String, redirect: MeshSignInRedirect) async throws -> MeshSignInStart
+    func completeConnectionSignIn(flow: String, redirectURL: String) async throws -> MeshConnectionState
+    func pollConnectionSignIn(flow: String) async throws -> MeshSignInPoll
+    func cancelConnectionSignIn(flow: String) throws
+    func refreshConnection(id: String) async throws -> MeshConnectionState
+    func connectionStepUp(id: String, challenge: [String]) throws -> MeshStepUpPlan
+    func noteConnectionCallSucceeded(id: String) throws
 
     func runs() async throws -> [MeshRun]
     func handOffRun(runId: String, memberId: String) async throws

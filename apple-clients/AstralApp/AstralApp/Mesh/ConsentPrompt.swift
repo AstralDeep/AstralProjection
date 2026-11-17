@@ -88,6 +88,44 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
         return prompt
     }
 
+    static func connection(canonicalRecord: Data, signingInput: Data) throws -> ConsentPrompt {
+        let record = try object(
+            canonicalRecord,
+            fields: ["auth", "device", "egress", "endpoint", "flow", "id", "kind", "local", "name", "tools", "v"])
+        let consentData = try payload(signingInput, context: "astral.consent/v1")
+        let consentObject = try object(consentData, fields: ["v", "kind", "digest", "device", "clock"])
+        let consent = try JSONDecoder().decode(ActionConsent.self, from: consentData)
+        try checkClock(consentObject["clock"], value: consent.clock)
+        guard record["v"] as? Int == 1, let name = record["name"] as? String, !name.isEmpty,
+            let endpoint = record["endpoint"] as? String, !endpoint.isEmpty,
+            let flow = record["flow"] as? String, ["private", "phi"].contains(flow),
+            let auth = record["auth"] as? [String: Any],
+            Set(auth.keys) == ["client_id", "issuer", "resource", "scheme", "scopes"],
+            let scheme = auth["scheme"] as? String, ["oauth", "none"].contains(scheme),
+            let scopes = auth["scopes"] as? [String], let tools = record["tools"] as? [[String: Any]],
+            let egress = record["egress"] as? [String], consent.v == 1, consent.kind == "connection",
+            isID(consent.device), consent.digest == hashID(canonicalRecord)
+        else { throw ConsentPromptError.invalidInput }
+        let names = try tools.map { tool -> String in
+            guard Set(tool.keys) == ["hash", "name"], let name = tool["name"] as? String else {
+                throw ConsentPromptError.invalidInput
+            }
+            return name
+        }
+        var lines = ["Server: " + endpoint, "Sign-in: " + (scheme == "oauth" ? "OAuth" : "none")]
+        if let issuer = auth["issuer"] as? String { lines.append("Issuer: " + issuer) }
+        if !scopes.isEmpty { lines.append("Scopes: " + scopes.joined(separator: ", ")) }
+        lines.append("Data class: " + flow)
+        lines.append("Reaches: " + egress.joined(separator: ", "))
+        lines.append("Tools: " + (names.isEmpty ? "none listed" : names.joined(separator: ", ")))
+        var prompt = ConsentPrompt(
+            actionTitle: "Connect " + name, effect: "connection.approve", target: name + " at " + endpoint,
+            arguments: lines.joined(separator: "\n") + "\nRecord: " + String(decoding: canonicalRecord, as: UTF8.self),
+            digest: consent.digest, requiresBiometry: true)
+        prompt.signingInputHash = hash(signingInput)
+        return prompt
+    }
+
     static func isGrant(canonicalAction: Data) -> Bool {
         guard let value = try? JSONSerialization.jsonObject(with: canonicalAction) as? [String: Any] else {
             return false
