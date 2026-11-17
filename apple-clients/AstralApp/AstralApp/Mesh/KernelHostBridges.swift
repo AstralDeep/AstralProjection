@@ -79,8 +79,19 @@ nonisolated final class KernelHostSigner: AstralKernel.HostSigner, @unchecked Se
 
 nonisolated final class KernelOnDeviceModel: AstralKernel.OnDeviceModel, @unchecked Sendable {
     private let model: any AstralOnDeviceModel
+    private let deadline: Duration
+    private let margin: Duration
+    private let backoff: Duration
 
-    init(_ model: any AstralOnDeviceModel) { self.model = model }
+    init(
+        _ model: any AstralOnDeviceModel, deadline: Duration = .milliseconds(20_000),
+        margin: Duration = .milliseconds(500), backoff: Duration = .milliseconds(50)
+    ) {
+        self.model = model
+        self.deadline = deadline
+        self.margin = margin
+        self.backoff = backoff
+    }
 
     func available() -> Bool { model.available() }
 
@@ -94,7 +105,13 @@ nonisolated final class KernelOnDeviceModel: AstralKernel.OnDeviceModel, @unchec
         let local = OnDeviceRequest(
             messages: messages, schemaJSON: request.jsonSchema, maxTokens: Int(request.maxTokens))
         let model = model
-        switch BlockingBridge.run({ await model.complete(local) }) {
+        let deadline = deadline
+        let backoff = backoff
+        let outcome = BlockingBridge.run(timeout: deadline + margin) {
+            await Self.complete(model, local, deadline: deadline, backoff: backoff)
+        }
+        guard let outcome else { throw HostCallError.Failed(message: "on_device.timeout") }
+        switch outcome {
         case .text(let text), .json(let text):
             return AstralKernel.OnDeviceResponse(text: text)
         case .refused:
@@ -103,6 +120,24 @@ nonisolated final class KernelOnDeviceModel: AstralKernel.OnDeviceModel, @unchec
             throw HostCallError.Failed(message: "on_device.unavailable: " + reason.rawValue)
         case .failed(let failure):
             throw HostCallError.Failed(message: "on_device." + failure.rawValue)
+        }
+    }
+}
+
+extension KernelOnDeviceModel {
+    // A busy model is waited for until the deadline, then reported as busy.
+    static func complete(
+        _ model: any AstralOnDeviceModel, _ request: OnDeviceRequest, deadline: Duration, backoff: Duration
+    ) async -> OnDeviceResponse {
+        let end = ContinuousClock.now + deadline
+        var delay = backoff
+        while true {
+            let response = await model.complete(request)
+            guard case .failed(.busy) = response else { return response }
+            guard ContinuousClock.now + delay < end else { return response }
+            try? await Task.sleep(for: delay)
+            if Task.isCancelled { return .failed(.cancelled) }
+            delay = min(delay * 2, .seconds(1))
         }
     }
 }
@@ -181,16 +216,23 @@ nonisolated final class KernelChangeBridge: AstralKernel.KernelListener, AstralK
 nonisolated enum BlockingBridge {
     private final class Slot<T: Sendable>: @unchecked Sendable {
         let semaphore = DispatchSemaphore(value: 0)
+        let lock = NSLock()
         var value: T?
     }
 
-    static func run<T: Sendable>(_ work: @escaping @Sendable () async -> T) -> T {
+    static func run<T: Sendable>(timeout: Duration, _ work: @escaping @Sendable () async -> T) -> T? {
         let slot = Slot<T>()
-        Task.detached {
-            slot.value = await work()
+        let task = Task.detached {
+            let value = await work()
+            slot.lock.withLock { slot.value = value }
             slot.semaphore.signal()
         }
-        slot.semaphore.wait()
-        return slot.value!
+        let parts = timeout.components
+        let seconds = Double(parts.seconds) + Double(parts.attoseconds) / 1e18
+        guard slot.semaphore.wait(timeout: .now() + seconds) == .success else {
+            task.cancel()
+            return nil
+        }
+        return slot.lock.withLock { slot.value }
     }
 }

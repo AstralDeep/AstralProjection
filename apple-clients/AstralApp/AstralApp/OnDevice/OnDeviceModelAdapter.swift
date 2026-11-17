@@ -45,6 +45,12 @@ nonisolated enum OnDeviceResponse: Equatable, Sendable {
     case failed(OnDeviceFailure)
 }
 
+nonisolated extension OnDeviceJSONSchema {
+    func checked(_ json: String) -> OnDeviceResponse {
+        accepts(json) ? .json(json) : .failed(.outputMismatchedSchema)
+    }
+}
+
 nonisolated enum OnDeviceModelAvailability: Equatable, Sendable {
     case available
     case unavailable(OnDeviceUnavailableReason)
@@ -210,7 +216,7 @@ nonisolated final class FoundationModelsOnDeviceModel: AstralOnDeviceModelWarmab
                     let response = try await session.respond(
                         to: composed.prompt, schema: try schema.generationSchema(), options: options)
                     let json = response.content.jsonString
-                    return schema.accepts(json) ? .json(json) : .failed(.outputMismatchedSchema)
+                    return schema.checked(json)
                 }
                 let response = try await session.respond(to: composed.prompt, options: options)
                 return .text(response.content)
