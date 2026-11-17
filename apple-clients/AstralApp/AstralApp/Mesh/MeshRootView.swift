@@ -82,6 +82,7 @@ enum MeshDestination: Hashable {
     case devices
     case runs
     case settings
+    case shared
 }
 
 struct MeshShell: View {
@@ -200,6 +201,8 @@ struct MeshShell: View {
                 NavigationStack { MeshRunsView() }
             case .settings:
                 NavigationStack { MeshSettingsView() }
+            case .shared:
+                NavigationStack { MeshSharedWithMeView() }
             case nil:
                 ContentUnavailableView("Choose something", systemImage: "sidebar.left")
             }
@@ -287,6 +290,11 @@ struct MeshShell: View {
                         .accessibilityIdentifier("mesh.side.runs")
                     Label("Settings", systemImage: "gearshape").tag(MeshDestination.settings)
                         .accessibilityIdentifier("mesh.side.settings")
+                    if !mesh.sharedItems.isEmpty {
+                        Label("Shared with Me", systemImage: "person.2.crop.square.stack")
+                            .tag(MeshDestination.shared)
+                            .accessibilityIdentifier(MeshSharedID.entry)
+                    }
                 }
                 Section("Chats") {
                     if mesh.chats.isEmpty {
@@ -298,6 +306,7 @@ struct MeshShell: View {
                 }
             }
             .listStyle(.sidebar)
+            .task { await mesh.refreshSharedItems() }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 HStack(spacing: 8) {
                     Circle().fill(syncColor).frame(width: 8, height: 8).accessibilityHidden(true)
