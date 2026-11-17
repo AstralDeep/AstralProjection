@@ -117,7 +117,8 @@ final class KernelConnectionMappingTests: XCTestCase {
 
     func testProposalAndStateMapEveryField() {
         let proposal = ConnectionProposal(
-            proposal: "p", connection: Self.id, kind: "a2a", name: "Research", endpoint: "https://mcp.example/mcp", local: false,
+            proposal: "p", connection: Self.id, kind: "a2a", name: "Research",
+            endpoint: "https://mcp.example/mcp", local: false,
             device: nil, scheme: "oauth", issuer: "https://issuer.example", issuerHost: "issuer.example",
             redirectHost: "astraldeep.github.io", scopes: ["read"], resource: "https://mcp.example/mcp",
             clientId: nil, tools: [], egress: ["issuer.example"], flowHint: "phi", replaces: Self.id, expiresMs: 77,

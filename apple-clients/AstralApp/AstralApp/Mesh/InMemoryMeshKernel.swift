@@ -1218,7 +1218,9 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         try record("approveConnection", proposal)
         try requireEnrolled()
         let value = try connectionBook.approve(proposal: proposal, flow: flow, toolNames: toolNames, clientId: clientId)
-        if let facts = connectionBook.modelFacts(of: value.id) { addModelProvider(value, facts.models, facts.recipients) }
+        if let facts = connectionBook.modelFacts(of: value.id) {
+            addModelProvider(value, facts.models, facts.recipients)
+        }
         listener.onChange(.connectionsChanged)
         return value
     }

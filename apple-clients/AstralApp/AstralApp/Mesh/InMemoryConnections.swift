@@ -150,9 +150,9 @@ nonisolated final class InMemoryConnections: @unchecked Sendable {
         guard let url = URLComponents(string: draft.endpoint), url.scheme == "https", let host = url.host,
             !host.isEmpty
         else { throw Self.refused("connection.egress_refused") }
-        guard draft.format.components(separatedBy: "{key}").count == 2 else { throw Self.refused("connection.malformed") }
-        guard !draft.header.isEmpty, draft.header.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") })
-        else { throw Self.refused("connection.malformed") }
+        let formatOK: Bool = draft.format.components(separatedBy: "{key}").count == 2
+        let headerOK: Bool = MeshConnectionKeyModel.validHeader(draft.header)
+        guard formatOK, headerOK else { throw Self.refused("connection.malformed") }
         return lock.withLock {
             counter += 1
             let id = String(format: "%032x", counter)
