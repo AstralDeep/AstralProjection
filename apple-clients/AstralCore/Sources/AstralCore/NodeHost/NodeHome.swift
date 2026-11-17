@@ -46,7 +46,7 @@
             NodeLaunchSpec(
                 executable: pack.appendingPathComponent("python/bin/python3.11"),
                 arguments: [
-                    "-I", pack.appendingPathComponent("launcher/astral_node_launch.py").path,
+                    "-I", "-B", pack.appendingPathComponent("launcher/astral_node_launch.py").path,
                     "--env-file", envFile.path, "--port", String(port), "--log-dir", logs.path,
                 ],
                 environment: [

@@ -31,7 +31,12 @@
             ) { _ in
                 MainActor.assumeIsolated { target.applicationWillTerminate() }
             }
-            if available { Task { await target.refresh() } }
+            if available {
+                Task {
+                    await target.refresh()
+                    await target.installOnFirstLaunch()
+                }
+            }
         }
 
         nonisolated static func defaultAvailability() -> Bool {

@@ -177,10 +177,15 @@
                 }
             } catch let error as NodePackError {
                 throw error
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch let error as URLError where error.code == .cancelled {
+                throw CancellationError()
             } catch {
                 throw NodePackError.downloadFailed(String(describing: error))
             }
 
+            try Task.checkCancellation()
             progress(.verifying)
             let actualSize =
                 ((try? fileManager.attributesOfItem(atPath: archive.path))?[.size] as? NSNumber)?.int64Value ?? -1
@@ -217,7 +222,6 @@
                 version: offer.descriptor.version, manifestSha256: offer.descriptor.manifestSha256, root: destination,
                 installedAt: Date())
             try record(installed)
-            prune(keeping: installed.version)
             progress(.done)
             return installed
         }
@@ -260,9 +264,10 @@
             try encoder.encode(installed).write(to: recordURL, options: .atomic)
         }
 
-        private func prune(keeping version: String) {
+        public func pruneSuperseded() {
+            guard let keeping = installed()?.version else { return }
             let packs = root.appendingPathComponent("packs", isDirectory: true)
-            for name in (try? fileManager.contentsOfDirectory(atPath: packs.path)) ?? [] where name != version {
+            for name in (try? fileManager.contentsOfDirectory(atPath: packs.path)) ?? [] where name != keeping {
                 try? fileManager.removeItem(at: packs.appendingPathComponent(name))
             }
         }

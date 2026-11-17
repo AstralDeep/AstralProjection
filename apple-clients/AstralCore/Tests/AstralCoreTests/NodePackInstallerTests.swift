@@ -281,8 +281,91 @@
             _ = try await subject.install(try await subject.fetchOffer(from: second.descriptorURL)) { _ in }
             let current = await subject.installed()
             XCTAssertEqual(current?.version, "two")
-            XCTAssertEqual(
-                try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("packs").path), ["two"])
+            let packs = root.appendingPathComponent("packs").path
+            XCTAssertEqual(Set(try FileManager.default.contentsOfDirectory(atPath: packs)), ["one", "two"])
+            await subject.pruneSuperseded()
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: packs), ["two"])
+        }
+
+        func testAnInstalledFormatOneRecordLoadsUnchanged() async throws {
+            let pack = root.appendingPathComponent("packs/old")
+            let python = pack.appendingPathComponent("python/bin/python3.11")
+            try FileManager.default.createDirectory(
+                at: python.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("#!/bin/sh\n".utf8).write(to: python)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: python.path)
+            let record = """
+                {"version":"old","manifestSha256":"\(String(repeating: "a", count: 64))",\
+                "root":"\(pack.absoluteString)","installedAt":"2026-11-01T10:00:00Z"}
+                """
+            try Data(record.utf8).write(to: root.appendingPathComponent("installed.json"))
+            let loaded = await installer().installed()
+            XCTAssertEqual(loaded?.version, "old")
+            XCTAssertEqual(loaded?.root.path, pack.path)
+        }
+
+        func testANewPackInstallsBesideTheOldOneAndLeavesTheHomeBytesAlone() async throws {
+            let subject = installer()
+            let first = try NodePackTestSupport.build(version: "one")
+            _ = try await subject.install(try await subject.fetchOffer(from: first.descriptorURL)) { _ in }
+            let home = root.appendingPathComponent("home/data")
+            try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+            try Data("secret-key-bytes".utf8).write(to: home.appendingPathComponent("node-ed25519.pem"))
+            try Data("ASTRAL_NODE_PROFILE=personal\n".utf8).write(to: root.appendingPathComponent("home/node.env"))
+            let snapshot = try Self.snapshot(root.appendingPathComponent("home"))
+
+            let second = try NodePackTestSupport.build(version: "two")
+            _ = try await subject.install(try await subject.fetchOffer(from: second.descriptorURL)) { _ in }
+            let packs = root.appendingPathComponent("packs").path
+            XCTAssertEqual(Set(try FileManager.default.contentsOfDirectory(atPath: packs)), ["one", "two"])
+            let current = await subject.installed()
+            XCTAssertEqual(current?.version, "two")
+            XCTAssertEqual(try Self.snapshot(root.appendingPathComponent("home")), snapshot)
+            await subject.pruneSuperseded()
+            XCTAssertEqual(try Self.snapshot(root.appendingPathComponent("home")), snapshot)
+        }
+
+        func testNothingIsPrunedWithoutAnInstalledRecord() async throws {
+            let stray = root.appendingPathComponent("packs/stray")
+            try FileManager.default.createDirectory(at: stray, withIntermediateDirectories: true)
+            await installer().pruneSuperseded()
+            XCTAssertTrue(FileManager.default.fileExists(atPath: stray.path))
+        }
+
+        func testALinkInTheArchiveCannotCarryALaterEntryOutOfTheInstallRoot() async throws {
+            let outside = try NodePackTestSupport.temporaryDirectory()
+            let built = try NodePackTestSupport.build()
+            let work = try NodePackTestSupport.temporaryDirectory()
+            try FileManager.default.createSymbolicLink(
+                atPath: work.appendingPathComponent("hop").path, withDestinationPath: outside.path)
+            try Data("x".utf8).write(to: outside.appendingPathComponent("evil.txt"))
+            let archive = built.directory.appendingPathComponent("pack.tar.gz")
+            try NodePackTestSupport.tar(work, to: archive, names: ["hop", "hop/evil.txt"])
+            try FileManager.default.removeItem(at: outside.appendingPathComponent("evil.txt"))
+            let data = try Data(contentsOf: archive)
+            let descriptor = NodePackDescriptor(
+                version: "hop",
+                archive: .init(file: "pack.tar.gz", size: Int64(data.count), sha256: NodePackTestSupport.sha(data)),
+                installedBytes: 10, manifestSha256: built.descriptor.manifestSha256)
+            try JSONEncoder().encode(descriptor).write(to: built.descriptorURL)
+            let subject = installer()
+            let offer = try await subject.fetchOffer(from: built.descriptorURL)
+            do { _ = try await subject.install(offer) { _ in } } catch {}
+            XCTAssertFalse(FileManager.default.fileExists(atPath: outside.appendingPathComponent("evil.txt").path))
+            let installed = await subject.installed()
+            XCTAssertNil(installed)
+        }
+
+        private static func snapshot(_ directory: URL) throws -> [String: Data] {
+            var found: [String: Data] = [:]
+            let keys: [URLResourceKey] = [.isRegularFileKey]
+            guard let walker = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: keys)
+            else { return found }
+            for case let url as URL in walker {
+                guard (try url.resourceValues(forKeys: [.isRegularFileKey])).isRegularFile == true else { continue }
+                found[String(url.path.dropFirst(directory.path.count))] = try Data(contentsOf: url)
+            }
+            return found
         }
 
         func testVerifyDetectsLaterTamperingAndRemoveForgetsThePack() async throws {

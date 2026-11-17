@@ -86,6 +86,7 @@
 
         public static let packURLKey = "node.pack.url"
         public static let keepRunningKey = "node.keepRunning"
+        public static let autoOfferedKey = "node.pack.autoOffered"
 
         public private(set) var phase: Phase
         public private(set) var descriptor: NodeDescriptor?
@@ -99,6 +100,7 @@
         @ObservationIgnored private var supervisor: NodeSupervisor?
         @ObservationIgnored private var installed: InstalledNodePack?
         @ObservationIgnored private var currentPort: Int?
+        @ObservationIgnored private var installTask: Task<Void, Never>?
 
         public init(environment: NodeHostEnvironment) {
             self.environment = environment
@@ -155,7 +157,33 @@
         }
 
         public func install() async {
-            guard case .offered(let offer) = phase else { return }
+            guard case .offered(let offer) = phase, installTask == nil else { return }
+            let task = Task { await self.performInstall(offer) }
+            installTask = task
+            await task.value
+            installTask = nil
+        }
+
+        public func cancelInstall() { installTask?.cancel() }
+
+        public func installOnFirstLaunch() async {
+            guard environment.available, environment.pinnedDescriptorSha256?.isEmpty == false,
+                !environment.defaultPackURL.isEmpty, installTask == nil,
+                !environment.defaults.bool(forKey: Self.autoOfferedKey)
+            else { return }
+            await refresh()
+            guard installed == nil, let url = URL(string: environment.defaultPackURL) else { return }
+            environment.defaults.set(true, forKey: Self.autoOfferedKey)
+            do {
+                phase = .offered(try await installer.fetchOffer(from: url))
+            } catch {
+                message = Self.describe(error)
+                return
+            }
+            await install()
+        }
+
+        private func performInstall(_ offer: NodePackOffer) async {
             await stop()
             phase = .downloading(fraction: 0)
             do {
@@ -164,6 +192,9 @@
                 }
                 installed = result
                 phase = .installed(version: result.version)
+            } catch is CancellationError {
+                message = "The download was cancelled."
+                phase = installed.map { .installed(version: $0.version) } ?? .notInstalled
             } catch {
                 message = Self.describe(error)
                 phase = installed.map { .installed(version: $0.version) } ?? .notInstalled
@@ -206,6 +237,7 @@
         }
 
         public func remove() async {
+            environment.defaults.set(true, forKey: Self.autoOfferedKey)
             await stop()
             try? await installer.remove()
             installed = nil
@@ -255,6 +287,7 @@
             case .running(let pid, let port):
                 phase = .running(port: port)
                 writeRunRecord(NodeRunRecord(pid: pid, port: port, packVersion: version, startedAt: Date()))
+                Task { await installer.pruneSuperseded() }
                 Task { await refreshDescriptor(port: port) }
             case .backingOff(_, let seconds, _):
                 phase = .backingOff("The node stopped. Restarting in \(Int(seconds.rounded(.up))) s.")
