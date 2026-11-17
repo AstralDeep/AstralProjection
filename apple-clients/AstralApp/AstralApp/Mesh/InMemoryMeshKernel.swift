@@ -556,6 +556,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
 
     func sendMessage(chatId: String, text: String, continues: String?) throws -> String {
         try record("sendMessage", text + "|" + (continues ?? ""))
+        lock.withLock { attendedValues.append(false) }
         return try appendMessage(chatId: chatId, text: text, continues: continues, attachments: [])
     }
 

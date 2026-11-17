@@ -39,14 +39,15 @@ nonisolated enum MeshKernelFactories {
     static func live(
         network: NetworkConfig = NetworkConfig(
             relay: .default, localDiscovery: true, internetLookup: true, loopbackOnly: false, syncIntervalMs: 30_000,
-            mailbox: nil)
+            mailbox: nil),
+        phiPrompt: any MeshPhiPrompting = MeshTreatAsPhiPrompt()
     ) -> MeshKernelFactory {
         { config, signer, model, tools, listener in
             var network = network
             network.mailbox = config.mailbox
             return try await RealMeshKernel.open(
                 config: config, network: network, signer: signer, model: model, tools: tools,
-                listener: listener)
+                listener: listener, phiPrompt: phiPrompt)
         }
     }
 }
@@ -65,9 +66,10 @@ enum MeshRuntimeBuilder {
         return directory
     }
 
-    static func live(
-        consent: ConsentCoordinator, makeKernel: @escaping MeshKernelFactory = MeshKernelFactories.live()
-    ) -> MeshRuntime {
+    static func live(consent: ConsentCoordinator, makeKernel: MeshKernelFactory? = nil) -> MeshRuntime {
+        let center = MeshPhiPromptCenter()
+        let factory: MeshKernelFactory =
+            makeKernel ?? MeshKernelFactories.live(phiPrompt: MeshPhiPromptHost(center: center))
         #if os(macOS)
             let kind = MeshDeviceKind.desktop
             let label = Host.current().localizedName ?? "Mac"
@@ -76,8 +78,8 @@ enum MeshRuntimeBuilder {
             let label = UIDevice.current.name
         #endif
         return MeshRuntime(
-            makeKernel: makeKernel, makeKeys: { try DeviceKeys() }, consent: consent,
+            makeKernel: factory, makeKeys: { try DeviceKeys() }, consent: consent,
             onDeviceModel: PreferredOnDeviceModel(), tools: DeviceLocalTools(),
-            dataDirectory: dataDirectory(), deviceLabel: label, deviceKind: kind)
+            dataDirectory: dataDirectory(), deviceLabel: label, deviceKind: kind, phiPrompts: center)
     }
 }
