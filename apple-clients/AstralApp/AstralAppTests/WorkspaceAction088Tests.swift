@@ -172,7 +172,7 @@ final class WorkspaceAction088Tests: XCTestCase {
             while continuation == nil { await Task.yield() }
             switch change {
             case 0: model.activeChatId = "other"
-            case 1: await model.signOut(revokeRemote: false)
+            case 1: await model.signOut()
             case 2: advanceRevision(model)
             default: task.cancel()
             }

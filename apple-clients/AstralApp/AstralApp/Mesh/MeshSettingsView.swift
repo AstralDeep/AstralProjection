@@ -5,10 +5,8 @@ import SwiftUI
 
 struct MeshSettingsView: View {
     @Environment(MeshRuntime.self) private var mesh
-    @Environment(AppModeStore.self) private var modeStore
     @Environment(AppModel.self) private var model
     @Environment(ThemeStore.self) private var theme
-    @State private var confirmingNode = false
     @State private var renaming = false
     @State private var draft = ""
     @State private var copied = false
@@ -142,14 +140,6 @@ struct MeshSettingsView: View {
                 .accessibilityIdentifier("mesh.settings.recovery")
             }
             MeshSafetySection()
-            Section {
-                Button("Sign in to a Server Instead") { confirmingNode = true }
-                    .accessibilityIdentifier("mesh.settings.node")
-            } header: {
-                Text("Account")
-            } footer: {
-                Text("Use an AstralDeep server account in this app. Your mesh stays on this device.")
-            }
             if let version = mesh.kernelVersion {
                 Section {
                     DisclosureGroup("Diagnostics") {
@@ -163,12 +153,6 @@ struct MeshSettingsView: View {
         .meshReadableWidth()
         .background(p.bg)
         .navigationTitle("Settings")
-        .confirmationDialog("Sign in to a server instead?", isPresented: $confirmingNode, titleVisibility: .visible) {
-            Button("Use a Server") { modeStore.choose(.node) }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This app will use a server account. Your mesh stays on this device.")
-        }
         .alert("Rename Device", isPresented: $renaming) {
             TextField("Name", text: $draft)
             Button("Save") {

@@ -576,7 +576,6 @@
                         }
                     }
                     Divider()
-                    PersonalMeshModeButton()
                     Button(model.chromeMenu?.signout.label ?? "Sign out") { Task { await model.signOut() } }
                 } label: {
                     HStack(spacing: 10) {

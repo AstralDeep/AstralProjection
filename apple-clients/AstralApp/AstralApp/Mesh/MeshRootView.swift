@@ -10,7 +10,6 @@ import SwiftUI
 struct MeshRootView: View {
     var start: MeshDestination?
     @Environment(MeshRuntime.self) private var mesh
-    @Environment(AppModeStore.self) private var modeStore
     @Environment(ConsentCoordinator.self) private var consent
     @Environment(AppModel.self) private var model
     @Environment(ThemeStore.self) private var theme
@@ -60,7 +59,6 @@ struct MeshRootView: View {
                 Text(message).multilineTextAlignment(.center).foregroundStyle(p.error)
                     .accessibilityIdentifier("mesh.failed")
                 Button("Try again") { Task { await mesh.open() } }.accessibilityIdentifier("mesh.retry")
-                Button("Connect to a node") { modeStore.choose(.node) }.accessibilityIdentifier("mesh.node")
             }
             .padding(24)
         case .ready:

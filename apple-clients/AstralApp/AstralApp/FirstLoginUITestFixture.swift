@@ -19,11 +19,8 @@
             case workspaceComponentRefinement = "workspace-component-refinement"
             case workspaceHistory = "workspace-history"
             case workspaceActions = "workspace-actions"
-            case workspaceActionsHTTP = "workspace-actions-http"
             case workspaceNavigation = "workspace-navigation"
             case workspaceNavigationMandatory = "workspace-navigation-mandatory"
-            case componentActionsHTTP = "component-actions-http"
-            case componentTimelineHTTP = "component-timeline-http"
             case voiceComposer = "voice-composer"
             case voiceTerminal = "voice-terminal"
             case continuitySeed = "continuity-seed"
@@ -111,27 +108,7 @@
                     conversationResumeStore: ConversationResumeStore(defaults: defaults),
                     tokenStore: InMemoryTokenStore(), defaults: defaults)
             }
-            guard let scenario = requestedScenario(),
-                [.workspaceActionsHTTP, .componentActionsHTTP, .componentTimelineHTTP].contains(scenario)
-            else { return nil }
-            let environment = ProcessInfo.processInfo.environment
-            guard environment["ASTRAL_UI_TESTING"] == "1",
-                let rawPort = environment["ASTRAL_UI_WORKSPACE_PORT"],
-                let port = UInt16(rawPort), port > 0, String(port) == rawPort,
-                let defaults = UserDefaults(suiteName: "WorkspaceActionsUITest.\(UUID().uuidString)")
-            else { preconditionFailure("Invalid workspace action UI-test loopback configuration.") }
-            defaults.set("http://127.0.0.1:\(port)", forKey: "serverBase")
-            let store = InMemoryTokenStore()
-            let token =
-                "fixture."
-                + Data(
-                    #"{"iss":"https://issuer.invalid","sub":"workspace-ui-fixture","name":"Workspace UI Fixture"}"#.utf8
-                )
-                .base64EncodedString() + ".fixture"
-            store.save(StoredTokens(from: TokenSet(accessToken: token, refreshToken: nil, expiresIn: 3600)))
-            return AppModel(
-                conversationResumeStore: ConversationResumeStore(defaults: defaults),
-                tokenStore: store, defaults: defaults)
+            return nil
         }
 
         @MainActor
@@ -139,20 +116,6 @@
             let completionGate: URL?
             do { completionGate = try completionGateURL() } catch {
                 preconditionFailure("Invalid first-login UI-test completion gate configuration.")
-            }
-            if [.workspaceActionsHTTP, .componentActionsHTTP, .componentTimelineHTTP].contains(scenario) {
-                precondition(ProcessInfo.processInfo.environment["ASTRAL_UI_TESTING"] == "1")
-                Task { @MainActor in
-                    await model.bootstrap()
-                    installWorkspaceActionsHTTP(on: model)
-                    if scenario != .workspaceActionsHTTP {
-                        installComponentActions(on: model)
-                        if scenario == .componentTimelineHTTP {
-                            model.handleFrame(InboundFrame.parse(#"{"type":"workspace_timeline_mode","active":true}"#)!)
-                        }
-                    }
-                }
-                return
             }
             model.signedIn = true
             model.accountName = "Release Verification"
@@ -351,7 +314,7 @@
                 break
             case .chatComposer, .workspaceStart, .workspaceCanvas, .workspaceChartScroll, .workspaceStyles,
                 .workspaceHistory,
-                .workspaceActions, .workspaceActionsHTTP, .componentActionsHTTP, .componentTimelineHTTP,
+                .workspaceActions,
                 .workspaceRichResult, .workspaceComponentRefinement, .workspaceNavigation,
                 .workspaceNavigationMandatory:
                 break
@@ -362,22 +325,6 @@
             case .continuitySeed, .continuityResume:
                 break
             }
-        }
-
-        @MainActor
-        private static func installWorkspaceActionsHTTP(on model: AppModel) {
-            precondition(model.signedIn, "Workspace UI fixture bootstrap failed.")
-            installWorkspace(on: model)
-            model.composerDraft = ""
-            model.activeChatId = "11111111-1111-4111-8111-111111111111"
-            model.canvas =
-                InboundFrame.parse(
-                    #"{"type":"ui_render","target":"canvas","components":[{"type":"text","component_id":"workspace-action-result","content":"Visible workspace action result","title":"PRIVATE_UNUSED_TITLE","_source_params":{"credential":"PRIVATE_UNUSED_VALUE"}}]}"#
-                )!.renderComponents
-            model.handleFrame(
-                InboundFrame.parse(
-                    #"{"type":"chrome_menu","model":{"version":2,"topbar":[{"key":"export","kind":"workspace_action","label":"Export page","icon":"download","operation":"export_canvas","context":"live_canvas"},{"key":"share","kind":"workspace_action","label":"Share page","icon":"share","operation":"share_canvas","context":"live_canvas"}],"signout":{"label":"Sign out"}}}"#
-                )!)
         }
 
         private static func componentMetadata(kinds: [ComponentActionKind]) -> JSONValue {
@@ -394,35 +341,6 @@
                         ])
                     }),
             ])
-        }
-
-        @MainActor
-        private static func installComponentActions(on model: AppModel) {
-            model.canvas = [
-                AstralComponent(
-                    type: "table",
-                    raw: .object([
-                        "type": .string("table"), "component_id": .string("component-table"),
-                        "title": .string("Component action result"), "provenance": .string("estimated"),
-                        "headers": .array([.string("Label"), .string("Value")]),
-                        "rows": .array([.array([.string("Alpha"), .number(2)])]),
-                        "component_chrome": componentMetadata(kinds: ComponentActionKind.allCases),
-                        "versions": .array([
-                            .object([
-                                "version_no": .number(2), "reason": .string("refine"),
-                                "created_at": .string("2026-09-12T00:00:00Z"), "title": .string("Earlier result"),
-                            ])
-                        ]),
-                    ])),
-                AstralComponent(
-                    type: "text",
-                    raw: .object([
-                        "type": .string("text"), "component_id": .string("component-empty"),
-                        "content": .string("Unrefined result"), "provenance": .string("grounded"),
-                        "component_chrome": componentMetadata(kinds: [.history]),
-                    ])),
-            ]
-            model.composerDraft = "Draft survives component actions"
         }
 
         @MainActor

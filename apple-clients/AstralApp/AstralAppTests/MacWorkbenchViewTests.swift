@@ -1433,7 +1433,7 @@
             XCTAssertTrue(try recognizedText(view).contains("Kept result"))
             model.macBrowser.isPresented = true
             window.close()
-            await model.signOut(revokeRemote: false)
+            await model.signOut()
             XCTAssertFalse(model.macBrowser.accountBound)
             XCTAssertFalse(model.macBrowser.isEnabled)
             XCTAssertFalse(model.macBrowser.isPresented)

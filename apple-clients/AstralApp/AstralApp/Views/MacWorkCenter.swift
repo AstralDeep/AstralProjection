@@ -328,7 +328,7 @@
 
         private static func safeError(_ error: Error) -> String {
             if let error = error as? MacWorkCenterError { return error.localizedDescription }
-            if let url = error as? URLError, url.code == .userAuthenticationRequired { return "Sign in to view Work." }
+            if let url = error as? URLError, url.code == .userAuthenticationRequired { return "Work is not available." }
             return "Work could not be refreshed. Try again."
         }
     }

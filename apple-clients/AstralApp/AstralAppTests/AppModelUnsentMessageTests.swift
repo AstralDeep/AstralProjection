@@ -220,7 +220,7 @@ final class AppModelUnsentMessageTests: XCTestCase {
         let model = launch()
         _ = try XCTUnwrap(sendMidTurn(model))
         let saved = scope(model)
-        await model.signOut(revokeRemote: false)
+        await model.signOut()
         XCTAssertNil(store.load(saved))
         XCTAssertEqual(launch().composerDraft, "")
     }

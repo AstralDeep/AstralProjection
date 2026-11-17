@@ -1,5 +1,5 @@
-// Remembers whether this install runs as a personal mesh or as a thin client of a node, and builds the live MeshRuntime for mesh mode.
-// Fresh and legacy installs start with mesh choices; an explicit server connection remains separate.
+// Remembers that this install runs as a personal mesh, and builds the live MeshRuntime for it.
+// A stored value from an older build that named a server connection reads as no choice and is left in place.
 
 import AstralCore
 import AstralKernel
@@ -15,7 +15,6 @@ import Observation
 final class AppModeStore {
     enum Mode: String, Equatable {
         case mesh
-        case node
     }
 
     private(set) var mode: Mode?
@@ -26,8 +25,6 @@ final class AppModeStore {
         self.defaults = defaults
         mode = defaults.string(forKey: Self.key).flatMap(Mode.init(rawValue:))
     }
-
-    var usesMesh: Bool { mode != .node }
 
     func choose(_ mode: Mode) {
         self.mode = mode
