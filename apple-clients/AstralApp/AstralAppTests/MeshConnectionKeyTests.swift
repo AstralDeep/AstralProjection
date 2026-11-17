@@ -22,7 +22,8 @@ final class MeshConnectionKeyTests: XCTestCase {
     private func keyed(_ h: MeshRuntimeHarness) async throws -> MeshConnection {
         let proposal = try await h.runtime.proposeKeyConnection(
             endpoint: Self.keyServer, name: "Keyed", local: false, key: fakeKey(), recipients: nil)
-        return try await h.runtime.approveConnection(proposal: proposal.proposal, flow: "private", toolNames: ["search"])
+        return try await h.runtime.approveConnection(
+            proposal: proposal.proposal, flow: "private", toolNames: ["search"])
     }
 
     private func writes(_ h: MeshRuntimeHarness) -> [String] {
