@@ -1466,6 +1466,18 @@ final class MeshRuntime {
         }
     }
 
+    func beginConnectionSignIn(id: String, redirect: MeshSignInRedirect) async throws -> MeshSignInStart {
+        try await call { try await $0.beginConnectionSignIn(id: id, redirect: redirect) }
+    }
+
+    func completeConnectionSignIn(flow: String, redirectURL: String) async throws -> MeshConnectionState {
+        try await call { try await $0.completeConnectionSignIn(flow: flow, redirectURL: redirectURL) }
+    }
+
+    func cancelConnectionSignIn(flow: String) async throws {
+        try await call { try $0.cancelConnectionSignIn(flow: flow) }
+    }
+
     func removeConnection(id: String) async throws {
         try await call { try $0.removeConnection(id: id) }
     }

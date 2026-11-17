@@ -493,6 +493,7 @@ struct MeshSyncStrip: View {
             if let notice = mesh.networkNotice {
                 strip(notice, color: p.warning, id: "network")
             }
+            MeshConnectionAttentionBanner()
             if showsSync, case .waiting = mesh.syncSummary {
                 strip(MeshPresentation.syncLine(mesh.syncSummary), color: p.muted, id: "sync")
             }

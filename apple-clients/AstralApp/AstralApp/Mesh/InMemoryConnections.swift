@@ -44,7 +44,7 @@ nonisolated final class InMemoryConnections: @unchecked Sendable {
     static let maxProposals = 8
     static let maxFlows = 4
     static let proposalTTLMs: UInt64 = 600_000
-    static let appLinkRedirect = "https://astraldeep.github.io/connections/callback"
+    static let appLinkRedirect = "https://astraldeep.github.io/oauth/callback"
 
     private let lock = NSLock()
     private let now: @Sendable () -> Date
