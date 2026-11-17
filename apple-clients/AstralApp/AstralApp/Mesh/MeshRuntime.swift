@@ -1992,7 +1992,8 @@ final class MeshRuntime {
             state.notice = nil
             record(failure: reason, in: &state)
             state.phiOffer = MeshPhiOffer.offer(
-                forCode: code, defaultProvider: providers.first { $0.isDefault }?.providerId)
+                forCode: code, defaultProvider: providers.first { $0.isDefault }?.providerId,
+                chatHoldsPhi: currentChat?.chatId == progress.chatId && currentChat?.labels.contains("phi") == true)
             if speaking { speakingChatId = nil }
         }
         guard wakeSession == session, isReady else { return }
