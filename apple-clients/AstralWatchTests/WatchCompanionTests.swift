@@ -154,7 +154,7 @@ final class WatchCompanionTests: XCTestCase {
         failing.pendingDictation = "keep me"
         failing.sendPending()
         await drain()
-        XCTAssertEqual(failedSent.requests.count, 3)
+        XCTAssertEqual(failedSent.requests.last, .sendMessage(owner: ownerA, chatId: "c1", text: "keep me"))
         XCTAssertEqual(failing.pendingDictation, "keep me")
         XCTAssertNotNil(failing.errorBanner)
         XCTAssertNil(failing.statusText)
@@ -193,14 +193,47 @@ final class WatchCompanionTests: XCTestCase {
 
     func testRelaySnapshotsRenderThroughWatchComponentView() throws {
         let (model, _) = make()
-        let components = WatchModel.components(for: "You: hi\nAstral: hello")
+        let text = "You: caf\u{E9} \u{65E5}\u{672C}\u{8A9E} \u{1F600}"
+        let components = WatchModel.components(for: "\(text)\nAstral: hello")
         XCTAssertEqual(components.count, 2)
+        XCTAssertEqual(components[0].fallbackText, text)
         let host = VStack {
             ForEach(Array(components.enumerated()), id: \.offset) { _, c in WatchComponentView(component: c) }
         }
         .environment(model)
         let renderer = ImageRenderer(content: host)
         XCTAssertNotNil(renderer.cgImage)
+        let view = Mirror(reflecting: WatchComponentView(component: components[0])).children
+        XCTAssertTrue(view.contains { ($0.value as? AstralComponent)?.textContent == text })
+    }
+
+    func testALaterFailedRunIsVisibleAfterTheSendWasAcknowledged() async throws {
+        let (model, _) = make()
+        model.receiveRelay(try phone(ownerA, .ready))
+        model.receiveRelay(try chatList(ownerA, ["c1"]))
+        model.openChat(model.chats[0])
+        model.pendingDictation = "do it"
+        model.sendPending()
+        await drain()
+        XCTAssertEqual(model.statusText, "Sent to your iPhone")
+        model.receiveRelay(try CompanionPhoneUpdate.run(owner: ownerA, chatId: "c1", state: .failed).encoded())
+        XCTAssertEqual(model.runState, .failed)
+        XCTAssertEqual(model.errorBanner, "Your iPhone couldn't run that. Try again.")
+    }
+
+    func testRelayMessageDataAlwaysGetsAnEmptyReplyAndReachesTheModel() async throws {
+        let sync = WatchOverrideSync()
+        var relayed: [Data] = []
+        sync.onRelay = { relayed.append($0) }
+        let packets = [
+            try phone(ownerA, .ready), Data("garbage".utf8),
+            try CompanionWatchRequest.listChats(owner: ownerB).encoded(),
+        ]
+        var replies: [Data] = []
+        for packet in packets { sync.handleMessageData(packet) { replies.append($0) } }
+        await drain()
+        XCTAssertEqual(replies, [Data(), Data(), Data()])
+        XCTAssertEqual(relayed, packets)
     }
 
     func testWatchSourcesHaveNoNetworkOrCredentialStore() throws {

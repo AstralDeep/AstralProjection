@@ -202,13 +202,6 @@ private final class ContractWatchBridge: WatchVoiceBridgeControlling {
         state = .ready
         onState(.ready)
     }
-    func connect(
-        grant: WatchVoiceBridgeGrant, onState: @escaping @MainActor (WatchVoiceBridgeState) -> Void,
-        onTranscript: @escaping @MainActor (WatchVoiceTranscript) -> Void,
-        onPlayout: @escaping @MainActor (WatchVoicePlayoutObservation) -> Void
-    ) async throws {
-        throw CompanionVoiceError.rejected
-    }
     func setCaptureEnabled(_ enabled: Bool) {}
     func interruptPlayback() {}
     func disconnect(reason: String) {

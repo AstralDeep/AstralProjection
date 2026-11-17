@@ -75,6 +75,10 @@ final class WatchOverrideSync: NSObject, WCSessionDelegate, CompanionVoiceChanne
         _ session: WCSession, didReceiveMessageData data: Data,
         replyHandler: @escaping (Data) -> Void
     ) {
+        handleMessageData(data, replyHandler: replyHandler)
+    }
+
+    nonisolated func handleMessageData(_ data: Data, replyHandler: @escaping (Data) -> Void) {
         let response = CompanionVoiceInboundReply(replyHandler)
         let packet: CompanionVoicePacket
         switch WatchInbound.classify(data) {
