@@ -47,11 +47,15 @@ final class InMemoryContactsTests: XCTestCase {
         await expect("contact.invitation_open") {
             _ = try await pair.alice.createContactInvitation(name: "Alice", ttlSeconds: 60)
         }
-        await expect("contact.self") { _ = try await pair.alice.acceptContactInvitation(text: invitation.text, name: "A") }
+        await expect("contact.self") {
+            _ = try await pair.alice.acceptContactInvitation(text: invitation.text, name: "A")
+        }
         await expect("contact.invite_malformed") {
             _ = try await pair.bob.acceptContactInvitation(text: "astral-contact:v2:AAAA", name: "Bob")
         }
-        await expect("contact.invite_malformed") { _ = try await pair.bob.acceptContactInvitation(text: "7", name: "Bob") }
+        await expect("contact.invite_malformed") {
+            _ = try await pair.bob.acceptContactInvitation(text: "7", name: "Bob")
+        }
         pair.clock.advance(61)
         await expect("contact.invite_expired") {
             _ = try await pair.bob.acceptContactInvitation(text: invitation.text, name: "Bob")
@@ -94,7 +98,9 @@ final class InMemoryContactsTests: XCTestCase {
         XCTAssertEqual(try pair.alice.contacts().first?.state, .unverified)
         let again = try await pair.alice.startContactVerification(mesh: contactMeshId("b"))
         XCTAssertEqual(again.code, side.code)
-        await expect("contact.unverified") { _ = try await pair.alice.startContactVerification(mesh: contactMeshId("9")) }
+        await expect("contact.unverified") {
+            _ = try await pair.alice.startContactVerification(mesh: contactMeshId("9"))
+        }
     }
 
     func testNoticesAndADowngradeAreReported() async throws {

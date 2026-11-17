@@ -90,6 +90,7 @@ struct MeshShell: View {
     @State private var destination: MeshDestination?
     @State private var selectedChat: String?
     @State private var selectedTab = 0
+    @State private var incomingContact: MeshIncomingContact?
     private var presentedPhi: Binding<MeshPhiOffer?> {
         Binding(get: { mesh.presentingPhi }, set: { mesh.presentingPhi = $0 })
     }
@@ -122,6 +123,12 @@ struct MeshShell: View {
                 Text(mesh.notice ?? "")
             }
             .sheet(item: presentedPhi) { offer in MeshPhiOfferSheet(offer: offer) }
+            .onOpenURL { url in
+                if let text = MeshContactLink.text(from: url) { incomingContact = MeshIncomingContact(text: text) }
+            }
+            .sheet(item: $incomingContact) { incoming in
+                MeshContactFlowSheet(choice: .accept, initialText: incoming.text)
+            }
             .task {
                 mesh.attachVoice(model.onDeviceVoice)
                 #if os(iOS)
