@@ -131,7 +131,6 @@
             let descriptor = try await client.descriptor()
             XCTAssertTrue(descriptor.canJoinMesh)
             XCTAssertEqual(descriptor.mesh?.state, "not_enrolled")
-            XCTAssertFalse(descriptor.mesh?.hasLegacyOwner ?? true)
             let result = try await client.pairingOffer(secret: "the-secret")
             XCTAssertEqual(
                 result,
@@ -173,7 +172,7 @@
             let cases: [(Int, String, NodePairingError)] = [
                 (403, "node.loopback_required", .loopbackRequired),
                 (401, "node.pairing_secret_required", .pairingSecretRequired),
-                (409, "node.legacy_owner", .legacyOwner),
+                (409, "node.legacy_owner", .refused(status: 409, code: "node.legacy_owner")),
                 (409, "node.owner_mismatch", .ownerMismatch),
                 (429, "node.pairing_rate_limited", .rateLimited),
                 (503, "mesh_unavailable", .meshUnavailable("mesh_unavailable")),
@@ -188,19 +187,6 @@
             }
             http.responses = [(Data(), 401)]
             await assertThrows(.refused(status: 401, code: "")) { _ = try await client.pairingOffer(secret: "s") }
-        }
-
-        func testTheLegacyOwnerShowsInTheDescriptorBinding() async throws {
-            let http = FakeNodeHTTP()
-            http.responses = [
-                (
-                    Data(
-                        #"{"format":"astral.node.descriptor/v2","node_id":"n","capabilities":["mesh-peer"],"mesh":{"state":"not_enrolled","owner_binding":{"state":"refused","code":"node.legacy_owner"}}}"#
-                            .utf8), 200
-                )
-            ]
-            let descriptor = try await NodePairingClient(port: 18_700, http: http).descriptor()
-            XCTAssertTrue(descriptor.mesh?.hasLegacyOwner ?? false)
         }
 
         func testThePairingSecretIsReadOnlyFromAPrivateFileTheOwnerHolds() throws {

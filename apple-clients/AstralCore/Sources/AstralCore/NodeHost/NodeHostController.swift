@@ -90,7 +90,6 @@
         public private(set) var phase: Phase
         public private(set) var descriptor: NodeDescriptor?
         public private(set) var message: String?
-        public private(set) var legacyOwnerRefused = false
         public var packURLText: String { didSet { environment.defaults.set(packURLText, forKey: Self.packURLKey) } }
         public var keepRunning: Bool { didSet { environment.defaults.set(keepRunning, forKey: Self.keepRunningKey) } }
 
@@ -202,7 +201,6 @@
             self.supervisor = nil
             currentPort = nil
             descriptor = nil
-            legacyOwnerRefused = false
             try? FileManager.default.removeItem(at: home.runRecord)
             phase = installed.map { .installed(version: $0.version) } ?? .notInstalled
         }
@@ -221,24 +219,16 @@
             try? FileManager.default.removeItem(at: home.runRecord)
         }
 
-        public var hasLegacyOwner: Bool { legacyOwnerRefused || descriptor?.mesh?.hasLegacyOwner == true }
-
         public func requestPairing() async throws -> NodePairingResult {
             guard let port = currentPort, isRunning else { throw NodePairingError.meshUnavailable("node_not_running") }
             let client = try NodePairingClient(port: port, http: environment.http)
             let descriptor = try await client.descriptor()
             self.descriptor = descriptor
             guard descriptor.canJoinMesh else { throw NodePairingError.meshUnavailable("mesh_peer_unavailable") }
-            if descriptor.mesh?.hasLegacyOwner == true { throw NodePairingError.legacyOwner }
             do {
-                do {
-                    return try await client.pairingOffer(secret: try home.readPairingSecret())
-                } catch NodePairingError.pairingSecretRequired {
-                    return try await client.pairingOffer(secret: try home.readPairingSecret())
-                }
-            } catch NodePairingError.legacyOwner {
-                legacyOwnerRefused = true
-                throw NodePairingError.legacyOwner
+                return try await client.pairingOffer(secret: try home.readPairingSecret())
+            } catch NodePairingError.pairingSecretRequired {
+                return try await client.pairingOffer(secret: try home.readPairingSecret())
             }
         }
 
@@ -301,7 +291,6 @@
 
         public static func describePairing(_ error: Error) -> String? {
             switch error as? NodePairingError {
-            case .legacyOwner: return nil
             case .pairingSecretUnavailable: return "The node has no pairing code yet. Wait a moment and try again."
             case .pairingSecretRequired: return "The node's pairing code changed. Try again."
             case .loopbackRequired: return "The node only pairs with a request from this Mac."

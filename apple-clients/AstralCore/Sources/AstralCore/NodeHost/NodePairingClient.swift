@@ -25,20 +25,11 @@
             public let meshId: String?
             public let memberId: String?
             public let requests: Bool?
-            public let ownerBinding: OwnerBinding?
-
-            public struct OwnerBinding: Decodable, Equatable, Sendable {
-                public let state: String?
-                public let code: String?
-            }
-
-            public var hasLegacyOwner: Bool { ownerBinding?.code == NodePairingError.legacyOwnerCode }
 
             enum CodingKeys: String, CodingKey {
                 case state, requests
                 case meshId = "mesh_id"
                 case memberId = "member_id"
-                case ownerBinding = "owner_binding"
             }
         }
 
@@ -69,14 +60,11 @@
     }
 
     public enum NodePairingError: Error, Equatable, Sendable {
-        public static let legacyOwnerCode = "node.legacy_owner"
-
         case notLoopback
         case unknownDescriptorFormat
         case pairingSecretUnavailable
         case pairingSecretRequired
         case loopbackRequired
-        case legacyOwner
         case ownerMismatch
         case ownerBindingUnavailable
         case profileInactive
@@ -140,7 +128,6 @@
             switch code {
             case "node.loopback_required": return .loopbackRequired
             case "node.pairing_secret_required": return .pairingSecretRequired
-            case NodePairingError.legacyOwnerCode: return .legacyOwner
             case "node.owner_mismatch": return .ownerMismatch
             case "node.owner_binding_unavailable": return .ownerBindingUnavailable
             case "node_profile_inactive": return .profileInactive
