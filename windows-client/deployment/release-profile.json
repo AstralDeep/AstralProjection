@@ -5,10 +5,7 @@
   "client_version": "0.6.0",
   "distribution": "production",
   "local_only": false,
-  "authority": "https://iam.ai.uky.edu/realms/Astral",
   "websocket_endpoint": "wss://sandbox.ai.uky.edu/ws",
-  "client_id": "astral-desktop",
-  "auth_mode": "keycloak_oidc_pkce",
   "override_policy": {
     "managed_profile_allowed": true,
     "command_line_profile_allowed": true,

@@ -146,10 +146,7 @@ def main(argv=None) -> int:
     # Must follow the byo-worker branch (frozen exe reentry)
     from astral_client.app import main as app_main
 
-    return app_main(
-        effective_profile=startup.effective_profile,
-        argv=list(startup.remaining_args),
-    )
+    return app_main(argv=list(startup.remaining_args))
 
 if __name__ == "__main__":
     raise SystemExit(main())

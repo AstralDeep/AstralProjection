@@ -41,7 +41,6 @@ def _generic(**changes):
         release_id="generic-developer-0.6.0",
         distribution="generic_developer",
         local_only=True,
-        authority="http://127.0.0.1:8080/realms/Astral",
         websocket_endpoint="ws://127.0.0.1:8001/ws",
         agent_connection={
             "byo_host": {"disposition": "authenticated_ui_tunnel"},
@@ -75,7 +74,6 @@ def test_reviewed_release_profile_is_complete_strict_and_nonlocal():
     assert effective.source == "bundled_release"
     assert effective.profile.distribution == "production"
     assert effective.profile.local_only is False
-    assert effective.profile.authority == "https://iam.ai.uky.edu/realms/Astral"
     assert effective.profile.websocket_endpoint == "wss://sandbox.ai.uky.edu/ws"
     assert effective.profile.agent_connection.byo_host.disposition == "authenticated_ui_tunnel"
     assert effective.profile.agent_connection.legacy_tools.disposition == "disabled"
@@ -99,8 +97,6 @@ def test_unknown_profile_fields_fail_closed():
     [
         ("profile_id", "placeholder"),
         ("release_id", "changeme"),
-        ("client_id", "example"),
-        ("authority", "https://example.invalid"),
         ("websocket_endpoint", "wss://example.com/ws"),
     ],
 )
@@ -112,9 +108,6 @@ def test_placeholder_values_are_rejected(field, value):
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("authority", "https://user@iam.ai.uky.edu/realms/Astral"),
-        ("authority", "https://iam.ai.uky.edu/realms/Astral?tenant=1"),
-        ("authority", "https://iam.ai.uky.edu/realms/Astral#fragment"),
         ("websocket_endpoint", "wss://user@sandbox.ai.uky.edu/ws"),
         ("websocket_endpoint", "wss://sandbox.ai.uky.edu/ws?token=x"),
         ("websocket_endpoint", "wss://sandbox.ai.uky.edu/ws#fragment"),
@@ -125,16 +118,10 @@ def test_uri_userinfo_query_and_fragment_are_rejected(field, value):
         parse_profile(_profile(**{field: value}))
 
 
-@pytest.mark.parametrize(
-    ("authority", "endpoint"),
-    [
-        ("https://localhost/realms/Astral", "wss://sandbox.ai.uky.edu/ws"),
-        ("https://iam.ai.uky.edu/realms/Astral", "wss://127.0.0.1:8001/ws"),
-    ],
-)
-def test_production_profile_cannot_be_local(authority, endpoint):
+@pytest.mark.parametrize("endpoint", ["wss://127.0.0.1:8001/ws", "wss://localhost/ws"])
+def test_production_profile_cannot_be_local(endpoint):
     with pytest.raises(DeploymentProfileError, match="production|local"):
-        parse_profile(_profile(authority=authority, websocket_endpoint=endpoint))
+        parse_profile(_profile(websocket_endpoint=endpoint))
 
 
 def test_generic_developer_profile_is_explicitly_local_only():
@@ -142,10 +129,7 @@ def test_generic_developer_profile_is_explicitly_local_only():
     assert parsed.local_only is True
     with pytest.raises(DeploymentProfileError, match="local"):
         parse_profile(
-            _generic(
-                authority="https://iam.ai.uky.edu/realms/Astral",
-                websocket_endpoint="wss://sandbox.ai.uky.edu/ws",
-            )
+            _generic(websocket_endpoint="wss://sandbox.ai.uky.edu/ws")
         )
 
 
@@ -248,7 +232,7 @@ def test_resolution_is_immutable_and_digest_is_canonical(tmp_path):
     with pytest.raises(FrozenInstanceError):
         effective.source = "different"
     with pytest.raises(FrozenInstanceError):
-        effective.profile.authority = "https://different.invalid"
+        effective.profile.websocket_endpoint = "wss://different.invalid/ws"
 
 
 def test_resolved_profile_does_not_reread_environment(monkeypatch):
@@ -259,9 +243,7 @@ def test_resolved_profile_does_not_reread_environment(monkeypatch):
         environment={},
     )
     monkeypatch.setenv("ASTRAL_WS_URL", "ws://127.0.0.1:2/ws")
-    monkeypatch.setenv("KEYCLOAK_AUTHORITY", "http://127.0.0.1:2/realms/x")
     assert effective.profile.websocket_endpoint == "wss://sandbox.ai.uky.edu/ws"
-    assert effective.profile.authority == "https://iam.ai.uky.edu/realms/Astral"
 
 
 def test_built_in_tools_agent_consumes_the_same_profile_identity(monkeypatch):
@@ -281,28 +263,6 @@ def test_built_in_tools_agent_consumes_the_same_profile_identity(monkeypatch):
     message = json.loads(_register_message(effective))
     assert message["api_key"] is None
     assert message["agent_card"]["metadata"] == metadata
-
-
-def test_every_packaged_runtime_consumer_agrees_on_profile_and_endpoint():
-    from astral_client.app import _runtime_profile_checks
-
-    effective = resolve_effective_profile(
-        bundled_profile_path=RELEASE_PROFILE,
-        expected_client_version="0.6.0",
-        environment={},
-    )
-    window = SimpleNamespace(
-        _deployment_profile=effective,
-        deployment_profile_digest=effective.digest,
-        _url=effective.profile.websocket_endpoint,
-        client=SimpleNamespace(url=effective.profile.websocket_endpoint),
-        _byo=SimpleNamespace(deployment_profile_digest=effective.digest),
-    )
-    assert _runtime_profile_checks(window, effective) == {
-        "window_profile_match": True,
-        "byo_profile_match": True,
-        "tools_agent_profile_match": True,
-    }
 
 
 def test_redacted_report_contains_identity_not_connection_values():

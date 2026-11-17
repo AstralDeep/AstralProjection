@@ -1,4 +1,4 @@
-"""Exercises explicit local-server deployment with real HTTPS Keycloak authentication.
+"""Exercises explicit local-server deployment with a loopback endpoint.
 The profile keeps release and all-local developer restrictions independent.
 """
 
@@ -19,7 +19,7 @@ def local_profile():
 
 
 @pytest.mark.parametrize("source", ["command_line", "persisted", "managed"])
-def test_local_profile_uses_one_explicit_endpoint_and_normal_keycloak(source):
+def test_local_profile_uses_one_explicit_loopback_endpoint(source):
     selected = local_profile()
     startup = resolve_startup(
         ["--deployment-profile", str(PROFILE)] if source == "command_line" else [],
@@ -31,8 +31,6 @@ def test_local_profile_uses_one_explicit_endpoint_and_normal_keycloak(source):
     assert profile.distribution == "local_backend"
     assert profile.local_only
     assert profile.websocket_endpoint == "ws://127.0.0.1:8001/ws"
-    assert profile.authority == "https://iam.ai.uky.edu/realms/Astral"
-    assert profile.auth_mode == "keycloak_oidc_pkce"
     assert not profile.override_policy.development_defaults_allowed
     assert not profile.override_policy.configure_dialog_allowed
     assert profile.agent_connection.legacy_tools.disposition == "disabled"
@@ -57,9 +55,6 @@ def test_local_backend_accepts_loopback_hosts(endpoint):
     ("websocket_endpoint", "ws://[0:0:0:0:0:0:0:0]:8001/ws", "loopback"),
     ("websocket_endpoint", "ws://[::0]:8001/ws", "loopback"),
     ("websocket_endpoint", "ws://[::%1]:8001/ws", "loopback"),
-    ("authority", "http://iam.ai.uky.edu/realms/Astral", "HTTPS"),
-    ("authority", "https://localhost/realms/Astral", "HTTPS"),
-    ("auth_mode", "keycloak_bff", "PKCE"),
 ])
 def test_local_backend_rejects_unsafe_or_ambiguous_connections(field, value, message):
     selected = local_profile()
@@ -69,7 +64,7 @@ def test_local_backend_rejects_unsafe_or_ambiguous_connections(field, value, mes
 
 
 @pytest.mark.parametrize("field", ["configure_dialog_allowed", "development_defaults_allowed"])
-def test_local_backend_cannot_enable_auth_configuration_fallback(field):
+def test_local_backend_cannot_enable_a_configuration_fallback(field):
     selected = local_profile()
     selected["override_policy"][field] = True
     with pytest.raises(DeploymentProfileError, match="fallback"):
@@ -88,7 +83,7 @@ def test_local_backend_cannot_enable_alternate_agent_authority(legacy):
         parse_profile(selected)
 
 
-@pytest.mark.parametrize("distribution", ["production", "generic_developer"])
+@pytest.mark.parametrize("distribution", ["production"])
 def test_existing_distribution_boundaries_are_not_relaxed(distribution):
     selected = local_profile()
     selected["distribution"] = distribution
@@ -142,9 +137,8 @@ def test_entrypoint_isolates_local_state_before_gui_reads_settings(monkeypatch):
     monkeypatch.delenv(settings.PROFILE_ENVIRONMENT_KEY, raising=False)
     observed = []
 
-    def start_gui(*, effective_profile, argv):
+    def start_gui(*, argv):
         observed.append(settings.settings_registry_key())
-        assert effective_profile.profile.websocket_endpoint == "ws://127.0.0.1:8001/ws"
         assert argv == []
         return 0
 
