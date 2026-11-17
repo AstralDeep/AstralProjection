@@ -52,6 +52,12 @@ struct MeshSettingsView: View {
                 }
                 .accessibilityIdentifier("mesh.settings.models")
                 NavigationLink {
+                    MeshConnectionsView()
+                } label: {
+                    Label("Connections", systemImage: "link")
+                }
+                .accessibilityIdentifier("mesh.settings.connections")
+                NavigationLink {
                     MeshRemoteMCPView()
                 } label: {
                     Label("Remote MCP tools", systemImage: "network")

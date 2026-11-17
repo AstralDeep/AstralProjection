@@ -1452,6 +1452,24 @@ final class MeshRuntime {
         }
     }
 
+    func proposeConnection(endpoint: String, name: String, local: Bool) async throws -> MeshConnectionProposal {
+        try await call { try await $0.proposeConnection(endpoint: endpoint, name: name, local: local) }
+    }
+
+    func reviewConnection(id: String) async throws -> MeshConnectionProposal {
+        try await call { try await $0.reviewConnection(id: id) }
+    }
+
+    func approveConnection(proposal: String, flow: String, toolNames: [String]) async throws -> MeshConnection {
+        try await call {
+            try $0.approveConnection(proposal: proposal, flow: flow, toolNames: toolNames, clientId: nil)
+        }
+    }
+
+    func removeConnection(id: String) async throws {
+        try await call { try $0.removeConnection(id: id) }
+    }
+
     func setRemoteMCPServer(_ config: MeshRemoteMCPConfig) async throws {
         try await call { try $0.setRemoteMCPServer(config) }
     }
