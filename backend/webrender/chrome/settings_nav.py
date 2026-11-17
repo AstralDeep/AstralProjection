@@ -58,13 +58,6 @@ def render_settings_nav(model, active_surface: str = "", *, identity=None, activ
                 item is current))
     if not parts:
         return ""
-    signout = model.signout
-    parts.append('<div class="astral-settings-nav-spacer" aria-hidden="true"></div>')
-    parts.append('<div class="astral-settings-nav-rule" role="presentation"></div>')
-    parts.append(
-        '<a href="/auth/logout" class="astral-settings-nav-item is-danger" '
-        f'data-menu-key="{esc(signout.key)}">{esc(signout.label)}</a>'
-    )
     return (
         '<nav class="astral-settings-nav" aria-label="Settings sections">'
         f"{_who_block(identity)}{''.join(parts)}</nav>"

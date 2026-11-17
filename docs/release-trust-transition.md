@@ -102,7 +102,7 @@ the transition:
 | Apple signing indirection | `ASTRAL_DEVELOPMENT_TEAM`, `ASTRAL_PROFILE_IOS`, `ASTRAL_PROFILE_MACOS`, `ASTRAL_PROFILE_WATCH` |
 
 The Play Console app, Apple Universal Purchase/App Store Connect records,
-certificates, provisioning profiles, Keycloak redirect registrations, Windows
+certificates, provisioning profiles, Windows
 settings, and local user data stay attached to those identities.
 
 ## Apple build-number cutover

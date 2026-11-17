@@ -3064,15 +3064,28 @@ test("a refresh racing an auth recovery leaves exactly one open socket", async (
   expect(await page.evaluate(() => window.__sockets.filter((socket) => socket.readyState === 1).length)).toBe(1);
 });
 
-test("a signed-out answer during an outage goes to sign-in instead of retrying", async ({ page }) => {
+test("an unavailable session during an outage shows the notice instead of retrying or navigating", async ({ page }) => {
   await page.clock.install();
   await installHarness(page);
   await failReconnects(page);
+  const origin = new URL(page.url()).origin;
   await page.evaluate(() => {
-    window.fetch = async () => ({ json: async () => ({ authenticated: false }) });
+    window.__sessionStatus = null;
+    window.fetch = async (url) => {
+      if (String(url).endsWith("/auth/session")) window.__sessionStatus = 404;
+      return { ok: false, status: 404, json: async () => ({}) };
+    };
   });
   await page.clock.runFor(5000);
-  await page.waitForURL(/\/auth\/login/u);
+  const notice = page.locator("#astral-not-available-notice");
+  await expect(notice).toContainText("Astral runs in the Mac and iPhone apps");
+  await expect(notice.locator("a")).toHaveAttribute("href", "https://astraldeep.github.io/downloads.html");
+  expect(await page.evaluate(() => window.__sessionStatus)).toBe(404);
+  expect(new URL(page.url()).origin).toBe(origin);
+  expect(new URL(page.url()).pathname).not.toMatch(/\/auth\//u);
+  const sockets = await page.evaluate(() => window.__sockets.length);
+  await page.clock.runFor(10 * 60000);
+  expect(await page.evaluate(() => window.__sockets.length)).toBe(sockets);
 });
 
 test("coming back online retries at once instead of waiting out the backoff", async ({ page }) => {

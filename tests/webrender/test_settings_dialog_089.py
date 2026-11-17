@@ -48,12 +48,12 @@ def test_a_footer_stays_below_the_split():
     assert html.index("astral-modal-split") < html.index("astral-modal-footer")
 
 
-def test_the_rail_marks_where_you_are_and_offers_sign_out():
+def test_the_rail_marks_where_you_are_and_links_no_sign_in_or_out():
     model = build_menu_model(["user"])
     html = render_settings_nav(model, settings_entry_surface(model))
     assert 'class="astral-settings-nav"' in html
     assert html.count('aria-current="true"') == 1
-    assert 'href="/auth/logout"' in html
+    assert "/auth/" not in html
     model = build_menu_model(["admin"])
     for tab, key in (("tutorial", "tutorial-admin"), ("quality", "tool-quality")):
         html = render_settings_nav(model, "admin_tools", active_params={"tab": tab})

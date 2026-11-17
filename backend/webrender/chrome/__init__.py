@@ -14,10 +14,7 @@ def render_modal_shell(title: str, body_html: str, surface: str = "",
                        icon: str = "", sections: tuple = (),
                        footer_html: str = "", nav_html: str = "") -> str:
     if mandatory:
-        close_btn = (
-            '<a href="/auth/logout" class="astral-modal-signout text-xs text-astral-muted '
-            'hover:text-astral-text underline underline-offset-2">Sign out</a>'
-        )
+        close_btn = ""
         mandatory_attr = ' data-mandatory="1"'
     else:
         close_btn = (

@@ -42,4 +42,4 @@ Tests cover separate device keys, exact challenge and DPoP signatures, missing
 or damaged custody, wrong owners/servers/keys, bounded replies, denied grants,
 stale UI responses, account changes, and cancellation during persistence. Live
 qualification must use the exact Projection pin with the host's real dispatcher
-and Keycloak staging; synthetic boundary tests do not replace those receipts.
+and a staged node; synthetic boundary tests do not replace those receipts.

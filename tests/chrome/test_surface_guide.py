@@ -9,7 +9,7 @@ from webrender.chrome import guide_content
 from webrender.chrome.surfaces import guide
 
 EXPECTED_SLUGS = [
-    "intro", "signing-in", "dashboard", "chat", "attachments", "voice",
+    "intro", "dashboard", "chat", "attachments", "voice",
     "agents", "components", "feedback", "audit", "tutorial", "tooltips",
     "preferences", "device", "privacy", "admin",
 ]
@@ -151,3 +151,9 @@ def test_html_to_text_preserves_blocks_bullets_and_decodes_entities():
         "<h2>A &amp; B</h2><p>First<br>line</p><ul><li>One</li><li>Two</li></ul>"
     )
     assert converted == "A & B\n\nFirst\nline\n\n• One\n\n• Two"
+
+
+def test_the_guide_names_no_sign_in_page_and_links_none():
+    assert "signing-in" not in [s["slug"] for s in guide_content.SECTIONS]
+    html = "".join(s["body_html"] for s in guide_content.SECTIONS)
+    assert "Signing in" not in html and "single sign-on" not in html

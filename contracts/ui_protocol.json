@@ -3480,7 +3480,7 @@
     },
     "push_navigation": {
       "version": 2,
-      "purpose": "Owner-bound OS push on the phone clients: the destination runtime enrolls the device push token with Deep, presents only what the server selected for the delivery pipeline, suppresses duplicates in the foreground, and resolves taps into authorized sources after Keycloak authentication. A tap never approves an action, executes a tool, or opens a server-unresolved target.",
+      "purpose": "Owner-bound OS push on the phone clients: the destination runtime enrolls the device push token with Deep, presents only what the server selected for the delivery pipeline, suppresses duplicates in the foreground, and resolves taps into authorized sources after the client's own authorization. A tap never approves an action, executes a tool, or opens a server-unresolved target.",
       "clients": {
         "android": "POST_NOTIFICATIONS-gated OS presentation with the astral_push default and astral_push_alerts channels; the provider bridge reports backend availability and supplies token rotations",
         "ios": "UNUserNotificationCenter authorization with APNs registration; alerts presented by the system when backgrounded and suppressed in favor of the in-app banner while connected",
@@ -3523,7 +3523,7 @@
           "precondition": "Every lifecycle callback supplies BOTH expected_token_generation and expected_destination_revision as positive query integers captured from the authoritative destination. A 409 conflict never falls back to unconditional deletion."
         },
         "denials": {
-          "401": "the Keycloak session is gone; authenticate again before any retry",
+          "401": "the client's own authorization is gone; authorize again before any retry",
           "400": "destination_invalid or ack_invalid; the local state is wrong, reset the runtime instead of retrying",
           "403": "the owner is not permitted to hold destinations for this platform; stay unregistered",
           "404": "unknown notification or destination for this owner; stop retrying the id",
@@ -3568,8 +3568,8 @@
         "deduplication": "A bounded notification_id receipt ledger suppresses duplicate locally admitted presentation and acknowledgment within the current owner/device generation. Restart seeds only currently delivered notices after owner/generation admission. Dismissal permits genuine redelivery. APNs OS presentation is outside this ledger and is never an exactly-once guarantee."
       },
       "navigation": {
-        "tap": "a tap first completes the ordinary Keycloak authentication; only then does the client act on the delivery identity",
-        "resolution": "After Keycloak authentication, GET the current owned inbox entry and immutable queued delivery proof for the captured device/server generation. Recheck owner/session/binding after every asynchronous result, then open its source through ordinary load_chat/server-owned notifications actions. The client never navigates from a URL inside the provider message.",
+        "tap": "a tap first completes the client's own authorization; only then does the client act on the delivery identity",
+        "resolution": "After the client's own authorization, GET the current owned inbox entry and immutable queued delivery proof for the captured device/server generation. Recheck owner/session/binding after every asynchronous result, then open its source through ordinary load_chat/server-owned notifications actions. The client never navigates from a URL inside the provider message.",
         "foreground_sources": "the owner's authenticated ws notification frame carries the bounded source ids; a frame naming a conversation other than the active one points at the authorized conversation surfaces and never opens or executes anything on its own",
         "unresolved": "an identity the client cannot resolve to an authorized source leaves the owner on the authenticated surfaces; the client must not fabricate a target",
         "forbidden": "taps never approve actions, execute tools, replay queued commands, or carry component verbs"
