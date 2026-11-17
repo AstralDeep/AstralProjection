@@ -187,9 +187,20 @@ nonisolated struct MeshConnectionRowFacts: Equatable, Identifiable, Sendable {
         host = URLComponents(string: connection.endpoint)?.host ?? connection.endpoint
         hereLine = connection.thisDevice.state == "signed_in" ? "Signed in here" : "Not signed in here"
         otherLines = connection.otherDevices.filter { $0.state == "signed_in" }.map { "Signed in on \($0.label)" }
-        unavailableLine = connection.supportedHere ? nil : "Not available on this device"
+        unavailableLine = Self.unavailable(connection)
         let pending: Bool = !(connection.pendingTools ?? []).isEmpty
         needsReview = pending || MeshConnectionAttentionFacts(connection)?.needsReview == true
+    }
+}
+
+extension MeshConnectionRowFacts {
+    static func unavailable(_ connection: MeshConnection) -> String? {
+        #if os(macOS)
+            return connection.supportedHere ? nil : "Not available on this device"
+        #else
+            if connection.kind == "mcp-stdio" { return "Runs on your Mac" }
+            return connection.supportedHere ? nil : "Not available on this device"
+        #endif
     }
 }
 
