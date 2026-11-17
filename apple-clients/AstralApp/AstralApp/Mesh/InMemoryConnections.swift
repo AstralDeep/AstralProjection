@@ -104,7 +104,6 @@ nonisolated final class InMemoryConnections: @unchecked Sendable {
             change(&card)
             cards[url] = card
             for (id, record) in records where record.proposal.endpoint == url {
-                guard let pinned = record.proposal.card, pinned != Self.facts(card, url: url) else { continue }
                 _ = state(id, "needs_attention", "refused")
             }
         }

@@ -146,7 +146,8 @@ final class MeshConnectionKeyTests: XCTestCase {
         let h = MeshRuntimeHarness()
         defer { h.cleanUp() }
         await h.runtime.open()
-        XCTAssertNil(await h.runtime.saveProvider(baseURL: "https://old.example.test/v1", model: "old", key: fakeKey()))
+        let saved = await h.runtime.saveProvider(baseURL: "https://old.example.test/v1", model: "old", key: fakeKey())
+        XCTAssertNil(saved)
         let before = writes(h)
         await h.runtime.open()
         await h.runtime.refreshProviders()

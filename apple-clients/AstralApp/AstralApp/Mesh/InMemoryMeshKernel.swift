@@ -964,6 +964,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     }
 
     private func addModelProvider(_ connection: MeshConnection, _ models: [String], _ recipients: [String]?) {
+        providerSaveGate()
         lock.withLock {
             let own: String = status.deviceId ?? ""
             providers.append(

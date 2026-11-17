@@ -11,6 +11,32 @@ struct MeshConnectionCard: View {
     let approve: () -> Void
 
     var body: some View {
+        if let change = facts.change { MeshConnectionChangeCard(facts: change) }
+        if let a2a = facts.a2a {
+            Section {
+                MeshConnectionFactRow(label: "Name", value: facts.name, id: "name")
+            } header: {
+                Text(facts.replacesExisting ? "Review the changes" : "Review this agent")
+            }
+            MeshConnectionA2ACard(facts: a2a)
+            MeshConnectionScopesRow(scopes: facts.scopes)
+        } else {
+            MeshConnectionPlainFacts(facts: facts)
+        }
+        MeshConnectionToolsSection(tools: facts.tools, selected: $selectedTools)
+        MeshConnectionLabelSection(phiSource: $phiSource)
+        Section {
+            Button("Approve", action: approve)
+                .disabled(!canApprove)
+                .accessibilityIdentifier(MeshConnectionID.approve)
+        }
+    }
+}
+
+struct MeshConnectionPlainFacts: View {
+    let facts: MeshConnectionCardFacts
+
+    var body: some View {
         Section {
             MeshConnectionFactRow(label: "Name", value: facts.name, id: "name")
             MeshConnectionFactRow(label: "Address", value: facts.address, id: "address")
@@ -20,13 +46,6 @@ struct MeshConnectionCard: View {
             MeshConnectionEgressRow(hosts: facts.egress)
         } header: {
             Text(facts.replacesExisting ? "Review the changes" : "Review this connection")
-        }
-        MeshConnectionToolsSection(tools: facts.tools, selected: $selectedTools)
-        MeshConnectionLabelSection(phiSource: $phiSource)
-        Section {
-            Button("Approve", action: approve)
-                .disabled(!canApprove)
-                .accessibilityIdentifier(MeshConnectionID.approve)
         }
     }
 }

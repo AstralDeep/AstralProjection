@@ -7,17 +7,27 @@ nonisolated struct MeshConnectionAttentionFacts: Equatable, Identifiable, Sendab
     let id: String
     let name: String
     let reason: String?
+    let kind: String
 
     init?(_ connection: MeshConnection) {
         guard connection.attention != nil || connection.thisDevice.state == "needs_attention" else { return nil }
         id = connection.id
         name = connection.name
+        kind = connection.kind
         reason = connection.attention ?? connection.thisDevice.reason
     }
 
-    var line: String { Self.text(reason: reason) }
+    var needsReview: Bool { reason == "scope" || (kind == "a2a" && reason == "refused") }
 
-    var needsReview: Bool { reason == "scope" }
+    var line: String { kind == "a2a" ? Self.agentText(reason: reason) : Self.text(reason: reason) }
+
+    static func agentText(reason: String?) -> String {
+        switch reason {
+        case "refused": return "The agent was refused or its card changed. Review it to continue."
+        case "not_signed_in": return "The agent needs you to sign in or add a key."
+        default: return text(reason: reason)
+        }
+    }
 
     static func text(reason: String?) -> String {
         switch reason {

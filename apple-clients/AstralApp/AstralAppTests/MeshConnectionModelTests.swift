@@ -168,6 +168,8 @@ private final class MeshConnectionServiceStub: MeshConnectionService {
     func approveConnection(proposal: String, flow: String, toolNames: [String]) async throws -> MeshConnection {
         throw MeshKernelError.stopped
     }
+
+    func currentConnection(id: String) -> MeshConnection? { nil }
 }
 
 nonisolated enum MeshConnectionTestSupport {
