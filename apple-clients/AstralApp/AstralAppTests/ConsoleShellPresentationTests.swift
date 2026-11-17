@@ -32,14 +32,14 @@ final class ConsoleShellPresentationTests: XCTestCase {
         )
     }
 
-    private func model(tokenStore: InMemoryTokenStore = InMemoryTokenStore(), server: URL? = nil) throws -> AppModel {
+    private func model(server: URL? = nil) throws -> AppModel {
         let suite = "ConsoleShellPresentationTests.\(UUID().uuidString)"
         suites.append(suite)
         let defaults = UserDefaults(suiteName: suite)!
         if let server { defaults.set(server.absoluteString, forKey: "serverBase") }
         let model = AppModel(
             conversationResumeStore: ConversationResumeStore(defaults: defaults),
-            tokenStore: tokenStore, defaults: defaults)
+            defaults: defaults)
         model.signedIn = true
         model.connected = true
         model.bindConversationAccount(

@@ -16,7 +16,7 @@ final class LLMFirstLoginOperationTests: XCTestCase {
     }
 
     private func modelWithConnection() -> (AppModel, FrameLog) {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.signedIn = true
         model.connected = true
         XCTAssertTrue(model.beginConversationConnection(connection))
@@ -94,7 +94,7 @@ final class LLMFirstLoginOperationTests: XCTestCase {
                 let defaults = try XCTUnwrap(UserDefaults(suiteName: "ComponentRefinementFixture.\(UUID().uuidString)"))
                 return AppModel(
                     conversationResumeStore: ConversationResumeStore(defaults: defaults),
-                    tokenStore: InMemoryTokenStore(), defaults: defaults)
+                    defaults: defaults)
             }
             let rich = models[0]
             let focused = models[1]

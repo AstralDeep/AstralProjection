@@ -61,18 +61,6 @@
       "until": "task 15"
     },
     {
-      "path": "apple-clients/AstralCore/Sources/AstralCore/Configuration.swift",
-      "until": "task 14"
-    },
-    {
-      "path": "apple-clients/MAC-COMPUTER-HOST.md",
-      "until": "task 14"
-    },
-    {
-      "path": "apple-clients/README.md",
-      "until": "task 14"
-    },
-    {
       "path": "windows-client/Launch-AstralDeep-Local.bat",
       "until": "task 16"
     },

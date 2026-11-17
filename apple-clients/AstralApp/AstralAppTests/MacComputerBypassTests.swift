@@ -120,7 +120,7 @@
                 let suite = "BypassReview.\(UUID().uuidString)"
                 suites.append(suite)
                 let model = AppModel(
-                    tokenStore: InMemoryTokenStore(), defaults: try XCTUnwrap(UserDefaults(suiteName: suite)),
+                    defaults: try XCTUnwrap(UserDefaults(suiteName: suite)),
                     computerHost: host)
                 model.signedIn = true
                 model.connected = true
@@ -202,7 +202,7 @@
                     let suite = "LateReview.\(UUID().uuidString)"
                     suites.append(suite)
                     let model = AppModel(
-                        tokenStore: InMemoryTokenStore(), defaults: try XCTUnwrap(UserDefaults(suiteName: suite)),
+                        defaults: try XCTUnwrap(UserDefaults(suiteName: suite)),
                         computerHost: host)
                     model.announcer = { [weak self] in self?.announced.append($0) }
                     let connection = UUID().uuidString.lowercased()
@@ -723,7 +723,7 @@
             let suite = "MacComputerBypassModel.\(UUID().uuidString)"
             let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
             let model = AppModel(
-                conversationResumeStore: ConversationResumeStore(defaults: defaults), tokenStore: InMemoryTokenStore(),
+                conversationResumeStore: ConversationResumeStore(defaults: defaults),
                 defaults: defaults, computerHost: host, processActivity: RecordingActivityScheduler())
             model.signedIn = true
             model.connected = true

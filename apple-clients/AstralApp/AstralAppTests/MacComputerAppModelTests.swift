@@ -11,7 +11,7 @@
     final class MacComputerAppModelTests: XCTestCase {
         func testProjectCapabilityIsAdvertisedWithoutActivatingBeforeServerSelection() throws {
             let model = AppModel(
-                tokenStore: InMemoryTokenStore(), defaults: UserDefaults(suiteName: UUID().uuidString)!)
+                defaults: UserDefaults(suiteName: UUID().uuidString)!)
             model.signedIn = true
             var sent: [JSONValue] = []
             model.outboundTap = { if let frame = try? JSONValue.parse(Data($0.utf8)) { sent.append(frame) } }
@@ -22,7 +22,7 @@
         }
         func testLocalConsentNeverEntersServerOperationQueue() {
             let model = AppModel(
-                tokenStore: InMemoryTokenStore(),
+                
                 defaults: UserDefaults(suiteName: "local-consent-" + UUID().uuidString)!)
             var sent: [String] = []
             model.outboundTap = { sent.append($0) }

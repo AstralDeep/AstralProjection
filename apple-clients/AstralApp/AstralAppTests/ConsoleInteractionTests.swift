@@ -87,7 +87,7 @@ final class ConsoleInteractionTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suite)!
         let model = AppModel(
             conversationResumeStore: ConversationResumeStore(defaults: defaults),
-            tokenStore: InMemoryTokenStore(), defaults: defaults)
+            defaults: defaults)
         model.signedIn = true
         model.connected = true
         model.bindConversationAccount(ConversationAccount(issuer: "https://iam.example.test", subject: "owner")!)
@@ -631,7 +631,7 @@ final class ConsoleInteractionTests: XCTestCase {
             let defaults = UserDefaults(suiteName: suite)!
             let model = AppModel(
                 conversationResumeStore: ConversationResumeStore(defaults: defaults),
-                tokenStore: InMemoryTokenStore(), defaults: defaults, computerHost: fixture.host)
+                defaults: defaults, computerHost: fixture.host)
             XCTAssertTrue(model.macComputerHost === fixture.host)
             XCTAssertTrue(fixture.host.browser === model.macBrowser)
             model.signedIn = true

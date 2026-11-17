@@ -15,7 +15,7 @@ final class ComponentAction088Tests: XCTestCase {
         suites.append(suite)
         let defaults = UserDefaults(suiteName: suite)!
         let model = AppModel(
-            conversationResumeStore: ConversationResumeStore(defaults: defaults), tokenStore: InMemoryTokenStore(),
+            conversationResumeStore: ConversationResumeStore(defaults: defaults),
             defaults: defaults)
         model.signedIn = true
         model.bindConversationAccount(ConversationAccount(issuer: "https://iam.test", subject: "one")!)

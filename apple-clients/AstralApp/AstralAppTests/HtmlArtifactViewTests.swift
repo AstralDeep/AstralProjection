@@ -233,7 +233,7 @@
         }
 
         func testTheViewShowsItsToolbarAndAnUnavailableStateForAnInvalidPayload() throws {
-            let model = AppModel(tokenStore: InMemoryTokenStore())
+            let model = AppModel()
             let theme = ThemeStore()
             for payload in [artifact("<p>ok</p>"), artifact("")] {
                 let view = NSHostingView(

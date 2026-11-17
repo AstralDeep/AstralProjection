@@ -32,7 +32,6 @@ final class KeychainServiceNameTests: XCTestCase {
     }
 
     func testEveryDefaultStoreUsesTheBundleDerivedService() {
-        XCTAssertEqual(KeychainTokenStore().service, KeychainServices.name("tokens"))
         XCTAssertEqual(KeychainMeshKeyStorage().service, KeychainServices.name("mesh"))
         XCTAssertEqual(KeychainUnsentMessageStore().service, KeychainServices.name("unsent-message"))
         XCTAssertEqual(MeshKeychainStore.defaultService, KeychainServices.name("mesh-device-v2"))

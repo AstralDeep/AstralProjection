@@ -32,7 +32,7 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
     }
 
     func testTaskCompletedForOpenChatReloadsIt() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.activeChatId = "c1"
         let log = record(model)
         reduce(model, #"{"type":"task_completed","payload":{"task_id":"t1","chat_id":"c1","status":"completed"}}"#)
@@ -50,7 +50,7 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
     }
 
     private func connectedModel() -> AppModel {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.bindConversationAccount(ConversationAccount(issuer: "https://test.invalid", subject: "background-owner")!)
         model.signedIn = true
         model.connected = true
@@ -150,7 +150,7 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
     }
 
     func testTaskCompletedForOtherChatStaysQuietWithoutReload() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.activeChatId = "c1"
         let log = record(model)
         reduce(model, #"{"type":"task_completed","payload":{"task_id":"t1","chat_id":"c2","status":"completed"}}"#)
@@ -159,7 +159,7 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
     }
 
     func testTaskCompletedWithoutChatIdKeepsIssuingSocketBehavior() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.activeChatId = "c1"
         let log = record(model)
         reduce(model, #"{"type":"task_completed","payload":{"task_id":"t1","status":"completed"}}"#)
@@ -168,7 +168,7 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
     }
 
     func testTaskStartedForOpenChatSetsStatusLine() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.activeChatId = "c1"
         reduce(model, #"{"type":"task_started","payload":{"task_id":"t1","chat_id":"c1","status":"queued"}}"#)
         XCTAssertEqual(model.statusText, "Working in the background…")
@@ -177,7 +177,7 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
     }
 
     func testTaskStartedForOtherChatStaysQuiet() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.activeChatId = "c1"
         reduce(model, #"{"type":"task_started","payload":{"task_id":"t1","chat_id":"c2","status":"queued"}}"#)
         XCTAssertNil(model.statusText)
@@ -186,7 +186,7 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
     }
 
     func testAttachingAnExistingFileStagesItWithoutABannerSentence() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.signedIn = true
         model.connected = true
         model.screen = .surface
@@ -201,7 +201,7 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
     }
 
     func testNotificationForOpenChatBannersAndReloads() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.activeChatId = "c1"
         let log = record(model)
         reduce(
@@ -212,7 +212,7 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
     }
 
     func testNotificationForOtherChatBannersWithoutReload() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.activeChatId = "c1"
         let log = record(model)
         reduce(model, #"{"type":"notification","level":"error","chat_id":"c2","title":"Job failed","body":"boom"}"#)
@@ -222,7 +222,7 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
     }
 
     func testChatAgnosticNotificationNeverReloads() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.activeChatId = "c1"
         let log = record(model)
         reduce(model, #"{"type":"notification","level":"info","title":"Reader live","body":"Ask again"}"#)
@@ -231,7 +231,7 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
     }
 
     func testReconnectReissuesLoadChatForActiveChat() async {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.activeChatId = "c1"
         let log = record(model)
         await model.handle(.connected)
@@ -239,7 +239,7 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
     }
 
     func testFirstConnectWithoutActiveChatSendsNothing() async {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         let log = record(model)
         await model.handle(.connected)
         XCTAssertTrue(log.frames.isEmpty)

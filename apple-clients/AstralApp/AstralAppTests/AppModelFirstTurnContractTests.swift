@@ -50,7 +50,7 @@ final class AppModelFirstTurnContractTests: XCTestCase {
     }
 
     func testSendChatPurgesWelcomeWhenArming() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.canvas = [welcomeHero, welcomeExamples, welcomeHint]
         model.sendChat("what's the weather?")
         XCTAssertTrue(model.pendingReplace)
@@ -58,14 +58,14 @@ final class AppModelFirstTurnContractTests: XCTestCase {
     }
 
     func testSendChatKeepsNonWelcomeComponents() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.canvas = [welcomeHero, workspaceCard]
         model.sendChat("hello")
         XCTAssertEqual(model.canvas.map(\.componentId), ["wc_abc123"])
     }
 
     func testSendEventChatMessagePurgesWelcomeWhenArming() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.canvas = [welcomeHero, welcomeHint]
         model.sendEvent("chat_message", .object(["message": .string("hi")]))
         XCTAssertTrue(model.pendingReplace)
@@ -73,7 +73,7 @@ final class AppModelFirstTurnContractTests: XCTestCase {
     }
 
     func testCommitNeverArchivesWelcomeToHistory() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.canvas = [workspaceCard]
         model.sendChat("first")
         model.canvas = [welcomeHero, workspaceCard]
@@ -85,7 +85,7 @@ final class AppModelFirstTurnContractTests: XCTestCase {
     }
 
     func testCommitSkipsHistoryWhenOnlyWelcomeWasShowing() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.canvas = [welcomeHero, welcomeExamples]
         model.sendChat("first")
         model.canvas = [welcomeHero]
@@ -96,7 +96,7 @@ final class AppModelFirstTurnContractTests: XCTestCase {
     }
 
     func testTextOnlyTurnDropsWelcomeFromKeptCanvas() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.sendChat("just a question")
         model.canvas = [welcomeHero, workspaceCard]
         reduce(model, doneStatus)
@@ -106,7 +106,7 @@ final class AppModelFirstTurnContractTests: XCTestCase {
     }
 
     func testUpsertOnlyTurnDropsWelcomeAtCommit() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.sendChat("just a question")
         model.canvas = [welcomeHero, workspaceCard]
         reduce(model, resultUpsert)
@@ -116,7 +116,7 @@ final class AppModelFirstTurnContractTests: XCTestCase {
     }
 
     func testCommitStillArchivesAPlainCanvas() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.canvas = [workspaceCard]
         model.sendChat("next")
         reduce(model, resultRender)

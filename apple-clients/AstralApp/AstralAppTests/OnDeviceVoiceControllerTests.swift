@@ -65,7 +65,7 @@ final class OnDeviceVoiceControllerTests: XCTestCase {
         let legacy = AppleVoiceSessionController(api: api, media: FakeVoiceMedia())
         let controller = OnDeviceVoiceController(store: store)
         let model = AppModel(
-            tokenStore: InMemoryTokenStore(), voiceController: legacy, onDeviceVoiceController: controller)
+            voiceController: legacy, onDeviceVoiceController: controller)
         await model.activateVoice()
         XCTAssertTrue(controller.showingSetup)
         XCTAssertEqual(api.startCount, 0)

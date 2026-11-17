@@ -30,7 +30,7 @@ final class AppModelLiveCanvasTests: XCTestCase {
     }
 
     func testUpsertAppliesToVisibleCanvasMidTurn() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.canvas = [workspaceCard]
         model.sendChat("go")
         reduce(model, resultUpsert)
@@ -40,7 +40,7 @@ final class AppModelLiveCanvasTests: XCTestCase {
     }
 
     func testUpsertOnlyTurnCommitsTheLiveCanvas() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.canvas = [workspaceCard]
         model.sendChat("go")
         reduce(model, resultUpsert)
@@ -51,7 +51,7 @@ final class AppModelLiveCanvasTests: XCTestCase {
     }
 
     func testRenderStaysBufferedUntilCommit() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.canvas = [workspaceCard]
         model.sendChat("go")
         reduce(model, designedRender)
@@ -63,7 +63,7 @@ final class AppModelLiveCanvasTests: XCTestCase {
     }
 
     func testOpsAfterBufferedRenderMirrorIntoCommit() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.sendChat("go")
         reduce(model, designedRender)
         reduce(model, resultUpsert)
@@ -74,7 +74,7 @@ final class AppModelLiveCanvasTests: XCTestCase {
     }
 
     func testFirstLiveOpClearsSkeletonWithoutEndingTurn() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.sendChat("go")
         XCTAssertTrue(model.showSkeleton)
         reduce(model, resultUpsert)
@@ -83,14 +83,14 @@ final class AppModelLiveCanvasTests: XCTestCase {
     }
 
     func testBufferedRenderKeepsSkeleton() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.sendChat("go")
         reduce(model, designedRender)
         XCTAssertTrue(model.showSkeleton)
     }
 
     func testStreamOpsGoLiveMidTurnAndClearSkeleton() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.sendChat("go")
         reduce(
             model,
@@ -101,7 +101,7 @@ final class AppModelLiveCanvasTests: XCTestCase {
     }
 
     func testNextTurnReArmsSkeleton() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.sendChat("one")
         reduce(model, resultUpsert)
         reduce(model, doneStatus)
@@ -153,7 +153,7 @@ final class AppModelLiveCanvasTests: XCTestCase {
     }
 
     func testContinuityTerminalFramesClearSkeletonAndCommitCanvas() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         armContinuityTurn(model)
         XCTAssertTrue(model.showSkeleton)
 
@@ -193,7 +193,7 @@ final class AppModelLiveCanvasTests: XCTestCase {
     }
 
     func testContinuityDoneWithoutSnapshotReleasesSkeleton() {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         armContinuityTurn(model)
         XCTAssertTrue(model.showSkeleton)
         reduce(model, doneStatus)
@@ -225,7 +225,7 @@ final class AppModelLiveCanvasTests: XCTestCase {
 
     #if os(macOS)
         func testMacTranscriptLayoutSettlesAcrossVoiceCommitChurn() {
-            let model = AppModel(tokenStore: InMemoryTokenStore())
+            let model = AppModel()
             model.turns = (0..<10).map { index in
                 .init(
                     id: "committed-\(index)",

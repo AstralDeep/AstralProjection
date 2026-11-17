@@ -156,7 +156,7 @@
 
         private func boundModel(_ fixture: Fixture, _ owner: ConversationAccount) -> AppModel {
             let model = AppModel(
-                outcomeUnknownStore: fixture.store, tokenStore: InMemoryTokenStore(),
+                outcomeUnknownStore: fixture.store,
                 defaults: fixture.defaults, computerHost: fixture.host)
             model.signedIn = true
             model.bindConversationAccount(owner)

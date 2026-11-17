@@ -22,7 +22,7 @@ final class SettingsAccessibilityTests: XCTestCase {
         suites.append(suite)
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         let model = AppModel(
-            conversationResumeStore: ConversationResumeStore(defaults: defaults), tokenStore: InMemoryTokenStore(),
+            conversationResumeStore: ConversationResumeStore(defaults: defaults),
             defaults: defaults)
         var spoken: [String] = []
         model.announcer = { spoken.append($0) }

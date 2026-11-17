@@ -51,7 +51,7 @@
             let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
             let model = AppModel(
                 conversationResumeStore: ConversationResumeStore(defaults: defaults),
-                tokenStore: InMemoryTokenStore(), defaults: defaults, computerHost: host)
+                defaults: defaults, computerHost: host)
             model.signedIn = true
             model.connected = true
             model.outboundTap = { _ in }

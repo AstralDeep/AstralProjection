@@ -36,9 +36,9 @@ struct AstralApp: App {
 
     init() {
         #if DEBUG
-            let launchModel = FirstLoginUITestFixture.workspaceActionsModel() ?? AppModel()
+            let launchModel = FirstLoginUITestFixture.workspaceActionsModel() ?? AppModel(unsentMessageStore: KeychainUnsentMessageStore())
         #else
-            let launchModel = AppModel()
+            let launchModel = AppModel(unsentMessageStore: KeychainUnsentMessageStore())
         #endif
         _model = State(initialValue: launchModel)
         let coordinator = ConsentCoordinator()

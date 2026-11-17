@@ -29,7 +29,7 @@
             suites.append(suite)
             let model = AppModel(
                 conversationResumeStore: ConversationResumeStore(defaults: defaults),
-                tokenStore: InMemoryTokenStore(), defaults: defaults,
+                defaults: defaults,
                 processActivity: RecordingActivityScheduler())
             model.signedIn = true
             model.connected = true

@@ -23,7 +23,7 @@ final class ChatDeletionConfirmationTests: XCTestCase {
         suites.append(suite)
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         let model = AppModel(
-            conversationResumeStore: ConversationResumeStore(defaults: defaults), tokenStore: InMemoryTokenStore(),
+            conversationResumeStore: ConversationResumeStore(defaults: defaults),
             defaults: defaults)
         let recorder = ChatDeletionRecorder(status: status)
         model.restTransportOverride = { await recorder.respond($0) }

@@ -103,7 +103,7 @@
             for route in ["button", "event", "send", "component"] {
                 let server = ProjectCatalogServer(project: project)
                 let model = AppModel(
-                    tokenStore: InMemoryTokenStore(), defaults: UserDefaults(suiteName: UUID().uuidString)!)
+                    defaults: UserDefaults(suiteName: UUID().uuidString)!)
                 model.projects.bind(
                     scope: "owner/server/device",
                     client: RestClient(
@@ -153,7 +153,7 @@
                 let server = ProjectCatalogServer(project: project)
                 await server.succeedCreations()
                 let model = AppModel(
-                    tokenStore: InMemoryTokenStore(), defaults: UserDefaults(suiteName: UUID().uuidString)!,
+                    defaults: UserDefaults(suiteName: UUID().uuidString)!,
                     onDeviceVoiceController: voice.controller)
                 model.projects.bind(
                     scope: "owner",
@@ -187,7 +187,7 @@
         func testServerChangeRetiresPendingProjectChoiceAndCatalog() async throws {
             let server = ProjectCatalogServer(project: project)
             let model = AppModel(
-                tokenStore: InMemoryTokenStore(), defaults: UserDefaults(suiteName: UUID().uuidString)!)
+                defaults: UserDefaults(suiteName: UUID().uuidString)!)
             model.projects.bind(
                 scope: "owner",
                 client: RestClient(
@@ -217,7 +217,7 @@
                     grants: io.port, persistence: .init(read: { bytes[$0] }, write: { bytes[$0] = $1 }))
                 let host = MacComputerHost(available: false, projectGrants: grants)
                 let model = AppModel(
-                    tokenStore: InMemoryTokenStore(), defaults: UserDefaults(suiteName: UUID().uuidString)!,
+                    defaults: UserDefaults(suiteName: UUID().uuidString)!,
                     computerHost: host)
                 host.beginWorkspaceNegotiation(server: URL(string: "https://example.test")!, account: "owner")
                 host.workspaceNegotiated(projects: true)
@@ -430,7 +430,7 @@
                 grants: io.port, persistence: .init(read: { bytes[$0] }, write: { bytes[$0] = $1 }))
             let host = MacComputerHost(available: false, projectGrants: grants)
             let model = AppModel(
-                tokenStore: InMemoryTokenStore(), defaults: UserDefaults(suiteName: UUID().uuidString)!,
+                defaults: UserDefaults(suiteName: UUID().uuidString)!,
                 computerHost: host)
             host.beginWorkspaceNegotiation(server: URL(string: "https://example.test")!, account: "owner")
             host.workspaceNegotiated(projects: true)
@@ -449,7 +449,7 @@
             defer { try? FileManager.default.removeItem(at: voice.root) }
             let server = ProjectCatalogServer(project: project)
             let model = AppModel(
-                tokenStore: InMemoryTokenStore(), defaults: UserDefaults(suiteName: UUID().uuidString)!,
+                defaults: UserDefaults(suiteName: UUID().uuidString)!,
                 onDeviceVoiceController: voice.controller)
             model.projects.bind(
                 scope: "owner",
@@ -504,7 +504,7 @@
                 await server.succeedCreations()
                 await server.raceCreation(staleSnapshot: stale)
                 let model = AppModel(
-                    tokenStore: InMemoryTokenStore(), defaults: UserDefaults(suiteName: UUID().uuidString)!)
+                    defaults: UserDefaults(suiteName: UUID().uuidString)!)
                 model.projects.bind(
                     scope: "owner",
                     client: RestClient(

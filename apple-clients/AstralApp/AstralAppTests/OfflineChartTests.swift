@@ -273,7 +273,7 @@ final class OfflineChartTests: XCTestCase {
                 contentRect: NSRect(x: 0, y: 0, width: 500, height: transcriptRole == nil ? 430 : 800),
                 styleMask: .borderless, backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
-            let model = AppModel(tokenStore: InMemoryTokenStore())
+            let model = AppModel()
             if let transcriptRole {
                 model.turns = [
                     .init(id: "synthetic-chart", role: transcriptRole, text: "", components: [try component(json)])

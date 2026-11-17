@@ -32,12 +32,12 @@
                 XCTFail("No defaults suite")
                 return AppModel(
                     conversationResumeStore: ConversationResumeStore(),
-                    tokenStore: InMemoryTokenStore(), defaults: .standard)
+                    defaults: .standard)
             }
             addTeardownBlock { UserDefaults().removePersistentDomain(forName: suite) }
             let model = AppModel(
                 conversationResumeStore: ConversationResumeStore(defaults: defaults),
-                tokenStore: InMemoryTokenStore(), defaults: defaults)
+                defaults: defaults)
             model.signedIn = true
             model.connected = true
             XCTAssertTrue(model.beginConversationConnection(connection))

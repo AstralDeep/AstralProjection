@@ -39,7 +39,7 @@
             let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
             let model = AppModel(
                 conversationResumeStore: ConversationResumeStore(defaults: defaults),
-                tokenStore: InMemoryTokenStore(), defaults: defaults)
+                defaults: defaults)
             model.signedIn = true
             model.connected = true
             model.chromeMenu = try XCTUnwrap(ChromeMenuModel.fromJSON(fixture("chrome-console")))

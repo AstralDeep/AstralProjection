@@ -85,7 +85,7 @@
                 let root = FileManager.default.temporaryDirectory.appendingPathComponent(
                     "voice-ui-\(UUID().uuidString)")
                 let voice = OnDeviceVoiceController(store: VoiceModelStore(manifest: manifest, root: root))
-                return AppModel(tokenStore: InMemoryTokenStore(), defaults: defaults, onDeviceVoiceController: voice)
+                return AppModel(defaults: defaults, onDeviceVoiceController: voice)
             }
             if let scenario = requestedScenario(),
                 [.workspaceHistory, .workspaceNavigation, .workspaceNavigationMandatory].contains(scenario)
@@ -96,7 +96,7 @@
                 defaults.set("http://127.0.0.1:1", forKey: "serverBase")
                 return AppModel(
                     conversationResumeStore: ConversationResumeStore(defaults: defaults),
-                    tokenStore: InMemoryTokenStore(), defaults: defaults)
+                    defaults: defaults)
             }
             if let scenario = requestedScenario(),
                 [.workspaceRichResult, .workspaceComponentRefinement].contains(scenario)
@@ -106,7 +106,7 @@
                 else { preconditionFailure("Invalid component UI-test configuration.") }
                 return AppModel(
                     conversationResumeStore: ConversationResumeStore(defaults: defaults),
-                    tokenStore: InMemoryTokenStore(), defaults: defaults)
+                    defaults: defaults)
             }
             return nil
         }

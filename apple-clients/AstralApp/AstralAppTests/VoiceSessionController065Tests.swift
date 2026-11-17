@@ -24,7 +24,7 @@ final class VoiceSessionController065Tests: XCTestCase {
         let api = FakeVoiceAPI()
         let media = FakeVoiceMedia()
         let controller = makeController(api: api, media: media)
-        let model = AppModel(tokenStore: InMemoryTokenStore(), voiceController: controller)
+        let model = AppModel(voiceController: controller)
         defer { controller.close() }
         model.signedIn = true
         model.connected = true
@@ -403,7 +403,7 @@ final class VoiceSessionController065Tests: XCTestCase {
     }
 
     func testAppModelRejectsRetiredVoiceWireWithoutSendingOrChangingConversation() throws {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         model.signedIn = true
         model.connected = true
         XCTAssertTrue(model.beginConversationConnection(connection))
