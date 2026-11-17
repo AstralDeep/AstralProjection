@@ -1,45 +1,14 @@
-// Compact watch renderers for the server's ROTE-degraded component set, falling back to readable text for
-// anything else so the wrist view never renders blank; used by WatchChatView, WatchHomeView, and
-// WatchGuidanceSurfaceView.
+// Compact watch renderers for the component set the paired iPhone relays, falling back to readable text for
+// anything else so the wrist view never renders blank; used by WatchChatView.
 
 import AstralCore
 import SwiftUI
 
 struct WatchComponentView: View {
     let component: AstralComponent
-    var workRead = false
-    var guidance = false
-    var consoleSurface = false
     @Environment(WatchModel.self) var model
-    @State private var expanded = false
 
-    var body: some View {
-        if WorkspaceWelcome.role(of: component) == .more {
-            VStack(alignment: .leading, spacing: 6) {
-                Button {
-                    expanded.toggle()
-                } label: {
-                    Label(component.title ?? "More examples", systemImage: expanded ? "chevron.down" : "chevron.right")
-                }
-                .buttonStyle(.plain)
-                .accessibilityValue(expanded ? "Expanded" : "Collapsed")
-                if expanded {
-                    ForEach(Array(component.children.enumerated()), id: \.offset) { _, child in
-                        WatchComponentView(
-                            component: child, workRead: workRead, guidance: guidance, consoleSurface: consoleSurface)
-                    }
-                }
-            }
-            .font(ConsoleTypography.footnote)
-        } else if WorkspaceWelcome.role(of: component) == .intro {
-            markdown(component.fallbackText)
-                .font(ConsoleTypography.title3.weight(.medium))
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-        } else {
-            rendered
-        }
-    }
+    var body: some View { rendered }
 
     @ViewBuilder
     private var rendered: some View {
@@ -138,8 +107,7 @@ struct WatchComponentView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     titleLine
                     ForEach(Array(component.children.enumerated()), id: \.offset) { _, child in
-                        WatchComponentView(
-                            component: child, workRead: workRead, guidance: guidance, consoleSurface: consoleSurface)
+                        WatchComponentView(component: child)
                     }
                 }
                 .padding(6)
@@ -147,46 +115,8 @@ struct WatchComponentView: View {
             }
         case "divider":
             Divider()
-        case "button":
-            if consoleSurface, model.consoleSurface?.permits(component) == true {
-                Button(component.label ?? "") { model.sendConsoleComponent(component) }
-                    .buttonStyle(.bordered)
-                    .disabled(!model.connected || model.consoleSurfaceGeneration != nil)
-                    .frame(minHeight: model.consolePresentation?.minimumControlHeight ?? 44)
-            } else if guidance, let action = component.raw["action"]?.stringValue,
-                let payload = component.raw["payload"],
-                let request = GuidanceRequest(action: action, payload: payload)
-            {
-                Button {
-                    _ = model.sendGuidanceRequest(action: request.action, payload: request.payload)
-                } label: {
-                    Text(verbatim: component.label ?? "")
-                }
-                .buttonStyle(.bordered)
-                .disabled(component.raw["disabled"]?.boolValue != false || !model.connected)
-                .accessibilityLabel(component.label ?? "")
-            } else if workRead, let payload = component.raw["payload"],
-                WorkReadRequest(payload: payload) != nil || WorkContinuityRequest(component: component) != nil
-            {
-                Button(component.label ?? "") { model.sendWorkComponent(component) }
-                    .buttonStyle(.bordered)
-                    .disabled(component.raw["disabled"]?.boolValue != false || !model.connected)
-                    .accessibilityLabel(component.label ?? "")
-            } else if WorkspaceWelcome.chatMessage(of: component) != nil {
-                Button(component.label ?? component.fallbackText) {
-                    model.sendWelcomeExample(component)
-                }
-                .buttonStyle(.bordered)
-                .accessibilityLabel(component.raw["aria-label"]?.stringValue ?? component.label ?? "Run example")
-            } else {
-                handoff
-            }
-        case "param_picker":
-            if guidance, let form = GuidanceForm(component: component) {
-                WatchGuidanceFormView(form: form)
-            } else {
-                handoff
-            }
+        case "button", "param_picker":
+            handoff
         case "input", "file_upload", "color_picker":
             handoff
         default:
@@ -211,8 +141,7 @@ struct WatchComponentView: View {
     }
 
     private func markdown(_ string: String) -> Text {
-        (workRead || guidance || consoleSurface)
-            ? Text(verbatim: string) : Text(InlineMarkdown.attributed(MarkdownBlocks.plainText(string)))
+        Text(InlineMarkdown.attributed(MarkdownBlocks.plainText(string)))
     }
 
     @ViewBuilder

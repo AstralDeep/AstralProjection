@@ -257,7 +257,7 @@ def test_the_app_model_may_hold_the_controller_but_not_start_it():
 
 
 def test_retired_and_watch_files_cannot_restore_a_hosted_transport():
-    for relative in ["AstralWatch/WatchVoiceREST.swift", "AstralApp/AstralApp/Voice/VoiceSessionController.swift"]:
+    for relative in ["AstralWatch/WatchModel.swift", "AstralApp/AstralApp/Voice/VoiceSessionController.swift"]:
         assert violations(relative, 'path: "api/voice/sessions"', SYMBOLS)
         assert violations(relative, "import LiveKit", SYMBOLS)
         assert violations(relative, "let speech = AVSpeechSynthesizer()", SYMBOLS)

@@ -1,199 +1,115 @@
-// Signed-in watch home: one-tap new conversation, bounded recent history (WatchHistoryRow), visible account
-// identity, and sign-out; launched from AstralWatchApp and the navigation harness.
-// Native navigation keeps a dark backdrop so the system clock stays readable across accepted palettes.
+// The watch home: the chats the paired iPhone relays, with plain states for an iPhone out of reach or no open mesh.
+// Launched from AstralWatchApp and the navigation harness; opening a chat pushes WatchChatView.
 
 import AstralCore
 import SwiftUI
 
 struct WatchNavigationView: View {
-    @Environment(WatchModel.self) private var model
-
     var body: some View {
         NavigationStack {
             WatchHomeView()
                 .containerBackground(.black, for: .navigation)
         }
-        .alert(
-            model.consoleLabel("brand", fallback: "AstralDeep"),
-            isPresented: Binding(
-                get: { model.handoffMessage != nil }, set: { if !$0 { model.handoffMessage = nil } }
-            )
-        ) {
-        } message: {
-            Text(verbatim: model.handoffMessage ?? "")
-        }
-    }
-}
-
-struct WatchOwnerSurfaceNavigation: ViewModifier {
-    @Environment(WatchModel.self) private var model
-
-    func body(content: Content) -> some View {
-        @Bindable var model = model
-        content
-            .navigationDestination(isPresented: $model.workVisible) { WatchWorkSurfaceView() }
-            .navigationDestination(
-                isPresented: Binding(
-                    get: { model.guidanceVisible },
-                    set: { if !$0 { model.closeGuidance() } }
-                )
-            ) { WatchGuidanceSurfaceView() }
     }
 }
 
 struct WatchHomeView: View {
     @Environment(WatchModel.self) var model
+    @State private var chatVisible = false
 
     var body: some View {
-        @Bindable var model = model
         Group {
-            if model.console != nil {
-                WatchConsoleHome()
+            if !model.phoneReachable {
+                WatchStateView(
+                    icon: "iphone.slash", title: "Your iPhone is out of reach",
+                    detail: "Bring it nearby to continue.", identifier: "watch-state-phone-unreachable")
             } else {
-                legacyHome
-                    .modifier(WatchOwnerSurfaceNavigation())
-            }
-        }
-        .navigationDestination(isPresented: $model.consoleChatVisible) { WatchChatView() }
-        .task { await model.refreshRecents() }
-        .overlay(alignment: .bottom) {
-            if !model.connected {
-                Text("Reconnecting…").font(ConsoleTypography.footnote).padding(4)
-                    .background(.ultraThinMaterial, in: Capsule())
-            }
-        }
-    }
-
-    private var legacyHome: some View {
-        List {
-            Section {
-                NavigationLink {
-                    WatchChatView()
-                        .onAppear { model.newConversation() }
-                } label: {
-                    Label("New conversation", systemImage: "plus.bubble.fill")
-                        .font(ConsoleTypography.headline)
-                }
-            }
-
-            ForEach(model.ownerSurfaceControls) { control in
-                Button {
-                    if control.action?.surface == "work" {
-                        model.openWork(control)
-                    } else {
-                        model.openGuidance(control)
-                    }
-                } label: {
-                    Label(control.label ?? control.key, systemImage: control.icon ?? "square.grid.2x2")
-                        .font(ConsoleTypography.headline)
-                }
-                .disabled(!model.connected)
-            }
-
-            if model.recentsLoading || !model.recents.isEmpty {
-                Section {
-                    if model.recentsLoading && model.recents.isEmpty {
-                        ProgressView("Loading your chats…")
-                            .font(ConsoleTypography.footnote)
-                    }
-                    ForEach(model.recents) { chat in
-                        NavigationLink {
-                            WatchChatView()
-                                .onAppear { model.openChat(chat) }
-                        } label: {
-                            WatchHistoryRow(chat: chat)
-                        }
-                    }
-                } header: {
-                    Text(verbatim: model.recentsTitle)
-                }
-            }
-
-            if let status = model.rootStatusText {
-                let accessibility = WatchAccessibility060.rootStatus(status)
-                Section("Live status") {
-                    Label {
-                        Text(status).lineLimit(3)
-                    } icon: {
-                        Image(systemName: "waveform.path.ecg")
-                    }
-                    .font(ConsoleTypography.footnote)
-                    .foregroundStyle(.secondary)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityIdentifier(accessibility.identifier)
-                    .accessibilityLabel(accessibility.name)
-                    .accessibilityValue(accessibility.state)
-                    .accessibilityAddTraits(.updatesFrequently)
-                }
-            }
-
-            Section {
-                Label(
-                    model.accountName.isEmpty ? "Signed in" : model.accountName,
-                    systemImage: "person.crop.circle"
-                )
-                .font(ConsoleTypography.footnote)
-                .foregroundStyle(.secondary)
-                Button(role: .destructive) {
-                    Task { await model.signOut() }
-                } label: {
-                    Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right")
+                switch model.link {
+                case .waiting: WatchWaitingView()
+                case .noMesh: WatchNoMeshView(stopped: false)
+                case .stopped: WatchNoMeshView(stopped: true)
+                case .ready: chatList
                 }
             }
         }
         .navigationTitle("AstralDeep")
+        .navigationDestination(isPresented: $chatVisible) { WatchChatView() }
+        .onChange(of: chatVisible) { _, visible in if !visible { model.closeChat() } }
+    }
 
+    private var chatList: some View {
+        List {
+            if model.chats.isEmpty {
+                Text(model.chatsLoaded ? "No chats yet. Start one on your iPhone." : "Loading your chats…")
+                    .font(ConsoleTypography.footnote)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("watch-chat-list-empty")
+            }
+            ForEach(model.chats, id: \.chatId) { chat in
+                Button {
+                    model.openChat(chat)
+                    chatVisible = true
+                } label: {
+                    WatchHistoryRow(chat: chat)
+                }
+            }
+            if model.omittedChats > 0 {
+                Text("\(model.omittedChats) more on your iPhone")
+                    .font(ConsoleTypography.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .refreshable { model.refreshChats() }
     }
 }
 
-struct WatchWorkSurfaceView: View {
-    @Environment(WatchModel.self) var model
-    @State private var timedOut = false
+struct WatchStateView: View {
+    let icon: String
+    let title: String
+    let detail: String
+    let identifier: String
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                if let update = model.workUpdate {
-                    Text(verbatim: update.title).font(ConsoleTypography.headline)
-                    ForEach(Array(update.components.enumerated()), id: \.offset) { _, component in
-                        WatchComponentView(component: component, workRead: true)
-                    }
-                } else if timedOut || model.workReadFailed || !model.connected {
-                    Text("This view is unavailable. Reconnect and retry.")
-                        .font(ConsoleTypography.footnote)
-                    Button("Retry") { model.retryWorkRead() }.disabled(!model.connected)
-                } else {
-                    Text("Loading…").font(ConsoleTypography.footnote)
-                        .accessibilityIdentifier("work-read-loading")
-                }
-            }.padding(6)
+        VStack(spacing: 6) {
+            Image(systemName: icon).font(ConsoleTypography.title2)
+            Text(title).font(ConsoleTypography.headline).multilineTextAlignment(.center)
+            Text(detail).font(ConsoleTypography.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }
-        .task(id: model.workReadState.generation) {
-            timedOut = false
-            guard let generation = model.workReadState.generation else { return }
-            if await model.expireWorkRead(generation: generation) { timedOut = true }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(identifier)
+    }
+}
+
+struct WatchWaitingView: View {
+    var body: some View {
+        VStack(spacing: 6) {
+            ProgressView()
+            Text("Waiting for your iPhone…").font(ConsoleTypography.footnote).foregroundStyle(.secondary)
         }
-        .onDisappear { model.closeWorkRead() }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("watch-state-waiting")
+    }
+}
+
+struct WatchNoMeshView: View {
+    let stopped: Bool
+
+    var body: some View {
+        WatchStateView(
+            icon: "iphone.gen3",
+            title: stopped ? "Your mesh is stopped" : "Open your mesh on your iPhone",
+            detail: stopped ? "Start it on your iPhone to continue." : "Then your chats appear here.",
+            identifier: "watch-state-no-mesh")
     }
 }
 
 struct WatchHistoryRow: View {
-    let chat: ChatSummary
+    let chat: CompanionChatSummary
 
     var body: some View {
-        HStack(alignment: .top, spacing: 6) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: chat.displayTitle)
-                    .font(ConsoleTypography.footnote)
-                    .lineLimit(2)
-                let time = chat.relativeTime()
-                if !time.isEmpty {
-                    Text(verbatim: time)
-                        .font(ConsoleTypography.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .accessibilityElement(children: .combine)
+        Text(verbatim: chat.title)
+            .font(ConsoleTypography.footnote)
+            .lineLimit(2)
+            .accessibilityElement(children: .combine)
     }
 }
