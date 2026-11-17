@@ -132,34 +132,20 @@ def test_explicit_runtime_namespace_is_preserved_and_invalid_namespace_refused()
 
 def test_entrypoint_isolates_local_state_before_gui_reads_settings(monkeypatch):
     import main as entrypoint
-    from astral_client import app, settings
+    from astral_client import not_available, settings
 
     monkeypatch.delenv(settings.PROFILE_ENVIRONMENT_KEY, raising=False)
     observed = []
 
-    def start_gui(*, argv):
+    def start_gui(argv):
         observed.append(settings.settings_registry_key())
         assert argv == []
         return 0
 
-    monkeypatch.setattr(app, "main", start_gui)
+    monkeypatch.setattr(not_available, "run", start_gui)
     assert entrypoint.main(["--deployment-profile", str(PROFILE)]) == 0
     assert len(observed) == 1
     assert observed[0] != settings.settings_registry_key({})
     assert observed[0].startswith(r"Software\AstralDeep\WindowsClientProfile-")
 
 
-def test_local_window_identifies_target_without_starting_transport(monkeypatch, native_root):
-    from astral_client.app import MainWindow
-
-    monkeypatch.setattr(MainWindow, "_start_integrity_check", lambda self: None)
-    monkeypatch.setattr(MainWindow, "_init_workspace", lambda self: None)
-    profile = resolve_startup(
-        ["--deployment-profile", str(PROFILE)], resource_root=ROOT,
-        expected_client_version="0.6.0", frozen=True, environment={},
-    ).effective_profile
-    window = native_root(MainWindow, profile.profile.websocket_endpoint, "", connect=False,
-                         deployment_profile=profile)
-    assert window.windowTitle() == "AstralDeep — Windows — Local testing"
-    assert window.client.url == profile.profile.websocket_endpoint
-    assert window._byo.deployment_profile_digest == profile.digest

@@ -126,7 +126,7 @@ cancellation tests require no download. `RealModelDiagnosticsTests` preserves th
 optional local timing/memory experiment and runs only when
 `ASTRAL_LFM3_DIAGNOSTICS=1`; it imposes no wall-clock performance gate.
 
-Run `AstralAppTests` and `VoiceConversationUITests`, plus the unsigned macOS and
+Run `AstralAppTests`, plus the unsigned macOS and
 iOS Simulator builds described in [README.md](README.md). Real microphone,
 speaker, interruption, route changes and the full conversation path still need
 device verification with the integrated conversation link; fixtures do not

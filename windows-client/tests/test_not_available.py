@@ -11,7 +11,6 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
-from astral_client import app as appmod  # noqa: E402
 from astral_client import not_available  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,7 +31,7 @@ def test_main_shows_only_the_not_available_window_and_never_touches_the_network(
     monkeypatch.setattr(socket.socket, "connect", refuse)
     monkeypatch.setattr(socket, "create_connection", refuse)
     monkeypatch.setattr(QApplication, "exec", inspect_then_return)
-    assert appmod.main([]) == 0
+    assert not_available.run([]) == 0
     assert len(seen["visible"]) == 1
     assert isinstance(seen["visible"][0], not_available.NotAvailableWindow)
     assert seen["texts"] == ["Astral for Windows is not available yet. Use the Mac or iPhone app."]

@@ -19,7 +19,6 @@
                     sessionLocked: { self.calls.append("locked") },
                     screensSlept: { self.calls.append("slept") },
                     sessionUnlocked: { self.calls.append("unlocked") },
-                    connectionMayHaveChanged: { self.calls.append("connection") },
                     audioConfigurationChanged: { self.calls.append("audio") },
                     willTerminate: { self.calls.append("quit") }),
                 appCenter: appCenter, workspaceCenter: workspaceCenter)
@@ -37,11 +36,9 @@
             workspaceCenter.post(name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
             workspaceCenter.post(name: NSWorkspace.screensDidSleepNotification, object: nil)
             workspaceCenter.post(name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil)
-            workspaceCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
-            appCenter.post(name: NSApplication.didBecomeActiveNotification, object: nil)
             appCenter.post(name: .AVAudioEngineConfigurationChange, object: nil)
             await Task.yield()
-            XCTAssertEqual(calls, ["locked", "slept", "unlocked", "connection", "connection", "audio"])
+            XCTAssertEqual(calls, ["locked", "slept", "unlocked", "audio"])
             withExtendedLifetime(subject) {}
         }
 

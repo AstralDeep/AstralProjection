@@ -1,6 +1,6 @@
 """Native renderer turning orchestrator SDUI component dicts into PySide6 widgets,
 mirroring backend/webrender/renderer.py's field shapes; render(component, ctx) is
-called by app.py's Canvas, with ctx.emit posting ui_events back.
+called by the canvas, with ctx.emit posting ui_events back.
 """
 
 from __future__ import annotations

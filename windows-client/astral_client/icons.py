@@ -1,6 +1,6 @@
 """SVG top-bar icon glyphs for the Windows client, drawn from the same stroked paths as
 the web top bar (webrender/chrome/topbar.py) so both clients render identically
-instead of via emoji fonts; used by app.py's TopBar.
+instead of via emoji fonts.
 """
 
 from __future__ import annotations

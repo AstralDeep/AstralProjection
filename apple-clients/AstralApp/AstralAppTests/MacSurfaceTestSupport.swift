@@ -1,4 +1,4 @@
-// Mounts workbench surfaces in a chosen theme, prepares native window publication, and drives real key and mouse events.
+// Mounts SwiftUI surfaces in a chosen theme, prepares native window publication, and drives real key and mouse events.
 // Named-window checks read the test process's public accessibility tree; PNGs also go to ASTRAL_SETTINGS_SNAPSHOT_DIR when set.
 
 #if os(macOS)
@@ -282,41 +282,10 @@
     enum SurfaceFixtures {
         static let presets = ["graphite", "midnight", "daylight"]
 
-        static func json(_ name: String) throws -> JSONValue {
-            let url = try XCTUnwrap(Bundle(for: SurfaceMount.self).url(forResource: name, withExtension: "json"), name)
-            return try JSONValue.parse(Data(contentsOf: url))
-        }
-
-        static func model(menu: JSONValue? = nil) throws -> (AppModel, String) {
+        static func model() throws -> (AppModel, String) {
             let suite = "MacSurfaceTests.\(UUID().uuidString)"
             let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-            let model = AppModel(
-                conversationResumeStore: ConversationResumeStore(defaults: defaults),
-                defaults: defaults)
-            model.signedIn = true
-            model.connected = true
-            model.bindConversationAccount(
-                try XCTUnwrap(ConversationAccount(issuer: "https://iam.example.test", subject: "surface-owner")))
-            model.chromeMenu = try XCTUnwrap(ChromeMenuModel.fromJSON(menu ?? json("chrome-console")))
-            return (model, suite)
-        }
-
-        static func menu(agents: [JSONValue]) throws -> JSONValue {
-            try replacing(json("chrome-console"), path: ["console", "catalog", "agents"], with: .array(agents))
-        }
-
-        static func replacing(_ value: JSONValue, path: [String], with replacement: JSONValue) throws -> JSONValue {
-            guard let key = path.first else { return replacement }
-            var object = try XCTUnwrap(value.objectValue, key)
-            object[key] = try replacing(object[key] ?? .object([:]), path: Array(path.dropFirst()), with: replacement)
-            return .object(object)
-        }
-
-        static func agent(_ id: String, name: String, description: String, state: String) -> JSONValue {
-            .object([
-                "id": .string(id), "name": .string(name), "description": .string(description),
-                "state": .string(state), "owned": .bool(true),
-            ])
+            return (AppModel(defaults: defaults), suite)
         }
     }
 #endif
