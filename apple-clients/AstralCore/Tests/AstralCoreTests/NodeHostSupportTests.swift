@@ -120,17 +120,16 @@
                 NodeHostAvailability.current(bundle: Bundle(for: NodeHostSupportTests.self), environment: [:]))
         }
 
-        func testPairingClientReadsTheDescriptorAndTheOffer() async throws {
+        private static let descriptorJSON =
+            #"{"format":"astral.node.descriptor/v2","node_id":"astral-node:1","capabilities":["chat","mesh-peer"],"mesh":{"state":"not_enrolled","mesh_id":null,"member_id":null,"requests":true,"owner_binding":{"state":"setup_required","code":"mesh.not_enrolled"}}}"#
+
+        func testPairingClientReadsTheDescriptorAndTheOfferWithOnlyTheSecret() async throws {
             let http = FakeNodeHTTP()
             http.responses = [
+                (Data(Self.descriptorJSON.utf8), 200),
                 (
                     Data(
-                        #"{"node_id":"astral-node:1","capabilities":["chat","mesh-peer"],"mesh":{"state":"not_enrolled","mesh_id":null,"member_id":null,"requests":true}}"#
-                            .utf8), 200
-                ),
-                (
-                    Data(
-                        #"{"pairing":{},"mesh":{"state":"offer","code":"ABCD-1234","payload":"payload-text","expires_ms":1700000000000}}"#
+                        #"{"state":"offer","code":"ABCD-1234","payload":"payload-text","expires_ms":1700000000000}"#
                             .utf8), 200
                 ),
             ]
@@ -138,55 +137,97 @@
             let descriptor = try await client.descriptor()
             XCTAssertTrue(descriptor.canJoinMesh)
             XCTAssertEqual(descriptor.mesh?.state, "not_enrolled")
-            let result = try await client.pairingOffer(bearer: "tok", label: "Sam's Mac")
+            XCTAssertFalse(descriptor.mesh?.hasLegacyOwner ?? true)
+            let result = try await client.pairingOffer(secret: "the-secret")
             XCTAssertEqual(
                 result,
                 .offer(NodePairingOffer(code: "ABCD-1234", payload: "payload-text", expiresMs: 1_700_000_000_000)))
             let request = http.requests[1]
-            XCTAssertEqual(request.url?.absoluteString, "http://127.0.0.1:18700/api/node/pairing")
-            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer tok")
-            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: request.httpBody!) as? [String: Any])
-            XCTAssertEqual(body["label"] as? String, "Sam's Mac")
-            XCTAssertEqual(body["scopes"] as? [String], [])
-            let key = try XCTUnwrap(body["device_key"] as? [String: String])
-            XCTAssertEqual(Set(key.keys), ["kty", "crv", "x"])
-            XCTAssertEqual(key["kty"], "OKP")
-            var padded = key["x"]!.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
-            while padded.count % 4 != 0 { padded += "=" }
-            XCTAssertEqual(Data(base64Encoded: padded)?.count, 32)
+            XCTAssertEqual(request.url?.absoluteString, "http://127.0.0.1:18700/api/node/mesh/offer")
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Astral-Pairing-Secret"), "the-secret")
+            XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+            XCTAssertNil(request.httpBody)
         }
 
-        func testPairingClientReportsJoinedRefusedAndMalformedAnswers() async throws {
+        func testPairingClientReportsJoinedMalformedAndUnknownFormatAnswers() async throws {
             let http = FakeNodeHTTP()
             let client = try NodePairingClient(port: 18_700, http: http)
-            http.responses = [(Data(#"{"mesh":{"state":"enrolled","mesh_id":"m1","member_id":"d1"}}"#.utf8), 200)]
-            let joined = try await client.pairingOffer(bearer: "t", label: "l")
+            http.responses = [(Data(#"{"state":"enrolled","mesh_id":"m1","member_id":"d1"}"#.utf8), 200)]
+            let joined = try await client.pairingOffer(secret: "s")
             XCTAssertEqual(joined, .alreadyJoined(meshId: "m1"))
-            http.responses = [(Data(#"{"mesh":{"state":"not_enrolled","error":"kernel_unavailable"}}"#.utf8), 200)]
-            await assertThrows(NodePairingError.meshUnavailable("kernel_unavailable")) {
-                _ = try await client.pairingOffer(bearer: "t", label: "l")
-            }
-            http.responses = [(Data(), 401)]
-            await assertThrows(NodePairingError.unauthorized) {
-                _ = try await client.pairingOffer(bearer: "t", label: "l")
-            }
-            http.responses = [(Data(#"{"detail":"node_owner_mismatch"}"#.utf8), 403)]
-            await assertThrows(NodePairingError.refused(status: 403, detail: "node_owner_mismatch")) {
-                _ = try await client.pairingOffer(bearer: "t", label: "l")
-            }
-            http.responses = [(Data(#"{"no":"mesh"}"#.utf8), 200)]
-            await assertThrows(NodePairingError.unexpectedResponse) {
-                _ = try await client.pairingOffer(bearer: "t", label: "l")
-            }
-            http.responses = [(Data(#"{"mesh":{"state":"offer","code":"x","payload":""}}"#.utf8), 200)]
-            await assertThrows(NodePairingError.unexpectedResponse) {
-                _ = try await client.pairingOffer(bearer: "t", label: "l")
+            for body in [#"{"no":"state"}"#, #"{"state":"offer","code":"x","payload":""}"#, #"{"state":"other"}"#] {
+                http.responses = [(Data(body.utf8), 200)]
+                await assertThrows(NodePairingError.unexpectedResponse) { _ = try await client.pairingOffer(secret: "s") }
             }
             http.responses = [(Data("x".utf8), 500)]
             await assertThrows(NodePairingError.unexpectedResponse) { _ = try await client.descriptor() }
+            http.responses = [
+                (Data(#"{"format":"astral.node.descriptor/v1","node_id":"n","capabilities":[]}"#.utf8), 200)
+            ]
+            await assertThrows(NodePairingError.unknownDescriptorFormat) { _ = try await client.descriptor() }
             XCTAssertThrowsError(try NodePairingClient(port: 0, http: http)) {
                 XCTAssertEqual($0 as? NodePairingError, .notLoopback)
             }
+        }
+
+        func testEachRefusalCodeMapsToItsOwnError() async throws {
+            let http = FakeNodeHTTP()
+            let client = try NodePairingClient(port: 18_700, http: http)
+            let cases: [(Int, String, NodePairingError)] = [
+                (403, "node.loopback_required", .loopbackRequired),
+                (401, "node.pairing_secret_required", .pairingSecretRequired),
+                (409, "node.legacy_owner", .legacyOwner),
+                (409, "node.owner_mismatch", .ownerMismatch),
+                (429, "node.pairing_rate_limited", .rateLimited),
+                (503, "mesh_unavailable", .meshUnavailable("mesh_unavailable")),
+                (503, "node.owner_binding_unavailable", .refused(status: 503, code: "node.owner_binding_unavailable")),
+                (500, "", .refused(status: 500, code: "")),
+            ]
+            for (status, code, expected) in cases {
+                http.responses = [(Data(#"{"detail":"\#(code)"}"#.utf8), status)]
+                await assertThrows(expected) { _ = try await client.pairingOffer(secret: "s") }
+            }
+            http.responses = [(Data(), 401)]
+            await assertThrows(.refused(status: 401, code: "")) { _ = try await client.pairingOffer(secret: "s") }
+        }
+
+        func testTheLegacyOwnerShowsInTheDescriptorBinding() async throws {
+            let http = FakeNodeHTTP()
+            http.responses = [
+                (
+                    Data(
+                        #"{"format":"astral.node.descriptor/v2","node_id":"n","capabilities":["mesh-peer"],"mesh":{"state":"not_enrolled","owner_binding":{"state":"refused","code":"node.legacy_owner"}}}"#
+                            .utf8), 200
+                )
+            ]
+            let descriptor = try await NodePairingClient(port: 18_700, http: http).descriptor()
+            XCTAssertTrue(descriptor.mesh?.hasLegacyOwner ?? false)
+        }
+
+        func testThePairingSecretIsReadOnlyFromAPrivateFileTheOwnerHolds() throws {
+            let home = NodeHome(root: root.appendingPathComponent("home"))
+            XCTAssertThrowsError(try home.readPairingSecret()) {
+                XCTAssertEqual($0 as? NodePairingError, .pairingSecretUnavailable)
+            }
+            try FileManager.default.createDirectory(at: home.data, withIntermediateDirectories: true)
+            let file = home.pairingSecretFile
+            XCTAssertEqual(file.lastPathComponent, "pairing-secret")
+            func write(_ text: String, mode: Int = 0o600) throws {
+                try text.write(to: file, atomically: true, encoding: .utf8)
+                try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: file.path)
+            }
+            try write("abc_DEF-123\n")
+            XCTAssertEqual(try home.readPairingSecret(), "abc_DEF-123")
+            try write("abc", mode: 0o644)
+            XCTAssertThrowsError(try home.readPairingSecret())
+            try write(" \n")
+            XCTAssertThrowsError(try home.readPairingSecret())
+            try write(String(repeating: "a", count: 300))
+            XCTAssertThrowsError(try home.readPairingSecret())
+            try FileManager.default.removeItem(at: file)
+            try FileManager.default.createSymbolicLink(at: file, withDestinationURL: root.appendingPathComponent("elsewhere"))
+            XCTAssertThrowsError(try home.readPairingSecret())
         }
 
         private func assertThrows(_ expected: NodePairingError, _ body: () async throws -> Void) async {

@@ -1,4 +1,4 @@
-// Prepares the node's private home directory and its personal-profile env file with the pack's own installer script, and builds the launch command for the supervisor.
+// Prepares the node's private home directory and its personal-profile env file with the pack's own installer script, reads the node's pairing secret, and builds the launch command for the supervisor.
 // NodeHostController calls it before the first start, and the env file stays in the home with mode 0600 and never passes through the app's own environment.
 
 #if os(macOS)
@@ -16,6 +16,7 @@
         public init(root: URL) { self.root = root }
 
         public var data: URL { root.appendingPathComponent("data", isDirectory: true) }
+        public var pairingSecretFile: URL { data.appendingPathComponent("pairing-secret") }
         public var envFile: URL { root.appendingPathComponent("node.env") }
         public var logs: URL { root.appendingPathComponent("logs", isDirectory: true) }
         public var launchLog: URL { logs.appendingPathComponent("launch.log") }
@@ -53,6 +54,19 @@
                     "LANG": "en_US.UTF-8",
                 ],
                 workingDirectory: pack, launchLog: launchLog)
+        }
+
+        public func readPairingSecret() throws -> String {
+            let path = pairingSecretFile.path
+            var info = stat()
+            guard lstat(path, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, info.st_uid == getuid(),
+                info.st_mode & 0o077 == 0, info.st_size > 0, info.st_size <= 256,
+                let data = FileManager.default.contents(atPath: path),
+                let text = String(data: data, encoding: .utf8)
+            else { throw NodePairingError.pairingSecretUnavailable }
+            let secret = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !secret.isEmpty else { throw NodePairingError.pairingSecretUnavailable }
+            return secret
         }
 
         static func safeLabel(_ label: String) -> String {

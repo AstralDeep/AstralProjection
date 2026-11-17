@@ -190,16 +190,16 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     func recoverWithWords(words: String, backupPath: String?) throws -> MeshRecovery {
         try record("recoverWithWords", "\(words.split(separator: " ").count)|" + (backupPath ?? ""))
         guard !lock.withLock({ status.hasMesh }) else {
-            throw MeshKernelError.refused(KernelMapping.failureText(code: "mesh.already_enrolled"))
+            throw KernelMapping.refusal("mesh.already_enrolled")
         }
         guard words.split(separator: " ").count == 24 else {
-            throw MeshKernelError.refused(KernelMapping.failureText(code: "recovery.bad_length"))
+            throw KernelMapping.refusal("recovery.bad_length")
         }
         guard words == recoveryWords.joined(separator: " ") else {
-            throw MeshKernelError.refused(KernelMapping.failureText(code: "recovery.bad_checksum"))
+            throw KernelMapping.refusal("recovery.bad_checksum")
         }
         guard backupPath != nil || hasLocalMesh else {
-            throw MeshKernelError.refused(KernelMapping.failureText(code: "recovery.no_roster"))
+            throw KernelMapping.refusal("recovery.no_roster")
         }
         let meshId = "sha256:" + String(repeating: "a", count: 64)
         let deviceId = "sha256:" + String(repeating: "e", count: 64)
@@ -441,7 +441,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     private static let futureSkew: TimeInterval = 300
 
     private static func callerRefusal(_ code: String) -> MeshKernelError {
-        .refused(KernelMapping.failureText(code: code))
+        KernelMapping.refusal(code)
     }
 
     private static func usableLabel(_ label: String) -> Bool {
@@ -818,7 +818,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     func grantTool(name: String, scope: String) throws {
         try record("grantTool", name + "|" + scope)
         guard !name.isEmpty, !scope.isEmpty else {
-            throw MeshKernelError.refused(KernelMapping.failureText(code: "grant.malformed"))
+            throw KernelMapping.refusal("grant.malformed")
         }
         try consentGate()
         lock.withLock { _ = grantsValue.insert(name + "/" + scope) }
@@ -827,7 +827,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     func revokeTool(name: String, scope: String) throws {
         try record("revokeTool", name + "|" + scope)
         guard !name.isEmpty, !scope.isEmpty else {
-            throw MeshKernelError.refused(KernelMapping.failureText(code: "grant.malformed"))
+            throw KernelMapping.refusal("grant.malformed")
         }
         lock.withLock { _ = grantsValue.remove(name + "/" + scope) }
     }
@@ -851,7 +851,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     func resolveHandle(chatId: String, handle: String) throws -> MeshResolvedHandle {
         try record("resolveHandle", chatId + "|" + handle)
         guard let value = lock.withLock({ handlesValue[handle] }) else {
-            throw MeshKernelError.refused(KernelMapping.failureText(code: "handle.no_value"))
+            throw KernelMapping.refusal("handle.no_value")
         }
         return value
     }
@@ -883,17 +883,17 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     func sendRequest(chatId: String, text: String, toMember: String) throws -> String {
         try record("sendRequest", chatId + "|" + toMember + "|" + text)
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw MeshKernelError.refused(KernelMapping.failureText(code: "request.empty"))
+            throw KernelMapping.refusal("request.empty")
         }
         let id = nextId("request")
         let now = clock()
         try lock.withLock {
             guard chats[chatId] != nil else { throw MeshKernelError.notFound }
             guard toMember != status.deviceId else {
-                throw MeshKernelError.refused(KernelMapping.failureText(code: "request.self_addressed"))
+                throw KernelMapping.refusal("request.self_addressed")
             }
             guard members.contains(where: { $0.memberId == toMember }) else {
-                throw MeshKernelError.refused(KernelMapping.failureText(code: "request.unknown_member"))
+                throw KernelMapping.refusal("request.unknown_member")
             }
             requestsValue.append(
                 MeshRequest(
@@ -1120,14 +1120,14 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     ) throws -> String {
         try lock.withLock {
             guard let index = requestsValue.firstIndex(where: { $0.requestId == id }) else {
-                throw MeshKernelError.refused(KernelMapping.failureText(code: "request.unknown"))
+                throw KernelMapping.refusal("request.unknown")
             }
             let request = requestsValue[index]
             guard request.toMember == status.deviceId else {
-                throw MeshKernelError.refused(KernelMapping.failureText(code: "request.not_target"))
+                throw KernelMapping.refusal("request.not_target")
             }
             guard allowed.contains(request.state) else {
-                throw MeshKernelError.refused(KernelMapping.failureText(code: "request." + request.state.rawValue))
+                throw KernelMapping.refusal("request." + request.state.rawValue)
             }
             var editable = EditableRequest(state: request.state, refusalCode: request.refusalCode)
             edit(&editable)

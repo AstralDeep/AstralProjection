@@ -112,7 +112,7 @@ final class RealMeshKernelTests: XCTestCase {
         let mac = try await open("Test Mac")
         let id = "AAECAwQFBgcICQoLDA0ODw"
         XCTAssertThrowsError(try mac.kernel.callerTickets()) {
-            XCTAssertEqual($0 as? MeshKernelError, .refused(KernelMapping.failureText(code: "mesh.not_enrolled")))
+            XCTAssertEqual($0 as? MeshKernelError, KernelMapping.refusal("mesh.not_enrolled"))
         }
         _ = try await createMesh(mac)
         XCTAssertEqual(try mac.kernel.callerTickets(), [])
@@ -122,10 +122,10 @@ final class RealMeshKernelTests: XCTestCase {
                 nodeId: "sha256:" + String(repeating: "0", count: 64), holderKey: holder, label: "Script",
                 toolNames: ["current_datetime"], a2a: false, lifetimeSeconds: 60)
         ) {
-            XCTAssertEqual($0 as? MeshKernelError, .refused(KernelMapping.failureText(code: "caller.wrong_node")))
+            XCTAssertEqual($0 as? MeshKernelError, KernelMapping.refusal("caller.wrong_node"))
         }
         XCTAssertThrowsError(try mac.kernel.revokeCallerTicket(id: "short")) {
-            XCTAssertEqual($0 as? MeshKernelError, .refused(KernelMapping.failureText(code: "caller.malformed")))
+            XCTAssertEqual($0 as? MeshKernelError, KernelMapping.refusal("caller.malformed"))
         }
         try mac.kernel.revokeCallerTicket(id: id)
         try mac.kernel.revokeCallerTicket(id: id)
@@ -135,7 +135,7 @@ final class RealMeshKernelTests: XCTestCase {
                 MeshCallerRequest(
                     authorization: "forged", proof: nil, method: "POST", target: "/a2a", bodySha256: "d", tool: nil))
         ) {
-            XCTAssertEqual($0 as? MeshKernelError, .refused(KernelMapping.failureText(code: "caller.malformed")))
+            XCTAssertEqual($0 as? MeshKernelError, KernelMapping.refusal("caller.malformed"))
         }
         await mac.kernel.stopNetwork()
     }
@@ -232,25 +232,25 @@ final class RealMeshKernelTests: XCTestCase {
         let fresh = try await open("New Mac")
         let wrong = Array(kit.words.reversed()).joined(separator: " ")
         XCTAssertThrowsError(try fresh.kernel.recoverWithWords(words: wrong, backupPath: file.path)) { error in
-            guard case MeshKernelError.refused(let text) = error else { return XCTFail("\(error)") }
+            guard case MeshKernelError.refused(_, let text) = error else { return XCTFail("\(error)") }
             XCTAssertFalse(text.isEmpty)
             XCTAssertFalse(text.contains(kit.words[0] + " " + kit.words[1]))
         }
         XCTAssertThrowsError(try fresh.kernel.recoverWithWords(words: "abandon ability", backupPath: file.path)) {
-            XCTAssertEqual($0 as? MeshKernelError, .refused("Enter all 24 recovery words."))
+            XCTAssertEqual($0 as? MeshKernelError, KernelMapping.refusal("recovery.bad_length"))
         }
         let unknown = (Array(kit.words.dropLast()) + ["zzzzzz"]).joined(separator: " ")
         XCTAssertThrowsError(try fresh.kernel.recoverWithWords(words: unknown, backupPath: file.path)) {
             XCTAssertEqual(
                 $0 as? MeshKernelError,
-                .refused("One of the words is not on the recovery word list. Check the spelling."))
+                KernelMapping.refusal("recovery.unknown_word"))
         }
         XCTAssertThrowsError(
             try fresh.kernel.recoverWithWords(words: kit.words.joined(separator: " "), backupPath: nil)
         ) {
             XCTAssertEqual(
                 $0 as? MeshKernelError,
-                .refused("Choose a backup file. This device holds no copy of your mesh."))
+                KernelMapping.refusal("recovery.no_roster"))
         }
         let notABackup = FileManager.default.temporaryDirectory.appendingPathComponent("junk-" + UUID().uuidString)
         try Data("not a backup".utf8).write(to: notABackup)
@@ -273,7 +273,7 @@ final class RealMeshKernelTests: XCTestCase {
         XCTAssertEqual(try fresh.kernel.chat(chatId: chat).messages.map(\.text), ["remember this"])
         XCTAssertThrowsError(
             try fresh.kernel.recoverWithWords(words: kit.words.joined(separator: " "), backupPath: file.path)
-        ) { XCTAssertEqual($0 as? MeshKernelError, .refused("This device already belongs to a mesh.")) }
+        ) { XCTAssertEqual($0 as? MeshKernelError, KernelMapping.refusal("mesh.already_enrolled")) }
         await fresh.kernel.stopNetwork()
     }
 
@@ -325,13 +325,13 @@ final class RealMeshKernelTests: XCTestCase {
         try await until("the phone to list the chat") { try phone.kernel.listChats().contains { $0.chatId == chat } }
 
         XCTAssertThrowsError(try mac.kernel.sendRequest(chatId: chat, text: "  ", toMember: phoneId)) {
-            XCTAssertEqual($0 as? MeshKernelError, .refused("Write the request first."))
+            XCTAssertEqual($0 as? MeshKernelError, KernelMapping.refusal("request.empty"))
         }
         XCTAssertThrowsError(try mac.kernel.sendRequest(chatId: chat, text: "hi", toMember: macId)) {
-            XCTAssertEqual($0 as? MeshKernelError, .refused("Choose another device. This one cannot ask itself."))
+            XCTAssertEqual($0 as? MeshKernelError, KernelMapping.refusal("request.self_addressed"))
         }
         XCTAssertThrowsError(try mac.kernel.sendRequest(chatId: chat, text: "hi", toMember: "sha256:nobody")) {
-            XCTAssertEqual($0 as? MeshKernelError, .refused("That device is not in your mesh."))
+            XCTAssertEqual($0 as? MeshKernelError, KernelMapping.refusal("request.unknown_member"))
         }
         XCTAssertTrue(try mac.kernel.chatRequests(chatId: chat).isEmpty)
 
@@ -347,7 +347,7 @@ final class RealMeshKernelTests: XCTestCase {
         XCTAssertEqual(seen.chatId, chat)
         XCTAssertTrue(try mac.kernel.pendingRequestsForMe().isEmpty)
         XCTAssertThrowsError(try mac.kernel.claimRequest(requestId: first)) {
-            XCTAssertEqual($0 as? MeshKernelError, .refused("That request is addressed to another device."))
+            XCTAssertEqual($0 as? MeshKernelError, KernelMapping.refusal("request.not_target"))
         }
 
         try phone.kernel.claimRequest(requestId: first)
@@ -367,7 +367,8 @@ final class RealMeshKernelTests: XCTestCase {
         let refused = try XCTUnwrap(try mac.kernel.chatRequests(chatId: chat).first { $0.requestId == second })
         XCTAssertEqual(refused.refusalCode, "request.busy")
         XCTAssertThrowsError(try phone.kernel.refuseRequest(requestId: second, code: "request.busy")) {
-            XCTAssertEqual($0 as? MeshKernelError, .refused("That request can no longer change."))
+            XCTAssertEqual(($0 as? MeshKernelError)?.message, "That request can no longer change.")
+            XCTAssertEqual(($0 as? MeshKernelError)?.code?.hasPrefix("request."), true)
         }
         XCTAssertThrowsError(try phone.kernel.refuseRequest(requestId: first, code: "Not A Code")) { _ in }
         XCTAssertTrue(try phone.kernel.pendingRequestsForMe().isEmpty)
@@ -407,9 +408,9 @@ final class RealMeshKernelTests: XCTestCase {
         XCTAssertEqual(denied as? MeshKernelError, .consentDenied)
         mac.presenter.approve = true
         let malformed = await grant("", "mesh_read")
-        XCTAssertEqual(malformed as? MeshKernelError, .refused("That tool name or permission could not be used."))
+        XCTAssertEqual(malformed as? MeshKernelError, KernelMapping.refusal("grant.malformed"))
         XCTAssertThrowsError(try kernel.revokeTool(name: "files.read", scope: "")) {
-            XCTAssertEqual($0 as? MeshKernelError, .refused("That tool name or permission could not be used."))
+            XCTAssertEqual($0 as? MeshKernelError, KernelMapping.refusal("grant.malformed"))
         }
         await kernel.stopNetwork()
     }
@@ -484,7 +485,7 @@ final class RealMeshKernelTests: XCTestCase {
             _ = try await open("Mac", mailbox: "not an address", reusing: first)
             XCTFail("a malformed mailbox must be refused")
         } catch {
-            XCTAssertEqual(error as? MeshKernelError, .refused("That mailbox address was not accepted."))
+            XCTAssertEqual(error as? MeshKernelError, KernelMapping.refusal("config.mailbox"))
         }
 
         let peerKey = try first.keys.operationsPublicKey().base64EncodedString()
@@ -564,7 +565,8 @@ final class RealMeshKernelTests: XCTestCase {
             _ = try await mac.kernel.act(surfaceId: "sha256:none", componentId: "c", capability: "cap", args: [:])
             XCTFail("an unknown surface must be refused")
         } catch {
-            guard case MeshKernelError.refused(let text) = error else { return XCTFail("\(error)") }
+            guard case MeshKernelError.refused(let code, let text) = error else { return XCTFail("\(error)") }
+            XCTAssertEqual(code, "surface.unknown_surface")
             XCTAssertTrue(text.contains("surface.unknown_surface"))
         }
         do {

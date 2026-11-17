@@ -1,4 +1,4 @@
-// Drives the Settings control "Run a node on this Mac": it offers the pack with its size, downloads and installs it, supervises the node and starts the pairing into the owner's mesh.
+// Drives the Settings control "Run a node on this Mac": it offers the pack with its size, downloads and installs it, supervises the node and starts the pairing into the owner's mesh with no sign-in.
 // The app's Mac settings view binds to it, and the quit handler calls applicationWillTerminate so the node stops unless Keep running is on.
 
 #if os(macOS)
@@ -94,6 +94,7 @@
         public private(set) var phase: Phase
         public private(set) var descriptor: NodeDescriptor?
         public private(set) var message: String?
+        public private(set) var legacyOwnerRefused = false
         public var packURLText: String { didSet { environment.defaults.set(packURLText, forKey: Self.packURLKey) } }
         public var keepRunning: Bool { didSet { environment.defaults.set(keepRunning, forKey: Self.keepRunningKey) } }
 
@@ -205,6 +206,7 @@
             self.supervisor = nil
             currentPort = nil
             descriptor = nil
+            legacyOwnerRefused = false
             try? FileManager.default.removeItem(at: home.runRecord)
             phase = installed.map { .installed(version: $0.version) } ?? .notInstalled
         }
@@ -223,14 +225,25 @@
             try? FileManager.default.removeItem(at: home.runRecord)
         }
 
-        public func requestPairing(ownerToken: () async throws -> String) async throws -> NodePairingResult {
+        public var hasLegacyOwner: Bool { legacyOwnerRefused || descriptor?.mesh?.hasLegacyOwner == true }
+
+        public func requestPairing() async throws -> NodePairingResult {
             guard let port = currentPort, isRunning else { throw NodePairingError.meshUnavailable("node_not_running") }
             let client = try NodePairingClient(port: port, http: environment.http)
             let descriptor = try await client.descriptor()
             self.descriptor = descriptor
             guard descriptor.canJoinMesh else { throw NodePairingError.meshUnavailable("mesh_peer_unavailable") }
-            let token = try await ownerToken()
-            return try await client.pairingOffer(bearer: token, label: environment.meshLabel)
+            if descriptor.mesh?.hasLegacyOwner == true { throw NodePairingError.legacyOwner }
+            do {
+                do {
+                    return try await client.pairingOffer(secret: try home.readPairingSecret())
+                } catch NodePairingError.pairingSecretRequired {
+                    return try await client.pairingOffer(secret: try home.readPairingSecret())
+                }
+            } catch NodePairingError.legacyOwner {
+                legacyOwnerRefused = true
+                throw NodePairingError.legacyOwner
+            }
         }
 
         private func begin(port: Int, adopting handle: NodeProcessHandle?) async {
@@ -288,6 +301,20 @@
                 return nil
             }
             return record
+        }
+
+        public static func describePairing(_ error: Error) -> String? {
+            switch error as? NodePairingError {
+            case .legacyOwner: return nil
+            case .pairingSecretUnavailable: return "The node has no pairing code yet. Wait a moment and try again."
+            case .pairingSecretRequired: return "The node's pairing code changed. Try again."
+            case .loopbackRequired: return "The node only pairs with a request from this Mac."
+            case .ownerMismatch: return "This node belongs to a different mesh."
+            case .rateLimited: return "Too many pairing attempts. Wait a minute and try again."
+            case .unknownDescriptorFormat: return "This node is too old. Update the node pack."
+            case .meshUnavailable(let code): return "The node cannot join a mesh yet (\(code))."
+            case .notLoopback, .refused, .unexpectedResponse, nil: return "The node refused the request."
+            }
         }
 
         static func describe(_ error: Error) -> String {

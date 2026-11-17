@@ -17,12 +17,12 @@
             defaults: UserDefaults = .standard, available: Bool = MacNodeHostStore.defaultAvailability(),
             root: URL = MacNodeHostStore.defaultRoot()
         ) {
-            let config = NodeHostSignIn.defaultConfig()
             let bundle = Bundle.main
+            // The pack's installer script still requires these two values, and a personal node ignores them.
             let environment = NodeHostEnvironment(
                 root: root, available: available,
-                issuer: config.authority.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/")),
-                clientId: config.clientId, meshLabel: (Host.current().localizedName ?? "Mac") + " node",
+                issuer: AstralConfig.keycloakAuthority.trimmingCharacters(in: CharacterSet(charactersIn: "/")),
+                clientId: AstralConfig.macosClientId, meshLabel: (Host.current().localizedName ?? "Mac") + " node",
                 defaults: defaults,
                 defaultPackURL: bundle.object(forInfoDictionaryKey: "ASTRALNodePackURL") as? String ?? "",
                 pinnedDescriptorSha256: bundle.object(forInfoDictionaryKey: "ASTRALNodePackSHA256") as? String)
@@ -47,11 +47,6 @@
             let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             return support.appendingPathComponent(Bundle.main.bundleIdentifier ?? "AstralDeep", isDirectory: true)
                 .appendingPathComponent("node", isDirectory: true)
-        }
-
-        static func ownerToken() async throws -> String {
-            let web = await MainActor.run { SystemNodeHostWebAuthenticator() }
-            return try await NodeHostSignIn(web: web).signIn(nonce: PKCE.makeVerifier())
         }
     }
 #endif

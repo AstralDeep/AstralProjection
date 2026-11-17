@@ -59,7 +59,7 @@ final class MeshCallerTicketTests: XCTestCase {
     ) {
         XCTAssertThrowsError(try work(), file: file, line: line) { error in
             XCTAssertEqual(
-                error as? MeshKernelError, .refused(KernelMapping.failureText(code: code)), file: file, line: line)
+                error as? MeshKernelError, KernelMapping.refusal(code), file: file, line: line)
         }
     }
 
@@ -114,7 +114,7 @@ final class MeshCallerTicketTests: XCTestCase {
                 KernelError.InvalidInput(code: code, message: ""), KernelError.Denied(code: code, message: ""),
             ] {
                 XCTAssertEqual(
-                    KernelMapping.error(error) as? MeshKernelError, .refused(KernelMapping.failureText(code: code)))
+                    KernelMapping.error(error) as? MeshKernelError, KernelMapping.refusal(code))
             }
         }
         XCTAssertEqual(
@@ -214,7 +214,7 @@ final class MeshCallerTicketTests: XCTestCase {
         let kernel = kernel()
         for id in ["", "short", ticketId + "A", "AAECAwQFBgcICQoLDA0ODx", "AAECAwQFBgcICQoLDA0OD+"] {
             XCTAssertThrowsError(try kernel.revokeCallerTicket(id: id), id) {
-                XCTAssertEqual($0 as? MeshKernelError, .refused(KernelMapping.failureText(code: "caller.malformed")))
+                XCTAssertEqual($0 as? MeshKernelError, KernelMapping.refusal("caller.malformed"))
             }
         }
     }
