@@ -1,4 +1,4 @@
-// Builds the Mac app's node host controller once, points it at Application Support, and stops the node when the app quits unless Keep running is on.
+// Builds the Mac app's node host controller once, points it at Application Support and the per-user launchd agent, and stops the node when the app quits unless Keep running is on.
 // AstralApp owns one instance, MeshSettingsView shows its controls, and the node pack is offered only in the direct-download build.
 
 #if os(macOS)
@@ -18,10 +18,15 @@
             root: URL = MacNodeHostStore.defaultRoot()
         ) {
             let bundle = Bundle.main
+            let label = NodeHome.launchAgentLabel(bundleIdentifier: bundle.bundleIdentifier ?? "AstralDeep")
+            let agents = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/LaunchAgents", isDirectory: true)
+            let launcher = LaunchdNodeProcessLauncher(
+                label: label, plist: NodeHome.launchAgentPlist(label: label, directory: agents))
             let environment = NodeHostEnvironment(
                 root: root, available: available,
                 meshLabel: (Host.current().localizedName ?? "Mac") + " node",
-                defaults: defaults,
+                defaults: defaults, launcher: launcher,
                 defaultPackURL: bundle.object(forInfoDictionaryKey: "ASTRALNodePackURL") as? String ?? "",
                 pinnedDescriptorSha256: bundle.object(forInfoDictionaryKey: "ASTRALNodePackSHA256") as? String)
             controller = NodeHostController(environment: environment)

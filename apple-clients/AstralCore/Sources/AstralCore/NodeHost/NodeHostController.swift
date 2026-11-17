@@ -2,6 +2,7 @@
 // The app's Mac settings view binds to it, and the quit handler calls applicationWillTerminate so the node stops unless Keep running is on.
 
 #if os(macOS)
+    import Darwin
     import Foundation
     import Observation
 
@@ -36,6 +37,7 @@
         public var runInstaller: @Sendable (URL, [String]) throws -> (status: Int32, output: String)
         public var defaultPackURL: String
         public var pinnedDescriptorSha256: String?
+        public var processPath: @Sendable (Int32) -> String?
 
         public init(
             root: URL, available: Bool, meshLabel: String,
@@ -49,7 +51,8 @@
             freePort: @escaping @Sendable () throws -> Int = NodeHome.freeLoopbackPort,
             runInstaller: @escaping @Sendable (URL, [String]) throws -> (status: Int32, output: String) =
                 NodeHome.runInstaller,
-            defaultPackURL: String = "", pinnedDescriptorSha256: String? = nil
+            defaultPackURL: String = "", pinnedDescriptorSha256: String? = nil,
+            processPath: @escaping @Sendable (Int32) -> String? = NodeHostEnvironment.executablePath
         ) {
             self.root = root
             self.available = available
@@ -65,6 +68,14 @@
             self.runInstaller = runInstaller
             self.defaultPackURL = defaultPackURL
             self.pinnedDescriptorSha256 = pinnedDescriptorSha256
+            self.processPath = processPath
+        }
+
+        public static func executablePath(of pid: Int32) -> String? {
+            var buffer = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+            let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+            guard length > 0 else { return nil }
+            return String(cString: buffer)
         }
     }
 
@@ -132,7 +143,9 @@
                 phase = .notInstalled
                 return
             }
-            if supervisor == nil, let record = adoptableRecord() {
+            if supervisor == nil, environment.launcher.ownsProcesses {
+                await resumeUnderLaunchd(installed)
+            } else if supervisor == nil, let record = adoptableRecord() {
                 await begin(port: record.port, adopting: AdoptedNodeProcess(pid: record.pid, sleep: environment.sleep))
             } else if supervisor == nil {
                 phase = .installed(version: installed.version)
@@ -229,6 +242,7 @@
         public func stop() async {
             guard let supervisor else { return }
             await supervisor.stop()
+            environment.launcher.teardown()
             self.supervisor = nil
             currentPort = nil
             descriptor = nil
@@ -239,6 +253,7 @@
         public func remove() async {
             environment.defaults.set(true, forKey: Self.autoOfferedKey)
             await stop()
+            environment.launcher.teardown()
             try? await installer.remove()
             installed = nil
             phase = .notInstalled
@@ -247,6 +262,7 @@
         public func applicationWillTerminate() {
             guard let supervisor else { return }
             if keepRunning { return }
+            environment.launcher.teardown()
             supervisor.stopSynchronously()
             try? FileManager.default.removeItem(at: home.runRecord)
         }
@@ -267,7 +283,7 @@
         private func begin(port: Int, adopting handle: NodeProcessHandle?) async {
             guard let installed else { return }
             currentPort = port
-            let spec = home.launchSpec(pack: installed.root, port: port)
+            let spec = home.launchSpec(pack: installed.root, port: port, keepRunning: keepRunning)
             let supervisor = NodeSupervisor(
                 spec: spec, port: port, launcher: environment.launcher, probe: environment.probe,
                 policy: environment.policy, sleep: environment.sleep
@@ -291,7 +307,9 @@
                 Task { await refreshDescriptor(port: port) }
             case .backingOff(_, let seconds, _):
                 phase = .backingOff("The node stopped. Restarting in \(Int(seconds.rounded(.up))) s.")
-            case .failed(let reason): phase = .failed(reason)
+            case .failed(let reason):
+                environment.launcher.teardown()
+                phase = .failed(reason)
             }
         }
 
@@ -306,6 +324,49 @@
             guard let data = try? encoder.encode(record) else { return }
             try? data.write(to: home.runRecord, options: .atomic)
             try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: home.runRecord.path)
+        }
+
+        private func resumeUnderLaunchd(_ installed: InstalledNodePack) async {
+            if let adoption = environment.launcher.adoptable() {
+                await begin(port: adoption.port, adopting: adoption.handle)
+                return
+            }
+            guard let record = readRunRecord() else {
+                phase = .installed(version: installed.version)
+                return
+            }
+            try? FileManager.default.removeItem(at: home.runRecord)
+            guard kill(record.pid, 0) == 0 else {
+                phase = .installed(version: installed.version)
+                return
+            }
+            guard let path = environment.processPath(record.pid), Self.isInside(path, root: installed.root) else {
+                message = "A process outside the node pack holds the recorded node, so it was left running."
+                phase = .installed(version: installed.version)
+                return
+            }
+            let legacy = AdoptedNodeProcess(pid: record.pid, sleep: environment.sleep)
+            legacy.terminate()
+            if await !legacy.waitForExit(timeout: environment.policy.terminationGrace) {
+                legacy.kill()
+                _ = await legacy.waitForExit(timeout: 2)
+            }
+            do { await begin(port: try environment.freePort(), adopting: nil) } catch {
+                phase = .failed(Self.describe(error))
+            }
+        }
+
+        static func isInside(_ path: String, root: URL) -> Bool {
+            let resolved = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+            let base = root.resolvingSymlinksInPath().path
+            return resolved.hasPrefix(base + "/")
+        }
+
+        private func readRunRecord() -> NodeRunRecord? {
+            guard let data = try? Data(contentsOf: home.runRecord) else { return nil }
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            return try? decoder.decode(NodeRunRecord.self, from: data)
         }
 
         private func adoptableRecord() -> NodeRunRecord? {
