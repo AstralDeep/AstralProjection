@@ -24,6 +24,12 @@ struct MeshConnectionsView: View {
                 }
                 .accessibilityIdentifier(MeshConnectionID.add)
                 NavigationLink {
+                    MeshConnectionA2AAddView()
+                } label: {
+                    Label("Add an agent", systemImage: "person.2")
+                }
+                .accessibilityIdentifier(MeshConnectionID.addAgent)
+                NavigationLink {
                     MeshConnectionKeyView(target: .server)
                 } label: {
                     Label("Add a server with a key", systemImage: "key")
@@ -91,8 +97,8 @@ struct MeshConnectionRow: View {
             }
             MeshConnectionSignInStatus(signIn: signIn, connectionId: facts.id)
             MeshConnectionRowActions(
-                facts: facts, canSignIn: connection.supportedHere && connection.scheme == "oauth",
-                canKey: connection.supportedHere && connection.scheme == "key", signIn: signIn, remove: remove)
+                facts: facts, canSignIn: MeshConnectionSignInRoute.of(connection) == .browser,
+                canKey: MeshConnectionSignInRoute.of(connection) == .key, signIn: signIn, remove: remove)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(MeshConnectionID.row(facts.id))

@@ -9,9 +9,12 @@ protocol MeshConnectionService: AnyObject {
     func proposeConnection(endpoint: String, name: String, local: Bool) async throws -> MeshConnectionProposal
     func reviewConnection(id: String) async throws -> MeshConnectionProposal
     func approveConnection(proposal: String, flow: String, toolNames: [String]) async throws -> MeshConnection
+    func currentConnection(id: String) -> MeshConnection?
 }
 
-extension MeshRuntime: MeshConnectionService {}
+extension MeshRuntime: MeshConnectionService {
+    func currentConnection(id: String) -> MeshConnection? { connections.first { $0.id == id } }
+}
 
 nonisolated struct MeshConnectionCardFacts: Equatable, Sendable {
     struct Tool: Identifiable, Equatable, Sendable {
@@ -30,8 +33,10 @@ nonisolated struct MeshConnectionCardFacts: Equatable, Sendable {
     let egress: [String]
     let replacesExisting: Bool
     let isLocal: Bool
+    let a2a: MeshA2ACardFacts?
+    let change: MeshA2AChangeFacts?
 
-    init(_ proposal: MeshConnectionProposal) {
+    init(_ proposal: MeshConnectionProposal, previous: MeshConnection? = nil) {
         proposalId = proposal.proposal
         name = proposal.name
         address = proposal.endpoint
@@ -42,6 +47,8 @@ nonisolated struct MeshConnectionCardFacts: Equatable, Sendable {
         egress = proposal.egress
         replacesExisting = proposal.replaces != nil
         isLocal = proposal.local
+        a2a = MeshA2ACardFacts(proposal)
+        change = MeshA2AChangeFacts(proposal, previous: previous)
     }
 
     static func shortHash(_ hash: String) -> String {
@@ -65,6 +72,7 @@ final class MeshConnectionAddModel {
     private(set) var phase: Phase = .entering
     private(set) var facts: MeshConnectionCardFacts?
     private(set) var problem: String?
+    private var previous: MeshConnection?
     var endpoint = ""
     var name = ""
     var local = false
@@ -111,6 +119,7 @@ final class MeshConnectionAddModel {
         guard phase == .entering else { return }
         phase = .proposing
         problem = nil
+        previous = service.currentConnection(id: id)
         do {
             show(try await service.reviewConnection(id: id))
         } catch {
@@ -149,7 +158,7 @@ final class MeshConnectionAddModel {
     }
 
     private func show(_ proposal: MeshConnectionProposal) {
-        let card = MeshConnectionCardFacts(proposal)
+        let card = MeshConnectionCardFacts(proposal, previous: previous)
         facts = card
         phiSource = card.replacesExisting && proposal.flowHint == "phi"
         selectedTools = Set(card.tools.map(\.name))
@@ -179,7 +188,8 @@ nonisolated struct MeshConnectionRowFacts: Equatable, Identifiable, Sendable {
         hereLine = connection.thisDevice.state == "signed_in" ? "Signed in here" : "Not signed in here"
         otherLines = connection.otherDevices.filter { $0.state == "signed_in" }.map { "Signed in on \($0.label)" }
         unavailableLine = connection.supportedHere ? nil : "Not available on this device"
-        needsReview = !(connection.pendingTools ?? []).isEmpty
+        let pending: Bool = !(connection.pendingTools ?? []).isEmpty
+        needsReview = pending || MeshConnectionAttentionFacts(connection)?.needsReview == true
     }
 }
 
@@ -233,6 +243,10 @@ nonisolated enum MeshConnectionID {
     static let keyFormat = "mesh.connections.key.format"
     static let addServerKey = "mesh.connections.add.key"
     static let addHttpApi = "mesh.connections.add.api"
+    static let addAgent = "mesh.connections.add.agent"
+    static let a2aUnsigned = "mesh.connections.a2a.unsigned"
+    static let a2aBlocked = "mesh.connections.a2a.blocked"
+    static let cardAddress = "mesh.connections.a2a.address"
 
     static func fact(_ id: String) -> String { "mesh.connections.card.\(id)" }
     static func tool(_ name: String) -> String { "mesh.connections.tool.\(name)" }

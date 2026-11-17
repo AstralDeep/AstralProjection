@@ -161,7 +161,7 @@ final class MeshProviderSharingTests: XCTestCase {
         editor.key = "new-draft-key"
         editor.model = "new-draft-model"
         await editor.save(in: h.runtime)
-        XCTAssertEqual(h.kernel.calls.filter { $0.name == "setModelProvider" }.count, 1)
+        XCTAssertEqual(h.kernel.calls.filter { $0.name == "approveConnection" }.count, 1)
         gate.release()
         await saving.value
         XCTAssertEqual(editor.key, "new-draft-key")
