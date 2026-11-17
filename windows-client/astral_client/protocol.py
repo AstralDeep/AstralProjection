@@ -26,7 +26,7 @@ from PySide6.QtCore import QObject, QSettings, Signal
 from PySide6.QtGui import QGuiApplication, QInputDevice, QPointingDevice
 
 from . import __version__
-from .auth import Session
+from .bearer import Session
 from .console import parse_turn_selection
 from .mesh import public_key
 from .settings import create_settings

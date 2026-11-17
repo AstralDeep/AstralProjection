@@ -4,7 +4,7 @@
   "client_version": "0.6.0",
   "python_version": "3.11",
   "target_platform": "win_amd64",
-  "deployment_profile_sha256": "25db27097a8069a0d472091676e8f1067b87776a303087d59b88dad32b6362b0",
+  "deployment_profile_sha256": "2c34b31f568f75c77a6fe33cab4a119ffe81b8bc00042d87e138909b3bcfaa57",
   "requirements_input_sha256": "c1a6e75360df5151f7b1c1d0a4c808881cd1df0e16c424b9d3475742f1458404",
   "requirements_lock_sha256": "cd62b676cf8fbe50647d7f3fd0e9dc565944fa9fc8ba43048e6b73a4e2feaab2",
   "runtime_contract_version": 3,

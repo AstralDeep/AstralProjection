@@ -63,7 +63,6 @@ def _offline_profile(path: Path) -> Path:
             "release_id": "windows-0.4.0-offline-smoke",
             "distribution": "generic_developer",
             "local_only": True,
-            "authority": "http://127.0.0.1:1/realms/Astral",
             "websocket_endpoint": "ws://127.0.0.1:1/ws",
         }
     )

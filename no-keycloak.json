@@ -17,38 +17,6 @@
   ],
   "pending": [
     {
-      "path": "windows-client/Launch-AstralDeep-Local.bat",
-      "until": "task 16"
-    },
-    {
-      "path": "windows-client/README.md",
-      "until": "task 16"
-    },
-    {
-      "path": "windows-client/astral_client/app.py",
-      "until": "task 16"
-    },
-    {
-      "path": "windows-client/astral_client/auth.py",
-      "until": "task 16"
-    },
-    {
-      "path": "windows-client/astral_client/deployment.py",
-      "until": "task 16"
-    },
-    {
-      "path": "windows-client/astral_client/rest.py",
-      "until": "task 16"
-    },
-    {
-      "path": "windows-client/deployment/local-backend-profile.json",
-      "until": "task 16"
-    },
-    {
-      "path": "windows-client/deployment/release-profile.json",
-      "until": "task 16"
-    },
-    {
       "path": "workflows-disabled/build-windows-candidate.yml",
       "until": "T8.6",
       "bound_by": "workflows-disabled/release-windows.yml"

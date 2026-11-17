@@ -4,10 +4,8 @@ It binds protocol.py's authenticated transport to native rendering, composition 
 
 from __future__ import annotations
 
-import argparse
 import base64
 from copy import copy, deepcopy
-import hashlib
 import inspect
 import json
 import logging
@@ -51,12 +49,11 @@ from shiboken6 import isValid
 
 from . import theme as T
 from . import icons as _icons
-from .auth import LoginCancelled, Session
+from .bearer import Session
 from . import confirm as _confirm
 from . import integrity as _integrity
 from . import __version__ as _APP_VERSION
 from .deployment import EffectiveDeploymentProfile
-from .deployment import write_redacted_report
 from .settings import create_settings
 from .surface_backdrop import SurfaceBackdrop
 from .protocol import (
@@ -213,8 +210,8 @@ def build_slash_completer(parent=None):
 
 
 def _user_from_token(token: str) -> str:
-    if not token or token == "dev-token":
-        return "Developer"
+    if not token:
+        return ""
     try:
         part = token.split(".")[1]
         part += "=" * (-len(part) % 4)
@@ -2093,13 +2090,11 @@ class MainWindow(QMainWindow):
     _download_done = Signal(object)
     _attachment_uploaded = Signal(object)
     _signed_out = Signal(str)
-    _reauth_done = Signal(int, object)
     _silent_refresh_done = Signal(int, object)
     _auth_refresh_requested = Signal()
-    _login_resolved = Signal(int, object)
     _byo_notice = Signal(str, str)
 
-    def __init__(self, url: str, token: str, session=None, login_params=None,
+    def __init__(self, url: str, token: str, session=None,
                  connect: bool = True,
                  deployment_profile: Optional[EffectiveDeploymentProfile] = None):
         super().__init__()
@@ -2132,7 +2127,6 @@ class MainWindow(QMainWindow):
         self._transient_chat_lines: list[str] = []
         self._url = url
         self._auth_session = session
-        self._login_params = login_params or {}
         self._reauth_tries = 0
         self._auth_generation = 0
         self._auth_stopped = False
@@ -2142,9 +2136,6 @@ class MainWindow(QMainWindow):
         self._auth_refresh_timer = QTimer(self)
         self._auth_refresh_timer.setSingleShot(True)
         self._auth_refresh_timer.timeout.connect(self._refresh_expiring_session)
-        self._login_active = False
-        self._login_cancel: Optional[threading.Event] = None
-        self._login_resolver = None
         self._workspace_ready = False
         self._agents: List[dict] = []
         self._operation_status_by_id: dict[str, OperationStatus] = {}
@@ -2429,10 +2420,8 @@ class MainWindow(QMainWindow):
         self._download_done.connect(self._on_download_done)
         self._attachment_uploaded.connect(self._on_attachment_uploaded)
         self._signed_out.connect(self._finish_sign_out)
-        self._reauth_done.connect(self._on_reauth_done)
         self._silent_refresh_done.connect(self._on_silent_refresh_done)
         self._auth_refresh_requested.connect(self._refresh_expiring_session)
-        self._login_resolved.connect(self._on_login_resolved)
         self._byo_notice.connect(self._show_banner)
         self._signing_out_done = False
         self._connected_once = False
@@ -3021,10 +3010,6 @@ class MainWindow(QMainWindow):
     def _on_banner_clicked(self) -> None:
         if self._banner.property("viewport_retry"):
             self._viewport.retry()
-            return
-        if self._login_active:
-            self.cancel_login()
-            self._hide_banner()
             return
         chat = self._banner_chat
         self._hide_banner()
@@ -3909,29 +3894,10 @@ class MainWindow(QMainWindow):
         self._resume_store.clear("definitive_sign_out", old_chat)
         self._continuity.clear_chat(old_chat, all_accounts=True)
         self._clear_transient_conversation()
-        sess = self._auth_session
-        refresh_token = getattr(sess, "refresh_token", None) if sess else None
-        client_id = getattr(sess, "client_id", "astral-desktop") if sess else "astral-desktop"
-        token_url = getattr(sess, "token_url", "") if sess else ""
-        access = getattr(sess, "access_token", None) or self._token
-        http_base = _http_base(self._url)
         self._show_banner("Signing out…")
 
         def _revoke() -> None:
             outcome = "local-only"
-            if isinstance(sess, Session) and sess.server_base is not None:
-                outcome = "revoked (server)" if sess.logout() else "revocation failed — local sign-out only"
-            elif refresh_token:
-                if rest.native_logout(http_base, access, refresh_token, client_id):
-                    outcome = "revoked (server)"
-                else:
-                    authority = ""
-                    if token_url.endswith("/protocol/openid-connect/token"):
-                        authority = token_url[: -len("/protocol/openid-connect/token")]
-                    if authority and rest.keycloak_logout(authority, client_id, refresh_token):
-                        outcome = "revoked (keycloak)"
-                    else:
-                        outcome = "revocation failed — local sign-out only"
             logger.info("sign-out: %s", outcome)
             self._signed_out.emit(outcome)
 
@@ -4489,7 +4455,7 @@ class MainWindow(QMainWindow):
         if self._silent_refresh_active:
             self._refresh_proactive = self._refresh_proactive and proactive
             return
-        if self._auth_stopped or self._reauth_active or self._login_active:
+        if self._auth_stopped or self._reauth_active:
             return
         if not (self._auth_session and self._reauth_tries < 2):
             self._auth_refresh_timer.stop()
@@ -4527,10 +4493,6 @@ class MainWindow(QMainWindow):
         self._silent_refresh_active = False
         self._refresh_proactive = False
         self._reauth_active = False
-        self._login_active = False
-        if self._login_cancel is not None:
-            self._login_cancel.set()
-            self._login_cancel = None
 
     def _stop_auth(self) -> None:
         self._viewport.retire(reset=True)
@@ -4668,113 +4630,6 @@ class MainWindow(QMainWindow):
             return
         self.topbar.set_status("Signed out", T.VARIANT_COLORS["error"][0])
         self._show_banner("Your session expired.", "error")
-        authority = self._login_params.get("authority")
-        if not authority:
-            self._show_banner(
-                "Your session expired. Restart the app to sign in again.", "error")
-            return
-        self._invalidate_auth()
-        generation = self._auth_generation
-        self._reauth_active = True
-        answer = QMessageBox.question(self, "Session expired",
-                                     "Your session expired. Sign in again?")
-        if self._auth_stopped or generation != self._auth_generation:
-            return
-        if answer != QMessageBox.StandardButton.Yes:
-            self._reauth_active = False
-            return
-        self._login_cancel = threading.Event()
-        cancel = self._login_cancel
-        self._show_banner("Opening your browser to sign in…")
-
-        def _login() -> None:
-            try:
-                from .auth import oidc_login
-                bff_base = (_http_base(self._url)
-                            if self._login_params.get("bff") else None)
-                session = oidc_login(
-                    authority,
-                    client_id=self._login_params.get("client_id", "astral-desktop"),
-                    bff_base=bff_base,
-                    cancel_event=cancel,
-                    server_base=(_http_base(self._url)
-                                 if bff_base is None and self._url.startswith("wss://") else None),
-                )
-                self._reauth_done.emit(generation, session)
-            except Exception:  # noqa: BLE001
-                logger.warning("interactive re-auth failed", exc_info=True)
-                self._reauth_done.emit(generation, None)
-
-        threading.Thread(target=_login, daemon=True).start()
-
-    def _on_reauth_done(self, generation: int, session: object) -> None:
-        if self._auth_stopped or generation != self._auth_generation:
-            return
-        self._reauth_active = False
-        if session is None:
-            self._show_banner("Sign-in failed. Try again from the menu.", "error")
-            return
-        self._apply_login(session.access_token, session)
-        self._hide_banner()
-
-    def begin_login(self, resolver) -> None:
-        if self._auth_stopped or self._login_active:
-            return
-        self._invalidate_auth()
-        generation = self._auth_generation
-        self._login_active = True
-        self._login_resolver = resolver
-        self._login_cancel = threading.Event()
-        cancel = self._login_cancel
-        self.topbar.set_status("Signing in…", T.MUTED)
-        self._show_banner(
-            "Signing in — complete the sign-in in your browser. "
-            "Click here to cancel."
-        )
-
-        def _work() -> None:
-            try:
-                token, session = resolver(cancel)
-                self._login_resolved.emit(generation, {"token": token, "session": session})
-            except LoginCancelled:
-                self._login_resolved.emit(generation, {"cancelled": True})
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("startup sign-in failed", exc_info=True)
-                self._login_resolved.emit(generation, {"error": str(exc)})
-
-        threading.Thread(target=_work, name="astral-login", daemon=True).start()
-
-    def cancel_login(self) -> None:
-        if self._login_cancel is not None:
-            self._login_cancel.set()
-            self.topbar.set_status("Cancelling sign-in…", T.MUTED)
-
-    def _on_login_resolved(self, generation: int, result: object) -> None:
-        if self._auth_stopped or generation != self._auth_generation:
-            return
-        self._login_active = False
-        result = result if isinstance(result, dict) else {}
-        if self._login_cancel is not None and self._login_cancel.is_set():
-            result = {"cancelled": True}
-        token = result.get("token")
-        if isinstance(token, str) and token:
-            self._hide_banner()
-            self._apply_login(token, result.get("session"))
-            return
-        self.topbar.set_status("Not signed in", T.VARIANT_COLORS["error"][0])
-        self._login_retry_prompt("cancelled" if result.get("cancelled") else "failed")
-
-    def _login_retry_prompt(self, verb: str) -> None:
-        box = QMessageBox(self)
-        box.setWindowTitle("Sign in")
-        box.setText(f"Sign-in {verb}. Retry, or quit?")
-        retry = box.addButton("Retry", QMessageBox.ButtonRole.AcceptRole)
-        box.addButton("Quit", QMessageBox.ButtonRole.RejectRole)
-        box.exec()
-        if box.clickedButton() is retry and self._login_resolver is not None:
-            self.begin_login(self._login_resolver)
-        else:
-            self.close()
 
     def _apply_login(self, token: str, session=None) -> None:
         self._retire_mesh()
@@ -5774,455 +5629,7 @@ def _http_base(ws_url: str) -> str:
     return f"{scheme}://{u.netloc}"
 
 
-def resolve_auth(args, cancel_event=None):
-    if args.token:
-        return args.token, None
-    if args.authority:
-        try:
-            from .auth import oidc_login
+def main(argv: Optional[list[str]] = None) -> int:
+    from .not_available import run
 
-            bff_base = _http_base(args.url) if getattr(args, "bff", False) else None
-            session = oidc_login(
-                args.authority, client_id=args.client_id, bff_base=bff_base,
-                cancel_event=cancel_event,
-                server_base=(_http_base(args.url) if not bff_base and args.url.startswith("wss://") else None),
-            )
-            return session.access_token, session
-        except LoginCancelled:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            if not getattr(args, "allow_dev_token_fallback", True):
-                raise RuntimeError("configured OIDC sign-in failed") from exc
-            print(f"OIDC login failed ({exc}); falling back to dev-token.")
-    if not getattr(args, "allow_dev_token_fallback", True):
-        raise RuntimeError("the effective deployment profile has no usable authority")
-    return "dev-token", None
-
-
-def _prompt_config(authority: str = "", ws_url: str = "", agent_key: str = ""):
-    dlg = QDialog()
-    dlg.setWindowTitle("Configure AstralDeep")
-    dlg.setMinimumWidth(540)
-    dlg.setStyleSheet(f"QDialog {{ background:{T.SURFACE_2}; }}")
-    lay = QVBoxLayout(dlg)
-    lay.setContentsMargins(20, 18, 20, 16)
-    lay.setSpacing(8)
-    intro = QLabel(
-        "Point this app at your AstralDeep deployment. These are saved on this "
-        "PC, so you'll only be asked once."
-    )
-    intro.setWordWrap(True)
-    intro.setStyleSheet(f"color:{T.MUTED}; font-size:12px;")
-    lay.addWidget(intro)
-
-    def _field(label: str, value: str, placeholder: str) -> QLineEdit:
-        lbl = QLabel(label)
-        lbl.setStyleSheet(f"color:{T.TEXT}; font-size:12px; font-weight:600;")
-        lay.addWidget(lbl)
-        edit = QLineEdit(value)
-        edit.setPlaceholderText(placeholder)
-        lay.addWidget(edit)
-        return edit
-
-    auth_e = _field("Keycloak realm URL", authority,
-                    "https://iam.example.edu/realms/Astral")
-    url_e = _field("Orchestrator WebSocket URL", ws_url or "ws://127.0.0.1:8001/ws",
-                   "ws://127.0.0.1:8001/ws")
-    key_e = _field("Agent API key (optional)", agent_key,
-                   "leave blank if your deployment doesn't require one")
-    key_e.setEchoMode(QLineEdit.EchoMode.Password)
-
-    row = QHBoxLayout()
-    row.addStretch(1)
-    skip = QPushButton("Skip")
-    skip.setCursor(Qt.CursorShape.PointingHandCursor)
-    skip.clicked.connect(lambda: dlg.done(0))
-    save = QPushButton("Save")
-    save.setObjectName("primary")
-    save.setCursor(Qt.CursorShape.PointingHandCursor)
-    save.clicked.connect(lambda: dlg.done(1))
-    row.addWidget(skip)
-    row.addWidget(save)
-    lay.addLayout(row)
-
-    if dlg.exec() != 1:
-        return None
-    return (
-        auth_e.text().strip(),
-        url_e.text().strip() or "ws://127.0.0.1:8001/ws",
-        key_e.text().strip(),
-    )
-
-
-def _resolve_config(args, *, settings, prompt) -> None:
-    authority = (os.getenv("KEYCLOAK_AUTHORITY")
-                 or settings.value("config/authority", "", type=str) or "")
-    ws_url = (os.getenv("ASTRAL_WS_URL")
-              or settings.value("config/ws_url", "", type=str)
-              or "ws://127.0.0.1:8001/ws")
-    agent_key = (os.getenv("AGENT_API_KEY")
-                 or settings.value("config/agent_key", "", type=str) or "")
-
-    if not authority and not args.token and prompt is not None:
-        vals = prompt(authority, ws_url, agent_key)
-        if vals:
-            authority, ws_url, agent_key = vals
-            settings.setValue("config/authority", authority)
-            settings.setValue("config/ws_url", ws_url)
-            settings.setValue("config/agent_key", agent_key)
-
-    args.authority = authority
-    args.url = ws_url
-    if agent_key:
-        os.environ["AGENT_API_KEY"] = agent_key
-
-
-def main(
-    *,
-    effective_profile: Optional[EffectiveDeploymentProfile] = None,
-    argv: Optional[list[str]] = None,
-) -> int:
-    ap = argparse.ArgumentParser(description="AstralDeep native Windows client")
-    if effective_profile is None:
-        ap.add_argument(
-            "--url", default=os.getenv("ASTRAL_WS_URL", "ws://127.0.0.1:8001/ws")
-        )
-        ap.add_argument("--authority", default=os.getenv("KEYCLOAK_AUTHORITY", ""))
-    ap.add_argument("--token", default=os.getenv("ASTRAL_TOKEN", ""))
-    smoke_reports = ap.add_mutually_exclusive_group()
-    smoke_reports.add_argument("--release-smoke-report")
-    smoke_reports.add_argument("--release-offline-smoke-report")
-    ap.add_argument(
-        "--release-smoke-prompt",
-        default="roll exactly 6 six-sided dice",
-    )
-    ap.add_argument("--release-smoke-timeout", type=float, default=60.0)
-    ap.add_argument(
-        "--client-id",
-        default=(
-            effective_profile.profile.client_id
-            if effective_profile is not None
-            else (
-                os.getenv("ASTRAL_CLIENT_ID")
-                or os.getenv("KEYCLOAK_DESKTOP_CLIENT_ID")
-                or "astral-desktop"
-            )
-        ),
-    )
-    ap.add_argument(
-        "--bff",
-        action="store_true",
-        default=(
-            effective_profile.profile.auth_mode == "keycloak_bff"
-            if effective_profile is not None
-            else os.getenv("ASTRAL_AUTH_BFF", "").lower() in ("1", "true", "yes")
-        ),
-    )
-    args = ap.parse_args(argv)
-    if (args.release_smoke_report or args.release_offline_smoke_report) and (
-        effective_profile is None or not args.token
-    ):
-        ap.error("release smoke reports require the effective profile and --token")
-    if args.release_offline_smoke_report and not effective_profile.profile.local_only:
-        ap.error(
-            "--release-offline-smoke-report requires an explicit local-only "
-            "generic/developer profile"
-        )
-    if not 5.0 <= args.release_smoke_timeout <= 120.0:
-        ap.error("--release-smoke-timeout must be between 5 and 120 seconds")
-    if effective_profile is not None:
-        args.url = effective_profile.profile.websocket_endpoint
-        args.authority = effective_profile.profile.authority
-        args.client_id = effective_profile.profile.client_id
-        args.bff = effective_profile.profile.auth_mode == "keycloak_bff"
-        args.allow_dev_token_fallback = False
-
-    app = QApplication(sys.argv)
-    configure(app)
-    _win = _launch(
-        args,
-        effective_profile=effective_profile,
-    )
-    if args.release_smoke_report:
-        _install_release_smoke(
-            _win,
-            effective_profile,
-            report_path=args.release_smoke_report,
-            prompt=args.release_smoke_prompt,
-            timeout_seconds=args.release_smoke_timeout,
-        )
-    elif args.release_offline_smoke_report:
-        _install_release_offline_smoke(
-            _win,
-            effective_profile,
-            report_path=args.release_offline_smoke_report,
-            timeout_seconds=args.release_smoke_timeout,
-        )
-    exit_code = app.exec()
-    return int(getattr(_win, "_release_smoke_exit_code", exit_code))
-
-
-def _runtime_profile_checks(
-    window: MainWindow,
-    effective_profile: EffectiveDeploymentProfile,
-) -> dict[str, bool]:
-    from win_agent.agent import build_card
-
-    metadata = build_card(effective_profile)["metadata"]
-    endpoint_digest = hashlib.sha256(
-        effective_profile.profile.websocket_endpoint.encode("utf-8")
-    ).hexdigest()
-    return {
-        "window_profile_match": (
-            window._deployment_profile is effective_profile
-            and window.deployment_profile_digest == effective_profile.digest
-            and window._url == effective_profile.profile.websocket_endpoint
-            and window.client.url == effective_profile.profile.websocket_endpoint
-        ),
-        "byo_profile_match": (
-            window._byo.deployment_profile_digest == effective_profile.digest
-        ),
-        "tools_agent_profile_match": (
-            metadata.get("deployment_profile_sha256") == effective_profile.digest
-            and metadata.get("deployment_release_id")
-            == effective_profile.profile.release_id
-            and metadata.get("deployment_endpoint_sha256") == endpoint_digest
-        ),
-    }
-
-
-def _install_release_smoke(
-    window: MainWindow,
-    effective_profile: EffectiveDeploymentProfile,
-    *,
-    report_path: str,
-    prompt: str,
-    timeout_seconds: float,
-) -> None:
-    state = {"sent": False, "complete": False}
-    window._release_smoke_exit_code = 1
-
-    def _console_checks() -> dict[str, bool]:
-        model = parse_console_model(window._console_model)
-        presentation = parse_console_presentation(window._console_presentation)
-        shell = window._console_shell
-        current = (
-            isinstance(shell, ConsoleShell)
-            and model is not None
-            and presentation is not None
-            and shell.model == model
-            and shell.presentation == presentation
-            and window._root_layout.indexOf(shell) >= 0
-            and window.isAncestorOf(shell)
-        )
-        return {
-            "console_model_valid": model is not None,
-            "console_presentation_valid": presentation is not None,
-            "console_shell_current": current,
-            "console_shell_visible": (
-                current and shell.isVisible() and shell.isEnabled()
-            ),
-            "legacy_topbar_hidden": window.topbar.isHidden(),
-            "legacy_split_hidden": window._legacy_split.isHidden(),
-        }
-
-    def _finish(frame: Optional[dict] = None, error: Optional[str] = None) -> None:
-        if state["complete"]:
-            return
-        state["complete"] = True
-        report = effective_profile.redacted_report()
-        console_checks = _console_checks()
-        report.update(console_checks)
-        if error is None and frame is not None:
-            transcript = frame.get("transcript") or []
-            canvas = frame.get("canvas") or {}
-            report.update(
-                {
-                    "status": "passed",
-                    "chat_id": frame.get("chat_id"),
-                    "render_revision": frame.get("render_revision"),
-                    "transcript_turns": len(transcript),
-                    "canvas_components": len(canvas.get("components") or []),
-                    **_runtime_profile_checks(window, effective_profile),
-                }
-            )
-            passed = (
-                all(console_checks.values())
-                and len(transcript) >= 2
-                and report["canvas_components"] >= 1
-                and report["window_profile_match"]
-                and report["byo_profile_match"]
-                and report["tools_agent_profile_match"]
-            )
-            report["status"] = "passed" if passed else "failed"
-            report["detail_code"] = (
-                "console_bootstrap_incomplete" if not all(console_checks.values())
-                else "rendered_turn_complete" if passed else "incomplete_rendered_turn"
-            )
-            window._release_smoke_exit_code = 0 if passed else 1
-        else:
-            report.update(
-                {
-                    "status": "failed",
-                    "detail_code": error or "smoke_timeout",
-                    "connected_once": bool(getattr(window, "_connected_once", False)),
-                    "prompt_sent": bool(state["sent"]),
-                }
-            )
-        write_redacted_report(report_path, report)
-        window.close()
-        QApplication.instance().quit()
-
-    def _status(value: str) -> None:
-        if value == "connected" and not state["sent"]:
-            state["sent"] = True
-            window._input.setText(prompt)
-            window._send()
-
-    def _message(frame: dict) -> None:
-        if (
-            state["sent"]
-            and frame.get("type") == "conversation_snapshot"
-            and frame.get("snapshot_purpose") == "commit"
-        ):
-            QTimer.singleShot(0, lambda: _finish(frame=frame))
-
-    def _poll_connected() -> None:
-        if state["complete"] or state["sent"]:
-            return
-        if getattr(window, "_connected_once", False):
-            _status("connected")
-            return
-        QTimer.singleShot(100, _poll_connected)
-
-    window.client.status.connect(_status)
-    window.client.message.connect(_message)
-    window._release_smoke_probe = (_status, _message, _finish)
-    QTimer.singleShot(0, _poll_connected)
-    QTimer.singleShot(int(timeout_seconds * 1000), lambda: _finish(error="smoke_timeout"))
-
-
-def _install_release_offline_smoke(
-    window: MainWindow,
-    effective_profile: EffectiveDeploymentProfile,
-    *,
-    report_path: str,
-    timeout_seconds: float,
-) -> None:
-    state = {"complete": False, "failure_seen": False, "retry_attempt": 0}
-    window._release_smoke_exit_code = 1
-
-    def _finish(error: Optional[str] = None) -> None:
-        if state["complete"]:
-            return
-        state["complete"] = True
-        checks = _runtime_profile_checks(window, effective_profile)
-        passed = (
-            error is None
-            and state["failure_seen"]
-            and state["retry_attempt"] >= 1
-            and all(checks.values())
-        )
-        report = effective_profile.redacted_report()
-        report.update(
-            {
-                "status": "passed" if passed else "failed",
-                "detail_code": (
-                    "offline_retry_observed"
-                    if passed
-                    else (error or "offline_retry_incomplete")
-                ),
-                "connection_failure_observed": state["failure_seen"],
-                "retry_attempt": state["retry_attempt"],
-                **checks,
-            }
-        )
-        window._release_smoke_exit_code = 0 if passed else 1
-        write_redacted_report(report_path, report)
-        window.close()
-        QApplication.instance().quit()
-
-    def _status(value: str) -> None:
-        if state["complete"]:
-            return
-        if value.startswith("closed:"):
-            state["failure_seen"] = True
-            return
-        if value.startswith("reconnecting:") and state["failure_seen"]:
-            try:
-                attempt = int(value.split(":", 1)[1])
-            except (IndexError, ValueError):
-                return
-            state["retry_attempt"] = max(state["retry_attempt"], attempt)
-            QTimer.singleShot(0, _finish)
-
-    window.client.status.connect(_status)
-    window._release_offline_smoke_probe = (_status, _finish)
-    QTimer.singleShot(
-        int(timeout_seconds * 1000), lambda: _finish(error="offline_retry_timeout")
-    )
-
-
-def _launch(
-    args,
-    settings=None,
-    effective_profile: Optional[EffectiveDeploymentProfile] = None,
-) -> "MainWindow":
-    settings = settings or create_settings()
-    if effective_profile is None:
-        _resolve_config(args, settings=settings, prompt=None)
-    else:
-        args.url = effective_profile.profile.websocket_endpoint
-        args.authority = effective_profile.profile.authority
-        args.client_id = effective_profile.profile.client_id
-        args.bff = effective_profile.profile.auth_mode == "keycloak_bff"
-        args.allow_dev_token_fallback = False
-    login_params = {
-        "authority": args.authority,
-        "client_id": args.client_id,
-        "bff": bool(getattr(args, "bff", False)),
-    }
-    if args.token:
-        token, session = resolve_auth(args)
-        win = MainWindow(
-            args.url,
-            token,
-            session=session,
-            login_params=login_params,
-            deployment_profile=effective_profile,
-        )
-        win.show()
-        win.raise_()
-        win.activateWindow()
-        return win
-
-    win = MainWindow(
-        args.url,
-        "",
-        session=None,
-        login_params=login_params,
-        connect=False,
-        deployment_profile=effective_profile,
-    )
-    win.show()
-    win.raise_()
-    win.activateWindow()
-    win.topbar.set_status("Signing in…", T.MUTED)
-
-    def _after_first_paint() -> None:
-        if not args.authority and effective_profile is None:
-            _resolve_config(args, settings=settings, prompt=_prompt_config)
-            win._login_params.update(
-                authority=args.authority,
-                client_id=getattr(args, "client_id", "astral-desktop"),
-                bff=bool(getattr(args, "bff", False)),
-            )
-            win.maybe_start_tools_agent()
-        win.begin_login(lambda cancel: resolve_auth(args, cancel_event=cancel))
-
-    QTimer.singleShot(0, _after_first_paint)
-    return win
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    return run(argv)
