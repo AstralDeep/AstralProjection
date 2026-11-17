@@ -8,7 +8,7 @@ import XCTest
 
 @MainActor
 final class WatchVoiceBridge065Tests: XCTestCase {
-    private let owner = CompanionVoiceOwner(issuer: "https://issuer.example", subject: "owner")!
+    private let owner = CompanionVoiceOwner(meshId: "sha256:" + String(repeating: "ab", count: 32))!
 
     func testReadyBindsPhoneConversationAndCaptureUsesOnlyPairedPackets() async throws {
         let h = try await harness()

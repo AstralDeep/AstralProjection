@@ -1,5 +1,5 @@
 // Defines bounded ephemeral audio and control packets for the paired Watch and phone.
-// WatchConnectivity supplies peer identity; owner metadata is compared with the phone's verified principal and never grants approval authority.
+// WatchConnectivity supplies peer identity; the owner is the phone's mesh id, compared with the open mesh and never granting approval authority.
 
 import CoreFoundation
 import Foundation
@@ -103,15 +103,11 @@ public struct CompanionVoiceSequenceGate: Sendable {
 }
 
 public struct CompanionVoiceOwner: Equatable, Sendable {
-    public let issuer: String
-    public let subject: String
+    public let meshId: String
 
-    public init?(issuer: String, subject: String) {
-        guard companionVoiceText(issuer, maximum: 2_048), companionVoiceText(subject, maximum: 2_048) else {
-            return nil
-        }
-        self.issuer = issuer
-        self.subject = subject
+    public init?(meshId: String) {
+        guard companionMeshIdValid(meshId) else { return nil }
+        self.meshId = meshId
     }
 }
 
@@ -128,10 +124,8 @@ public struct CompanionVoiceActivation: Equatable, Sendable {
     }
 
     public init?(data: Data) {
-        guard let object = companionVoiceObject(data), let rawOwner = object["owner"] as? [String: Any],
-            Set(rawOwner.keys) == ["issuer", "subject"], let issuer = rawOwner["issuer"] as? String,
-            let subject = rawOwner["subject"] as? String,
-            let owner = CompanionVoiceOwner(issuer: issuer, subject: subject),
+        guard let object = companionVoiceObject(data), let rawOwner = object["owner"] as? String,
+            let owner = CompanionVoiceOwner(meshId: rawOwner),
             let rawMode = object["mode"] as? String, let mode = Mode(rawValue: rawMode),
             Set(object.keys) == (mode == .conversation ? ["owner", "mode"] : ["owner", "mode", "text"])
         else { return nil }
@@ -144,10 +138,10 @@ public struct CompanionVoiceActivation: Equatable, Sendable {
         guard mode == .conversation ? text == nil : text.map({ companionVoiceText($0, maximum: 8_192) }) == true
         else { throw CompanionVoiceError.invalidPacket }
         var object: [String: Any] = [
-            "owner": ["issuer": owner.issuer, "subject": owner.subject], "mode": mode.rawValue,
+            "owner": owner.meshId, "mode": mode.rawValue,
         ]
         if let text { object["text"] = text }
-        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
     }
 }
 
@@ -171,7 +165,7 @@ public struct CompanionVoiceConversation: Equatable, Sendable {
     public func encoded() throws -> Data {
         guard companionVoiceText(chatId, maximum: 512), companionVoiceText(title, maximum: 1_024)
         else { throw CompanionVoiceError.invalidPacket }
-        return try JSONSerialization.data(withJSONObject: ["chat_id": chatId, "title": title], options: [.sortedKeys])
+        return try JSONSerialization.data(withJSONObject: ["chat_id": chatId, "title": title], options: [.sortedKeys, .withoutEscapingSlashes])
     }
 }
 
@@ -205,7 +199,7 @@ public struct CompanionVoiceSpeech: Equatable, Sendable {
         else { throw CompanionVoiceError.invalidPacket }
         return try JSONSerialization.data(
             withJSONObject: ["id": id.uuidString, "index": index, "text": text, "frames": frames],
-            options: [.sortedKeys])
+            options: [.sortedKeys, .withoutEscapingSlashes])
     }
 }
 
@@ -268,17 +262,26 @@ private func companionVoiceObject(_ data: Data) -> [String: Any]? {
     return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
 }
 
-private func companionVoiceText(_ value: String, maximum: Int) -> Bool {
+func companionVoiceText(_ value: String, maximum: Int) -> Bool {
     !value.isEmpty && value.utf8.count <= maximum
         && !value.unicodeScalars.contains {
             CharacterSet.controlCharacters.contains($0) && $0 != "\n" && $0 != "\t"
         }
 }
 
-private func companionVoiceInteger(_ value: Any?, range: ClosedRange<Int>) -> Int? {
+func companionVoiceInteger(_ value: Any?, range: ClosedRange<Int>) -> Int? {
     guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
         number.doubleValue.isFinite, number.doubleValue.rounded() == number.doubleValue,
         number.doubleValue >= Double(range.lowerBound), number.doubleValue <= Double(range.upperBound)
     else { return nil }
     return number.intValue
+}
+
+private let meshIdPrefix = "sha256:"
+private let meshIdHexCount = 64
+
+func companionMeshIdValid(_ value: String) -> Bool {
+    let bytes = Array(value.utf8)
+    return bytes.count == meshIdPrefix.utf8.count + meshIdHexCount && bytes.prefix(meshIdPrefix.utf8.count).elementsEqual(meshIdPrefix.utf8)
+        && bytes.dropFirst(meshIdPrefix.utf8.count).allSatisfy { ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102) }
 }
