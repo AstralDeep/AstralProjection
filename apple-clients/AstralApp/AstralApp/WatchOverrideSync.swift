@@ -1,5 +1,5 @@
-// Owns the iPhone's one WatchConnectivity delegate for endpoint preferences and ephemeral paired-Watch voice.
-// Interactive PCM stays out of application context and background transfer queues.
+// Owns the iPhone's one WatchConnectivity delegate for endpoint preferences, ephemeral paired-Watch voice and the companion relay packets.
+// Interactive PCM stays out of application context and background transfer queues, and relay packets are carried verbatim for PhoneCompanionRelay.
 
 #if os(iOS)
     import AstralCore
@@ -7,11 +7,15 @@
     import WatchConnectivity
 
     @MainActor
-    final class WatchOverrideSync: NSObject, WCSessionDelegate, CompanionVoiceChannel {
+    final class WatchOverrideSync: NSObject, WCSessionDelegate, CompanionVoiceChannel, CompanionRelayChannel {
         static let shared = WatchOverrideSync()
         var onPacket: (@MainActor @Sendable (CompanionVoicePacket) async throws -> Void)?
         var onReachabilityChanged: (@MainActor @Sendable (Bool) -> Void)?
-        private var pending: String?
+        var onRelayRequest: (@MainActor @Sendable (Data) async -> Void)?
+        var onRelayReady: (@MainActor @Sendable () -> Void)?
+        private var context: [String: Any] = [:]
+        private var contextDirty = false
+        static let companionContextKeys = ["chats": "companion.chats", "phone": "companion.phone"]
 
         var reachable: Bool {
             guard WCSession.isSupported() else { return false }
@@ -28,17 +32,30 @@
 
         func push(_ rawEndpoint: String?) {
             guard let endpoint = AstralConfig.usableEndpoint(rawEndpoint) else { return }
-            pending = endpoint
+            context[AstralConfig.serverOverrideDefaultsKey] = endpoint
+            contextDirty = true
             flush()
         }
 
+        func publish(_ update: Data, latestState: Bool) {
+            guard WCSession.isSupported() else { return }
+            let object = try? JSONSerialization.jsonObject(with: update) as? [String: Any]
+            if latestState, let kind = object?["kind"] as? String, let key = Self.companionContextKeys[kind] {
+                context[key] = update
+                contextDirty = true
+                flush()
+            }
+            guard reachable else { return }
+            WCSession.default.sendMessageData(update, replyHandler: nil, errorHandler: nil)
+        }
+
         private func flush() {
-            guard WCSession.isSupported(), let endpoint = pending else { return }
+            guard WCSession.isSupported(), contextDirty else { return }
             let session = WCSession.default
             guard session.activationState == .activated, session.isPaired, session.isWatchAppInstalled else { return }
             do {
-                try session.updateApplicationContext([AstralConfig.serverOverrideDefaultsKey: endpoint])
-                pending = nil
+                try session.updateApplicationContext(context)
+                contextDirty = false
             } catch {}
         }
 
@@ -71,7 +88,10 @@
         ) {
             let response = CompanionVoiceInboundReply(replyHandler)
             guard let packet = try? CompanionVoicePacket(data: data) else {
-                response.send(Data())
+                Task { @MainActor [weak self] in
+                    if let self, self.reachable, let handler = self.onRelayRequest { await handler(data) }
+                    response.send(Data())
+                }
                 return
             }
             Task { @MainActor [weak self] in
@@ -97,6 +117,7 @@
                 guard let self else { return }
                 self.flush()
                 self.onReachabilityChanged?(self.reachable)
+                if self.reachable { self.onRelayReady?() }
             }
         }
 
@@ -104,6 +125,7 @@
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.onReachabilityChanged?(self.reachable)
+                if self.reachable { self.onRelayReady?() }
             }
         }
 

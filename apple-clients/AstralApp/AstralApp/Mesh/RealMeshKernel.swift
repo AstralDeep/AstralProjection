@@ -238,6 +238,14 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
         }
     }
 
+    func chatForDevice(chatId: String, deviceProfileJson: String) throws -> MeshChatView {
+        try mapped {
+            let detail = try kernel.chatForDevice(chatId: chatId, deviceProfileJson: deviceProfileJson)
+            let bases = lock.withLock { queuedBases }
+            return KernelChatMapper.map(detail, unknown: kernel.unknownOutcomes(), queuedBases: bases)
+        }
+    }
+
     func createChat(title: String) throws -> String { try mapped { try kernel.createChat(title: title) } }
 
     func sendMessage(chatId: String, text: String, continues: String?) throws -> String {

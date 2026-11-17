@@ -1456,6 +1456,39 @@ final class MeshRuntime {
         return PairedWatchVoiceContext(owner: owner, chatId: scope.chatId, title: title, meshSession: scope.session)
     }
 
+    var companionMeshId: String? { isReady && hasMesh ? status.meshId : nil }
+
+    var companionStopped: Bool { status.stopped }
+
+    func trackCompanionState() {
+        _ = (chats, turns, status, isReady)
+    }
+
+    func companionChatView(chatId: String) async -> MeshChatView? {
+        guard companionMeshId != nil, chats.contains(where: { $0.chatId == chatId }) else { return nil }
+        let profile = MeshDeviceProfile.watchJSON()
+        return try? await call { try $0.chatForDevice(chatId: chatId, deviceProfileJson: profile) }
+    }
+
+    func companionSend(chatId: String, text: String) async -> Bool {
+        guard companionMeshId != nil, !status.stopped, chats.contains(where: { $0.chatId == chatId }) else {
+            return false
+        }
+        if currentChatId != chatId { await openChat(chatId) }
+        return await send(text)
+    }
+
+    func companionStop(chatId: String) async {
+        guard companionMeshId != nil else { return }
+        await interrupt(chatId: chatId)
+    }
+
+    func companionRunState(chatId: String) -> CompanionRunState {
+        guard let turn = turns[chatId] else { return .idle }
+        if turn.running { return turn.stopRequested ? .stopping : .running }
+        return turn.failure == nil ? .idle : .failed
+    }
+
     func watchVoiceContextCurrent(_ context: PairedWatchVoiceContext) async -> Bool {
         isReady && hasMesh && !status.stopped && status.meshId == context.owner.meshId
             && wakeSession == context.meshSession && currentChatId == context.chatId

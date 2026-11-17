@@ -525,6 +525,16 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         }
     }
 
+    func chatForDevice(chatId: String, deviceProfileJson: String) throws -> MeshChatView {
+        try record("chatForDevice", chatId + "|" + deviceProfileJson)
+        return try lock.withLock {
+            guard let chat = chats[chatId] else { throw MeshKernelError.notFound }
+            return MeshChatView(
+                chatId: chatId, title: chat.title, messages: chat.messages, branches: branches(of: chat),
+                surfaces: chat.surfaces, rendered: renderedValue[chatId] ?? [], labels: [], status: chat.status)
+        }
+    }
+
     func createChat(title: String) throws -> String {
         try record("createChat", title)
         let id = nextId("chat")

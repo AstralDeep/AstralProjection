@@ -27,6 +27,20 @@ enum MeshDeviceProfile {
         return String(decoding: data, as: UTF8.self)
     }
 
+    static func watchJSON() -> String {
+        let fields: [String: JSONValue] = [
+            "device_type": .string("watch"),
+            "screen_width": .number(184), "screen_height": .number(224),
+            "viewport_width": .number(184), "viewport_height": .number(224),
+            "pixel_ratio": .number(2),
+            "has_touch": .bool(true),
+            "pointer_type": .string("coarse"),
+            "supported_types": .array(ClientDispositions.watch.nativeComponentTypes.map { .string($0) }),
+        ]
+        guard let data = try? JSONEncoder().encode(JSONValue.object(fields)) else { return "{}" }
+        return String(decoding: data, as: UTF8.self)
+    }
+
     private static func size(mac: Bool, width: Int?, height: Int?) -> (Int, Int) {
         if let width, let height { return (width, height) }
         #if os(iOS)

@@ -609,6 +609,7 @@ nonisolated protocol MeshKernel: Sendable {
 
     func listChats() throws -> [MeshChatSummary]
     func chat(chatId: String) throws -> MeshChatView
+    func chatForDevice(chatId: String, deviceProfileJson: String) throws -> MeshChatView
     func createChat(title: String) throws -> String
     func sendMessage(chatId: String, text: String, continues: String?) throws -> String
     func addAttachment(chatId: String, bytes: Data, mime: String, name: String) throws -> MeshAttachment
