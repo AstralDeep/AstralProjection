@@ -265,6 +265,7 @@ final class AppModel: NSObject {
     @ObservationIgnored let onDeviceVoice: OnDeviceVoiceController
     #if os(iOS)
         @ObservationIgnored let watchVoice: PairedWatchVoiceRelay
+        @ObservationIgnored let watchRelay: PhoneCompanionRelay
         @ObservationIgnored let meshPush: MeshPushCoordinator
     #endif
 
@@ -759,6 +760,7 @@ final class AppModel: NSObject {
         self.onDeviceVoice = localVoice
         #if os(iOS)
             self.watchVoice = PairedWatchVoiceRelay(controller: localVoice, channel: WatchOverrideSync.shared)
+            self.watchRelay = PhoneCompanionRelay(channel: WatchOverrideSync.shared)
             self.meshPush = MeshPushCoordinator(
                 rest: AstralConfig.meshPushPublisherURL.flatMap { MeshPushRest(publisherURL: $0) })
         #endif

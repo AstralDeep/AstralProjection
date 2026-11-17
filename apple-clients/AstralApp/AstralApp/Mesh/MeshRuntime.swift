@@ -1263,6 +1263,37 @@ final class MeshRuntime {
         return true
     }
 
+    func send(_ text: String, to chatId: String) async -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, isReady, hasMesh, !status.stopped, let meshId = status.meshId,
+            chats.contains(where: { $0.chatId == chatId }), let reservation = reserveTurn(chatId: chatId)
+        else { return false }
+        let session = wakeSession
+        defer { releaseReservation(chatId: chatId, id: reservation) }
+        guard
+            let eventId = await attempt(
+                allowRetired: true,
+                { kernel in
+                    let head = MeshChatTree.defaultHead(of: try kernel.chat(chatId: chatId).messages)
+                    return try kernel.sendMessage(chatId: chatId, text: trimmed, continues: head)
+                })
+        else { return false }
+        guard isReady, wakeSession == session, status.meshId == meshId, !status.stopped else { return false }
+        if currentChatId == chatId {
+            selectedHead = eventId
+            headPinned = false
+            await reloadChat(chatId)
+            guard isReady, wakeSession == session, status.meshId == meshId else { return false }
+        }
+        startTurn(
+            chatId: chatId, reservation: reservation,
+            interrupt: { kernel, chat in try kernel.interruptMessage(chatId: chat, messageId: eventId) },
+            steer: { kernel, chat, text in try kernel.steerMessage(chatId: chat, messageId: eventId, text: text) },
+            cancelPending: { kernel, chat in try await kernel.cancelPendingMessage(chatId: chat, messageId: eventId) },
+            run: { try await $0.runMessage(chatId: chatId, messageId: eventId) })
+        return true
+    }
+
     func steer(_ text: String) async -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
@@ -1454,6 +1485,38 @@ final class MeshRuntime {
             throw MeshKernelError.unavailable("Choose a chat before starting Watch voice.")
         }
         return PairedWatchVoiceContext(owner: owner, chatId: scope.chatId, title: title, meshSession: scope.session)
+    }
+
+    var companionMeshId: String? { isReady && hasMesh ? status.meshId : nil }
+
+    var companionStopped: Bool { status.stopped }
+
+    func trackCompanionState() {
+        _ = (chats, turns, status, isReady)
+    }
+
+    func companionChatView(chatId: String) async -> MeshChatView? {
+        guard companionMeshId != nil, chats.contains(where: { $0.chatId == chatId }) else { return nil }
+        let profile = MeshDeviceProfile.watchJSON()
+        return try? await call { try $0.chatForDevice(chatId: chatId, deviceProfileJson: profile) }
+    }
+
+    func companionSend(chatId: String, text: String) async -> Bool {
+        guard companionMeshId != nil, !status.stopped, chats.contains(where: { $0.chatId == chatId }) else {
+            return false
+        }
+        return await send(text, to: chatId)
+    }
+
+    func companionStop(chatId: String) async {
+        guard companionMeshId != nil else { return }
+        await interrupt(chatId: chatId)
+    }
+
+    func companionRunState(chatId: String) -> CompanionRunState {
+        guard let turn = turns[chatId] else { return .idle }
+        if turn.running { return turn.stopRequested ? .stopping : .running }
+        return turn.failure == nil ? .idle : .failed
     }
 
     func watchVoiceContextCurrent(_ context: PairedWatchVoiceContext) async -> Bool {

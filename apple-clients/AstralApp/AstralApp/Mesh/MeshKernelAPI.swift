@@ -227,6 +227,8 @@ nonisolated struct MeshChatMessage: Identifiable, Equatable, Sendable {
     let delivery: MeshDelivery
     let surfaceIds: [String]
     var attachments: [MeshAttachment] = []
+    var confidentiality = "private"
+    var integrity = "owner"
     var id: String { eventId }
 }
 
@@ -609,6 +611,7 @@ nonisolated protocol MeshKernel: Sendable {
 
     func listChats() throws -> [MeshChatSummary]
     func chat(chatId: String) throws -> MeshChatView
+    func chatForDevice(chatId: String, deviceProfileJson: String) throws -> MeshChatView
     func createChat(title: String) throws -> String
     func sendMessage(chatId: String, text: String, continues: String?) throws -> String
     func addAttachment(chatId: String, bytes: Data, mime: String, name: String) throws -> MeshAttachment
