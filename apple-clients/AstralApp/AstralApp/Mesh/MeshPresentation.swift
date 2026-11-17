@@ -168,6 +168,7 @@ nonisolated enum MeshPresentation {
 
     static func codeGroups(_ code: String) -> [String] {
         let digits = code.filter { !$0.isWhitespace }
+        if digits.count == 12 { return stride(from: 0, to: 12, by: 4).map { String(digits.dropFirst($0).prefix(4)) } }
         guard digits.count == 8 else { return [String(code)] }
         return [String(digits.prefix(4)), String(digits.suffix(4))]
     }

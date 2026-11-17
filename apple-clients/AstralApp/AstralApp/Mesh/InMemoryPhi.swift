@@ -9,6 +9,7 @@ nonisolated final class InMemoryPhi: @unchecked Sendable {
     private var excluded: Set<String> = []
     private var legacyDevices: Set<String> = []
     private var rows: [MeshPhiDestination] = []
+    var verifiedContacts: @Sendable () -> Set<String> = { [] }
     private var statusValue = MeshPhiStatus(modelPresent: false, screened: 0, overBudget: 0, failed: 0)
 
     func markNotUpgraded(_ deviceId: String) { lock.withLock { _ = legacyDevices.insert(deviceId) } }
@@ -102,12 +103,16 @@ nonisolated final class InMemoryPhi: @unchecked Sendable {
         let current = try propose(source: proposal.source, deviceId: members.first { $0.isThisDevice }?.memberId ?? "")
         try lock.withLock {
             if !current.needsApproval { throw KernelMapping.refusal("phi_destination.on_device") }
-            if current.kind == .contact { throw KernelMapping.refusal("phi_destination.contact_unavailable") }
+            if current.kind == .contact && !verifiedContacts().contains(current.target) {
+                throw KernelMapping.refusal("phi_destination.contact_unavailable")
+            }
             guard let subject = current.subject else { throw KernelMapping.refusal("phi_destination.malformed") }
             rows.removeAll { $0.subject == subject }
+            let form: MeshPhiDestinationForm =
+                current.kind == .contact ? .contact : (subject.hasPrefix("local:") ? .local : .endpoint)
             rows.append(
                 MeshPhiDestination(
-                    subject: subject, form: subject.hasPrefix("local:") ? .local : .endpoint, target: current.target,
+                    subject: subject, form: form, target: current.target,
                     status: .approved, code: nil, approvedBy: members.first { $0.isThisDevice }?.memberId))
         }
     }

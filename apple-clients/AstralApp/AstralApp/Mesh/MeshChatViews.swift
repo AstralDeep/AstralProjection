@@ -45,12 +45,14 @@ struct MeshChatListView: View {
 
     var body: some View {
         List(selection: $selection) {
+            if !mesh.sharedItems.isEmpty { sharedEntry }
             ForEach(mesh.chats) { chat in
                 MeshChatRow(chat: chat).tag(chat.chatId)
             }
         }
+        .task { await mesh.refreshSharedItems() }
         .overlay {
-            if mesh.chats.isEmpty {
+            if mesh.chats.isEmpty && mesh.sharedItems.isEmpty {
                 ContentUnavailableView {
                     Label("No chats yet", systemImage: "bubble.left.and.bubble.right")
                 } description: {
@@ -76,6 +78,17 @@ struct MeshChatListView: View {
     }
 }
 
+extension MeshChatListView {
+    fileprivate var sharedEntry: some View {
+        NavigationLink {
+            MeshSharedWithMeView()
+        } label: {
+            Label("Shared with Me (\(mesh.sharedItems.count))", systemImage: "person.2.crop.square.stack")
+        }
+        .accessibilityIdentifier(MeshSharedID.entry)
+    }
+}
+
 struct MeshChatDetailView: View {
     @Environment(MeshRuntime.self) private var mesh
     @Environment(ConsentCoordinator.self) private var consent
@@ -83,6 +96,7 @@ struct MeshChatDetailView: View {
     @Environment(ThemeStore.self) private var theme
     @State private var draft = ""
     @State private var requesting: MeshMember?
+    @State private var sharing = false
     @State private var choosingAttachment = false
     @State private var fileProblem: String?
     private var p: AstralPalette { theme.palette }
@@ -102,9 +116,10 @@ struct MeshChatDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbar {
-            if !otherMembers.isEmpty {
-                ToolbarItem(placement: .primaryAction) { chatMenu }
-            }
+            ToolbarItem(placement: .primaryAction) { chatMenu }
+        }
+        .sheet(isPresented: $sharing) {
+            if let chatId = mesh.currentChatId { MeshShareSheet(chatId: chatId) }
         }
         .sheet(item: $requesting) { member in
             NavigationStack {
@@ -264,6 +279,8 @@ struct MeshChatDetailView: View {
 
     private var chatMenu: some View {
         Menu {
+            Button("Share Chat", systemImage: "square.and.arrow.up") { sharing = true }
+                .accessibilityIdentifier(MeshShareID.action)
             ForEach(otherMembers) { member in
                 Button("Send a Request to " + member.label, systemImage: "paperplane") { requesting = member }
             }

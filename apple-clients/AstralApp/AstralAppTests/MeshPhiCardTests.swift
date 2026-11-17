@@ -26,6 +26,7 @@ private final class KernelPhiService: MeshPhiService {
         case .provider(let name): return try kernel.proposeProviderPhiDestination(name: name)
         case .legacyServer(let name): return try kernel.proposeLegacyPhiDestination(name: name)
         case .connection(let id, let usage): return try kernel.proposeConnectionPhiDestination(id: id, usage: usage)
+        case .contact(let mesh): return try kernel.proposeContactPhiDestination(mesh: mesh)
         }
     }
     func approvePhiDestination(_ proposal: MeshPhiProposal) async throws {

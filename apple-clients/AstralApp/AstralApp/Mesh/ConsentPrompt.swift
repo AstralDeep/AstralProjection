@@ -126,6 +126,60 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
         return prompt
     }
 
+    static func contact(canonicalRecord: Data, signingInput: Data) throws -> ConsentPrompt {
+        let record = try object(canonicalRecord, fields: ["count", "heads", "mesh", "ms", "name", "state", "v"])
+        let consent = try recordConsent(signingInput, kind: "contact", record: canonicalRecord)
+        guard record["v"] as? Int == 1, let mesh = record["mesh"] as? String, isID(mesh),
+            let name = record["name"] as? String, !name.isEmpty, record["state"] as? String == "verified",
+            let heads = record["heads"] as? [String], !heads.isEmpty, heads.allSatisfy(isID),
+            let count = record["count"] as? Int, count >= heads.count
+        else { throw ConsentPromptError.invalidInput }
+        let lines = ["Name: " + name, "Mesh: " + fingerprint(mesh)]
+        var prompt = ConsentPrompt(
+            actionTitle: "Verify contact", effect: "contact.verify", target: name + ", mesh " + fingerprint(mesh),
+            arguments: lines.joined(separator: "\n") + "\nRecord: " + String(decoding: canonicalRecord, as: UTF8.self),
+            digest: consent.digest, requiresBiometry: true)
+        prompt.signingInputHash = hash(signingInput)
+        return prompt
+    }
+
+    static func share(canonicalRecord: Data, signingInput: Data, label: String) throws -> ConsentPrompt {
+        let record = try object(
+            canonicalRecord, fields: ["contact", "id", "item", "kind", "ms", "phi", "supersedes", "v"])
+        let consent = try recordConsent(signingInput, kind: "share", record: canonicalRecord)
+        guard record["v"] as? Int == 1, record["kind"] as? String == "view", let contact = record["contact"] as? String,
+            isID(contact), let phi = record["phi"] as? Bool,
+            let item = record["item"] as? [String: Any], Set(item.keys) == ["chat", "kind"],
+            item["kind"] as? String == "chat", let chat = item["chat"] as? String, isID(chat)
+        else { throw ConsentPromptError.invalidInput }
+        var lines = ["Chat: " + String(label.prefix(200)), "With mesh: " + fingerprint(contact)]
+        lines.append(phi ? "This chat holds PHI and PHI is included." : "Read only. PHI is not included.")
+        var prompt = ConsentPrompt(
+            actionTitle: phi ? "Share chat with PHI" : "Share chat", effect: "share.grant",
+            target: "Chat " + String(chat.dropFirst("sha256:".count).prefix(8)) + " with mesh " + fingerprint(contact),
+            arguments: lines.joined(separator: "\n") + "\nRecord: " + String(decoding: canonicalRecord, as: UTF8.self),
+            digest: consent.digest, requiresBiometry: true)
+        prompt.signingInputHash = hash(signingInput)
+        return prompt
+    }
+
+    private static func recordConsent(_ signingInput: Data, kind: String, record: Data) throws -> ActionConsent {
+        let consentData = try payload(signingInput, context: "astral.consent/v1")
+        let consentObject = try object(consentData, fields: ["v", "kind", "digest", "device", "clock"])
+        let consent = try JSONDecoder().decode(ActionConsent.self, from: consentData)
+        try checkClock(consentObject["clock"], value: consent.clock)
+        guard consent.v == 1, consent.kind == kind, isID(consent.device), consent.digest == hashID(record) else {
+            throw ConsentPromptError.invalidInput
+        }
+        return consent
+    }
+
+    static func fingerprint(_ mesh: String) -> String {
+        let digits = Array(mesh.dropFirst("sha256:".count).prefix(16))
+        return stride(from: 0, to: digits.count, by: 4).map { String(digits[$0..<min($0 + 4, digits.count)]) }
+            .joined(separator: " ")
+    }
+
     static func isGrant(canonicalAction: Data) -> Bool {
         guard let value = try? JSONSerialization.jsonObject(with: canonicalAction) as? [String: Any] else {
             return false

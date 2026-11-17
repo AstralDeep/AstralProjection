@@ -268,6 +268,8 @@ nonisolated enum KernelMapping {
             }
         case .allowanceChanged: return [.allowanceChanged]
         case .connectionsChanged: return [.connectionsChanged]
+        case .contactsChanged: return [.contactsChanged]
+        case .sharesChanged: return [.sharesChanged]
         case .turn(let progress): return turn(progress)
         }
     }
@@ -425,11 +427,39 @@ nonisolated enum KernelMapping {
         ("oauth.wrong_callback", "The sign-in came back to an unexpected address. It was refused."),
         ("oauth.no_authorization_url", "The service gave no sign-in address."),
         ("oauth.", "The sign-in was refused or did not complete."),
+        ("contact.invite_expired", "That invitation ran out of time. Ask for a new one."),
+        ("contact.invite_bad_signature", "That invitation was changed on the way. Ask for a new one."),
+        ("contact.invite_malformed", "That is not a contact invitation."),
+        ("contact.invite_lifetime", "That invitation is valid for too long to trust."),
+        ("contact.invitation_open", "An invitation is already open. Cancel it first."),
+        ("contact.self", "That invitation is from your own mesh."),
+        ("contact.too_many", "You have the most contacts a mesh can hold."),
+        ("contact.unreachable", "Their devices could not be reached. Try again when they are online."),
+        ("contact.exchange_unknown", "That comparison is no longer open. Start again."),
+        ("contact.unverified", "Verify this contact first."),
+        ("contact.device_kind", "Use a phone or computer to add contacts."),
+        ("contact.roster_rejected", "This contact's devices changed in a way you have not approved."),
+        ("contact.heads_missing", "This contact has not finished syncing. Try again."),
+        ("contact.", "The contact could not be changed."),
+        ("share.contact_unverified", "Verify this contact before sharing."),
+        ("share.contact_unknown", "That contact is not in your list."),
+        ("share.phi_not_destination", "This chat holds PHI. Approve this contact for PHI first."),
+        ("share.exists", "This chat is already shared with that contact."),
+        ("share.changed", "The share changed after it was shown. Review it again."),
+        ("share.proposal_unknown", "That share is no longer open. Start again."),
+        ("share.chat_unknown", "That chat is no longer on this device."),
+        ("share.grant_unknown", "That share has already ended."),
+        ("share.device_kind", "Use a phone or computer to share chats."),
+        ("share.reader_kind", "This device cannot read shared chats."),
+        ("share.too_large", "This chat is too large to share."),
+        ("share.too_many", "You have the most shares a mesh can hold."),
+        ("share.peer_unknown", "Their devices could not be reached. Try again when they are online."),
+        ("share.", "The share could not be changed."),
         ("phi.group_not_ready", "Set up PHI on your mesh first. Open the PHI settings to adopt it."),
         ("phi.device_excluded", "This device is excluded from PHI. Use a device that is in the PHI group."),
         ("phi_group.node_device", "A node cannot approve PHI destinations."),
         ("phi_destination.on_device", "That place runs on this device, so it needs no approval."),
-        ("phi_destination.contact_unavailable", "Contacts cannot receive PHI yet."),
+        ("phi_destination.contact_unavailable", "Verify this contact before they can receive PHI."),
         ("phi_destination.", "That destination cannot be approved for PHI."),
         ("phi_group.", "The PHI group could not be changed."),
         ("flow.phi_to_model", "PHI cannot go to this model until you approve it."),
@@ -587,6 +617,60 @@ nonisolated enum KernelMapping {
         AstralKernel.PhiDestinationProposal(
             kind: value.kind.rawValue, target: value.target, subject: value.subject, name: value.name,
             needsApproval: value.needsApproval, facts: value.facts.map(\.rawValue), source: value.source)
+    }
+
+    static func contactInvitation(_ value: AstralKernel.ContactInvitation) -> MeshContactInvitation {
+        MeshContactInvitation(text: value.text, link: value.link, expiresInSeconds: value.expiresS)
+    }
+
+    static func contactExchange(_ value: AstralKernel.ContactExchange) -> MeshContactExchange {
+        MeshContactExchange(
+            id: value.id, mesh: value.mesh, name: value.name, code: value.code, codeQR: value.codeQr,
+            devices: Int(value.devices))
+    }
+
+    static func contact(_ value: AstralKernel.ContactInfo) -> MeshContact {
+        MeshContact(
+            mesh: value.mesh, name: value.name, state: MeshContactState(rawValue: value.state) ?? .unverified,
+            fingerprint: value.fingerprint, devices: Int(value.devices),
+            notices: value.notices.map { MeshContactNotice(notice: $0.notice, device: $0.device) },
+            reason: value.reason)
+    }
+
+    static func shareProposal(_ value: AstralKernel.ShareProposal) -> MeshShareProposal {
+        MeshShareProposal(
+            id: value.id, chat: value.chat, title: value.title, contact: value.contact,
+            contactName: value.contactName, verified: value.verified, labels: value.labels,
+            phiNeeded: value.phiNeeded, phiDestination: value.phiDestination, supersedes: value.supersedes,
+            refusal: value.refusal)
+    }
+
+    static func shareProposal(_ value: MeshShareProposal) -> AstralKernel.ShareProposal {
+        AstralKernel.ShareProposal(
+            id: value.id, chat: value.chat, title: value.title, contact: value.contact,
+            contactName: value.contactName, verified: value.verified, labels: value.labels,
+            phiNeeded: value.phiNeeded, phiDestination: value.phiDestination, supersedes: value.supersedes,
+            refusal: value.refusal)
+    }
+
+    static func share(_ value: AstralKernel.ShareInfo) -> MeshShareInfo {
+        MeshShareInfo(
+            id: value.id, chat: value.chat, title: value.title, contact: value.contact,
+            contactName: value.contactName, phi: value.phi, phiWithheld: value.phiWithheld,
+            state: MeshShareState(rawValue: value.state) ?? .waiting)
+    }
+
+    static func sharedItem(_ value: AstralKernel.SharedItemInfo) -> MeshSharedItem {
+        MeshSharedItem(
+            grant: value.grant, contact: value.contact, contactName: value.contactName, chat: value.chat,
+            title: value.title, phi: value.phi, withheldPhi: Int(value.withheldPhi),
+            withheldFields: Int(value.withheldFields), withheldKeys: Int(value.withheldKeys),
+            state: MeshSharedState(rawValue: value.state) ?? .needsVerification, events: Int(value.events),
+            updatedAt: date(ms: value.updatedMs))
+    }
+
+    static func refreshReport(_ value: AstralKernel.RefreshReport) -> MeshRefreshReport {
+        MeshRefreshReport(received: Int(value.received), refused: Int(value.refused), stopped: value.stopped)
     }
 
     static func phiStatus(_ value: AstralKernel.PhiStatus) -> MeshPhiStatus {

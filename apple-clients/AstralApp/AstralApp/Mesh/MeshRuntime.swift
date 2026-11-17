@@ -393,6 +393,9 @@ final class MeshRuntime {
     private(set) var turns: [String: MeshTurnState] = [:]
     private(set) var pendingConsents: [MeshPendingConsent] = []
     private(set) var connections: [MeshConnection] = []
+    private(set) var contacts: [MeshContact] = []
+    private(set) var shares: [MeshShareInfo] = []
+    private(set) var sharedItems: [MeshSharedItem] = []
     var presentingPhi: MeshPhiOffer?
     private(set) var phiOffer: MeshPhiOffer?
     private(set) var allowance: MeshAllowance?
@@ -433,6 +436,7 @@ final class MeshRuntime {
     @ObservationIgnored private var turnReservations: [String: UUID] = [:]
     @ObservationIgnored private var supersededTurns: [String: Set<String>] = [:]
     @ObservationIgnored private var recoveryScan: UUID?
+    @ObservationIgnored private var endedShares: [String: MeshShareInfo] = [:]
     @ObservationIgnored private var closing = false
     @ObservationIgnored private var closeWaiters: [CheckedContinuation<Void, Never>] = []
     @ObservationIgnored private(set) var speakingChatId: String?
@@ -663,6 +667,10 @@ final class MeshRuntime {
         members = []
         pendingConsents = []
         connections = []
+        contacts = []
+        shares = []
+        sharedItems = []
+        endedShares = [:]
         runs = []
         proposals = []
         chatRequests = []
@@ -880,6 +888,87 @@ final class MeshRuntime {
 
     func refreshConnections() async {
         if let value = await attempt({ try $0.connections() }) { connections = value }
+    }
+
+    func refreshContacts() async {
+        if let value = await attempt({ try $0.contacts() }) { contacts = value }
+    }
+
+    func refreshShares() async {
+        if let value = await attempt({ try $0.shares() }) {
+            let live = Set(value.map(\.id))
+            shares = value + endedShares.values.filter { !live.contains($0.id) }.sorted { $0.id < $1.id }
+        }
+    }
+
+    func refreshSharedItems() async {
+        if let value = await attempt({ try $0.sharedWithMe() }) { sharedItems = value }
+    }
+
+    func createContactInvitation(name: String, ttlSeconds: UInt64) async throws -> MeshContactInvitation {
+        try await call { try await $0.createContactInvitation(name: name, ttlSeconds: ttlSeconds) }
+    }
+
+    func cancelContactInvitation() async { _ = try? await call { $0.cancelContactInvitation() } }
+
+    func acceptContactInvitation(text: String, name: String) async throws -> MeshContactExchange {
+        let exchange = try await call { try await $0.acceptContactInvitation(text: text, name: name) }
+        await refreshContacts()
+        return exchange
+    }
+
+    func startContactVerification(mesh: String) async throws -> MeshContactExchange {
+        try await call { try await $0.startContactVerification(mesh: mesh) }
+    }
+
+    func pendingContactExchanges() async throws -> [MeshContactExchange] {
+        try await call { try $0.pendingContactExchanges() }
+    }
+
+    func verifyContact(exchangeId: String) async throws -> MeshContact {
+        let contact = try await call { try $0.verifyContact(exchangeId: exchangeId) }
+        await refreshContacts()
+        return contact
+    }
+
+    func rejectContactExchange(exchangeId: String) async throws {
+        try await call { try $0.rejectContactExchange(exchangeId: exchangeId) }
+    }
+
+    func removeContact(mesh: String) async throws {
+        try await call { try $0.removeContact(mesh: mesh) }
+        await refreshContacts()
+        await refreshShares()
+    }
+
+    func proposeShare(chatId: String, contactMesh: String) async throws -> MeshShareProposal {
+        try await call { try $0.proposeShare(chatId: chatId, contactMesh: contactMesh) }
+    }
+
+    func approveShare(_ proposal: MeshShareProposal) async throws -> MeshShareInfo {
+        let info = try await call { try $0.approveShare(proposal) }
+        await refreshShares()
+        return info
+    }
+
+    func revokeShare(_ share: MeshShareInfo) async throws {
+        try await call { try $0.revokeShare(id: share.id) }
+        endedShares[share.id] = share.revoked()
+        await refreshShares()
+    }
+
+    func sharedChat(grant: String) async throws -> MeshChatView {
+        try await call { try $0.sharedChat(grant: grant) }
+    }
+
+    func refreshShared(grant: String) async throws -> MeshRefreshReport {
+        let report = try await call { try await $0.refreshShared(grant: grant) }
+        await refreshSharedItems()
+        return report
+    }
+
+    func sharedAttachment(grant: String, event: String) async throws -> Data {
+        try await call { try await $0.sharedAttachment(grant: grant, event: event) }
     }
 
     func refreshAllowance() async {
@@ -1485,6 +1574,7 @@ final class MeshRuntime {
             case .legacyServer(let name): return try kernel.proposeLegacyPhiDestination(name: name)
             case .connection(let id, let usage): return try kernel.proposeConnectionPhiDestination(id: id, usage: usage)
             case .source(let source): return try kernel.proposePhiDestination(source: source)
+            case .contact(let mesh): return try kernel.proposeContactPhiDestination(mesh: mesh)
             }
         }
     }
@@ -1963,6 +2053,12 @@ final class MeshRuntime {
             await refreshAllowance()
         case .connectionsChanged:
             await refreshConnections()
+        case .contactsChanged:
+            await refreshContacts()
+            await refreshSharedItems()
+        case .sharesChanged:
+            await refreshShares()
+            await refreshSharedItems()
         case .runProgress:
             await refreshRuns()
         case .joinRequested(let request):

@@ -9,6 +9,7 @@ nonisolated enum MeshPhiDestinationRequest: Equatable, Hashable, Sendable {
     case legacyServer(name: String)
     case connection(id: String, usage: String)
     case source(String)
+    case contact(mesh: String)
 }
 
 nonisolated enum MeshPhiOffer: Equatable, Hashable, Sendable, Identifiable {
