@@ -199,6 +199,9 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
                 throw ConsentPromptError.invalidInput
             }
             target = (header.type == "stop" ? "Stop counter " : "Resume counter ") + String(counter)
+        case "phi_authority", "phi_approval":
+            let described = try phi(header.type, body: body)
+            return try phiPrompt(described, data: data, signingInput: signingInput)
         default:
             throw ConsentPromptError.invalidInput
         }
@@ -212,6 +215,59 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
         prompt.signingInputHash = hash(signingInput)
         return prompt
     }
+
+    private struct PhiChange {
+        let effect: String
+        let title: String
+        let target: String
+    }
+
+    private static let approvalFields: Set<String> = [
+        "kind", "institution", "subject_kind", "subject", "issued_s", "not_after_s", "sig",
+    ]
+
+    private static func phi(_ type: String, body: [String: Any]) throws -> PhiChange {
+        if type == "phi_authority" {
+            guard Set(body.keys) == ["action", "institution"], body["action"] as? String == "add",
+                let institution = body["institution"] as? [String: Any], Set(institution.keys) == ["key", "name"],
+                let name = institution["name"] as? String, name.hasPrefix(approverPrefix),
+                isID(String(name.dropFirst(approverPrefix.count)))
+            else { throw ConsentPromptError.invalidInput }
+            _ = try keyBytes(institution["key"], count: 65)
+            return PhiChange(
+                effect: "roster.phi_register_approver", title: "Let this device approve PHI places",
+                target: String(name.dropFirst(approverPrefix.count)))
+        }
+        guard let action = body["action"] as? String else { throw ConsentPromptError.invalidInput }
+        if action == "revoke" {
+            guard Set(body.keys) == ["action", "subject"], let subject = body["subject"] as? String, !subject.isEmpty
+            else { throw ConsentPromptError.invalidInput }
+            return PhiChange(effect: "roster.phi_revoke", title: "Take back a PHI approval", target: subject)
+        }
+        guard action == "grant", Set(body.keys) == ["action", "attestation"],
+            let statement = body["attestation"] as? [String: Any], Set(statement.keys) == approvalFields,
+            statement["kind"] as? String == "phi", let kind = statement["subject_kind"] as? String,
+            let subject = statement["subject"] as? String, !subject.isEmpty
+        else { throw ConsentPromptError.invalidInput }
+        switch kind {
+        case "device", "node":
+            return PhiChange(effect: "roster.phi_grant", title: "Let a device read PHI", target: subject)
+        case "endpoint":
+            return PhiChange(
+                effect: "roster.phi_approve_destination", title: "Let a place receive PHI", target: subject)
+        default: throw ConsentPromptError.invalidInput
+        }
+    }
+
+    private static func phiPrompt(_ change: PhiChange, data: Data, signingInput: Data) throws -> ConsentPrompt {
+        var prompt = ConsentPrompt(
+            actionTitle: change.title, effect: change.effect, target: change.target,
+            arguments: String(decoding: data, as: UTF8.self), digest: hashID(data), requiresBiometry: true)
+        prompt.signingInputHash = hash(signingInput)
+        return prompt
+    }
+
+    private static let approverPrefix = "astral-device:"
 
     func requiringBiometry(_ required: Bool) -> ConsentPrompt {
         guard required, !requiresBiometry else { return self }

@@ -40,7 +40,7 @@ final class KernelConnectionMappingTests: XCTestCase {
         AstralKernel.ConsentPrompt(
             kind: kind, title: "Research", target: "Research at https://mcp.example/mcp", canonicalAction: record,
             canonicalArguments: Data(), signingInput: input, digest: hash(record), untrustedSources: [], labels: [],
-            requiresBiometry: true)
+            requiresBiometry: true, batch: 1)
     }
 
     func testConnectionPromptShowsTheRecordAndBindsToTheSigningInput() throws {

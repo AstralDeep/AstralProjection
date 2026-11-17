@@ -15,6 +15,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     private let listener: any MeshKernelListening
     private let clock: @Sendable () -> Date
     let connectionBook: InMemoryConnections
+    let phiBook = InMemoryPhi()
     private var status: MeshStatus
     private var principalValue: MeshVerifiedPrincipal?
     private var wakeRouteValue: MeshWakeRoute?
@@ -36,6 +37,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     private var allowanceValue: MeshAllowance
     private var counter = 0
     private var log: [Call] = []
+    private var attendedValues: [Bool] = []
     private var resumeTargets: Set<MeshResumeTarget> = []
     private var pendingMessages: Set<MeshPendingMessage> = []
     private var offer: MeshPairingOffer?
@@ -557,8 +559,13 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         return try appendMessage(chatId: chatId, text: text, continues: continues, attachments: [])
     }
 
-    func addAttachment(chatId: String, bytes: Data, mime: String, name: String) throws -> MeshAttachment {
+    var attendedFlags: [Bool] { lock.withLock { attendedValues } }
+
+    func addAttachment(chatId: String, bytes: Data, mime: String, name: String, attended: Bool) throws
+        -> MeshAttachment
+    {
         try record("addAttachment", chatId + "|" + name)
+        lock.withLock { attendedValues.append(attended) }
         let id = nextId("attachment")
         let chunks = UInt64((bytes.count + 262_143) / 262_144)
         let attachment = MeshAttachment(
@@ -581,8 +588,11 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         }
     }
 
-    func sendMessage(chatId: String, text: String, continues: String?, attachments: [String]) throws -> String {
+    func sendMessage(chatId: String, text: String, continues: String?, attachments: [String], attended: Bool) throws
+        -> String
+    {
         try record("sendMessageWithAttachments", text + "|" + attachments.joined(separator: ","))
+        lock.withLock { attendedValues.append(attended) }
         return try appendMessage(chatId: chatId, text: text, continues: continues, attachments: attachments)
     }
 
@@ -1029,6 +1039,116 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
                 remoteMCPToolsValue[server]?[index].status = "new"
             }
         }
+    }
+
+    func phiGroup() throws -> MeshPhiGroup {
+        try record("phiGroup")
+        try requireEnrolled()
+        return phiBook.group(members: lock.withLock { members })
+    }
+
+    func adoptPhiGroup() throws -> MeshPhiGroup {
+        try record("adoptPhiGroup")
+        try requireEnrolled()
+        let group = phiBook.adopt(members: lock.withLock { members })
+        listener.onChange(.rosterChanged)
+        return group
+    }
+
+    func includePhiDevice(deviceId: String) throws -> MeshPhiGroup {
+        try record("includePhiDevice", deviceId)
+        try requireEnrolled()
+        let group = try phiBook.include(deviceId, members: lock.withLock { members })
+        listener.onChange(.rosterChanged)
+        return group
+    }
+
+    func excludePhiDevice(deviceId: String) throws -> MeshPhiGroup {
+        try record("excludePhiDevice", deviceId)
+        try requireEnrolled()
+        let group = try phiBook.exclude(deviceId, members: lock.withLock { members })
+        listener.onChange(.rosterChanged)
+        return group
+    }
+
+    func rotateStalePhiEpoch() throws -> Bool {
+        try record("rotateStalePhiEpoch")
+        try requireEnrolled()
+        return false
+    }
+
+    func phiDestinations() throws -> MeshPhiDestinations {
+        try record("phiDestinations")
+        try requireEnrolled()
+        return phiBook.destinations(members: lock.withLock { members })
+    }
+
+    func phiDestinationAllowed(kind: MeshPhiDestinationKind, target: String) -> Bool {
+        phiBook.allowed(kind: kind, target: target)
+    }
+
+    func proposePhiDestination(source: String) throws -> MeshPhiProposal {
+        try record("proposePhiDestination")
+        try requireEnrolled()
+        return try phiBook.propose(source: source, deviceId: localMember.memberId)
+    }
+
+    func proposeProviderPhiDestination(name: String) throws -> MeshPhiProposal {
+        try record("proposeProviderPhiDestination", name)
+        try requireEnrolled()
+        guard let provider = lock.withLock({ providers.first { $0.providerId == name } }) else {
+            throw KernelMapping.refusal("provider.not_found")
+        }
+        let source = try Self.phiSource(["source": "provider", "name": name, "base_url": provider.baseURL])
+        return try phiBook.propose(source: source, deviceId: localMember.memberId)
+    }
+
+    func proposeLegacyPhiDestination(name: String) throws -> MeshPhiProposal {
+        try record("proposeLegacyPhiDestination", name)
+        try requireEnrolled()
+        guard let server = lock.withLock({ remoteMCPServersValue[name] }) else {
+            throw KernelMapping.refusal("mcp.server_missing")
+        }
+        let source = try Self.phiSource(["source": "legacy_server", "name": name, "endpoint": server.endpoint])
+        return try phiBook.propose(source: source, deviceId: localMember.memberId)
+    }
+
+    func proposeConnectionPhiDestination(id: String, usage: String) throws -> MeshPhiProposal {
+        try record("proposeConnectionPhiDestination", id)
+        try requireEnrolled()
+        let found = connectionBook.list().first { $0.id == id }
+        guard let found else { throw KernelMapping.refusal("connection.not_found") }
+        let source = try Self.phiSource([
+            "source": "connection", "name": found.name, "use": usage, "confined": false, "endpoint": found.endpoint,
+            "device": found.device ?? NSNull(),
+        ])
+        return try phiBook.propose(source: source, deviceId: localMember.memberId)
+    }
+
+    func approvePhiDestination(_ proposal: MeshPhiProposal) throws {
+        try record("approvePhiDestination", proposal.target)
+        try requireEnrolled()
+        try consentGate()
+        try phiBook.approve(proposal, members: lock.withLock { members })
+        listener.onChange(.rosterChanged)
+    }
+
+    func revokePhiDestination(subject: String) throws {
+        try record("revokePhiDestination", subject)
+        try requireEnrolled()
+        try consentGate()
+        try phiBook.revoke(subject: subject)
+        listener.onChange(.rosterChanged)
+    }
+
+    func phiStatus() throws -> MeshPhiStatus {
+        try record("phiStatus")
+        return phiBook.status()
+    }
+
+    private static func phiSource(_ object: [String: Any]) throws -> String {
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        return String(decoding: data, as: UTF8.self)
     }
 
     func proposeConnection(endpoint: String, name: String, local: Bool) async throws -> MeshConnectionProposal {

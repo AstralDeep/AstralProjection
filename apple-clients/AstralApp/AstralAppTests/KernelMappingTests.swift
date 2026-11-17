@@ -23,7 +23,7 @@ final class KernelMappingTests: XCTestCase {
             let message = Data((domain + "\n" + mesh).utf8)
             let native = AstralKernel.ConsentPrompt(
                 kind: .other, title: action, target: "", canonicalAction: Data(), canonicalArguments: Data(),
-                signingInput: message, digest: "", untrustedSources: [], labels: [], requiresBiometry: true)
+                signingInput: message, digest: "", untrustedSources: [], labels: [], requiresBiometry: true, batch: 1)
             let prompt = try KernelHostSigner.display(for: native, message: message)
             XCTAssertTrue(prompt.requiresBiometry)
             XCTAssertEqual(prompt.target, mesh)
@@ -339,7 +339,7 @@ final class KernelMappingTests: XCTestCase {
         func prompt(kind: ConsentKind, title: String = "t", input: Data) -> AstralKernel.ConsentPrompt {
             AstralKernel.ConsentPrompt(
                 kind: kind, title: title, target: "x", canonicalAction: Data(), canonicalArguments: Data(),
-                signingInput: input, digest: "d", untrustedSources: [], labels: [], requiresBiometry: true)
+                signingInput: input, digest: "d", untrustedSources: [], labels: [], requiresBiometry: true, batch: 1)
         }
         let input = Data("astral.roster/v2\n{}".utf8)
         XCTAssertThrowsError(
@@ -408,7 +408,7 @@ final class KernelMappingTests: XCTestCase {
         let signer = AstralKernel.ConsentPrompt(
             kind: .toolEffect, title: "run.takeover", target: "owner_action", canonicalAction: action,
             canonicalArguments: action, signingInput: input, digest: hash(action), untrustedSources: [], labels: [],
-            requiresBiometry: false)
+            requiresBiometry: false, batch: 1)
         let shown = try KernelHostSigner.display(for: signer, message: input)
         XCTAssertEqual(shown.actionTitle, "Take over this run")
         XCTAssertTrue(shown.isBound(to: input))
@@ -475,7 +475,7 @@ final class KernelMappingTests: XCTestCase {
         let routed = AstralKernel.ConsentPrompt(
             kind: .toolEffect, title: "files.read", target: "grant mesh_read", canonicalAction: action,
             canonicalArguments: action, signingInput: good, digest: id("a"), untrustedSources: [], labels: [],
-            requiresBiometry: false)
+            requiresBiometry: false, batch: 1)
         let shown = try KernelHostSigner.display(for: routed, message: good)
         XCTAssertEqual(shown.actionTitle, "Allow files.read")
         XCTAssertTrue(shown.requiresBiometry)
