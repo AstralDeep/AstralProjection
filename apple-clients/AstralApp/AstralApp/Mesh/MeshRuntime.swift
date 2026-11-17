@@ -397,6 +397,7 @@ final class MeshRuntime {
     private(set) var runs: [MeshRun] = []
     private(set) var proposals: [MeshProposal] = []
     private(set) var toolEntries: [MeshToolEntry] = []
+    private(set) var callerTickets: [MeshCallerTicket] = []
     private(set) var grantedTools: Set<String> = []
     private(set) var meshGrants: [MeshGrant] = []
     private(set) var resolvedHandles: [String: MeshResolvedHandle] = [:]
@@ -654,6 +655,7 @@ final class MeshRuntime {
         chatRequests = []
         requestsForMe = []
         toolEntries = []
+        callerTickets = []
         grantedTools = []
         meshGrants = []
         resolvedHandles = [:]
@@ -730,6 +732,40 @@ final class MeshRuntime {
         if let value = await attempt({ try $0.grants() }) {
             meshGrants = value.filter { $0.refusal == nil }
             grantedTools = Set(meshGrants.map(\.key))
+        }
+    }
+
+    func refreshCallerTickets() async {
+        if let value = await attempt({ try $0.callerTickets() }) { callerTickets = value }
+    }
+
+    func mintCallerTicket(
+        nodeId: String, holderKey: String, label: String, toolNames: [String], a2a: Bool, lifetimeSeconds: UInt64
+    ) async -> Result<MeshCallerTicket, MeshKernelError> {
+        do {
+            let ticket = try await call {
+                try $0.mintCallerTicket(
+                    nodeId: nodeId, holderKey: holderKey, label: label, toolNames: toolNames, a2a: a2a,
+                    lifetimeSeconds: lifetimeSeconds)
+            }
+            await refreshCallerTickets()
+            return .success(ticket)
+        } catch let error as MeshKernelError {
+            return .failure(error)
+        } catch {
+            return .failure(.refused(Self.describe(error)))
+        }
+    }
+
+    func revokeCallerTicket(id: String) async -> MeshKernelError? {
+        do {
+            try await call { try $0.revokeCallerTicket(id: id) }
+            await refreshCallerTickets()
+            return nil
+        } catch let error as MeshKernelError {
+            return error
+        } catch {
+            return .refused(Self.describe(error))
         }
     }
 
