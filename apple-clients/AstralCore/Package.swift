@@ -54,7 +54,13 @@ let package = Package(
         .library(name: "AstralCore", targets: ["AstralCore"])
     ],
     targets: [
-        .target(name: "AstralCore", path: "Sources/AstralCore", resources: [.process("Resources/Fonts")]),
+        .target(name: "AstralExecSpawn", path: "Sources/AstralExecSpawn"),
+        .target(
+            name: "AstralCore",
+            dependencies: ["AstralExecSpawn"],
+            path: "Sources/AstralCore",
+            resources: [.process("Resources/Fonts"), .copy("Resources/Exec")]
+        ),
         .testTarget(
             name: "AstralCoreTests",
             dependencies: ["AstralCore"],
@@ -63,7 +69,7 @@ let package = Package(
                 "Fixtures/astralprims-fixtures.json",
                 "Fixtures/generate_fixtures.py",
             ],
-            resources: [.process("Fixtures/voice_065")]
+            resources: [.process("Fixtures/voice_065"), .copy("Fixtures/exec")]
         ),
     ]
 )
