@@ -54,12 +54,15 @@ final class OnDevicePhiFilterTests: XCTestCase {
             ], jsonSchema: try schemaJSON(), grammar: nil, maxTokens: 2048)
     }
 
-    private func host(_ script: [AstralDeep.OnDeviceResponse], deadline: Duration = .milliseconds(300)) -> (
+    private func host(
+        _ script: [AstralDeep.OnDeviceResponse], deadline: Duration = .milliseconds(300),
+        margin: Duration = .milliseconds(100)
+    ) -> (
         KernelOnDeviceModel, ScriptedPhiModel
     ) {
         let model = ScriptedPhiModel(script)
         return (
-            KernelOnDeviceModel(model, deadline: deadline, margin: .milliseconds(100), backoff: .milliseconds(5)), model
+            KernelOnDeviceModel(model, deadline: deadline, margin: margin, backoff: .milliseconds(5)), model
         )
     }
 
@@ -145,8 +148,14 @@ final class OnDevicePhiFilterTests: XCTestCase {
         XCTAssertEqual(model.requests.count, 3)
     }
 
+    func testDefaultDeadlineEqualsTheContractTimeout() throws {
+        let limits = try XCTUnwrap(contract()["limits"] as? [String: Any])
+        let timeout = try XCTUnwrap(limits["timeout_ms"] as? Int)
+        XCTAssertEqual(KernelOnDeviceModel.defaultDeadline, .milliseconds(timeout))
+    }
+
     func testBusyPastTheDeadlineFailsAsBusy() throws {
-        let (host, _) = host([.failed(.busy)], deadline: .milliseconds(60))
+        let (host, _) = host([.failed(.busy)], deadline: .milliseconds(60), margin: .seconds(10))
         XCTAssertEqual(try failure(host), "on_device.busy")
     }
 

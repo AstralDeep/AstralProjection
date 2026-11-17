@@ -79,12 +79,14 @@ nonisolated final class KernelHostSigner: AstralKernel.HostSigner, @unchecked Se
 
 nonisolated final class KernelOnDeviceModel: AstralKernel.OnDeviceModel, @unchecked Sendable {
     private let model: any AstralOnDeviceModel
+    static let defaultDeadline: Duration = .milliseconds(20_000)
+
     private let deadline: Duration
     private let margin: Duration
     private let backoff: Duration
 
     init(
-        _ model: any AstralOnDeviceModel, deadline: Duration = .milliseconds(20_000),
+        _ model: any AstralOnDeviceModel, deadline: Duration = KernelOnDeviceModel.defaultDeadline,
         margin: Duration = .milliseconds(500), backoff: Duration = .milliseconds(50)
     ) {
         self.model = model
