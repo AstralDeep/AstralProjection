@@ -1,5 +1,6 @@
 // An in-memory MeshKernel with scripted behavior for unit tests, previews and the UI fixture launch.
 // It follows the same state rules the host expects from the real kernel, and reports changes through the listener it was opened with.
+// Caller holder keys are checked only against the contract's refused list, so the real kernel stays the authority on point validity.
 
 import AstralCore
 import Foundation
@@ -17,6 +18,13 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     private var principalValue: MeshVerifiedPrincipal?
     private var wakeRouteValue: MeshWakeRoute?
     private var members: [MeshMember] = []
+    private var issuedCallers: [MeshCallerTicket] = []
+    private var acceptedCallers: [MeshCallerTicket] = []
+    private var seenProofs: Set<String> = []
+    private var revokedCallerIds: Set<String> = []
+    private var stopRaises: UInt64 = 0
+    private var callerStopLevels: [String: UInt64] = [:]
+    private var nodeCatalogs: [String: Set<String>] = [:]
     private var chats: [String: StoredChat] = [:]
     private var order: [String] = []
     private var consents: [MeshPendingConsent] = []
@@ -319,9 +327,172 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         listener.onChange(.rosterChanged)
     }
 
+    var localMember: MeshMember {
+        lock.withLock { members.first { $0.isThisDevice } ?? Self.thisDevice(status: status) }
+    }
+
+    func acceptCaller(_ ticket: MeshCallerTicket) { lock.withLock { acceptedCallers.append(ticket) } }
+
+    func setNodeCatalog(_ nodeId: String, tools: [String]) {
+        lock.withLock { nodeCatalogs[nodeId] = Set(tools) }
+    }
+
+    func mintCallerTicket(
+        nodeId: String, holderKey: String, label: String, toolNames: [String], a2a: Bool, lifetimeSeconds: UInt64
+    ) throws -> MeshCallerTicket {
+        try record("mintCallerTicket", nodeId + "|" + label)
+        let ticket = try lock.withLock { () -> MeshCallerTicket in
+            try requireEnrolledLocked()
+            if status.stopped { throw MeshKernelError.stopped }
+            guard let local = members.first(where: { $0.isThisDevice }) else { throw MeshKernelError.consentDenied }
+            guard local.kind != .node else { throw Self.callerRefusal("caller.wrong_minter") }
+            guard members.contains(where: { $0.memberId == nodeId && $0.kind == .node }) else {
+                throw Self.callerRefusal("caller.wrong_node")
+            }
+            guard Self.usableHolder(holderKey),
+                (1...MeshCallerTicketLimits.maxLifetimeSeconds).contains(lifetimeSeconds)
+            else { throw Self.callerRefusal("caller.malformed") }
+            guard let catalog = nodeCatalogs[nodeId] else { throw Self.callerRefusal("caller.no_catalog") }
+            let count = toolNames.count + (a2a ? 1 : 0)
+            guard (1...MeshCallerTicketLimits.maxTools).contains(count) else {
+                throw Self.callerRefusal("caller.malformed")
+            }
+            var seen: Set<String> = []
+            for name in toolNames {
+                if name == MeshCallerTicketLimits.a2aTool || !seen.insert(name).inserted {
+                    throw Self.callerRefusal("caller.malformed")
+                }
+                if !catalog.contains(name) { throw Self.callerRefusal("caller.unknown_tool") }
+            }
+            guard Self.usableLabel(label) else { throw Self.callerRefusal("caller.malformed") }
+            let id = Self.newTicketId()
+            let issued = clock()
+            let granted = (toolNames + (a2a ? [MeshCallerTicketLimits.a2aTool] : [])).sorted()
+            return MeshCallerTicket(
+                id: id, text: "in-memory-caller-ticket:" + id, label: label, nodeId: nodeId, tools: granted,
+                issuedAt: issued, expiresAt: issued.addingTimeInterval(TimeInterval(lifetimeSeconds)), revoked: false,
+                expired: false)
+        }
+        try consentGate()
+        lock.withLock {
+            issuedCallers.append(ticket)
+            callerStopLevels[ticket.id] = stopRaises
+        }
+        return ticket
+    }
+
+    func callerTickets() throws -> [MeshCallerTicket] {
+        try record("callerTickets")
+        return try lock.withLock {
+            try requireEnrolledLocked()
+            return issuedCallers.map(listedLocked)
+        }
+    }
+
+    func revokeCallerTicket(id: String) throws {
+        try record("revokeCallerTicket", id)
+        try lock.withLock {
+            try requireEnrolledLocked()
+            guard Self.validTicketId(id) else { throw Self.callerRefusal("caller.malformed") }
+            revokedCallerIds.insert(id)
+        }
+    }
+
+    func verifyCallerRequest(_ request: MeshCallerRequest) throws -> MeshVerifiedCaller {
+        try record("verifyCallerRequest", request.target)
+        return try lock.withLock {
+            try requireEnrolledLocked()
+            guard let local = members.first(where: { $0.isThisDevice }) else { throw MeshKernelError.consentDenied }
+            guard let held = acceptedCallers.first(where: { $0.text == request.authorization }) else {
+                throw Self.callerRefusal("caller.malformed")
+            }
+            guard let proof = request.proof, !proof.isEmpty else { throw Self.callerRefusal("caller.proof_malformed") }
+            guard held.nodeId == local.memberId else { throw Self.callerRefusal("caller.wrong_node") }
+            let ticket = listedLocked(held)
+            if stopRaises > callerStopLevels[ticket.id, default: 0] { throw Self.callerRefusal("caller.stopped") }
+            if ticket.expired { throw Self.callerRefusal("caller.expired") }
+            if ticket.issuedAt.timeIntervalSince(clock()) > Self.futureSkew {
+                throw Self.callerRefusal("caller.not_yet_valid")
+            }
+            if ticket.revoked { throw Self.callerRefusal("caller.revoked") }
+            guard seenProofs.insert(ticket.id + "|" + proof).inserted else {
+                throw Self.callerRefusal("caller.replayed")
+            }
+            if let tool = request.tool, !ticket.tools.contains(tool) {
+                throw Self.callerRefusal("caller.tool_not_covered")
+            }
+            return MeshVerifiedCaller(
+                id: ticket.id, meshId: status.meshId ?? "", deviceId: local.memberId, label: ticket.label,
+                tool: request.tool, tools: ticket.tools, expiresAt: ticket.expiresAt)
+        }
+    }
+
+    private func requireEnrolledLocked() throws {
+        guard status.hasMesh else { throw Self.callerRefusal("mesh.not_enrolled") }
+    }
+
+    private func listedLocked(_ ticket: MeshCallerTicket) -> MeshCallerTicket {
+        MeshCallerTicket(
+            id: ticket.id, text: ticket.text, label: ticket.label, nodeId: ticket.nodeId, tools: ticket.tools,
+            issuedAt: ticket.issuedAt, expiresAt: ticket.expiresAt, revoked: revokedCallerIds.contains(ticket.id),
+            expired: clock() >= ticket.expiresAt)
+    }
+
+    private static let futureSkew: TimeInterval = 300
+
+    private static func callerRefusal(_ code: String) -> MeshKernelError {
+        .refused(KernelMapping.failureText(code: code))
+    }
+
+    private static func usableLabel(_ label: String) -> Bool {
+        (1...MeshCallerTicketLimits.maxLabelLength).contains(label.unicodeScalars.count)
+            && !label.unicodeScalars.contains(where: MeshCallerLabelClasses.refuses)
+    }
+
+    private static let smallOrderY = [
+        "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "7P_______________________________________38",
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "xxdqcD1N2E-6PAt2DRBnDyogU_osOczGTsf9d5KsA3o",
+        "JuiVj8KyJ7BFw_SJ8u-Y8NXfrAXTxjM5sTgCiG1T_AU",
+    ]
+
+    private static let refusedHolders: Set<String> = [
+        "g3CbrxsbDVAKgzza0u8li0rIi69fB07TnnuBcQUlhhU", "UU-dss261QdcDIytewJIFUZ9LfRJ7YPoznhUKKucbUU",
+        "Dlpu61n2r1mTZNr2znmyNj88J5uS-CL6dXSBlKOdtng", "AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    ]
+
+    private static func usableHolder(_ text: String) -> Bool {
+        guard text.hasPrefix(MeshCallerTicketLimits.holderPrefix) else { return false }
+        let body = String(text.dropFirst(MeshCallerTicketLimits.holderPrefix.count))
+        guard var raw = decodedBase64URL(body), raw.count == 32, !refusedHolders.contains(body) else { return false }
+        raw[31] &= 0x7f
+        let nonCanonical = raw[31] == 0x7f && raw[1..<31].allSatisfy { $0 == 0xff } && raw[0] >= 0xed
+        let masked = encodedBase64URL(raw)
+        return !nonCanonical && !smallOrderY.contains(masked)
+    }
+
+    private static func validTicketId(_ id: String) -> Bool { decodedBase64URL(id)?.count == 16 }
+
+    private static func newTicketId() -> String { encodedBase64URL(withUnsafeBytes(of: UUID().uuid) { Data($0) }) }
+
+    private static func encodedBase64URL(_ data: Data) -> String {
+        data.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
+    private static func decodedBase64URL(_ text: String) -> Data? {
+        guard !text.isEmpty, !text.contains("="), !text.contains("+"), !text.contains("/") else { return nil }
+        var padded = text.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        padded += String(repeating: "=", count: (4 - padded.count % 4) % 4)
+        guard let data = Data(base64Encoded: padded), encodedBase64URL(data) == text else { return nil }
+        return data
+    }
+
     func raiseStop() throws {
         try record("raiseStop")
-        lock.withLock { status.stopped = true }
+        lock.withLock {
+            status.stopped = true
+            stopRaises += 1
+        }
         listener.onChange(.rosterChanged)
         listener.onChange(.allowanceChanged)
     }

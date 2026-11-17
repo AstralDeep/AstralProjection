@@ -186,6 +186,29 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
 
     func removeDevice(memberId: String) throws { try mapped { try kernel.removeDevice(memberId: memberId) } }
 
+    func mintCallerTicket(
+        nodeId: String, holderKey: String, label: String, toolNames: [String], a2a: Bool, lifetimeSeconds: UInt64
+    ) throws -> MeshCallerTicket {
+        try mapped {
+            KernelMapping.callerTicket(
+                try kernel.mintCallerTicket(
+                    nodeId: nodeId, holderKey: holderKey, label: label, toolNames: toolNames, a2a: a2a,
+                    lifetimeS: lifetimeSeconds))
+        }
+    }
+
+    func callerTickets() throws -> [MeshCallerTicket] {
+        try mapped { try kernel.callerTickets().map(KernelMapping.callerTicket) }
+    }
+
+    func revokeCallerTicket(id: String) throws { try mapped { try kernel.revokeCallerTicket(id: id) } }
+
+    func verifyCallerRequest(_ request: MeshCallerRequest) throws -> MeshVerifiedCaller {
+        try mapped {
+            KernelMapping.verifiedCaller(try kernel.verifyCallerRequest(request: KernelMapping.callerRequest(request)))
+        }
+    }
+
     func raiseStop() throws { try mapped { _ = try kernel.raiseStop() } }
 
     func resumeStop() throws { try mapped { _ = try kernel.resumeStop() } }

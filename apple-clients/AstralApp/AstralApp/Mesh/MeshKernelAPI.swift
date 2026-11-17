@@ -130,6 +130,45 @@ nonisolated struct MeshMember: Identifiable, Equatable, Sendable {
     var id: String { memberId }
 }
 
+nonisolated struct MeshCallerTicket: Identifiable, Equatable, Sendable {
+    let id: String
+    let text: String
+    let label: String
+    let nodeId: String
+    let tools: [String]
+    let issuedAt: Date
+    let expiresAt: Date
+    let revoked: Bool
+    let expired: Bool
+}
+
+nonisolated struct MeshCallerRequest: Equatable, Sendable {
+    let authorization: String
+    let proof: String?
+    let method: String
+    let target: String
+    let bodySha256: String
+    let tool: String?
+}
+
+nonisolated struct MeshVerifiedCaller: Equatable, Sendable {
+    let id: String
+    let meshId: String
+    let deviceId: String
+    let label: String
+    let tool: String?
+    let tools: [String]
+    let expiresAt: Date
+}
+
+nonisolated enum MeshCallerTicketLimits {
+    static let maxTools = 32
+    static let maxLabelLength = 64
+    static let maxLifetimeSeconds: UInt64 = 2_592_000
+    static let a2aTool = "a2a.message"
+    static let holderPrefix = "astral-caller-holder:v1:"
+}
+
 nonisolated struct MeshDeviceSync: Equatable, Sendable {
     enum State: String, Equatable, Sendable { case synced, behind, unreachable }
     let memberId: String
@@ -550,6 +589,12 @@ nonisolated protocol MeshKernel: Sendable {
     func approvePairing(payload: String) async throws
     func roster() async throws -> [MeshMember]
     func removeDevice(memberId: String) throws
+    func mintCallerTicket(
+        nodeId: String, holderKey: String, label: String, toolNames: [String], a2a: Bool, lifetimeSeconds: UInt64
+    ) throws -> MeshCallerTicket
+    func callerTickets() throws -> [MeshCallerTicket]
+    func revokeCallerTicket(id: String) throws
+    func verifyCallerRequest(_ request: MeshCallerRequest) throws -> MeshVerifiedCaller
     func raiseStop() throws
     func resumeStop() throws
     func exportBackup(path: String) throws
