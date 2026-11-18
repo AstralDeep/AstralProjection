@@ -418,6 +418,7 @@ nonisolated struct MeshModelProviderConfig: Equatable, Sendable {
     let model: String
     let apiKey: String
     var recipients: [String]? = nil
+    var name: String? = nil
 }
 
 nonisolated enum MeshTurnEvent: Equatable, Sendable {

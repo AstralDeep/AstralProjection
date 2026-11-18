@@ -321,6 +321,7 @@ nonisolated enum MeshRequestRefusal: String, CaseIterable, Sendable {
 }
 
 nonisolated enum MeshProviderInputError: Error, Equatable, Sendable {
+    case invalidName
     case invalidURL
     case insecureURL
     case missingModel
@@ -331,6 +332,7 @@ nonisolated enum MeshProviderInputError: Error, Equatable, Sendable {
 
     var message: String {
         switch self {
+        case .invalidName: return "Use 1 to 64 lowercase letters, numbers, - or _."
         case .invalidURL: return "Enter the base URL of an OpenAI-compatible service."
         case .insecureURL: return "Use an https address. Plain http is allowed only for this device."
         case .missingModel: return "Enter a model name."
@@ -343,9 +345,20 @@ nonisolated enum MeshProviderInputError: Error, Equatable, Sendable {
 }
 
 nonisolated enum MeshProviderInput {
-    static func validate(baseURL: String, model: String, key: String, recipients: [String]? = nil) -> Result<
-        MeshModelProviderConfig, MeshProviderInputError
-    > {
+    static func normalizedName(_ text: String) -> String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    static func isValidName(_ text: String) -> Bool {
+        let name = normalizedName(text)
+        let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789-_".unicodeScalars)
+        return (1...64).contains(name.unicodeScalars.count) && name.unicodeScalars.allSatisfy(allowed.contains)
+    }
+
+    static func validate(
+        name providerName: String? = nil, baseURL: String, model: String, key: String, recipients: [String]? = nil
+    ) -> Result<MeshModelProviderConfig, MeshProviderInputError> {
+        if let providerName, !isValidName(providerName) { return .failure(.invalidName) }
         let base = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = model.trimmingCharacters(in: .whitespacesAndNewlines)
         let secret = key.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -357,7 +370,10 @@ nonisolated enum MeshProviderInput {
         guard !name.isEmpty else { return .failure(.missingModel) }
         guard !secret.isEmpty else { return .failure(.missingKey) }
         guard recipients?.isEmpty != true else { return .failure(.missingRecipients) }
-        return .success(MeshModelProviderConfig(baseURL: base, model: name, apiKey: secret, recipients: recipients))
+        return .success(
+            MeshModelProviderConfig(
+                baseURL: base, model: name, apiKey: secret, recipients: recipients,
+                name: providerName.map(normalizedName)))
     }
 }
 
@@ -1734,21 +1750,23 @@ final class MeshRuntime {
         try await call { try $0.setConnectionKey(id: id, secrets: secrets, recipients: recipients) }
     }
 
-    func saveModelConnection(baseURL: String, model: String, key: String, recipients: [String]?) async
+    func saveModelConnection(name: String, baseURL: String, model: String, key: String, recipients: [String]?) async
         -> MeshProviderInputError?
     {
         guard !savingProvider else { return .saving }
-        switch MeshProviderInput.validate(baseURL: baseURL, model: model, key: key, recipients: recipients) {
+        switch MeshProviderInput.validate(
+            name: name, baseURL: baseURL, model: model, key: key, recipients: recipients)
+        {
         case .failure(let error):
             return error
         case .success(let config):
             savingProvider = true
             defer { savingProvider = false }
             let session = wakeSession
+            let providerName = config.name ?? name
             let draft = MeshModelConnectionDraft(
-                name: URL(string: config.baseURL)?.host ?? "Model", endpoint: config.baseURL,
-                provider: Self.providerSlug(config.baseURL), models: [config.model], apiKeys: [config.apiKey],
-                recipients: config.recipients)
+                name: providerName, endpoint: config.baseURL, provider: providerName,
+                models: [config.model], apiKeys: [config.apiKey], recipients: config.recipients)
             do {
                 let proposal = try await call { try await $0.proposeModelConnection(draft) }
                 _ = try await call {
@@ -1765,13 +1783,6 @@ final class MeshRuntime {
                 return .failed(Self.describe(error))
             }
         }
-    }
-
-    nonisolated static func providerSlug(_ baseURL: String) -> String {
-        let host: String = (URL(string: baseURL)?.host ?? "model").lowercased()
-        let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789-_")
-        let mapped: String = String(host.map { allowed.contains($0) ? $0 : "-" })
-        return String(mapped.prefix(48))
     }
 
     func approveConnection(proposal: String, flow: String, toolNames: [String]) async throws -> MeshConnection {

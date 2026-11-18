@@ -255,20 +255,31 @@ struct MeshModelProviderView: View {
                 }
             }
             Section("OpenAI-compatible provider") {
-                TextField("Base URL", text: $editor.baseURL)
+                TextField("Provider name", text: $editor.providerName, prompt: Text(MeshProviderPlaceholder.name))
+                    .autocorrectionDisabled()
+                    #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                    #endif
+                    .accessibilityLabel("Provider name")
+                    .accessibilityIdentifier("provider.name.field")
+                if let nameProblem = editor.nameProblem {
+                    Text(nameProblem.message).font(ConsoleTypography.footnote).foregroundStyle(p.error)
+                        .accessibilityIdentifier("provider.name.error")
+                }
+                TextField("Base URL", text: $editor.baseURL, prompt: Text(MeshProviderPlaceholder.baseURL))
                     .autocorrectionDisabled()
                     #if os(iOS)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
                     #endif
                     .accessibilityIdentifier("mesh.models.url")
-                TextField("Model", text: $editor.model)
+                TextField("Model", text: $editor.model, prompt: Text(MeshProviderPlaceholder.model))
                     .autocorrectionDisabled()
                     #if os(iOS)
                         .textInputAutocapitalization(.never)
                     #endif
                     .accessibilityIdentifier("mesh.models.model")
-                SecureField("API key", text: $editor.key)
+                SecureField("API key", text: $editor.key, prompt: Text(MeshProviderPlaceholder.key))
                     .accessibilityIdentifier("mesh.models.key")
             }
             .disabled(editor.saving || mesh.savingProvider)
@@ -287,7 +298,7 @@ struct MeshModelProviderView: View {
                 Button("Save") {
                     Task { await editor.save(in: mesh) }
                 }
-                .disabled(editor.saving || mesh.savingProvider)
+                .disabled(!editor.canSave || mesh.savingProvider)
                 .accessibilityIdentifier("mesh.models.save")
             }
         }

@@ -161,6 +161,7 @@ final class MeshConnectionKeyTests: XCTestCase {
         defer { h.cleanUp() }
         await h.runtime.open()
         let editor = MeshProviderEditor()
+        editor.providerName = "models"
         editor.baseURL = "https://models.example.test/v1"
         editor.model = "tiny"
         editor.key = fakeKey()

@@ -1350,7 +1350,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     }
 
     func proposeModelConnection(_ draft: MeshModelConnectionDraft) async throws -> MeshConnectionProposal {
-        try record("proposeModelConnection", draft.endpoint)
+        try record("proposeModelConnection", "\(draft.name)/\(draft.provider)")
         try requireEnrolled()
         return try connectionBook.proposeModel(draft)
     }
