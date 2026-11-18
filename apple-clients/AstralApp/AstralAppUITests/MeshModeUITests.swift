@@ -56,9 +56,11 @@ final class MeshModeUITests: XCTestCase {
                     self.app.sheets.count > 0 || self.app.dialogs.count > 0 || !self.element("mesh.composer").isHittable
                 })
         #else
-            let presented = XCTNSPredicateExpectation(
-                predicate: NSPredicate(format: "hittable == false"), object: element("mesh.composer"))
-            XCTAssertEqual(XCTWaiter.wait(for: [presented], timeout: 5), .completed)
+            XCTAssertTrue(
+                waitUntil(10) {
+                    !self.element("mesh.composer").isHittable || self.app.navigationBars["Recents"].exists
+                        || self.app.buttons["Browse"].exists || self.app.staticTexts["No Recents"].exists
+                })
         #endif
         attach("mesh-file-picker")
     }
@@ -522,14 +524,15 @@ final class MeshModeUITests: XCTestCase {
     private func visible(_ id: String, attempts: Int = 8) -> XCUIElement {
         let target = element(id)
         #if os(macOS)
-            guard target.waitForExistence(timeout: 5) else { return target }
+            guard target.waitForExistence(timeout: 5), let view = scrollView(containing: target) else { return target }
             var delta: CGFloat = -150
-            for _ in 0..<attempts where !target.isHittable {
-                guard let view = scrollView(containing: target) else { break }
-                let before = target.frame.midY
-                let below = before > view.frame.midY
+            for _ in 0..<attempts {
+                let before = target.frame
+                let shownFrame = view.frame.insetBy(dx: 0, dy: 4)
+                if shownFrame.contains(before) { break }
+                let below = before.maxY > shownFrame.maxY
                 view.scroll(byDeltaX: 0, deltaY: delta)
-                let moved = target.frame.midY - before
+                let moved = target.frame.midY - before.midY
                 if (below && moved >= 0) || (!below && moved <= 0) { delta = -delta }
             }
         #endif

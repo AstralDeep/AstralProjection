@@ -142,7 +142,7 @@ final class MeshDeviceKeysTests: XCTestCase {
             XCTAssertNil(absent)
             try store.save(Data([0]), account: "a")
         } catch MeshSecretStoreError.keychain(let status) where status == errSecMissingEntitlement {
-            throw XCTSkip("Keychain needs a signed host; unsigned simulator test builds have none")
+            throw XCTSkip("Keychain needs a signed host; unsigned test builds have none")
         }
         try store.save(Data([1, 2, 3]), account: "a")
         XCTAssertEqual(try store.load("a"), Data([1, 2, 3]))

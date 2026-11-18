@@ -46,6 +46,11 @@ MACOS_BINARY_MEMBER = "Products/Debug/AstralDeep.app/Contents/MacOS/AstralDeep.d
 MACOS_SKIP_DISPOSITIONS = {
     "unit": {
         "AppModelChromeSurfaceTests/testEvidenceHostedSurfaceRetiresItsActualTimerAndRejectsLateReplay()": "Hosted SwiftUI evidence coverage uses the isolated iOS test destination",
+        "ConnectionKeychainTests/testConnectionItemsLeaveTheMeshDeviceItemsUnchanged()": "Keychain needs a signed host; unsigned test builds have none",
+        "ConnectionKeychainTests/testRoundTripReplaceRemoveAndAbsent()": "Keychain needs a signed host; unsigned test builds have none",
+        "ConnectionKeychainTests/testStoredItemsReadBackAsThisDeviceOnlyAndNotSynchronizable()": "Keychain needs a signed host; unsigned test builds have none",
+        "ConnectionKeychainTests/testTwoIssuersForOneConnectionDoNotCollide()": "Keychain needs a signed host; unsigned test builds have none",
+        "MeshDeviceKeysTests/testKeychainStoreRoundTrip()": "Keychain needs a signed host; unsigned test builds have none",
         "OnDeviceFallbackModelTests/testRealVerifiedTextFallbackWhenExplicitlyRequested()": "Set ASTRAL_VERIFIED_MODEL_TEST_ROOT to a verified installed model root for this local hardware check.",
     },
     "ui": {
@@ -54,7 +59,11 @@ MACOS_SKIP_DISPOSITIONS = {
 }
 IOS_SKIP_DISPOSITIONS = {
     "unit": {
-        "MeshDeviceKeysTests/testKeychainStoreRoundTrip()": "Keychain needs a signed host; unsigned simulator test builds have none",
+        "ConnectionKeychainTests/testConnectionItemsLeaveTheMeshDeviceItemsUnchanged()": "Keychain needs a signed host; unsigned test builds have none",
+        "ConnectionKeychainTests/testRoundTripReplaceRemoveAndAbsent()": "Keychain needs a signed host; unsigned test builds have none",
+        "ConnectionKeychainTests/testStoredItemsReadBackAsThisDeviceOnlyAndNotSynchronizable()": "Keychain needs a signed host; unsigned test builds have none",
+        "ConnectionKeychainTests/testTwoIssuersForOneConnectionDoNotCollide()": "Keychain needs a signed host; unsigned test builds have none",
+        "MeshDeviceKeysTests/testKeychainStoreRoundTrip()": "Keychain needs a signed host; unsigned test builds have none",
         "OnDeviceFallbackModelTests/testRealVerifiedTextFallbackWhenExplicitlyRequested()": (
             "Set ASTRAL_VERIFIED_MODEL_TEST_ROOT to a verified installed model root for this local hardware check."
         ),
