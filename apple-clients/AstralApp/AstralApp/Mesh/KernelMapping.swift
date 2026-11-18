@@ -331,7 +331,8 @@ nonisolated enum KernelMapping {
     }
 
     static func failureText(code: String, fallback: String = "The mesh refused that request.") -> String {
-        plainText(code: code) ?? fallback + " (" + code + ")"
+        guard let entry = codeTexts.first(where: { code.hasPrefix($0.0) }) else { return fallback + " (" + code + ")" }
+        return entry.0 == "provider." && entry.0 != code ? entry.1 + " (" + code + ")" : entry.1
     }
 
     private static let codeTexts: [(String, String)] = [
