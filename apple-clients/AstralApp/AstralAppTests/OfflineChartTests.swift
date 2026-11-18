@@ -132,21 +132,20 @@ final class OfflineChartTests: XCTestCase {
         defer { coordinator.dismantle(view) }
         coordinator.update(view, component: chart, viewportWidth: 390)
         _ = try await waitForState(view, expected: "ready")
-        let origin = try await view.evaluateJavaScript("performance.timeOrigin") as? Double
-        XCTAssertNotNil(origin)
+        _ = try await view.evaluateJavaScript("window.documentMarker = true; true")
         _ = try await view.evaluateJavaScript("Plotly.relayout('chart', {'yaxis.range': [1,4]}); true")
         view.frame.size = CGSize(width: 700, height: 320)
         coordinator.update(view, component: chart, viewportWidth: 1440)
         try await waitForJavaScript(view, "document.getElementById('chart')._fullLayout.height === 320")
-        let resizedOrigin = try await view.evaluateJavaScript("performance.timeOrigin") as? Double
+        let sameDocument = try await view.evaluateJavaScript("window.documentMarker === true") as? Bool
         let range =
             try await view.evaluateJavaScript("document.getElementById('chart').layout.yaxis.range") as? [Double]
-        XCTAssertEqual(resizedOrigin, origin)
+        XCTAssertEqual(sameDocument, true)
         XCTAssertEqual(range, [1, 4])
         coordinator.update(view, component: changed, viewportWidth: 1440)
         try await waitForJavaScript(view, "document.getElementById('chart').data[0].y[0] === 8")
-        let updatedOrigin = try await view.evaluateJavaScript("performance.timeOrigin") as? Double
-        XCTAssertNotEqual(updatedOrigin, origin)
+        let reloaded = try await view.evaluateJavaScript("window.documentMarker === undefined") as? Bool
+        XCTAssertEqual(reloaded, true)
         view.frame.size = CGSize(width: 390, height: 260)
         coordinator.update(view, component: changed, viewportWidth: 390)
         try await waitForJavaScript(view, "document.getElementById('chart')._fullLayout.height === 260")

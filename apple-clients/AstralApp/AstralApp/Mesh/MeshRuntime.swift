@@ -1626,6 +1626,7 @@ final class MeshRuntime {
             })
         let result = await work.task.value
         guard isReady, wakeSession == session else { return }
+        while wakeSession == session, turnTasks[chatId]?.id == reservation { await Task.yield() }
         if case .success(let value) = result, let value, value.refused {
             notice = KernelMapping.failureText(code: value.code ?? value.status, fallback: "That action didn't run.")
         }

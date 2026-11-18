@@ -61,7 +61,7 @@ final class MeshConnectionA2ATests: XCTestCase {
         let facts = try XCTUnwrap(MeshA2ACardFacts(proposal))
         XCTAssertFalse(facts.signed)
         XCTAssertEqual(facts.signedLine, "Not signed")
-        XCTAssertTrue(facts.unsignedWarning.contains("not signed"))
+        XCTAssertTrue(facts.unsignedWarning.contains("isn't signed"))
         XCTAssertEqual(facts.schemeLine, "No sign-in")
     }
 

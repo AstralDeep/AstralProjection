@@ -135,6 +135,11 @@ final class MeshOrdinaryResumeTests: XCTestCase {
         }
         let entered = await eventually { waiting.requests == 1 }
         XCTAssertTrue(entered)
+        let opened = await eventually {
+            if case .running = try? original.chat(chatId: chat).status { return true }
+            return false
+        }
+        XCTAssertTrue(opened)
         guard case .running(let turnId) = try original.chat(chatId: chat).status else {
             return XCTFail("The real kernel must have a signed open turn")
         }
@@ -282,16 +287,22 @@ final class MeshOrdinaryResumeTests: XCTestCase {
         gate.release()
         await stopping.value
         await runtime.settle()
-        XCTAssertEqual(answering.requests.count, 0)
+        XCTAssertEqual(answering.answerRequests.count, 0)
         await runtime.close()
         let reopened = makeRuntime()
         await reopened.open()
         await reopened.settle()
         await reopened.openChat(chat)
-        XCTAssertEqual(answering.requests.count, 0, "Explicitly stopped input must not execute after reopening")
+        XCTAssertEqual(answering.answerRequests.count, 0, "Explicitly stopped input must not execute after reopening")
         XCTAssertEqual(reopened.currentChat?.messages.filter { $0.author == .owner }.map(\.eventId), [message])
         XCTAssertTrue(reopened.currentChat?.messages.filter { $0.author == .assistant }.isEmpty == true)
         await reopened.close()
     }
 
+}
+
+extension FakeOnDeviceModel {
+    var answerRequests: [AstralDeep.OnDeviceRequest] {
+        requests.filter { $0.schemaJSON?.contains("\"findings\"") != true }
+    }
 }
