@@ -514,7 +514,7 @@ final class MeshModeUITests: XCTestCase {
             let target = element(id)
             var swipes = 0
             while !(target.exists && target.isHittable) && swipes < attempts {
-                app.swipeUp()
+                app.swipeUp(velocity: .slow)
                 swipes += 1
             }
             return target

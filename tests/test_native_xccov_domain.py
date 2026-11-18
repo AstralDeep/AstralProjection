@@ -1051,12 +1051,26 @@ def test_mac_diagnostic_acceptance_does_not_hide_unknown_failure_or_nested_resul
             )
     elif mutation == "lane":
         lane = "ui"
+        warning["name"] = _FOCUS_WARNING
         summary, tests = _mac_metadata(lane)
     _case(tests)["children"] = (
         warning if mutation == "not_list" else [warning] * (17 if mutation == "too_many" else 1)
     )
     with pytest.raises(domain.DomainError):
         domain.test_identity(summary, tests, lane, platform="macos", architecture="arm64")
+
+
+@pytest.mark.parametrize("text", [_QOS_WARNING, _REAL_MESH_QOS_WARNING])
+def test_mac_ui_accepts_only_the_priority_inversion_warnings(text):
+    summary, tests = _mac_metadata("ui")
+    _case(tests)["children"] = [{"nodeType": "Runtime Warning", "name": text}]
+    domain.test_identity(summary, tests, "ui", platform="macos", architecture="arm64")
+    _case(tests)["children"] = [
+        {"nodeType": "Runtime Warning", "name": text},
+        {"nodeType": "Runtime Warning", "name": _FOCUS_WARNING},
+    ]
+    with pytest.raises(domain.DomainError):
+        domain.test_identity(summary, tests, "ui", platform="macos", architecture="arm64")
 
 
 @pytest.mark.parametrize(

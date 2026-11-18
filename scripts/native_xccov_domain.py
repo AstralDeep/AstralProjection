@@ -231,11 +231,21 @@ MACOS_UNIT_WARNING_SOURCES = {
     "RealMeshKernelTests.swift": "Thread running at User-initiated quality-of-service class waiting on a lower QoS thread running at Default quality-of-service class. Investigate ways to avoid priority inversions",
 }
 MACOS_UNIT_WARNINGS = frozenset(MACOS_UNIT_WARNING_SOURCES.values())
+MACOS_UI_WARNINGS = frozenset(
+    {
+        MACOS_UNIT_WARNING_SOURCES["ConsoleShellPresentationTests.swift"],
+        MACOS_UNIT_WARNING_SOURCES["RealMeshKernelTests.swift"],
+    }
+)
 
 
 def macos_case_warnings(children: Any, lane: str) -> None:
     require(isinstance(children, list) and len(children) <= 16)
-    require(not children or lane == "unit")
+    require(
+        not children
+        or lane == "unit"
+        or all(isinstance(warning, dict) and warning.get("name") in MACOS_UI_WARNINGS for warning in children)
+    )
     for warning in children:
         require(
             isinstance(warning, dict)
