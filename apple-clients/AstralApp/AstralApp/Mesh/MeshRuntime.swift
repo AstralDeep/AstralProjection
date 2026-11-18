@@ -219,6 +219,35 @@ nonisolated struct MeshRestoredMesh: Equatable, Sendable {
     let eventsImported: Int
 }
 
+nonisolated enum MeshExit: Equatable, Sendable {
+    case leave, delete, reset
+
+    var title: String {
+        switch self {
+        case .leave: return "Leave this mesh?"
+        case .delete: return "Delete this mesh?"
+        case .reset: return "Set this device's data aside?"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .leave: return "This device leaves the mesh. Your chats stay on your other devices."
+        case .delete:
+            return "This deletes the mesh from this device. Without your recovery words it can't be recovered."
+        case .reset: return "This device starts over. Its old mesh data is kept aside and nothing is sent."
+        }
+    }
+
+    var button: String {
+        switch self {
+        case .leave: return "Leave This Mesh"
+        case .delete: return "Delete This Mesh"
+        case .reset: return "Set Data Aside"
+        }
+    }
+}
+
 nonisolated enum MeshRestoreState: Equatable, Sendable {
     case idle
     case recovering
@@ -421,6 +450,8 @@ final class MeshRuntime {
     private(set) var acknowledgedOutcomes: Set<String> = []
     private(set) var spoken: [VoiceSpokenRecord] = []
     private(set) var restoredInstall = false
+    private(set) var confirmingNewMesh = false
+    private(set) var confirmingExit: MeshExit?
     private(set) var networkNotice: String?
     var notice: String?
     @ObservationIgnored weak var speechSink: MeshSpeechSink?
@@ -737,11 +768,8 @@ final class MeshRuntime {
     func refreshStatus() async {
         if let value = await attempt({ try await $0.meshStatus() }) {
             status = value
-            if value.hasMesh, join != .idle, join != .joined {
-                join = .joined
-                keys?.acknowledgeRestore()
-                restoredInstall = false
-            }
+            if value.hasMesh, join != .idle, join != .joined { join = .joined }
+            if value.hasMesh || value.recoveryPending { clearRestoreWarning() }
         }
     }
 
@@ -1024,6 +1052,77 @@ final class MeshRuntime {
         await refreshProposals()
     }
 
+    private func clearRestoreWarning() {
+        guard restoredInstall || keys?.wasRestored == true else { return }
+        keys?.acknowledgeRestore()
+        restoredInstall = false
+    }
+
+    func chooseCreateMesh() async {
+        if restoredInstall {
+            confirmingNewMesh = true
+        } else {
+            await createMesh()
+        }
+    }
+
+    func cancelNewMesh() { confirmingNewMesh = false }
+
+    func requestExit() {
+        confirmingExit = status.hasMesh ? (members.count > 1 ? .leave : .delete) : .reset
+    }
+
+    func cancelExit() { confirmingExit = nil }
+
+    func confirmExit() async {
+        guard let exit = confirmingExit else { return }
+        confirmingExit = nil
+        if exit == .leave {
+            guard let own = members.first(where: \.isThisDevice) else { return }
+            do {
+                try await call { try $0.removeDevice(memberId: own.memberId) }
+            } catch MeshKernelError.consentDenied {
+                notice = "Leaving the mesh was not approved."
+                return
+            } catch {
+                notice = Self.describe(error)
+                return
+            }
+        }
+        await close()
+        do {
+            _ = try MeshStoreRetirement.retire(dataDirectory, now: now())
+            try keys?.erase()
+            keys = nil
+            endedShares = endedShareStore.load()
+            restoredInstall = false
+        } catch {
+            notice = "The old data on this device couldn't be set aside. Try again."
+        }
+        await open()
+    }
+
+    func confirmNewMesh() async {
+        guard confirmingNewMesh else { return }
+        confirmingNewMesh = false
+        await close()
+        var failed = false
+        do {
+            _ = try MeshStoreRetirement.retire(dataDirectory, now: now())
+            endedShares = endedShareStore.load()
+            clearRestoreWarning()
+        } catch {
+            failed = true
+        }
+        await open()
+        guard isReady else { return }
+        if failed {
+            creation = .failed("The old data on this device couldn't be set aside. Try again.")
+        } else {
+            await createMesh()
+        }
+    }
+
     func createMesh() async {
         guard isReady, kernel != nil, creation == .idle || isFailedCreation else { return }
         let session = wakeSession
@@ -1032,8 +1131,7 @@ final class MeshRuntime {
         do {
             let kit = try await call { try $0.createMesh() }
             guard isReady, wakeSession == session else { return }
-            keys?.acknowledgeRestore()
-            restoredInstall = false
+            clearRestoreWarning()
             creation = .recovery(kit.words)
             await refreshStatus()
             await refreshRoster()
@@ -1083,8 +1181,7 @@ final class MeshRuntime {
         defer { if scoped { backup?.stopAccessingSecurityScopedResource() } }
         do {
             let result = try await call { try $0.recoverWithWords(words: phrase, backupPath: backup?.path) }
-            keys?.acknowledgeRestore()
-            restoredInstall = false
+            clearRestoreWarning()
             await refreshAll()
             let label = members.first(where: \.isThisDevice)?.label ?? deviceLabel
             restore = .restored(

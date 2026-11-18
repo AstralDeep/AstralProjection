@@ -60,7 +60,7 @@ struct MeshOnboardingView: View {
             .accessibilityIdentifier("mesh.restored")
         }
         Button {
-            Task { await mesh.createMesh() }
+            Task { await mesh.chooseCreateMesh() }
         } label: {
             Text(mesh.status.recoveryPending ? "Resume recovery" : "Create a Mesh").frame(maxWidth: .infinity)
         }
@@ -69,6 +69,16 @@ struct MeshOnboardingView: View {
         .keyboardShortcut(.defaultAction)
         .disabled(busy)
         .accessibilityIdentifier("mesh.create")
+        .confirmationDialog(
+            "Start a new mesh on this device?", isPresented: newMeshBinding, titleVisibility: .visible
+        ) {
+            Button("Start New Mesh") { Task { await mesh.confirmNewMesh() } }
+                .accessibilityIdentifier("mesh.create.confirm")
+            Button("Cancel", role: .cancel) { mesh.cancelNewMesh() }
+                .accessibilityIdentifier("mesh.create.cancel")
+        } message: {
+            Text("The mesh this device was restored from stays on your other devices.")
+        }
         Button {
             joining = true
         } label: {
@@ -89,6 +99,10 @@ struct MeshOnboardingView: View {
         if case .failed(let message) = mesh.join {
             error(message)
         }
+    }
+
+    private var newMeshBinding: Binding<Bool> {
+        Binding(get: { mesh.confirmingNewMesh }, set: { if !$0 { mesh.cancelNewMesh() } })
     }
 
     private var isFailedJoin: Bool {

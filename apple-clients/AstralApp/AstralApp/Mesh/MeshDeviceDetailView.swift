@@ -81,6 +81,7 @@ struct MeshDeviceDetailView: View {
                     Text(member.memberId.suffix(12)).font(.system(.footnote, design: .monospaced))
                 }
             }
+            if member.isThisDevice { exitSection }
             if !member.isThisDevice {
                 Section {
                     NavigationLink {
@@ -105,12 +106,23 @@ struct MeshDeviceDetailView: View {
         .meshReadableWidth()
         .background(p.bg)
         .meshRemoveConfirmation($removing)
+        .meshExitConfirmation()
         .alert("Rename Device", isPresented: $renaming) {
             TextField("Name", text: $draft)
             Button("Save") { Task { _ = await mesh.renameDevice(member, to: draft) } }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This name shows on every device.")
+        }
+    }
+
+    private var exitSection: some View {
+        let single = mesh.members.count <= 1
+        return Section {
+            Button(single ? "Delete This Mesh" : "Leave This Mesh", role: .destructive) { mesh.requestExit() }
+                .accessibilityIdentifier("mesh.device.exit")
+        } footer: {
+            Text(single ? "No other device is in this mesh." : "Your chats stay on your other devices.")
         }
     }
 
@@ -122,4 +134,27 @@ struct MeshDeviceDetailView: View {
 
 extension String {
     fileprivate var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
+}
+
+extension View {
+    func meshExitConfirmation() -> some View { modifier(MeshExitConfirmation()) }
+}
+
+private struct MeshExitConfirmation: ViewModifier {
+    @Environment(MeshRuntime.self) private var mesh
+
+    func body(content: Content) -> some View {
+        let exit = mesh.confirmingExit
+        content.confirmationDialog(
+            exit?.title ?? "", isPresented: Binding(get: { exit != nil }, set: { if !$0 { mesh.cancelExit() } }),
+            titleVisibility: .visible
+        ) {
+            Button(exit?.button ?? "Continue", role: .destructive) { Task { await mesh.confirmExit() } }
+                .accessibilityIdentifier("mesh.exit.confirm")
+            Button("Cancel", role: .cancel) { mesh.cancelExit() }
+                .accessibilityIdentifier("mesh.exit.cancel")
+        } message: {
+            Text(exit?.message ?? "")
+        }
+    }
 }

@@ -49,6 +49,31 @@ nonisolated enum MeshKernelFactories {
     }
 }
 
+nonisolated enum MeshStoreRetirement {
+    static func retire(_ directory: URL, now: Date, fileManager: FileManager = .default) throws -> URL? {
+        guard fileManager.fileExists(atPath: directory.path) else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
+        let base = directory.lastPathComponent + ".retired-" + formatter.string(from: now)
+        let parent = directory.deletingLastPathComponent()
+        var target = parent.appendingPathComponent(base, isDirectory: true)
+        var suffix = 1
+        while fileManager.fileExists(atPath: target.path) {
+            suffix += 1
+            target = parent.appendingPathComponent(base + "-\(suffix)", isDirectory: true)
+        }
+        try fileManager.moveItem(at: directory, to: target)
+        var fresh = directory
+        try fileManager.createDirectory(at: fresh, withIntermediateDirectories: true)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? fresh.setResourceValues(values)
+        return target
+    }
+}
+
 @MainActor
 enum MeshRuntimeBuilder {
     static func dataDirectory(in root: URL? = nil) -> URL {

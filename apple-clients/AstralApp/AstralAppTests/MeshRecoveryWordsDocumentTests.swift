@@ -8,7 +8,8 @@ import XCTest
 final class MeshRecoveryWordsDocumentTests: XCTestCase {
     func testTextIsOneNumberedWordPerLineAndNothingElse() {
         let words = (1...24).map { "word\($0)" }
-        let lines = MeshRecoveryWordsDocument(words: words).text.split(separator: "\n", omittingEmptySubsequences: false)
+        let text = MeshRecoveryWordsDocument(words: words).text
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
         XCTAssertEqual(lines.count, 25)
         XCTAssertEqual(lines.last, "")
         for (index, word) in words.enumerated() { XCTAssertEqual(String(lines[index]), "\(index + 1). \(word)") }
