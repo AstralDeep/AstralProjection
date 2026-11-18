@@ -1,5 +1,5 @@
 // Decides whether the system-browser sign-in can run on this OS and whether a returned URL is the connection callback.
-// The Apple app's sign-in driver calls it before opening a session and again before handing a redirect to the Kernel.
+// The Apple app's sign-in driver supplies its platform, and calls it before opening a session and before handing a redirect to the Kernel.
 
 import Foundation
 
@@ -20,26 +20,12 @@ public enum ConnectionCallback {
         case unavailable(code: String)
     }
 
-    public static var currentPlatform: Platform {
-        #if os(iOS)
-            return .iOS
-        #elseif os(macOS)
-            return .macOS
-        #else
-            return .other
-        #endif
-    }
-
     public static func availability(platform: Platform, version: OperatingSystemVersion) -> Availability {
         switch platform {
         case .iOS: return atLeast(version, major: 17, minor: 4) ? .available : .unavailable(code: tooOldCode)
         case .macOS: return atLeast(version, major: 14, minor: 4) ? .available : .unavailable(code: tooOldCode)
         case .other: return .unavailable(code: tooOldCode)
         }
-    }
-
-    public static func availabilityHere() -> Availability {
-        availability(platform: currentPlatform, version: ProcessInfo.processInfo.operatingSystemVersion)
     }
 
     public static func matches(_ url: URL) -> Bool {

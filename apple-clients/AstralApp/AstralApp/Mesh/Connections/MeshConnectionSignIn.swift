@@ -232,3 +232,16 @@ enum MeshSystemWebAuth {
         return MeshSystemWebAuthSession(session: session)
     }
 }
+
+extension ConnectionCallback {
+    static func availabilityHere() -> Availability {
+        #if os(iOS)
+            let platform = Platform.iOS
+        #elseif os(macOS)
+            let platform = Platform.macOS
+        #else
+            let platform = Platform.other
+        #endif
+        return availability(platform: platform, version: ProcessInfo.processInfo.operatingSystemVersion)
+    }
+}
