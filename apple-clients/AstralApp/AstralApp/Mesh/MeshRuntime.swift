@@ -919,14 +919,17 @@ final class MeshRuntime {
     }
 
     func refreshConnections() async {
+        guard status.hasMesh else { return }
         if let value = await attempt({ try $0.connections() }) { connections = value }
     }
 
     func refreshContacts() async {
+        guard status.hasMesh else { return }
         if let value = await attempt({ try $0.contacts() }) { contacts = value }
     }
 
     func refreshShares() async {
+        guard status.hasMesh else { return }
         if let value = await attempt({ try $0.shares() }) {
             let live = Set(value.map(\.id))
             shares = value + endedShares.values.filter { !live.contains($0.id) }.sorted { $0.id < $1.id }
@@ -934,6 +937,7 @@ final class MeshRuntime {
     }
 
     func refreshSharedItems() async {
+        guard status.hasMesh else { return }
         if let value = await attempt({ try $0.sharedWithMe() }) { sharedItems = value }
     }
 
@@ -2286,10 +2290,17 @@ final class MeshRuntime {
             return value
         } catch {
             guard wakeSession == session, isReady else { return nil }
+            if Self.isNotEnrolled(error), !hasMesh || join != .idle { return nil }
             notice = Self.describe(error)
             offerPhi(forCode: (error as? MeshKernelError)?.code)
             return nil
         }
+    }
+
+    nonisolated static func isNotEnrolled(_ error: Error) -> Bool {
+        guard let kernel = error as? MeshKernelError else { return false }
+        return kernel.code == "mesh.not_enrolled" || kernel.message == "mesh.not_enrolled"
+            || kernel.message == KernelMapping.failureText(code: "mesh.not_enrolled")
     }
 
     private func perform(_ work: @escaping @Sendable (any MeshKernel) async throws -> Void) async {
