@@ -364,7 +364,7 @@ final class RealMeshKernelTests: XCTestCase {
         let attachment = try mac.kernel.addAttachment(chatId: chat, bytes: bytes, mime: "text/plain", name: "notes.txt")
         let sent = try mac.kernel.sendMessage(chatId: chat, text: "", continues: nil, attachments: [attachment.id])
         try await until("the phone to read the attachment-only message") {
-            (try? phone.kernel.chat(chatId: chat))?.messages.first?.attachments.count == 1
+            (try? phone.kernel.chat(chatId: chat))?.messages.first?.attachments.first?.name == "notes.txt"
         }
         let received = try XCTUnwrap(phone.kernel.chat(chatId: chat).messages.first)
         XCTAssertEqual(received.eventId, sent)

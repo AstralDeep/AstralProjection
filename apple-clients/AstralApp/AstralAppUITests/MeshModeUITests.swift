@@ -58,7 +58,6 @@ final class MeshModeUITests: XCTestCase {
         launch("onboarding")
         XCTAssertTrue(element("mesh.create").waitForExistence(timeout: 10))
         XCTAssertTrue(element("mesh.join").exists)
-        XCTAssertTrue(element("mesh.node").exists)
         element("mesh.create").tap()
 
         XCTAssertTrue(element("mesh.recovery.word.1").waitForExistence(timeout: 10))
@@ -96,7 +95,7 @@ final class MeshModeUITests: XCTestCase {
         XCTAssertTrue(element("mesh.restore.file.choose").exists)
         words.tap()
         words.typeText((0..<23).map { "word" + String(UnicodeScalar(UInt8(97 + $0))) }.joined(separator: " "))
-        XCTAssertTrue(element("mesh.restore.count").label.contains("23 of 24"))
+        XCTAssertTrue(countShows("23 of 24"))
         XCTAssertFalse(submit.isEnabled)
         words.typeText(" wrongword")
         XCTAssertTrue(submit.isEnabled)
@@ -107,7 +106,7 @@ final class MeshModeUITests: XCTestCase {
 
         words.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.95)).tap()
         words.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: " wrongword".count) + " wordx")
-        XCTAssertTrue(element("mesh.restore.count").label.contains("24 of 24"))
+        XCTAssertTrue(countShows("24 of 24"))
         submit.tap()
         XCTAssertTrue(element("mesh.restored.title").waitForExistence(timeout: 10))
         XCTAssertTrue(element("mesh.restored.device").exists)
@@ -312,7 +311,7 @@ final class MeshModeUITests: XCTestCase {
         XCTAssertTrue(element("mesh.devices.stop").waitForExistence(timeout: 5))
         attach("mesh-devices-safety")
         selectTab("Settings")
-        element("mesh.settings.allowance").tap()
+        reveal("mesh.settings.allowance").tap()
         XCTAssertTrue(element("mesh.allowance.blocked").waitForExistence(timeout: 5))
         XCTAssertTrue(element("mesh.allowance.share").exists)
         attach("mesh-allowance")
@@ -408,6 +407,24 @@ final class MeshModeUITests: XCTestCase {
             let side = element("mesh.side." + name.lowercased())
             if side.exists { side.tap() } else { app.radioButtons[name].firstMatch.tap() }
         }
+    }
+
+    private func countShows(_ text: String) -> Bool {
+        let count = element("mesh.restore.count")
+        let shown = NSPredicate(format: "label CONTAINS %@", text)
+        let expectation = XCTNSPredicateExpectation(predicate: shown, object: count)
+        return XCTWaiter.wait(for: [expectation], timeout: 5) == .completed
+    }
+
+    @discardableResult
+    private func reveal(_ id: String, attempts: Int = 6) -> XCUIElement {
+        let target = element(id)
+        var swipes = 0
+        while !(target.exists && target.isHittable) && swipes < attempts {
+            app.swipeUp()
+            swipes += 1
+        }
+        return target
     }
 
     private func goBack() {

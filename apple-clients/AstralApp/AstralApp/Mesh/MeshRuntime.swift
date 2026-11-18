@@ -92,6 +92,7 @@ nonisolated final class MeshTurnLifetime: @unchecked Sendable {
 nonisolated final class MeshTurnWork: @unchecked Sendable {
     let id: UUID
     let task: Task<Result<MeshActResult?, Error>, Never>
+    var settled: Task<Void, Never>?
     private let lifetime: MeshTurnLifetime
     private let kernel: any MeshKernel
     private let chatId: String
@@ -1625,8 +1626,8 @@ final class MeshRuntime {
                 try await $0.act(surfaceId: surfaceId, componentId: componentId, capability: capability, args: args)
             })
         let result = await work.task.value
+        await work.settled?.value
         guard isReady, wakeSession == session else { return }
-        while wakeSession == session, turnTasks[chatId]?.id == reservation { await Task.yield() }
         if case .success(let value) = result, let value, value.refused {
             notice = KernelMapping.failureText(code: value.code ?? value.status, fallback: "That action didn't run.")
         }
@@ -2040,7 +2041,7 @@ final class MeshRuntime {
             interrupt: interrupt, steer: steer, cancelPending: cancelPending, operation: operation)
         turnTasks[chatId] = work
         let worker = work.task
-        Task { [weak self] in
+        work.settled = Task { [weak self] in
             let result = await worker.value
             if work.retiring { await work.retire().value }
             guard let self, self.wakeSession == session, self.turnTasks[chatId]?.id == id else { return }
