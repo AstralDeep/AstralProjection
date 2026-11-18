@@ -774,7 +774,7 @@ final class AppleLocalVoiceRuntime {
         wiring.transcript("")
         feedback(
             "unavailable", "local_session_not_ready",
-            "Voice stopped because request acceptance could not be confirmed. Typed chat remains available.")
+            "Voice stopped because request acceptance couldn't be confirmed. Typed chat remains available.")
         wiring.failClosed()
     }
 

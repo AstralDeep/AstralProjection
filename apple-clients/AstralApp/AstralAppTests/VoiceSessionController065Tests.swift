@@ -20,26 +20,6 @@ final class VoiceSessionController065Tests: XCTestCase {
     private let submission = "00000000-0000-4000-8000-000000000007"
     private let request = "00000000-0000-4000-8000-000000000008"
 
-    func testAppModelDoesNotWireLegacyControllerToHostedChatOrMedia() async throws {
-        let api = FakeVoiceAPI()
-        let media = FakeVoiceMedia()
-        let controller = makeController(api: api, media: media)
-        let model = AppModel(tokenStore: InMemoryTokenStore(), voiceController: controller)
-        defer { controller.close() }
-        model.signedIn = true
-        model.connected = true
-        var wires: [String] = []
-        model.currentConnectionVoiceSendOverride = { wires.append($0) }
-        model.outboundTap = { wires.append($0) }
-        XCTAssertTrue(model.beginConversationConnection(connection))
-        install(controller, replaceSender: false)
-        controller.updateVisibleChatLocally(nil)
-        await controller.activate()
-        XCTAssertTrue(wires.isEmpty)
-        XCTAssertEqual(api.startCount, 0)
-        XCTAssertEqual(media.connectCount, 0)
-    }
-
     func testExistingChatActivationRequiresMatchingHydrationBeforePermissionAndMedia() async throws {
         let api = FakeVoiceAPI()
         api.startOutcome = .started(restSession(synced: true), grant())
@@ -402,32 +382,6 @@ final class VoiceSessionController065Tests: XCTestCase {
         XCTAssertEqual(controller.phase, "error")
     }
 
-    func testAppModelRejectsRetiredVoiceWireWithoutSendingOrChangingConversation() throws {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
-        model.signedIn = true
-        model.connected = true
-        XCTAssertTrue(model.beginConversationConnection(connection))
-        var sent: [String] = []
-        model.currentConnectionVoiceSendOverride = { sent.append($0) }
-        model.consoleDashboardVisible = true
-        let newChat = Outbound.correlatedVoiceNewChat(
-            connectionGeneration: connection,
-            submissionId: "00000000-0000-4000-8000-00000000000d",
-            requestGeneration: "00000000-0000-4000-8000-00000000000e")
-        let transcript = try XCTUnwrap(
-            VoiceTranscript(frame: try XCTUnwrap(InboundFrame.parse(finalTranscript()))))
-        let voiceChat = Outbound.voiceChatMessage(
-            transcript: transcript, connectionGeneration: connection)
-        XCTAssertFalse(model.sendVoiceWire(newChat))
-        XCTAssertFalse(model.sendVoiceWire(voiceChat))
-        XCTAssertFalse(model.sendVoiceWire(voiceChat))
-        XCTAssertTrue(sent.isEmpty)
-        XCTAssertTrue(model.localOperationSubmissions.isEmpty)
-        XCTAssertTrue(model.transientTurns.isEmpty)
-        XCTAssertTrue(model.consoleDashboardVisible)
-        XCTAssertNil(model.errorBanner)
-    }
-
     func testActivationConnectsLiveKitAndDefersCaptureUntilContextSync() async {
         let api = FakeVoiceAPI()
         api.startOutcome = .started(restSession(synced: false), grant())
@@ -605,7 +559,7 @@ final class VoiceSessionController065Tests: XCTestCase {
                     state: "failed", message: "The safe server explanation remains visible.",
                     occurredAt: "2099-07-31T12:05:00Z")))
         let failedNotice = try XCTUnwrap(controller.terminalNotice)
-        XCTAssertEqual(failedNotice.title, "Request did not complete.")
+        XCTAssertEqual(failedNotice.title, "Request didn't complete.")
         XCTAssertEqual(
             failedNotice.serverMessage, "The safe server explanation remains visible.")
 
@@ -641,7 +595,7 @@ final class VoiceSessionController065Tests: XCTestCase {
                     state: "refused", turnId: nextTurn, sequence: 3,
                     message: "This request needs a different permission.",
                     occurredAt: "2099-07-31T12:05:02Z")))
-        XCTAssertEqual(controller.terminalNotice?.title, "Request did not start.")
+        XCTAssertEqual(controller.terminalNotice?.title, "Request didn't start.")
         XCTAssertEqual(
             controller.terminalNotice?.serverMessage,
             "This request needs a different permission.")
@@ -703,7 +657,7 @@ final class VoiceSessionController065Tests: XCTestCase {
                     retryPolicy: "explicit_user_retry")))
 
         XCTAssertEqual(controller.awaitingAcceptance, 0)
-        XCTAssertEqual(controller.terminalNotice?.title, "Request did not start.")
+        XCTAssertEqual(controller.terminalNotice?.title, "Request didn't start.")
         XCTAssertEqual(
             controller.terminalNotice?.serverMessage, "Capacity is temporarily full.")
         XCTAssertNotNil(controller.terminalNotice)
@@ -955,7 +909,7 @@ final class VoiceSessionController065Tests: XCTestCase {
             controller.terminalNotice?.displayText.contains(
                 "text result is still available") == true)
         XCTAssertFalse(
-            controller.terminalNotice?.displayText.contains("Request did not complete") == true)
+            controller.terminalNotice?.displayText.contains("Request didn't complete") == true)
         XCTAssertTrue(sent.compactMap(InboundFrame.parse).allSatisfy { $0.name != "voice_playout_event" })
 
         let dropped = try XCTUnwrap(media.authorized.first)

@@ -311,7 +311,7 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
                 switch KernelChatMapper.continuation(for: head, in: view, queuedBases: bases) {
                 case .turn(let turn): anchor = turn
                 case .root: anchor = nil
-                case nil: throw MeshKernelError.refused("That message is not part of this chat yet.")
+                case nil: throw MeshKernelError.refused("That message isn't part of this chat yet.")
                 }
             }
             let id = try kernel.sendMessageAttended(
@@ -495,7 +495,7 @@ nonisolated final class RealMeshKernel: MeshKernel, @unchecked Sendable {
         try mapped {
             let resolved = try kernel.resolveHandle(chatId: chatId, handle: handle)
             guard let kind = MeshResolvedHandle.Kind(rawValue: resolved.kind) else {
-                throw MeshKernelError.refused("That link or image cannot be shown.")
+                throw MeshKernelError.refused("That link or image can't be shown.")
             }
             return MeshResolvedHandle(kind: kind, value: resolved.value, mime: resolved.mime)
         }

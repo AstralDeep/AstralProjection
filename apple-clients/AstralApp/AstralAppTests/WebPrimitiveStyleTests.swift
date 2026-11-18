@@ -15,7 +15,7 @@ final class WebPrimitiveStyleTests: XCTestCase {
         _ json: String, viewport: CGFloat = 411, preset: String = "graphite",
         width: CGFloat = 320, textSize: DynamicTypeSize = .large, scale: CGFloat = 1
     ) throws -> CGImage {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
+        let model = AppModel()
         let theme = ThemeStore()
         theme.apply(preset: preset)
         let component = try XCTUnwrap(AstralComponent(json: JSONValue.parse(Data(json.utf8))))
@@ -162,7 +162,7 @@ final class WebPrimitiveStyleTests: XCTestCase {
         let code = try render(#"{"type":"code","content":"ok"}"#)
         assertRGB(try rgb(code, x: 300, y: code.height / 2), [35, 35, 40])
         #if os(macOS)
-            let model = AppModel(tokenStore: InMemoryTokenStore())
+            let model = AppModel()
             let theme = ThemeStore()
             let component = try XCTUnwrap(
                 AstralComponent(json: JSONValue.parse(Data(#"{"type":"code","content":"OK OK OK"}"#.utf8))))
@@ -208,15 +208,10 @@ final class WebPrimitiveStyleTests: XCTestCase {
         return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
     }
 
-    func testUploadHintEmptyHistoryAndUntitledWelcomeDisclosureDrawNoHelperCopy() throws {
+    func testUploadHintAndUntitledDisclosureDrawNoHelperCopy() throws {
         let upload = try recognized(render(#"{"type":"file_upload","label":"Quarterly report"}"#))
         XCTAssertTrue(upload.contains { $0.contains("Quarterly report") })
         XCTAssertFalse(upload.contains { $0.contains("paperclip") || $0.contains("chat input") })
-        XCTAssertTrue(try recognized(render(#"{"type":"chat_history","items":[]}"#)).isEmpty)
-        let more = try recognized(
-            render(
-                #"{"type":"collapsible","title":"","data-welcome":"more","aria-label":"More examples","content":[]}"#))
-        XCTAssertFalse(more.contains { $0.contains("More examples") || $0.contains("Details") })
         let details = try recognized(render(#"{"type":"collapsible","title":"","content":[]}"#))
         XCTAssertTrue(details.contains { $0.contains("Details") })
     }
@@ -255,25 +250,6 @@ final class WebPrimitiveStyleTests: XCTestCase {
         attachment.name = "088-apple-metric-variant-progress"
         attachment.lifetime = .keepAlways
         add(attachment)
-    }
-
-    func testNewChatKeepsNativeTargetAndOnlyAddsVisibleLabelAtWebBreakpoint() throws {
-        var widths: [Int] = []
-        for viewport: CGFloat in [639, 640] {
-            let renderer = ImageRenderer(
-                content:
-                    AstralNewChatButton(viewportWidth: viewport, palette: .graphite, action: {})
-                    .fixedSize().background(AstralPalette.graphite.surface)
-                    .environment(\.dynamicTypeSize, .large)
-            )
-            renderer.scale = 1
-            let image = try XCTUnwrap(renderer.cgImage)
-            XCTAssertGreaterThanOrEqual(image.height, 44)
-            XCTAssertGreaterThanOrEqual(image.width, 44)
-            widths.append(image.width)
-            assertRGB(try rgb(image, x: 8, y: image.height / 2), [27, 27, 31])
-        }
-        XCTAssertGreaterThan(widths[1], widths[0] + 40)
     }
 
     func testCompositeRenderersPreserveVisibleContentInBothThemes() throws {

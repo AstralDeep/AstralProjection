@@ -86,8 +86,8 @@ _INTRO = "".join([
     _h2("How to use this guide"),
     _ul(
         _li(
-            _strong("New here?"), " Start with ", _em("Signing in"), ", then ",
-            _em("Dashboard tour"), ", then ", _em("Chatting with agents"), ".",
+            _strong("New here?"), " Start with ", _em("Dashboard tour"), ", then ",
+            _em("Chatting with agents"), ".",
         ),
         _li(
             _strong("Want a hands-on walkthrough?"), " Use ", _em("Take the tour"),
@@ -97,37 +97,6 @@ _INTRO = "".join([
             _strong("Looking for something specific?"), " Browse the table of contents, or "
             "hover any control on the dashboard for a short tooltip.",
         ),
-    ),
-])
-
-_SIGNING_IN = "".join([
-    _h1("Signing in"),
-    _p(
-        "AstralDeep uses your organisation's single sign-on (SSO) provider. When you visit the "
-        "site you'll be redirected to the sign-in page; after you authenticate, you're returned "
-        "to the dashboard.",
-    ),
-    _h2("Roles"),
-    _ul(
-        _li(
-            _strong("User"),
-            " — chat with agents, give feedback, view your own audit log, replay the tutorial.",
-        ),
-        _li(
-            _strong("Admin"),
-            " — everything users can do, plus Tool quality, Tutorial admin and System LLM settings.",
-        ),
-    ),
-    _p(
-        "If you sign in and the app immediately asks you to sign in again (or shows an "
-        "authentication error), your account doesn't have either role yet — contact an "
-        "administrator.",
-    ),
-    _h2("Signing out"),
-    _p(
-        "Open ", _strong("Settings"), " from the gear at the bottom of the sidebar and choose ",
-        _strong("Sign out"),
-        ". Your session ends both in AstralDeep and at your SSO provider.",
     ),
 ])
 
@@ -162,8 +131,7 @@ _DASHBOARD = "".join([
             _em("Agents & permissions"), ", ", _em("LLM settings"), ", ",
             _em("Personalization"), ", ", _em("Audit log"), " and ", _em("Theme"),
             " without closing and reopening it. ", _em("Take the tour"), " and ",
-            _em("User guide"), " are under Help, and ", _em("Sign out"),
-            " is at the rail's bottom.",
+            _em("User guide"), " are under Help.",
         ),
         _li(
             _strong("Admin entries"),
@@ -446,7 +414,7 @@ _TUTORIAL = "".join([
         "Open Settings → “Take the tour” any time to walk through the core workflow as a "
         "guided overlay: starting a chat, opening agents, reviewing the audit log, and giving "
         "feedback. The overlay highlights the relevant control on the dashboard for each step. "
-        "(On your very first sign-in, AstralDeep first asks you to connect your own AI "
+        "(On your very first run, AstralDeep first asks you to connect your own AI "
         "provider; the tour is available right after that.)",
     ),
     _h2("Controls"),
@@ -466,7 +434,7 @@ _TUTORIAL = "".join([
     _p(
         "If you refresh the browser part-way through the tour, you resume on the same step "
         "(or the next still-applicable step if a step has been archived). State follows your "
-        "account, so signing in from a different device or browser preserves your progress.",
+        "account, so opening the app on a different device preserves your progress.",
     ),
     _h2("Admins see extra steps"),
     _p(
@@ -520,8 +488,8 @@ _PREFERENCES = "".join([
     ),
     _h2("Resetting"),
     _p(
-        "Sign out and back in to re-fetch preferences from the server. Local-only state "
-        "(e.g. an unsubmitted draft message) is discarded on sign-out.",
+        "Reload the app to re-fetch preferences from the server. Local-only state "
+        "(e.g. an unsubmitted draft message) is discarded on reload.",
     ),
 ])
 
@@ -650,7 +618,6 @@ _ADMIN = "".join([
 
 SECTIONS = [
     {"slug": "intro", "title": "Welcome", "body_html": _INTRO},
-    {"slug": "signing-in", "title": "Signing in", "body_html": _SIGNING_IN},
     {"slug": "dashboard", "title": "Dashboard tour", "body_html": _DASHBOARD},
     {"slug": "chat", "title": "Chatting with agents", "body_html": _CHAT},
     {"slug": "attachments", "title": "Attachments & files", "body_html": _ATTACHMENTS},

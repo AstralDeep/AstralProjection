@@ -70,8 +70,7 @@ Optional local smoke test (installable release APK, same code as the bundle):
 adb install -r app\build\outputs\apk\release\app-release.apk
 ```
 
-The release build points at `wss://sandbox.ai.uky.edu` / Keycloak
-`https://iam.ai.uky.edu/realms/Astral` (`AppConfig.kt`, switched on
+The release build points at `wss://sandbox.ai.uky.edu` (`AppConfig.kt`, switched on
 `BuildConfig.DEBUG`). Minification is intentionally OFF for now, so the release
 binary behaves identically to the CI-tested debug build apart from endpoints.
 
@@ -96,15 +95,9 @@ versionName = "<approved marketing version>"
    Plan for this if not registering as an organization.
 2. **Create app** — App (not game), Free. The application id
    `com.personalailabs.astraldeep` (registered 2026-07-07) is fixed forever at
-   first upload. The AppAuth redirect scheme uses that registered ID; the
-   Kotlin `namespace` and source packages intentionally append `.app` as
+   first upload. The Kotlin `namespace` and source packages intentionally append `.app` as
    `com.personalailabs.astraldeep.app` (fully renamed 2026-07-07 from the
-   historical package). **Keycloak prerequisite**: the
-   `astral-mobile` client's *Valid Redirect URIs* and *Valid post-logout
-   redirect URIs* must include `com.personalailabs.astraldeep:/oauth2redirect`
-   — login fails with a redirect_uri error until they do. (Keep the old
-   `com.kyopenscience.astral:/oauth2redirect` entry only while sideloaded
-   builds of the old package are still in use.)
+   historical package).
 3. **Play App Signing** — accepted by default on first `.aab` upload; the
    keystore above becomes the registered upload key.
 
@@ -113,7 +106,7 @@ versionName = "<approved marketing version>"
 | Item | Answer |
 |---|---|
 | Privacy policy | `https://kyopenscience.com/astraldeep/privacy-policy/` |
-| App access | **All or some functionality is restricted** — the app is login-only against a private Keycloak realm. Provide a working reviewer account (a Keycloak user in the `Astral` realm with the `user` role) with username + password and instructions ("Tap Sign in → enter credentials"). **Review will fail without this.** |
+| App access | **All functionality is available without special access** — the app opens to a "not available yet" screen and has no sign-in. |
 | Ads | No ads |
 | Content rating | Complete the questionnaire; a utility/productivity chat client with no objectionable content → typically Everyone/PEGI 3. User-generated content is private (per-user chats, not shared publicly). |
 | Target audience | 18+ (avoids child-safety/Families policy obligations) |
@@ -128,16 +121,15 @@ versionName = "<approved marketing version>"
 
 Declares what the app collects/shares. Truthful answers for this client:
 
-- **Collected**: Personal info → *User IDs* and *Email address* (Keycloak OIDC
-  sign-in); Messages → *Other in-app messages* (chat content sent to the
+- **Collected**: Personal info → *User IDs* and *Email address* (none while the app
+  is paused); Messages → *Other in-app messages* (chat content sent to the
   AstralDeep backend); Files and docs (chat attachments, if the user attaches
   them).
 - **Shared with third parties**: No (data goes only to the first-party backend).
 - **Encrypted in transit**: Yes (WSS/HTTPS in release; tokens stored via
   `androidx.security-crypto` EncryptedSharedPreferences; `allowBackup=false`).
 - **Deletion**: point at the account/data deletion story for the backend
-  (chat deletion exists in-app; account deletion is handled by the operator via
-  Keycloak — describe whatever process the privacy policy documents).
+  (chat deletion exists in-app; account deletion is handled by the operator — describe whatever process the privacy policy documents).
 
 ### Store listing assets (required before any public track)
 
@@ -169,8 +161,8 @@ Declares what the app collects/shares. Truthful answers for this client:
 ## Known deferred items
 
 - **R8/minify is off** by design (first release). If enabled later, revisit
-  `proguard-rules.pro` — it covers kotlinx.serialization/AppAuth/OkHttp but has
-  no Coil keeps — and smoke-test login + rendering on a minified build.
+  `proguard-rules.pro` — it covers kotlinx.serialization/OkHttp but has
+  no Coil keeps — and smoke-test rendering on a minified build.
 - **No CI release job** by design — bundles are built locally with the local
   keystore. If automated later: base64 the keystore + passwords into GitHub
   secrets and add a tag-triggered `bundleRelease` workflow.

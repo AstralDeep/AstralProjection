@@ -18,7 +18,10 @@ final class ConnectionKeychainTests: XCTestCase {
     private func live() throws -> (ConnectionKeychain, String) {
         let service = "com.personalailabs.astraldeep.connection-credentials.test." + UUID().uuidString
         let store = ConnectionKeychain(service: service)
-        do { _ = try store.get(account: "probe") } catch HostKeystoreError.Failed(let message)
+        do {
+            try store.put(account: "probe", secret: Data([1]))
+            try store.remove(account: "probe")
+        } catch HostKeystoreError.Failed(let message)
             where message.contains(String(errSecMissingEntitlement))
         {
             throw XCTSkip("Keychain needs a signed host; unsigned test builds have none")

@@ -53,7 +53,7 @@ private struct MeshCallersScreen: View {
             Button("Revoke", role: .destructive) { Task { await model.confirmRevoke(ticket) } }
             Button("Cancel", role: .cancel) { model.cancelRevoke() }
         } message: { ticket in
-            Text("The caller can no longer use \(ticket.label). This cannot be undone.")
+            Text("The caller can no longer use \(ticket.label). This can't be undone.")
         }
     }
 }

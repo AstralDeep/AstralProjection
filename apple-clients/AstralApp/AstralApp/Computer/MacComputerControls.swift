@@ -337,4 +337,11 @@
             }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
         }
     }
+
+    extension String {
+        var leadSentence: String {
+            guard let end = range(of: ". ") else { return self }
+            return String(self[..<end.lowerBound]) + "."
+        }
+    }
 #endif

@@ -7,6 +7,7 @@ import Security
 
 nonisolated enum MeshSecretStoreError: Error, Equatable {
     case keychain(OSStatus)
+    case migration(String)
 }
 
 nonisolated protocol MeshSecretStore: Sendable {
@@ -28,7 +29,7 @@ nonisolated final class MeshKeychainStore: MeshSecretStore, @unchecked Sendable 
         var query = baseQuery(account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
-        let (status, result) = run(query) { SecItemCopyMatching($0, &$1) }
+        let (status, result) = try run(query) { SecItemCopyMatching($0, &$1) }
         switch status {
         case errSecSuccess: return result as? Data
         case errSecItemNotFound: return nil
@@ -38,7 +39,7 @@ nonisolated final class MeshKeychainStore: MeshSecretStore, @unchecked Sendable 
 
     func save(_ value: Data, account: String) throws {
         let update: [String: Any] = [kSecValueData as String: value]
-        let (updateStatus, _) = run(baseQuery(account)) { query, _ in
+        let (updateStatus, _) = try run(baseQuery(account)) { query, _ in
             SecItemUpdate(query, update as CFDictionary)
         }
         if updateStatus == errSecSuccess { return }
@@ -46,12 +47,12 @@ nonisolated final class MeshKeychainStore: MeshSecretStore, @unchecked Sendable 
         var add = baseQuery(account)
         add[kSecValueData as String] = value
         add[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        let (addStatus, _) = run(add) { query, _ in SecItemAdd(query, nil) }
+        let (addStatus, _) = try run(add) { query, _ in SecItemAdd(query, nil) }
         guard addStatus == errSecSuccess else { throw MeshSecretStoreError.keychain(addStatus) }
     }
 
     func remove(_ account: String) throws {
-        let (status, _) = run(baseQuery(account)) { query, _ in SecItemDelete(query) }
+        let (status, _) = try run(baseQuery(account)) { query, _ in SecItemDelete(query) }
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw MeshSecretStoreError.keychain(status)
         }
@@ -68,20 +69,21 @@ nonisolated final class MeshKeychainStore: MeshSecretStore, @unchecked Sendable 
     #if os(macOS)
         private func run(
             _ query: [String: Any], _ call: (CFDictionary, inout CFTypeRef?) -> OSStatus
-        ) -> (OSStatus, CFTypeRef?) {
-            for dataProtection in [true, false] {
-                var scoped = query
-                if dataProtection { scoped[kSecUseDataProtectionKeychain as String] = true }
-                var result: CFTypeRef?
-                let status = call(scoped as CFDictionary, &result)
-                if status != errSecItemNotFound && status != errSecMissingEntitlement { return (status, result) }
+        ) throws -> (OSStatus, CFTypeRef?) {
+            do {
+                try LegacyKeychainMigrator.shared.ensureMigrated(service: service, accessibility: .whenUnlocked)
+            } catch let error as KeychainMigrationError {
+                throw MeshSecretStoreError.migration(error.code)
             }
-            return (errSecItemNotFound, nil)
+            var scoped = query
+            scoped[kSecUseDataProtectionKeychain as String] = true
+            var result: CFTypeRef?
+            return (call(scoped as CFDictionary, &result), result)
         }
     #else
         private func run(
             _ query: [String: Any], _ call: (CFDictionary, inout CFTypeRef?) -> OSStatus
-        ) -> (OSStatus, CFTypeRef?) {
+        ) throws -> (OSStatus, CFTypeRef?) {
             var result: CFTypeRef?
             return (call(query as CFDictionary, &result), result)
         }

@@ -22,22 +22,14 @@ struct ConsentSheet: View {
                         .font(.title2.bold())
                         .accessibilityAddTraits(.isHeader)
                         .accessibilityIdentifier("consent.title")
-                    field("Tool", prompt.effect, id: "consent.effect")
-                    field("Target", prompt.target, id: "consent.target")
-                    argumentsField
-                    if let source = prompt.untrustedSource {
-                        Label {
-                            Text("Influenced by untrusted content: \(source)")
-                        } icon: {
-                            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                        }
-                        .accessibilityElement(children: .combine)
-                        .accessibilityIdentifier("consent.untrusted")
-                    }
+                    Text(prompt.summaryLine)
+                        .font(.body)
+                        .accessibilityIdentifier("consent.summary")
+                    untrustedNotice
                     if !prompt.labels.isEmpty {
                         field("Labels", prompt.labels.joined(separator: ", "), id: "consent.labels")
                     }
-                    field("Digest", prompt.shortDigest, id: "consent.digest", monospaced: true)
+                    detailsDisclosure
                 }
                 .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -79,6 +71,32 @@ struct ConsentSheet: View {
         #endif
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("consent.sheet")
+    }
+
+    @ViewBuilder
+    private var untrustedNotice: some View {
+        if let source = prompt.untrustedSource {
+            Label {
+                Text("Influenced by untrusted content: \(source)")
+            } icon: {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("consent.untrusted")
+        }
+    }
+
+    private var detailsDisclosure: some View {
+        DisclosureGroup("Details") {
+            VStack(alignment: .leading, spacing: 12) {
+                field("Tool", prompt.effect, id: "consent.effect")
+                field("Target", prompt.target, id: "consent.target")
+                argumentsField
+                field("Digest", prompt.shortDigest, id: "consent.digest", monospaced: true)
+            }
+            .padding(.top, 8)
+        }
+        .accessibilityIdentifier("consent.details")
     }
 
     private var argumentsField: some View {

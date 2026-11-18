@@ -5,7 +5,6 @@ import SwiftUI
 
 struct MeshOnboardingView: View {
     @Environment(MeshRuntime.self) private var mesh
-    @Environment(AppModeStore.self) private var modeStore
     @Environment(ThemeStore.self) private var theme
     @State private var recovering = false
     @State private var joining = false
@@ -50,11 +49,6 @@ struct MeshOnboardingView: View {
     private var choices: some View {
         VStack(spacing: 8) {
             Text("Your personal mesh").font(ConsoleTypography.title2).accessibilityAddTraits(.isHeader)
-            Text("A mesh links your devices. Your chats and assistant follow you, and no server holds them.")
-                .font(ConsoleTypography.body)
-                .foregroundStyle(p.muted)
-                .multilineTextAlignment(.center)
-                .accessibilityIdentifier("mesh.explainer")
         }
         if mesh.restoredInstall {
             Label(
@@ -66,7 +60,7 @@ struct MeshOnboardingView: View {
             .accessibilityIdentifier("mesh.restored")
         }
         Button {
-            Task { await mesh.createMesh() }
+            Task { await mesh.chooseCreateMesh() }
         } label: {
             Text(mesh.status.recoveryPending ? "Resume recovery" : "Create a Mesh").frame(maxWidth: .infinity)
         }
@@ -75,6 +69,14 @@ struct MeshOnboardingView: View {
         .keyboardShortcut(.defaultAction)
         .disabled(busy)
         .accessibilityIdentifier("mesh.create")
+        .alert("Start a New Mesh?", isPresented: newMeshBinding) {
+            Button("Start New Mesh", role: .destructive) { Task { await mesh.confirmNewMesh(confirmed: true) } }
+                .accessibilityIdentifier("mesh.create.confirm")
+            Button("Cancel", role: .cancel) { mesh.cancelNewMesh() }
+                .accessibilityIdentifier("mesh.create.cancel")
+        } message: {
+            Text("The mesh this device was restored from stays on your other devices.")
+        }
         Button {
             joining = true
         } label: {
@@ -88,9 +90,6 @@ struct MeshOnboardingView: View {
             Button("Recover my mesh") { recovering = true }
                 .disabled(busy)
                 .accessibilityIdentifier("mesh.recover")
-            Button("Sign in to a server") { modeStore.choose(.node) }
-                .disabled(busy)
-                .accessibilityIdentifier("mesh.node")
         }
         .buttonStyle(.borderless)
         .font(ConsoleTypography.subheadline)
@@ -98,6 +97,10 @@ struct MeshOnboardingView: View {
         if case .failed(let message) = mesh.join {
             error(message)
         }
+    }
+
+    private var newMeshBinding: Binding<Bool> {
+        Binding(get: { mesh.confirmingNewMesh }, set: { if !$0 { mesh.cancelNewMesh() } })
     }
 
     private var isFailedJoin: Bool {
@@ -225,6 +228,7 @@ struct MeshRecoveryView: View {
     @State private var written = false
     @State private var answers = ["", ""]
     @State private var mismatch = false
+    @State private var exporting = false
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
@@ -248,6 +252,7 @@ struct MeshRecoveryView: View {
                             .accessibilityIdentifier("mesh.recovery.word.\(index + 1)")
                     }
                 }
+                saveAsTextFile
                 Toggle("I wrote all 24 words down in order", isOn: $written)
                     .accessibilityIdentifier("mesh.recovery.written")
                 if written {
@@ -290,5 +295,25 @@ struct MeshRecoveryView: View {
             .frame(maxWidth: .infinity)
         }
         .background(p.bg)
+        .fileExporter(
+            isPresented: $exporting, document: MeshRecoveryWordsDocument(words: words), contentType: .plainText,
+            defaultFilename: MeshRecoveryWordsDocument.defaultFilename
+        ) { _ in }
+    }
+
+    private var saveAsTextFile: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                exporting = true
+            } label: {
+                Label("Save as Text File", systemImage: "square.and.arrow.down")
+            }
+            .meshBordered()
+            .accessibilityLabel("Save recovery words as a text file")
+            .accessibilityIdentifier("mesh.recovery.save")
+            Text("Anyone with this file can recover your mesh.")
+                .font(ConsoleTypography.footnote)
+                .foregroundStyle(p.muted)
+        }
     }
 }

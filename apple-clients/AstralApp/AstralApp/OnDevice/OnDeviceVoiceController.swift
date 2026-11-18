@@ -106,7 +106,7 @@ final class OnDeviceVoiceController {
         case .installed: break
         }
         guard let link else {
-            message = "Voice is not ready in this conversation yet."
+            message = "Voice isn't ready in this conversation yet."
             showingSetup = true
             return
         }
@@ -153,10 +153,10 @@ final class OnDeviceVoiceController {
                 self.stop()
                 switch reason {
                 case "voice_recognition_timed_out":
-                    self.message = "Voice could not finish recognizing that sentence. Try again."
+                    self.message = "Voice couldn't finish recognizing that sentence. Try again."
                 case "audio_capture_format_unavailable", "audio_engine_restart_failed":
                     self.message =
-                        "Microphone audio is not available. Check the selected input device in Sound settings, then start voice again."
+                        "Microphone audio isn't available. Check the selected input device in Sound settings, then start voice again."
                 default:
                     self.message = "Voice stopped. Try starting it again."
                 }
@@ -177,11 +177,11 @@ final class OnDeviceVoiceController {
             guard generation == attempt else { return }
             if error is VoiceDuplexError {
                 message =
-                    "The microphone and speaker could not start. Check the selected audio devices, then try again."
+                    "The microphone and speaker couldn't start. Check the selected audio devices, then try again."
             } else if let failure = error as? MeshKernelError {
                 message = failure.message
             } else {
-                message = "The voice model could not start. Try downloading it again."
+                message = "The voice model couldn't start. Try downloading it again."
             }
             showingSetup = true
         }

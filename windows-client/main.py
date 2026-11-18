@@ -1,5 +1,5 @@
 """Entry point for the Windows client exe; picks between the BYO worker stdio loop and
-astral_client/app.py's Qt GUI. Handles --byo-worker before importing app.py so a
+the not-available window. Handles --byo-worker before importing app.py so a
 frozen re-invocation runs as a worker, not a second GUI.
 """
 
@@ -144,12 +144,9 @@ def main(argv=None) -> int:
         isolate_local_settings(startup.effective_profile.digest)
 
     # Must follow the byo-worker branch (frozen exe reentry)
-    from astral_client.app import main as app_main
+    from astral_client.not_available import run
 
-    return app_main(
-        effective_profile=startup.effective_profile,
-        argv=list(startup.remaining_args),
-    )
+    return run(list(startup.remaining_args))
 
 if __name__ == "__main__":
     raise SystemExit(main())

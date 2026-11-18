@@ -28,7 +28,6 @@ _MAX_PROFILE_BYTES = 64 * 1024
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _PROFILE_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{2,63}$")
 _RELEASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{2,127}$")
-_CLIENT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$")
 _PLACEHOLDERS = {"changeme", "placeholder", "example", "default"}
 
 _PROFILE_FIELDS = {
@@ -38,10 +37,7 @@ _PROFILE_FIELDS = {
     "client_version",
     "distribution",
     "local_only",
-    "authority",
     "websocket_endpoint",
-    "client_id",
-    "auth_mode",
     "override_policy",
     "agent_connection",
 }
@@ -195,10 +191,7 @@ class DeploymentProfile:
     client_version: str
     distribution: str
     local_only: bool
-    authority: str
     websocket_endpoint: str
-    client_id: str
-    auth_mode: str
     override_policy: OverridePolicy
     agent_connection: AgentConnection
 
@@ -210,10 +203,7 @@ class DeploymentProfile:
             "client_version": self.client_version,
             "distribution": self.distribution,
             "local_only": self.local_only,
-            "authority": self.authority,
             "websocket_endpoint": self.websocket_endpoint,
-            "client_id": self.client_id,
-            "auth_mode": self.auth_mode,
             "override_policy": self.override_policy.as_dict(),
             "agent_connection": self.agent_connection.as_dict(),
         }
@@ -236,8 +226,6 @@ class EffectiveDeploymentProfile:
             "local_only": self.profile.local_only,
             "source": self.source,
             "profile_sha256": self.digest,
-            "auth_mode": self.profile.auth_mode,
-            "client_mode": "public" if self.profile.auth_mode == "keycloak_oidc_pkce" else "bff",
             "byo_host_disposition": self.profile.agent_connection.byo_host.disposition,
             "legacy_tools_disposition": self.profile.agent_connection.legacy_tools.disposition,
             "legacy_tools_credential_source": (
@@ -294,14 +282,9 @@ def parse_profile(
     if distribution not in {"production", "generic_developer", "local_backend"}:
         raise DeploymentProfileError("distribution is unsupported")
     local_only = _bool(data["local_only"], "local_only")
-    authority, authority_local = _uri(data["authority"], "authority", websocket=False)
     endpoint, endpoint_local = _uri(
         data["websocket_endpoint"], "websocket_endpoint", websocket=True
     )
-    client_id = _identifier(data["client_id"], "client_id", _CLIENT_ID)
-    auth_mode = data["auth_mode"]
-    if auth_mode not in {"keycloak_oidc_pkce", "keycloak_bff"}:
-        raise DeploymentProfileError("auth_mode is unsupported")
 
     policy_data = _exact_fields(data["override_policy"], _OVERRIDE_FIELDS, "override_policy")
     for field_name in _OVERRIDE_FIELDS:
@@ -338,9 +321,9 @@ def parse_profile(
         raise DeploymentProfileError("legacy tools disposition and credential source disagree")
 
     if distribution == "production":
-        if local_only or authority_local or endpoint_local:
+        if local_only or endpoint_local:
             raise DeploymentProfileError("production deployment values must be non-local")
-        if not authority.startswith("https://") or not endpoint.startswith("wss://"):
+        if not endpoint.startswith("wss://"):
             raise DeploymentProfileError("production deployment values require TLS")
         if policy.configure_dialog_allowed or policy.development_defaults_allowed:
             raise DeploymentProfileError("production profile permits a developer fallback")
@@ -349,16 +332,12 @@ def parse_profile(
     elif distribution == "local_backend":
         if not local_only or not _is_loopback_endpoint(endpoint):
             raise DeploymentProfileError("local backend profiles require a loopback WebSocket endpoint")
-        if authority_local or not authority.startswith("https://"):
-            raise DeploymentProfileError("local backend profiles require a remote HTTPS Keycloak authority")
-        if auth_mode != "keycloak_oidc_pkce":
-            raise DeploymentProfileError("local backend profiles require direct Keycloak PKCE")
         if policy.configure_dialog_allowed or policy.development_defaults_allowed:
             raise DeploymentProfileError("local backend profiles cannot permit a developer fallback")
         if byo_disposition != "authenticated_ui_tunnel" or legacy_disposition != "disabled":
             raise DeploymentProfileError("local backend agent dispositions are inconsistent")
     else:
-        if not local_only or not authority_local or not endpoint_local:
+        if not local_only or not endpoint_local:
             raise DeploymentProfileError("generic developer profiles must be explicitly local-only")
 
     return DeploymentProfile(
@@ -368,10 +347,7 @@ def parse_profile(
         client_version=client_version,
         distribution=distribution,
         local_only=local_only,
-        authority=authority,
         websocket_endpoint=endpoint,
-        client_id=client_id,
-        auth_mode=auth_mode,
         override_policy=policy,
         agent_connection=AgentConnection(
             byo_host=ByoHostDisposition(byo_disposition),
@@ -397,10 +373,7 @@ def _development_profile() -> DeploymentProfile:
             "client_version": "0.6.0",
             "distribution": "generic_developer",
             "local_only": True,
-            "authority": "http://127.0.0.1:8080/realms/Astral",
             "websocket_endpoint": "ws://127.0.0.1:8001/ws",
-            "client_id": "astral-desktop",
-            "auth_mode": "keycloak_oidc_pkce",
             "override_policy": {
                 "managed_profile_allowed": True,
                 "command_line_profile_allowed": True,

@@ -1,5 +1,5 @@
-// Remembers whether this install runs as a personal mesh or as a thin client of a node, and builds the live MeshRuntime for mesh mode.
-// Fresh and legacy installs start with mesh choices; an explicit server connection remains separate.
+// Remembers that this install runs as a personal mesh, and builds the live MeshRuntime for it.
+// A stored value from an older build that named a server connection reads as no choice and is left in place.
 
 import AstralCore
 import AstralKernel
@@ -15,7 +15,6 @@ import Observation
 final class AppModeStore {
     enum Mode: String, Equatable {
         case mesh
-        case node
     }
 
     private(set) var mode: Mode?
@@ -26,8 +25,6 @@ final class AppModeStore {
         self.defaults = defaults
         mode = defaults.string(forKey: Self.key).flatMap(Mode.init(rawValue:))
     }
-
-    var usesMesh: Bool { mode != .node }
 
     func choose(_ mode: Mode) {
         self.mode = mode
@@ -49,6 +46,31 @@ nonisolated enum MeshKernelFactories {
                 config: config, network: network, signer: signer, model: model, tools: tools,
                 listener: listener, phiPrompt: phiPrompt)
         }
+    }
+}
+
+nonisolated enum MeshStoreRetirement {
+    static func retire(_ directory: URL, now: Date, fileManager: FileManager = .default) throws -> URL? {
+        guard fileManager.fileExists(atPath: directory.path) else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
+        let base = directory.lastPathComponent + ".retired-" + formatter.string(from: now)
+        let parent = directory.deletingLastPathComponent()
+        var target = parent.appendingPathComponent(base, isDirectory: true)
+        var suffix = 1
+        while fileManager.fileExists(atPath: target.path) {
+            suffix += 1
+            target = parent.appendingPathComponent(base + "-\(suffix)", isDirectory: true)
+        }
+        try fileManager.moveItem(at: directory, to: target)
+        var fresh = directory
+        try fileManager.createDirectory(at: fresh, withIntermediateDirectories: true)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? fresh.setResourceValues(values)
+        return target
     }
 }
 

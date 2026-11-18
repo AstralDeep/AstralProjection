@@ -210,7 +210,7 @@
             XCTAssertEqual(Set(texts).count, errors.count - 2)
             XCTAssertEqual(describe(NodePairingError.meshUnavailable("node_not_running")), "Start the node first.")
             XCTAssertEqual(
-                describe(NodePairingError.meshUnavailable("kernel_x")), "The node cannot join a mesh yet (kernel_x).")
+                describe(NodePairingError.meshUnavailable("kernel_x")), "The node can't join a mesh yet (kernel_x).")
             XCTAssertEqual(
                 describe(NodePairingError.rateLimited), "Too many pairing attempts. Wait a minute and try again.")
             XCTAssertEqual(describe(CancellationError()), "The node refused the request.")
@@ -239,7 +239,7 @@
             await controller.lookUpOffer()
             await controller.install()
             XCTAssertEqual(controller.phase, .notInstalled)
-            XCTAssertEqual(controller.message, "The archive digest does not match and the download was discarded.")
+            XCTAssertEqual(controller.message, "The archive digest doesn't match and the download was discarded.")
         }
 
         func testASetupFailureSurfacesAsAFailedPhase() async throws {
@@ -251,7 +251,7 @@
             await controller.lookUpOffer()
             await controller.install()
             await controller.start()
-            XCTAssertEqual(controller.phase, .failed("The node home could not be prepared (openssl missing)."))
+            XCTAssertEqual(controller.phase, .failed("The node home couldn't be prepared (openssl missing)."))
         }
 
         func testSettingsPersistAcrossControllers() {
@@ -386,7 +386,7 @@
             let controller = NodeHostController(environment: wrongPin)
             await controller.installOnFirstLaunch()
             XCTAssertEqual(controller.phase, .notInstalled)
-            XCTAssertEqual(controller.message, "The pack description does not match the pinned digest.")
+            XCTAssertEqual(controller.message, "The pack description doesn't match the pinned digest.")
             XCTAssertTrue(defaults.bool(forKey: NodeHostController.autoOfferedKey))
             await controller.installOnFirstLaunch()
             let packs = root.appendingPathComponent("node/packs").path

@@ -28,9 +28,7 @@ Orchestrator (:8001)  ──WebSocket /ws──►  OrchestratorClient (asyncio 
   donut and radar charts using native Qt layouts and painting.
 - `astral_client/console.py`, `console_widgets.py` — validated `console/v2`
   chrome/catalog and ROTE presentation rendered as the native application shell.
-- `astral_client/workspace_actions.py` — authorized committed-canvas export and
-  share, fenced to the current owner, connection, chat and render revision.
-- `astral_client/app.py` — main window (chat rail + canvas) and message wiring.
+- `astral_client/not_available.py` — the one window the client opens while it waits for its kernel port.
 - `astral_client/theme.py` — server theme roles and packaged shared Open Sans.
 
 ### Console v2
@@ -48,12 +46,7 @@ authorized committed HTML and saves atomically to the user's chosen file. Share
 is offered only when the server declares it; neither action grants permission
 locally or substitutes an uncommitted native view for server export state.
 
-Normal Keycloak sessions renew before their reported expiry and register again
-through the existing connection protocol. Same-owner renewal retains the draft,
-attachments, pending submissions and unchanged result controls. Account changes
-clear private views and reject delayed responses from the previous account.
-Actions that encounter an expired credential ask for a retry after reconnection;
-uploads are never silently repeated.
+**Paused.** The Windows client is paused until its kernel port qualifies. It opens one window, "Astral for Windows is not available yet. Use the Mac or iPhone app.", has no sign-in and makes no network request. The rest of the client stays compiled and is not reachable from that window.
 
 Result titles move above their action row when the measured width requires it.
 Status feedback wraps long words and remains keyboard reachable when it exceeds
@@ -97,11 +90,11 @@ never mixed between sources:
 
 An invalid higher-precedence selection fails closed with exit code 78. It does
 not fall back to the bundle or to localhost. Per-field deployment variables
-such as `ASTRAL_WS_URL` and `KEYCLOAK_AUTHORITY` are intentionally not read
+such as `ASTRAL_WS_URL` are intentionally not read
 after profile resolution. Credentials are not profile fields.
 
-Validate an installed executable non-interactively without exposing authority,
-endpoint, or credentials:
+Validate an installed executable non-interactively without exposing the
+endpoint or credentials:
 
 ```powershell
 .\dist\AstralDeep.exe --validate-deployment --report deployment-validation.json
@@ -119,16 +112,12 @@ Packaged tests and release qualification choose a fresh identifier for each
 invocation. They never clear the interactive user's profile. Disposable
 namespaces remain in the test account's settings storage.
 
-For a local backend with the usual remote Keycloak identity provider, use
-`Launch-AstralDeep-Local.bat`. It passes the complete
-`deployment/local-backend-profile.json` to the same packaged executable.
-The window title includes **Local testing**. This explicit `local_backend`
-distribution requires a loopback WebSocket endpoint, a remote HTTPS authority,
-direct Keycloak PKCE and authenticated agent transport. It rejects developer
-authentication/configuration fallbacks, unspecified bind addresses and legacy
-agent keys. `local_only` scopes the application backend; identity remains at
-the selected HTTPS Keycloak authority. Production and all-local generic
-developer profile restrictions are unchanged.
+For a local backend, pass the complete `deployment/local-backend-profile.json` to
+the packaged executable with `--deployment-profile`. The window title includes
+**Local testing**. This explicit `local_backend` distribution requires a loopback
+WebSocket endpoint and authenticated agent transport. It rejects developer
+configuration fallbacks, unspecified bind addresses and legacy agent keys.
+Production and all-local generic developer profile restrictions are unchanged.
 
 A local profile may also be selected in the existing native
 `deployment/profile_json` setting so opening the executable directly uses it.
@@ -137,32 +126,30 @@ namespace derived from the complete profile. Production conversation resumption,
 workspace selection and remote-control consent are not inherited. An explicitly
 provided `ASTRAL_WINDOWS_PROFILE_ID` continues to select its isolated namespace.
 Removing that explicit selection restores the bundled sandbox profile; do so
-only when the build is approved for that environment. User sign-in is still
-required; the launcher does not supply tokens or change server authentication.
+only when the build is approved for that environment.
 
 ## Run (dev)
 
-Requires **Python 3.11+** and a running orchestrator. For local dev set the
-orchestrator to mock auth
-(`USE_MOCK_AUTH=true`, `ASTRAL_ENV=development`) so the `dev-token` is accepted.
+Requires **Python 3.11+**. The client opens its not-available window and needs no
+orchestrator.
 
 ```bash
 python -m venv .venv
-.venv/Scripts/python -m pip install --require-hashes -r ../apple-clients/NodePack/build-requirements.lock
+.venv/Scripts/python -m pip install --require-hashes -r ../tooling/python-ci/build-requirements.lock
 .venv/Scripts/python ../scripts/install_presentation_components.py install --deep-source <pinned-Deep> --primitives-source <pinned-Primitives> --kernel-source <pinned-Kernel>
-.venv/Scripts/python main.py --token <JWT>    # uses the bundled production profile
+.venv/Scripts/python main.py    # uses the bundled production profile
 # Explicit local development uses a complete schema-conforming local profile:
-.venv/Scripts/python main.py --deployment-profile C:\path\to\local-profile.json --token dev-token
+.venv/Scripts/python main.py --deployment-profile C:\path\to\local-profile.json
 ```
 
 The local profile is validated fail-closed by
 [`astral_client/deployment.py`](astral_client/deployment.py) and its focused
 tests. `distribution` must be `generic_developer`, `local_only` must be `true`,
-and its authority and WebSocket endpoint must be loopback URLs. The original
+and its WebSocket endpoint must be a loopback URL. The original
 feature-060 schema remains attributable through
 [`../provenance/extraction.json`](../provenance/extraction.json), but its former
 AstralDeep `specs/` path is not a standalone Projection contract. `ASTRAL_TOKEN`
-remains an optional credential input; it is not deployment configuration.
+is not deployment configuration.
 
 ## Build the .exe
 
@@ -171,7 +158,7 @@ The first-party speech helper uses the repository-pinned .NET SDK from
 committed lock, then publish the warning-clean product before freezing Python:
 
 ```powershell
-.venv\Scripts\python -m pip install --require-hashes -r ..\apple-clients\NodePack\build-requirements.lock
+.venv\Scripts\python -m pip install --require-hashes -r ..\tooling\python-ci\build-requirements.lock
 .venv\Scripts\python ..\scripts\install_presentation_components.py install `
   --deep-source <pinned-Deep> --primitives-source <pinned-Primitives> --kernel-source <pinned-Kernel>
 dotnet restore asr-helper\tests\AstralSpeechHelper.Tests.csproj --locked-mode
@@ -257,30 +244,7 @@ $env:ASTRAL_WINDOWS_EXE = (Resolve-Path dist\AstralDeep.exe).Path
 
 ## Auth
 
-- **Dev**: `dev-token` against a mock-auth orchestrator (`--token dev-token`, or
-  the fallback when no authority is configured and the first-run dialog is
-  skipped).
-- **Real Keycloak (OIDC)**: select a complete profile whose `authority`,
-  `client_id`, and `auth_mode` are approved together. The app runs
-  **Authorization-Code + PKCE with a loopback redirect** (RFC
-  8252) — it opens the system browser, you log in, and the token is used for
-  `register_ui`; it silently refreshes on expiry. An explicit `--token` always
-  wins.
-
-By default the desktop uses its own **dedicated public Keycloak client**,
-`astral-desktop` (the by-the-book native-app posture, RFC 8252 / OAuth 2.0 for
-Native Apps): the browser does PKCE, then the app exchanges the auth code and
-refreshes tokens **directly against Keycloak** — it holds no secret and does not
-depend on the orchestrator's BFF, and the web/desktop auth surfaces stay
-  isolated. The orchestrator accepts the desktop client's `azp` via its
-  `KEYCLOAK_ALLOWED_AZP` allow-list.
-
-**One-time Keycloak setup** (create the public client + add it to the
-allow-list): see [`docs/keycloak-windows-client-setup.md`](../docs/keycloak-windows-client-setup.md).
-
-Legacy BFF reuse remains available only when an approved whole profile selects
-`auth_mode: keycloak_bff`; it is not enabled by mixing command-line fields into
-the production profile.
+There is no sign-in. The client opens to a "not available yet" window until its kernel port qualifies.
 
 ## Windows tools agent (client-hosted)
 
@@ -442,7 +406,7 @@ environment variables cannot widen repository or workflow trust.
 
 ## Scope / status
 
-Working: real Keycloak OIDC (dedicated public client, silent refresh) → chat →
+Paused. Compiled but unreachable: chat →
 agents → native SDUI canvas, in-place `ui_upsert` updates, **live push
 streaming** (`ui_stream_data` frames rendered in place on the canvas),
 button/history interactions, client-hosted Windows tools agent, and native app
@@ -470,9 +434,6 @@ modules), and we do not embed the web app's HTML.
 - **App chrome** (settings, agent management, modals) → native Qt
   reimplementation driven by the same WS events as the web chrome — *not* an
   embedded HTML view.
-- **OIDC login** → the **system** browser (RFC 8252 external user-agent), which
-  is the correct, more secure native pattern; it is the OS browser, **not** an
-  in-app embedded web view. The app never sees your Keycloak password.
 
 
 Presentation wheels are built from the clean exact commits named by

@@ -88,7 +88,7 @@
         var pid: pid_t { snapshot.pid }
         var center: CGPoint { CGPoint(x: frame.midX, y: frame.midY) }
         var label: String {
-            "\(entry.label.map { MacComputerAccessibility.clean($0) } ?? entry.name) — \(snapshot.app)"
+            "\(entry.label.map { MacComputerAccessibility.clean($0) } ?? entry.name) in \(snapshot.app)"
         }
     }
 
@@ -427,11 +427,11 @@
             var parts = ["[\(target.ref)]", target.entry.name]
             if let label = target.entry.label { parts.append(quoted(label, 80)) }
             if let value { parts.append("value=" + quoted(value, 60)) }
-            return bounded(parts.joined(separator: " ") + " — " + clean(target.snapshot.app), 200)
+            return bounded(parts.joined(separator: " ") + " in " + clean(target.snapshot.app), 200)
         }
 
         static func menuLine(_ titles: [String], app: String) -> String {
-            bounded("menu " + quoted(titles.map(clean).joined(separator: " › "), 140) + " — " + clean(app), 200)
+            bounded("menu " + quoted(titles.map(clean).joined(separator: " › "), 140) + " in " + clean(app), 200)
         }
 
         static func bounded(_ text: String, _ limit: Int) -> String {

@@ -629,13 +629,13 @@ def test_runtime_manifests_bind_exact_owning_dependency_inventory() -> None:
             "5e2d075903b5cd264613e7538c7c51b1484fe2ed489d4ead3e6b4ba0cf3911c4"
         ),
         "android-client/app/gradle.lockfile": (
-            "dcef358e06fed8b01fe03fcf9446cabfd57d12be9367973e597dcc6874c68ef5"
+            "cc60dc1f561b8d5a3474ace663e13c2c801b0ac8b17730d53f3279b76837d895"
         ),
         "android-client/core/gradle.lockfile": (
             "aee1fb50d70d15c9c7be9def38101135e607b42ba440477c6a8e3043333cfc49"
         ),
         "android-client/gradle/libs.versions.toml": (
-            "791fc52e6127684e57906c31d1ad53058c175643037edc8f4c0792d7a185ae0f"
+            "fe4a7c9955f1b4c6995b792601df76c1d9998103e99ed7f4eaec6ba4c5f30540"
         ),
         "apple-clients/AstralApp/AstralApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved": (
             "cc42f10d6a19ab700a48bfa71c9484843ae71ce3604e6cf2f1529f121c18821f"
@@ -752,7 +752,7 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
     assert len(paths) == len(set(paths))
     assert len(extraction["entries"]) == 519
     removed = {entry["path"] for entry in record["entries"] if entry.get("resultStatus") == "removed"}
-    assert len(removed) == 38
+    assert len(removed) == 104
     assert {path for path in removed if path.startswith(("backend/rote/", "tests/rote/"))} == {
         "backend/rote/__init__.py", "backend/rote/adapter.py", "backend/rote/capabilities.py",
         "backend/rote/fallback.py", "backend/rote/lod.py", "backend/rote/objectives.py", "backend/rote/rote.py",

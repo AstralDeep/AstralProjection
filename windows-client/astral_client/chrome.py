@@ -1,5 +1,5 @@
 """Decides whether a server-pushed chrome_render frame needs a native-client notice
-(only for a non-empty modal region); app.py calls this since the desktop reimplements
+(only for a non-empty modal region); the desktop reimplements
 chrome as Qt dialogs instead of rendering the pushed HTML.
 """
 

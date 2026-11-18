@@ -81,6 +81,7 @@ struct MeshDeviceDetailView: View {
                     Text(member.memberId.suffix(12)).font(.system(.footnote, design: .monospaced))
                 }
             }
+            if member.isThisDevice { exitSection }
             if !member.isThisDevice {
                 Section {
                     NavigationLink {
@@ -111,6 +112,16 @@ struct MeshDeviceDetailView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This name shows on every device.")
+        }
+    }
+
+    private var exitSection: some View {
+        let single = mesh.members.count <= 1
+        return Section {
+            Button(mesh.exitAction.button, role: .destructive) { mesh.requestExit() }
+                .accessibilityIdentifier("mesh.device.exit")
+        } footer: {
+            Text(single ? "No other device is in this mesh." : "Your chats stay on your other devices.")
         }
     }
 

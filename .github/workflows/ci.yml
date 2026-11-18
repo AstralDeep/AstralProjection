@@ -54,7 +54,7 @@ jobs:
           path: build/ci/review-diagnostics.json
           if-no-files-found: error
       - run: mkdir -p build/074/coverage
-      - run: python -m pytest tests apple-clients/NodePack/tests -q -p no:cacheprovider --cov=astralprojection --cov=webrender --cov=assemble_pack --cov=local_sources --cov=pack_manifest --cov=package_kernel_wheel --cov=pins --cov=astral_node_launch --cov=node_logging --cov=scripts.install_presentation_components --cov=scripts.merge_xccov_line_coverage --cov=scripts.build_offline_assets --cov=scripts.build_native_export --cov=scripts.android_coverage --cov=scripts.native_xccov_domain --cov=scripts.collect_xccov_native_domain --cov=scripts.export_xccov_line_coverage --cov=scripts.check_changed_coverage --cov=scripts.ci_review_diagnostics --cov=scripts.ci_lanes --cov=scripts.ci_apple_ui_products --cov=scripts.ci_kernel_apple --cov=scripts.ci_retry_diagnostics --cov=scripts.check_regression_effectiveness --cov=scripts.swift_inactive_input --cov-branch --cov-append --cov-report=xml:build/074/coverage/projection-python.xml
+      - run: python -m pytest tests -q -p no:cacheprovider --cov=astralprojection --cov=webrender --cov=scripts.presentation_sources --cov=scripts.install_presentation_components --cov=scripts.merge_xccov_line_coverage --cov=scripts.build_offline_assets --cov=scripts.build_native_export --cov=scripts.android_coverage --cov=scripts.native_xccov_domain --cov=scripts.collect_xccov_native_domain --cov=scripts.export_xccov_line_coverage --cov=scripts.check_changed_coverage --cov=scripts.ci_review_diagnostics --cov=scripts.ci_lanes --cov=scripts.ci_apple_ui_products --cov=scripts.ci_kernel_apple --cov=scripts.ci_retry_diagnostics --cov=scripts.check_regression_effectiveness --cov=scripts.swift_inactive_input --cov-branch --cov-append --cov-report=xml:build/074/coverage/projection-python.xml
       - name: Prove focused regression effectiveness
         run: python scripts/check_regression_effectiveness.py
       - name: Record changed Python coverage for the event range
@@ -485,9 +485,23 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  no-keycloak:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          repository: AstralDeep/AstralDeep
+          path: .deep-checker
+          persist-credentials: false
+      - run: python3 .deep-checker/scripts/check_no_keycloak.py --repo . --config no-keycloak.json
+
   required:
     if: always()
-    needs: [python, web, windows-tests, windows-package]
+    needs: [python, web, windows-tests, windows-package, no-keycloak]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -498,3 +512,4 @@ jobs:
           [[ '${{ needs.web.result }}' == 'success' ]]
           [[ '${{ needs.windows-tests.result }}' == 'success' ]]
           [[ '${{ needs.windows-package.result }}' == 'success' ]]
+          [[ '${{ needs.no-keycloak.result }}' == 'success' ]]

@@ -13,6 +13,11 @@ struct MeshConnectionsView: View {
     var body: some View {
         List {
             Section {
+                if mesh.connections.isEmpty {
+                    Text("No connections yet")
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier(MeshConnectionID.empty)
+                }
                 ForEach(mesh.connections) { connection in
                     MeshConnectionRow(
                         connection: connection, signIn: signIn, remove: { removing = connection })
@@ -68,8 +73,8 @@ struct MeshConnectionsView: View {
     }
 }
 
-private extension MeshConnectionsView {
-    var removalShown: Binding<Bool> {
+extension MeshConnectionsView {
+    fileprivate var removalShown: Binding<Bool> {
         Binding(get: { removing != nil }, set: { shown in if !shown { removing = nil } })
     }
 }
@@ -91,6 +96,10 @@ struct MeshConnectionRow: View {
             }
             if let line = facts.unavailableLine {
                 Text(line).font(ConsoleTypography.caption).foregroundStyle(.secondary)
+            }
+            if let reason = facts.unavailableReason {
+                Text(reason).font(ConsoleTypography.caption).foregroundStyle(.secondary)
+                    .accessibilityLabel("Unavailable here. \(reason)")
             }
             if let attention = MeshConnectionAttentionFacts(connection) {
                 MeshConnectionAttentionBadge(facts: attention)
@@ -147,10 +156,15 @@ struct MeshConnectionRowActions: View {
 }
 
 struct MeshConnectionsLegacySection: View {
+    @Environment(ThemeStore.self) private var theme
     let model: MeshLegacyServersModel
 
     var body: some View {
         Section("Added before connections") {
+            if let problem = model.problem {
+                Text(problem).foregroundStyle(theme.palette.error)
+                    .accessibilityIdentifier(MeshConnectionID.legacyProblem)
+            }
             ForEach(model.rows) { row in
                 VStack(alignment: .leading, spacing: 2) {
                     Text(row.name)
@@ -185,8 +199,8 @@ struct MeshConnectionSignInStatus: View {
     private func line(_ phase: MeshConnectionSignIn.Phase) -> String? {
         switch phase {
         case .idle: return nil
-        case .starting, .waiting: return "Signing in..."
-        case .completing: return "Finishing..."
+        case .starting, .waiting: return "Signing in…"
+        case .completing: return "Finishing…"
         case .signedIn(let pending): return pending ? "Signed in. Review its tools to use them." : "Signed in."
         case .cancelled: return "Sign-in cancelled."
         case .failed(let text): return text

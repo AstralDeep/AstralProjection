@@ -267,7 +267,11 @@ jobs:
       - name: Validate App Store icon assets
         run: python3 apple-clients/Scripts/generate_app_icons.py --check
       - name: Run AstralCore with coverage
-        run: swift test --package-path apple-clients/AstralCore --enable-code-coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          export ASTRAL_EXEC_TEST_PYTHON="$(command -v python)"
+          swift test --package-path apple-clients/AstralCore --enable-code-coverage
       - name: Stage SwiftPM coverage data
         if: always()
         shell: bash
@@ -772,26 +776,43 @@ jobs:
             slug: ios-1
             platform: ios
             destination: "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5"
-            tests: "WorkspacePresentationUITests"
+            tests: "MeshStoredSurfaceUITests"
           - name: iOS 26.5 shard 2
             slug: ios-2
             platform: ios
             destination: "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5"
-            tests: "WorkspaceActionsUITests VoiceConversationUITests"
+            tests: >-
+              MeshModeUITests/testFirstLaunchShowsCreateAndJoinBeforeAnyServerLogin
+              MeshModeUITests/testLegacyServerLoginPreferenceOpensMeshChoices
+              MeshModeUITests/testAttachmentOnlyMessageShowsItsFileAndTheComposerCanAddAnother
+              MeshModeUITests/testCreatingAMeshShowsRecoveryWordsOnceAndRequiresConfirmation
+              MeshModeUITests/testRecoveringWithTheWordsShowsTheRestoredMeshAndDevice
+              MeshModeUITests/testRequestsShowInTheChatAndCanBeRefusedWithAReason
+              MeshModeUITests/testRemoteMCPManagerIsReachableFromSettings
+              MeshModeUITests/testPermissionsAndMailboxLiveInSettings
+              MeshModeUITests/testReviewOpensTheConsentSheetWithTheActionAndDenyClosesIt
+              MeshModeUITests/testDenyOnTheBannerDismissesTheApprovalWithoutASheet
+              MeshModeUITests/testOutcomeUnknownCardOffersCheckOrLeave
           - name: iOS 26.5 shard 3
             slug: ios-3
             platform: ios
             destination: "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5"
             tests: >-
-              LLMFirstLoginUITests Accessibility060UITests SettingsControlsUITests
-              ConversationContinuityUITests/testDeterministicProcessRelaunchRestoresSemanticConversation
+              MeshModeUITests/testTheLargestTextSizeKeepsEveryMeshScreenUsable
+              MeshModeUITests/testRunsAndSettingsScreensRender
+              MeshModeUITests/testJoinOffersScanOrPasteAndShowsTheComparisonCode
+              MeshModeUITests/testJoinCanShowItsOwnCodeInstead
+              MeshModeUITests/testShellShowsWaitingDeviceQueuedMessageBranchesAndApproval
+              MeshModeUITests/testDevicesAndSettingsExposeMembersStopAndAllowance
+              MeshModeUITests/testAddingADeviceShowsAnInvitationThenComparesCodesAndApproves
+              MeshModeUITests/testTheFallbackWalksThroughCodeComparisonAndApproval
+              MeshModeUITests/testAnUnreadableCodeKeepsThePersonOnTheCodeStepWithAnError
+              MeshModeUITests/testDeviceDetailOffersRequestAndRemovalWithConfirmation
           - name: macOS
             slug: macos
             platform: macos
             destination: "platform=macOS,arch=arm64"
-            tests: >-
-              LLMFirstLoginUITests VoiceConversationUITests Accessibility060UITests WorkspacePresentationUITests
-              ConversationContinuityUITests/testDeterministicProcessRelaunchRestoresSemanticConversation
+            tests: "MeshModeUITests MeshStoredSurfaceUITests"
     steps:
       - name: Check out candidate
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

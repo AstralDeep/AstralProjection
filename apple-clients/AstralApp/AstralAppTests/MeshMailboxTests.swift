@@ -128,11 +128,11 @@ final class MeshMailboxTests: XCTestCase {
         XCTAssertTrue(text(.ok, ok: now.addingTimeInterval(-3_600)).hasPrefix("Working. Last exchange "))
         XCTAssertEqual(text(.waiting), "Waiting for the mailbox to answer.")
         XCTAssertEqual(text(.removed), "The mailbox no longer accepts this device.")
-        XCTAssertEqual(text(.unreachable), "The mailbox cannot be reached right now.")
+        XCTAssertEqual(text(.unreachable), "The mailbox can't be reached right now.")
         XCTAssertEqual(
             text(.error, error: "mailbox.too_large"), "The mailbox refused the exchange (mailbox.too_large).")
         XCTAssertEqual(text(.error), "The mailbox refused the exchange.")
-        XCTAssertEqual(text(.unknown), "The mailbox state is not known.")
+        XCTAssertEqual(text(.unknown), "The mailbox state isn't known.")
     }
 
     func testGeneratedMailboxStateMapsToTheHostType() {

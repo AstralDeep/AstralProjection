@@ -264,6 +264,10 @@ struct MeshJoinStartView: View {
                 Label(message, systemImage: "exclamationmark.triangle.fill")
                     .font(ConsoleTypography.subheadline).foregroundStyle(p.error)
                     .accessibilityIdentifier("mesh.join.error")
+                if message == KernelMapping.failureText(code: "mesh.already_enrolled") {
+                    Button("Leave or Reset This Device") { mesh.requestExit() }
+                        .accessibilityIdentifier("mesh.join.leave")
+                }
             }
             Button {
                 Task { await mesh.acceptInvitation(payload: payload) }
@@ -343,7 +347,6 @@ struct MeshJoinStartView: View {
                     .font(.system(.footnote, design: .monospaced))
                     .scrollContentBackground(.hidden)
                     .padding(10)
-                    .opacity(payload.isEmpty ? 0.02 : 1)
                     .accessibilityLabel("Invitation")
                     .accessibilityIdentifier("mesh.join.payload")
             #endif

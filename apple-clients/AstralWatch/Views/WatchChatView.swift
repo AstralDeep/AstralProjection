@@ -96,6 +96,7 @@ struct WatchChatView: View {
             Label(banner, systemImage: "exclamationmark.triangle")
                 .font(ConsoleTypography.footnote)
                 .foregroundStyle(model.theme.palette.warning)
+                .accessibilityIdentifier("watch-chat-error")
         }
     }
 

@@ -119,7 +119,7 @@ final class MeshAttachmentTests: XCTestCase {
         let bytes = await h.runtime.attachmentBytes(withheld)
         XCTAssertNil(bytes)
         XCTAssertFalse(h.kernel.calls.contains { $0.name == "fetchAttachment" })
-        XCTAssertEqual(h.runtime.notice, "This file is not available on this device.")
+        XCTAssertEqual(h.runtime.notice, "This file isn't available on this device.")
     }
 
     func testClosingTheMeshDuringFetchDiscardsLatePlaintextBytes() async throws {

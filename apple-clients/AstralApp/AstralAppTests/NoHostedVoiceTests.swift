@@ -89,9 +89,13 @@ private final class VoiceHarness {
             })
         self.onDevice = onDevice
         self.hosted = hosted
-        model = AppModel(
-            tokenStore: InMemoryTokenStore(), defaults: UserDefaults(suiteName: suite)!,
-            voiceController: hosted, onDeviceVoiceController: onDevice)
+        #if os(macOS)
+            model = AppModel(
+                defaults: UserDefaults(suiteName: suite)!,
+                voiceController: hosted, onDeviceVoiceController: onDevice)
+        #else
+            model = AppModel(voiceController: hosted, onDeviceVoiceController: onDevice)
+        #endif
     }
 
     func tearDown() {
@@ -99,30 +103,6 @@ private final class VoiceHarness {
         hosted.close()
         UserDefaults.standard.removePersistentDomain(forName: suite)
         try? FileManager.default.removeItem(at: root)
-    }
-
-    func connect() throws {
-        let registration = model.registrationFrame(token: "voice-guard-token", resumed: false)
-        let payload = try JSONValue.parse(Data(registration.utf8))
-        connection = try XCTUnwrap(payload["connection_generation"]?.stringValue)
-        let binding =
-            """
-            {"type":"voice_control_binding","schema_version":"1","device_id":"\(model.voiceDeviceId)","connection_generation":"\(connection)","binding_id":"00000000-0000-4000-8000-00000000000a","binding":"synthetic-binding-value-000000000000","expires_at":"2099-07-31T12:10:00Z"}
-            """
-        model.handleFrame(try XCTUnwrap(InboundFrame.parse(binding)))
-    }
-
-    func composerFrame(actions: [VoiceControlAction], revision: Int = 1) throws -> InboundFrame {
-        let controls = actions.map {
-            """
-            {"key":"voice-\($0.rawValue.replacingOccurrences(of: "_", with: "-"))","action":"\($0.rawValue)","label":"Voice","icon":"microphone","visible":true,"enabled":true,"pressed":false,"busy":false}
-            """
-        }.joined(separator: ",")
-        let raw =
-            """
-            {"type":"composer_state","schema_version":"1","revision":\(revision),"connection_generation":"\(connection)","voice":{"available":true,"state":"off","speech_muted":false,"microphone_enabled":false,"foreground_active":false,"reason":"ready","output_locale":"en-US","chat_context_revision":null,"applied_chat_context_revision":null,"chat_context_synced":false,"controls":[\(controls)]}}
-            """
-        return try XCTUnwrap(InboundFrame.parse(raw))
     }
 
     func assertHostedIdle(
@@ -221,18 +201,10 @@ final class NoHostedVoiceTests: XCTestCase {
         HostedVoiceRequestRecorder.reset()
     }
 
-    func testRegistrationDoesNotAdvertiseHostedMedia() throws {
-        let model = AppModel(tokenStore: InMemoryTokenStore())
-        let value = try JSONValue.parse(Data(model.registrationFrame(token: "token", resumed: false).utf8))
-        XCTAssertEqual(value["device"]?["voice_transport"]?.stringValue, "")
-        XCTAssertEqual(HostedVoiceRequestRecorder.requests, [])
-    }
-
     func testActivateVoiceStartsOnlyTheOnDevicePipeline() async throws {
         let harness = try await VoiceHarness()
         defer { harness.tearDown() }
-        try harness.connect()
-        await harness.model.activateVoice()
+        await harness.model.onDeviceVoice.activate()
         XCTAssertTrue(harness.onDevice.isRunning)
         XCTAssertTrue(harness.audio.started)
         harness.assertHostedIdle("activateVoice")
@@ -244,8 +216,8 @@ final class NoHostedVoiceTests: XCTestCase {
         let hosted = AppleVoiceSessionController(api: api, media: media)
         let onDevice = OnDeviceVoiceController(store: nil)
         let model = AppModel(
-            tokenStore: InMemoryTokenStore(), voiceController: hosted, onDeviceVoiceController: onDevice)
-        await model.activateVoice()
+            voiceController: hosted, onDeviceVoiceController: onDevice)
+        await model.onDeviceVoice.activate()
         XCTAssertFalse(onDevice.isRunning)
         XCTAssertEqual(api.startCount + api.takeoverCount + api.startLocalCount + api.endCount, 0)
         XCTAssertEqual(media.connectCount, 0)
@@ -253,60 +225,10 @@ final class NoHostedVoiceTests: XCTestCase {
         XCTAssertEqual(HostedVoiceRequestRecorder.requests, [])
     }
 
-    func testEveryVoiceControlActionLeavesTheHostedControllerIdle() async throws {
-        for action in VoiceControlAction.allCases {
-            let harness = try await VoiceHarness()
-            defer { harness.tearDown() }
-            try harness.connect()
-            if action != .start { await harness.model.activateVoice() }
-            await harness.model.performVoiceControl(action)
-            switch action {
-            case .start:
-                XCTAssertTrue(harness.onDevice.isRunning, "\(action)")
-            case .end, .microphone, .stopSpeech, .muteSpeech:
-                XCTAssertFalse(harness.onDevice.isRunning, "\(action)")
-            case .takeover, .visibleChat, .sensitiveRecap:
-                XCTAssertTrue(harness.onDevice.isRunning, "\(action)")
-            }
-            harness.assertHostedIdle("performVoiceControl(\(action.rawValue))")
-        }
-    }
-
-    func testEveryVoiceControlActionCarriedByAServerFrameLeavesTheHostedControllerIdle() async throws {
-        for action in VoiceControlAction.allCases {
-            let harness = try await VoiceHarness()
-            defer { harness.tearDown() }
-            try harness.connect()
-            harness.model.handleFrame(try harness.composerFrame(actions: [action]))
-            let controls = try XCTUnwrap(harness.hosted.composer?.controls)
-            XCTAssertEqual(controls.map(\.action), [action])
-            harness.assertHostedIdle("frame \(action.rawValue) received")
-            for control in controls where control.enabled && control.visible {
-                await harness.model.performVoiceControl(control.action)
-            }
-            harness.assertHostedIdle("frame \(action.rawValue) performed")
-            XCTAssertEqual(harness.onDevice.isRunning, action == .start, "\(action)")
-        }
-    }
-
-    func testOneFrameCarryingAllVoiceControlActionsLeavesTheHostedControllerIdle() async throws {
-        let harness = try await VoiceHarness()
-        defer { harness.tearDown() }
-        try harness.connect()
-        harness.model.handleFrame(try harness.composerFrame(actions: VoiceControlAction.allCases))
-        XCTAssertEqual(harness.hosted.composer?.controls.map(\.action), VoiceControlAction.allCases)
-        XCTAssertFalse(harness.hosted.takeoverAvailable)
-        for control in try XCTUnwrap(harness.hosted.composer?.controls) {
-            await harness.model.performVoiceControl(control.action)
-        }
-        harness.assertHostedIdle("all actions in one frame")
-    }
-
     func testSceneAndAudioLifecycleEventsNeverStartTheHostedController() async throws {
         let harness = try await VoiceHarness()
         defer { harness.tearDown() }
-        try harness.connect()
-        await harness.model.activateVoice()
+        await harness.model.onDeviceVoice.activate()
         harness.model.voiceSceneBecameInactive()
         harness.model.voiceSceneBecameActive()
         harness.model.voiceAudioSessionInterrupted()
@@ -324,18 +246,15 @@ final class NoHostedVoiceTests: XCTestCase {
     func testAnOnDeviceSessionDrivenWithFakesNeverRequestsApiVoice() async throws {
         let harness = try await VoiceHarness(realRest: true)
         defer { harness.tearDown() }
-        try harness.connect()
-        harness.model.handleFrame(try harness.composerFrame(actions: VoiceControlAction.allCases))
-        await harness.model.activateVoice()
+        await harness.model.onDeviceVoice.activate()
         XCTAssertTrue(harness.onDevice.isRunning)
         try harness.speakOneTurn("what is on my calendar")
         XCTAssertEqual(harness.link.turns.map(\.text), ["what is on my calendar"])
         harness.model.voiceAudioSessionInterrupted()
         harness.model.voiceAudioSessionInterruptionEnded()
-        await harness.model.performVoiceControl(.microphone)
-        await harness.model.performVoiceControl(.start)
+        harness.model.onDeviceVoice.stop()
+        await harness.model.onDeviceVoice.activate()
         try harness.speakOneTurn("and tomorrow")
-        for action in VoiceControlAction.allCases { await harness.model.performVoiceControl(action) }
         harness.onDevice.stop()
         for _ in 0..<20 { await Task.yield() }
         XCTAssertEqual(harness.link.turns.count, 2)
@@ -347,7 +266,6 @@ final class NoHostedVoiceTests: XCTestCase {
         func testMacPushToTalkCapturesOnDeviceAndNeverTouchesTheHostedController() async throws {
             let harness = try await VoiceHarness(realRest: true)
             defer { harness.tearDown() }
-            try harness.connect()
             let pipeline = VoicePipeline(
                 audio: harness.audio, transcriber: harness.transcriber, fastPath: nil, link: harness.link,
                 clock: harness.clock)

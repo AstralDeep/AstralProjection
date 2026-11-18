@@ -78,18 +78,21 @@ final class ConfigurationResolutionTests: XCTestCase {
             "http://localhost:8001")
     }
 
-    func testAuthorityFallsBackToTheProductionRealm() {
-        XCTAssertEqual(
-            AstralConfig.resolve(
-                override: nil, infoValue: nil,
-                fallback: AstralConfig.fallbackKeycloakAuthority),
-            "https://iam.ai.uky.edu/realms/Astral")
-    }
-
-    func testOAuthClientIdsMatchTheBackendContract() {
-        XCTAssertEqual(AstralConfig.iosClientId, "astral-mobile")
-        XCTAssertEqual(AstralConfig.macosClientId, "astral-desktop")
-        XCTAssertEqual(AstralConfig.watchClientId, "astral-watch")
-        XCTAssertEqual(AstralConfig.redirectURI, "com.personalailabs.astraldeep:/oauth2redirect")
+    func testNoSourceNamesAnIdentityServerSetting() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources", isDirectory: true)
+        let files = try XCTUnwrap(FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil))
+        var offenders: [String] = []
+        for case let url as URL in files where url.pathExtension == "swift" {
+            let text = try String(contentsOf: url, encoding: .utf8)
+            for forbidden in [
+                "Keycloak", "keycloak", "oauth2redirect", "PKCE", "ServerSession", "DeviceLoginClient",
+                "TokenStorage", "MeshEnrollmentCustody", "\"server-session\"",
+            ]
+            where text.contains(forbidden) {
+                offenders.append(url.lastPathComponent + ": " + forbidden)
+            }
+        }
+        XCTAssertEqual(offenders, [])
     }
 }

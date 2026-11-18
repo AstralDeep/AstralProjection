@@ -1,6 +1,6 @@
-"""Tests for astral_client/app.py, win_agent/byo_host.py, and byo_worker.py: bundle
+"""Tests for win_agent/byo_host.py and byo_worker.py: bundle
 delivery/spawn, stdout/stdin tunnel framing, stop/reconnect/rehydrate lifecycle,
-revision rollover, and MainWindow frame routing.
+and revision rollover.
 """
 
 from __future__ import annotations
@@ -542,79 +542,3 @@ class _FakeClient:
 
     def send_event(self, action, payload, session_id=None):
         self.sent.append((action, payload))
-
-
-@pytest.fixture
-def win(qapp, monkeypatch, tmp_path):
-    pytest.importorskip("PySide6")
-    os.environ["ASTRAL_WIN_AGENT"] = "0"
-    from astral_client import app as appmod
-
-    monkeypatch.setattr(appmod, "OrchestratorClient", _FakeClient)
-    monkeypatch.setattr(appmod.MainWindow, "_start_integrity_check", lambda self: None)
-    monkeypatch.setattr(appmod.MainWindow, "_init_workspace", lambda self: None)
-    monkeypatch.setenv("BYO_AGENTS_DIR", str(tmp_path))
-    w = appmod.MainWindow("ws://127.0.0.1:9/ws", "dev-token")
-    w._byo._base_dir = str(tmp_path)
-    spawned = []
-    w._byo._spawn = lambda argv: spawned.append(argv) or _FakeProc()
-    w._spawned = spawned
-    yield w
-    w.close()
-
-
-def test_window_routes_the_four_host_frames(win):
-    assert win._on_message({"type": "agent_bundle_deliver", "agent_id": AGENT,
-                            "files": BUNDLE}) is None
-    assert win._byo.running() == [AGENT]
-    assert win._spawned
-
-    win._on_message({"type": "agent_tunnel", "agent_id": AGENT, "frame": '{"type":"x"}'})
-    win._on_message({"type": "agent_offline", "agent_id": AGENT})
-    win._on_message({"type": "agent_stop", "agent_id": AGENT})
-    assert win._byo.running() == []
-
-
-def test_window_reregisters_byo_agents_on_reconnect(win, monkeypatch):
-    calls = []
-    monkeypatch.setattr(win._byo, "on_ui_connected", lambda: calls.append(1))
-    win._on_status("connected")
-    assert calls == [1]
-
-
-def test_window_close_stops_every_child(win):
-    win._on_message({"type": "agent_bundle_deliver", "agent_id": AGENT, "files": BUNDLE})
-    assert win._byo.running() == [AGENT]
-
-    win.close()
-
-    assert win._byo.running() == []
-
-
-def test_sign_out_stops_every_child(win):
-    win._on_message({"type": "agent_bundle_deliver", "agent_id": AGENT, "files": BUNDLE})
-    procs = list(win._byo._children.values())
-    assert procs and win._byo.running() == [AGENT]
-
-    win._finish_sign_out("revoked")
-
-    assert all(c.proc.terminated for c in procs)
-    assert win._byo.running() == []
-
-
-def test_application_shutdown_stops_every_child(win):
-    from PySide6.QtWidgets import QApplication
-
-    win._on_message({"type": "agent_bundle_deliver", "agent_id": AGENT, "files": BUNDLE})
-    procs = list(win._byo._children.values())
-
-    QApplication.instance().aboutToQuit.emit()
-
-    assert all(c.proc.terminated for c in procs)
-    assert win._byo.running() == []
-
-
-def test_window_acks_registration_to_the_host(win):
-    win._on_message({"type": "agent_bundle_deliver", "agent_id": AGENT, "files": BUNDLE})
-    win._on_message({"type": "agent_registered", "agent_id": AGENT})
-    assert win._byo.running() == [AGENT]

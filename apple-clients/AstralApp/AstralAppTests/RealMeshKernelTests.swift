@@ -107,6 +107,15 @@ final class RealMeshKernelTests: XCTestCase {
         }.value
     }
 
+    private func adoptPhiGroup(_ device: Device, members: Int = 1) async throws {
+        let kernel = device.kernel
+        try await until("every member to carry the PHI marker") {
+            let group = try kernel.phiGroup()
+            return group.members.count == members && group.members.allSatisfy(\.upgraded)
+        }
+        _ = try await Task.detached { try kernel.adoptPhiGroup() }.value
+    }
+
     private func until(_ what: String, _ condition: () async throws -> Bool) async throws {
         let deadline = Date().addingTimeInterval(30)
         while Date() < deadline {
@@ -260,6 +269,7 @@ final class RealMeshKernelTests: XCTestCase {
         XCTAssertTrue(prompt.target.contains("Phone"))
 
         try await until("the phone to join") { try await phone.kernel.meshStatus().hasMesh }
+        try await adoptPhiGroup(mac, members: 2)
         let roster = try await mac.kernel.roster()
         XCTAssertEqual(Set(roster.map(\.label)), ["Mac", "Phone"])
         try await until("the phone to read the chat") { (try? phone.kernel.chat(chatId: chat))?.messages.count == 1 }
@@ -332,7 +342,7 @@ final class RealMeshKernelTests: XCTestCase {
         let roster = try await fresh.kernel.roster()
         XCTAssertEqual(Set(roster.map(\.label)), ["Mac", "New Mac"])
         XCTAssertEqual(roster.first(where: \.isThisDevice)?.label, "New Mac")
-        XCTAssertEqual(try fresh.kernel.chat(chatId: chat).messages.map(\.text), ["remember this"])
+        XCTAssertTrue(try fresh.kernel.listChats().contains { $0.chatId == chat })
         XCTAssertThrowsError(
             try fresh.kernel.recoverWithWords(words: kit.words.joined(separator: " "), backupPath: file.path)
         ) { XCTAssertEqual($0 as? MeshKernelError, KernelMapping.refusal("mesh.already_enrolled")) }
@@ -348,12 +358,13 @@ final class RealMeshKernelTests: XCTestCase {
         let offer = try await phone.kernel.createPairingOffer()
         try await mac.kernel.approvePairing(payload: offer.payload)
         try await until("the phone to join") { try await phone.kernel.meshStatus().hasMesh }
+        try await adoptPhiGroup(mac, members: 2)
         try await until("the phone to read the chat") { (try? phone.kernel.chat(chatId: chat)) != nil }
         let bytes = Data("notes shared with the phone".utf8)
         let attachment = try mac.kernel.addAttachment(chatId: chat, bytes: bytes, mime: "text/plain", name: "notes.txt")
         let sent = try mac.kernel.sendMessage(chatId: chat, text: "", continues: nil, attachments: [attachment.id])
         try await until("the phone to read the attachment-only message") {
-            (try? phone.kernel.chat(chatId: chat))?.messages.first?.attachments.count == 1
+            (try? phone.kernel.chat(chatId: chat))?.messages.first?.attachments.first?.name == "notes.txt"
         }
         let received = try XCTUnwrap(phone.kernel.chat(chatId: chat).messages.first)
         XCTAssertEqual(received.eventId, sent)

@@ -12,9 +12,10 @@ final class MeshModeUITests: XCTestCase {
         super.tearDown()
     }
 
-    private func launch(_ scenario: String, largestText: Bool = false) {
+    private func launch(_ scenario: String, largestText: Bool = false, autoJoin: Bool = true) {
         app = XCUIApplication()
         app.launchArguments = ["--astral-ui-test-mesh", scenario]
+        if !autoJoin { app.launchArguments.append("--astral-ui-test-no-auto-join") }
         if largestText {
             app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
         }
@@ -40,17 +41,27 @@ final class MeshModeUITests: XCTestCase {
 
     func testAttachmentOnlyMessageShowsItsFileAndTheComposerCanAddAnother() {
         launch("attachments")
-        let chat = app.staticTexts["Shared files"].firstMatch
+        let chat = element("mesh.chat.chat-1")
         XCTAssertTrue(chat.waitForExistence(timeout: 10))
+        XCTAssertTrue(shown(chat).contains("Shared files"))
         chat.tap()
         XCTAssertTrue(element("mesh.composer.attach").waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["notes.txt"].exists)
+        XCTAssertTrue(text("notes.txt").waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Save notes.txt"].isEnabled)
         attach("mesh-file-attachment")
         element("mesh.composer.attach").tap()
-        let presented = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "hittable == false"), object: element("mesh.composer"))
-        XCTAssertEqual(XCTWaiter.wait(for: [presented], timeout: 5), .completed)
+        #if os(macOS)
+            XCTAssertTrue(
+                waitUntil(5) {
+                    self.app.sheets.count > 0 || self.app.dialogs.count > 0 || !self.element("mesh.composer").isHittable
+                })
+        #else
+            XCTAssertTrue(
+                waitUntil(10) {
+                    !self.element("mesh.composer").isHittable || self.app.navigationBars["Recents"].exists
+                        || self.app.buttons["Browse"].exists || self.app.staticTexts["No Recents"].exists
+                })
+        #endif
         attach("mesh-file-picker")
     }
 
@@ -58,7 +69,6 @@ final class MeshModeUITests: XCTestCase {
         launch("onboarding")
         XCTAssertTrue(element("mesh.create").waitForExistence(timeout: 10))
         XCTAssertTrue(element("mesh.join").exists)
-        XCTAssertTrue(element("mesh.node").exists)
         element("mesh.create").tap()
 
         XCTAssertTrue(element("mesh.recovery.word.1").waitForExistence(timeout: 10))
@@ -80,7 +90,7 @@ final class MeshModeUITests: XCTestCase {
         replace(seventh, with: "wordg")
         replace(eighteenth, with: "wordr")
         proceed.tap()
-        XCTAssertTrue(element("mesh.tab.chats").waitForExistence(timeout: 10))
+        XCTAssertTrue(shellMarker.waitForExistence(timeout: 10))
         XCTAssertFalse(element("mesh.recovery.word.1").exists)
         attach("mesh-created")
     }
@@ -96,7 +106,7 @@ final class MeshModeUITests: XCTestCase {
         XCTAssertTrue(element("mesh.restore.file.choose").exists)
         words.tap()
         words.typeText((0..<23).map { "word" + String(UnicodeScalar(UInt8(97 + $0))) }.joined(separator: " "))
-        XCTAssertTrue(element("mesh.restore.count").label.contains("23 of 24"))
+        XCTAssertTrue(countShows("23 of 24"))
         XCTAssertFalse(submit.isEnabled)
         words.typeText(" wrongword")
         XCTAssertTrue(submit.isEnabled)
@@ -105,16 +115,23 @@ final class MeshModeUITests: XCTestCase {
         XCTAssertTrue(element("mesh.restore.error").waitForExistence(timeout: 5))
         XCTAssertFalse(element("mesh.restored.title").exists)
 
-        words.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.95)).tap()
-        words.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: " wrongword".count) + " wordx")
-        XCTAssertTrue(element("mesh.restore.count").label.contains("24 of 24"))
+        #if os(macOS)
+            words.tap()
+            words.typeKey("a", modifierFlags: .command)
+            words.typeText(
+                (0..<23).map { "word" + String(UnicodeScalar(UInt8(97 + $0))) }.joined(separator: " ") + " wordx")
+        #else
+            words.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.95)).tap()
+            words.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: " wrongword".count) + " wordx")
+        #endif
+        XCTAssertTrue(countShows("24 of 24"))
         submit.tap()
         XCTAssertTrue(element("mesh.restored.title").waitForExistence(timeout: 10))
         XCTAssertTrue(element("mesh.restored.device").exists)
         XCTAssertTrue(element("mesh.restored.members").exists)
         attach("mesh-restored")
         element("mesh.restored.continue").tap()
-        XCTAssertTrue(element("mesh.tab.chats").waitForExistence(timeout: 10))
+        XCTAssertTrue(shellMarker.waitForExistence(timeout: 10))
     }
 
     func testRequestsShowInTheChatAndCanBeRefusedWithAReason() {
@@ -128,7 +145,11 @@ final class MeshModeUITests: XCTestCase {
         XCTAssertTrue(element("mesh.request.reason.22222222").exists)
         attach("mesh-requests")
         element("mesh.request.refuse.11111111").tap()
-        let reason = app.buttons["Not now"]
+        #if os(macOS)
+            let reason = app.sheets.buttons["Not now"]
+        #else
+            let reason = app.buttons["Not now"]
+        #endif
         XCTAssertTrue(reason.waitForExistence(timeout: 5))
         reason.tap()
         XCTAssertTrue(element("mesh.request.reason.11111111").waitForExistence(timeout: 5))
@@ -137,11 +158,11 @@ final class MeshModeUITests: XCTestCase {
 
     func testRemoteMCPManagerIsReachableFromSettings() {
         launch("shell")
-        XCTAssertTrue(app.tabBars.buttons["Settings"].waitForExistence(timeout: 15))
+        XCTAssertTrue(waitForShell())
         selectTab("Settings")
         let manager = element("mesh.settings.mcp")
         XCTAssertTrue(manager.waitForExistence(timeout: 5))
-        manager.tap()
+        visible("mesh.settings.mcp").tap()
         XCTAssertTrue(element("mesh.mcp.name").waitForExistence(timeout: 5))
         XCTAssertTrue(element("mesh.mcp.endpoint").exists)
         XCTAssertTrue(element("mesh.mcp.bearer").exists)
@@ -151,32 +172,41 @@ final class MeshModeUITests: XCTestCase {
 
     func testPermissionsAndMailboxLiveInSettings() {
         launch("shell")
-        XCTAssertTrue(app.tabBars.buttons["Settings"].waitForExistence(timeout: 15))
+        XCTAssertTrue(waitForShell())
         selectTab("Settings")
         XCTAssertTrue(element("mesh.settings.permissions").waitForExistence(timeout: 5))
-        element("mesh.settings.permissions").tap()
+        visible("mesh.settings.permissions").tap()
         XCTAssertTrue(element("mesh.tool.grant.this-device/current_datetime").waitForExistence(timeout: 5))
         XCTAssertFalse(element("mesh.tool.revoke.this-device/current_datetime").exists)
         XCTAssertTrue(element("mesh.permissions.remote.none").exists)
         attach("mesh-permissions")
-        element("mesh.tool.grant.this-device/current_datetime").tap()
+        visible("mesh.tool.grant.this-device/current_datetime").tap()
         XCTAssertTrue(element("mesh.tool.granted.this-device/current_datetime").waitForExistence(timeout: 5))
         XCTAssertTrue(element("mesh.tool.revoke.this-device/current_datetime").exists)
         XCTAssertFalse(element("mesh.tool.grant.this-device/current_datetime").exists)
         attach("mesh-permissions-granted")
-        goBack()
         let mailbox = element("mesh.settings.mailbox")
-        let settings = app.collectionViews.firstMatch
-        XCTAssertTrue(settings.waitForExistence(timeout: 5))
-        let start = settings.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.65))
-        let end = settings.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
-        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.2)
-        attach("mesh-settings-mailbox-revealed")
-        XCTAssertTrue(mailbox.waitForExistence(timeout: 5))
-        XCTAssertTrue(mailbox.isHittable)
-        mailbox.tap()
+        #if os(macOS)
+            app.terminate()
+            launch("shell")
+            XCTAssertTrue(waitForShell())
+            selectTab("Settings")
+            XCTAssertTrue(mailbox.waitForExistence(timeout: 5))
+            visible("mesh.settings.mailbox").tap()
+        #else
+            goBack()
+            let settings = app.collectionViews.firstMatch
+            XCTAssertTrue(settings.waitForExistence(timeout: 5))
+            let start = settings.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.65))
+            let end = settings.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+            start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.2)
+            attach("mesh-settings-mailbox-revealed")
+            XCTAssertTrue(mailbox.waitForExistence(timeout: 5))
+            XCTAssertTrue(mailbox.isHittable)
+            mailbox.tap()
+        #endif
         XCTAssertTrue(element("mesh.mailbox.status").waitForExistence(timeout: 5))
-        XCTAssertTrue(element("mesh.mailbox.status").label.contains("No mailbox is set"))
+        XCTAssertTrue(shown(element("mesh.mailbox.status")).contains("No mailbox is set"))
     }
 
     func testReviewOpensTheConsentSheetWithTheActionAndDenyClosesIt() {
@@ -186,8 +216,8 @@ final class MeshModeUITests: XCTestCase {
         review.tap()
         XCTAssertTrue(element("consent.sheet").waitForExistence(timeout: 10))
         XCTAssertTrue(element("consent.title").exists)
-        XCTAssertTrue(element("consent.target").exists)
-        XCTAssertTrue(element("consent.arguments").exists)
+        XCTAssertTrue(element("consent.summary").exists)
+        XCTAssertTrue(element("consent.details").exists)
         XCTAssertTrue(element("consent.approve").exists)
         XCTAssertTrue(element("consent.deny").exists)
         attach("mesh-consent-sheet")
@@ -211,7 +241,9 @@ final class MeshModeUITests: XCTestCase {
         XCTAssertTrue(chat.waitForExistence(timeout: 10))
         chat.tap()
         let card = element("mesh.unknown.check")
-        for _ in 0..<4 where !card.exists { app.swipeUp() }
+        #if os(iOS)
+            for _ in 0..<4 where !card.exists { app.swipeUp() }
+        #endif
         XCTAssertTrue(card.waitForExistence(timeout: 5))
         XCTAssertTrue(element("mesh.unknown.leave").exists)
         attach("mesh-outcome-unknown")
@@ -245,11 +277,11 @@ final class MeshModeUITests: XCTestCase {
         selectTab("Settings")
         XCTAssertTrue(element("mesh.settings.models").waitForExistence(timeout: 5))
         attach("mesh-settings")
-        app.swipeUp()
+        swipeUp()
         XCTAssertTrue(element("mesh.settings.recovery").waitForExistence(timeout: 5))
         attach("mesh-settings-more")
-        app.swipeDown()
-        element("mesh.settings.models").tap()
+        swipeDown()
+        visible("mesh.settings.models").tap()
         XCTAssertTrue(element("mesh.models.save").waitForExistence(timeout: 5))
         attach("mesh-model-provider")
     }
@@ -290,7 +322,7 @@ final class MeshModeUITests: XCTestCase {
         launch("shell")
         selectTab("Devices")
         XCTAssertTrue(element("mesh.strip.sync").waitForExistence(timeout: 10))
-        XCTAssertTrue((element("mesh.strip.sync").label).contains("Waiting to sync with Sam's iPhone"))
+        XCTAssertTrue(shown(element("mesh.strip.sync")).contains("Waiting to sync with Sam's iPhone"))
         selectTab("Chats")
         XCTAssertTrue(element("mesh.consent.review").waitForExistence(timeout: 5))
         XCTAssertTrue(element("mesh.consent.deny").exists)
@@ -308,11 +340,11 @@ final class MeshModeUITests: XCTestCase {
         selectTab("Devices")
         XCTAssertTrue(element("mesh.devices.add").waitForExistence(timeout: 10))
         attach("mesh-devices")
-        app.swipeUp()
+        swipeUp()
         XCTAssertTrue(element("mesh.devices.stop").waitForExistence(timeout: 5))
         attach("mesh-devices-safety")
         selectTab("Settings")
-        element("mesh.settings.allowance").tap()
+        reveal("mesh.settings.allowance").tap()
         XCTAssertTrue(element("mesh.allowance.blocked").waitForExistence(timeout: 5))
         XCTAssertTrue(element("mesh.allowance.share").exists)
         attach("mesh-allowance")
@@ -336,43 +368,44 @@ final class MeshModeUITests: XCTestCase {
     }
 
     func testTheFallbackWalksThroughCodeComparisonAndApproval() {
-        launch("shell")
+        launch("shell", autoJoin: false)
         selectTab("Devices")
         XCTAssertTrue(element("mesh.devices.add").waitForExistence(timeout: 10))
         element("mesh.devices.add").tap()
         XCTAssertTrue(element("mesh.invite.fallback").waitForExistence(timeout: 5))
-        element("mesh.invite.fallback").tap()
+        visible("mesh.invite.fallback").tap()
         XCTAssertTrue(element("mesh.add.step.1").waitForExistence(timeout: 5))
         attach("mesh-add-fallback-1-start")
-        element("mesh.add.start").tap()
+        visible("mesh.add.start").tap()
         XCTAssertTrue(element("mesh.add.step.2").waitForExistence(timeout: 5))
         attach("mesh-add-fallback-2-code")
         let field = element("mesh.add.payload")
         XCTAssertTrue(field.waitForExistence(timeout: 5))
-        field.tap()
+        visible("mesh.add.payload").tap()
         field.typeText("astral-pair:v1:offer")
-        element("mesh.add.continue").tap()
+        visible("mesh.add.continue").tap()
         XCTAssertTrue(element("mesh.add.step.3").waitForExistence(timeout: 5))
         XCTAssertTrue(element("mesh.add.code").exists)
-        element("mesh.add.approve").tap()
+        visible("mesh.add.approve").tap()
         XCTAssertTrue(element("mesh.add.done").waitForExistence(timeout: 5))
-        element("mesh.add.done").tap()
+        visible("mesh.add.done").tap()
         XCTAssertTrue(element("mesh.devices.add").waitForExistence(timeout: 5))
     }
 
     func testAnUnreadableCodeKeepsThePersonOnTheCodeStepWithAnError() {
-        launch("shell")
+        launch("shell", autoJoin: false)
         selectTab("Devices")
         XCTAssertTrue(element("mesh.devices.add").waitForExistence(timeout: 10))
         element("mesh.devices.add").tap()
         XCTAssertTrue(element("mesh.invite.fallback").waitForExistence(timeout: 5))
-        element("mesh.invite.fallback").tap()
-        element("mesh.add.start").tap()
+        visible("mesh.invite.fallback").tap()
+        XCTAssertTrue(element("mesh.add.start").waitForExistence(timeout: 5))
+        visible("mesh.add.start").tap()
         let field = element("mesh.add.payload")
         XCTAssertTrue(field.waitForExistence(timeout: 5))
-        field.tap()
+        visible("mesh.add.payload").tap()
         field.typeText("not a code")
-        element("mesh.add.continue").tap()
+        visible("mesh.add.continue").tap()
         XCTAssertTrue(element("mesh.add.error").waitForExistence(timeout: 5))
         XCTAssertTrue(element("mesh.add.step.2").exists)
         attach("mesh-add-error")
@@ -381,15 +414,19 @@ final class MeshModeUITests: XCTestCase {
     func testDeviceDetailOffersRequestAndRemovalWithConfirmation() {
         launch("shell")
         selectTab("Devices")
-        let row = app.staticTexts["Sam's iPhone"].firstMatch
+        #if os(macOS)
+            let row = element("mesh.member.cccccccc")
+        #else
+            let row = app.staticTexts["Sam's iPhone"].firstMatch
+        #endif
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.tap()
         XCTAssertTrue(element("mesh.device.header").waitForExistence(timeout: 5))
         attach("mesh-device-detail")
-        app.swipeUp()
+        swipeUp()
         XCTAssertTrue(element("mesh.device.request").waitForExistence(timeout: 5))
         attach("mesh-device-detail-actions")
-        element("mesh.device.remove").tap()
+        visible("mesh.device.remove").tap()
         XCTAssertTrue(app.buttons["Remove Device"].waitForExistence(timeout: 5))
         attach("mesh-device-remove-confirm")
     }
@@ -404,11 +441,114 @@ final class MeshModeUITests: XCTestCase {
         let bar = app.tabBars.buttons[name]
         if bar.exists {
             bar.tap()
-        } else {
+            return
+        }
+        #if os(macOS)
+            guard name != "Chats" else { return }
+            let side = element("mesh.side." + name.lowercased())
+            XCTAssertTrue(side.waitForExistence(timeout: 10))
+            side.tap()
+        #else
             let side = element("mesh.side." + name.lowercased())
             if side.exists { side.tap() } else { app.radioButtons[name].firstMatch.tap() }
-        }
+        #endif
     }
+
+    private var shellMarker: XCUIElement {
+        #if os(macOS)
+            return element("mesh.side.devices")
+        #else
+            return element("mesh.tab.chats")
+        #endif
+    }
+
+    private func waitForShell() -> Bool {
+        #if os(macOS)
+            return element("mesh.side.settings").waitForExistence(timeout: 15)
+        #else
+            return app.tabBars.buttons["Settings"].waitForExistence(timeout: 15)
+        #endif
+    }
+
+    private func text(_ value: String) -> XCUIElement {
+        app.staticTexts.matching(NSPredicate(format: "label == %@ OR value == %@", value, value)).firstMatch
+    }
+
+    private func shown(_ element: XCUIElement) -> String {
+        element.label.isEmpty ? ((element.value as? String) ?? "") : element.label
+    }
+
+    private func waitUntil(_ timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
+        return condition()
+    }
+
+    private func swipeUp() {
+        #if os(iOS)
+            app.swipeUp()
+        #endif
+    }
+
+    private func swipeDown() {
+        #if os(iOS)
+            app.swipeDown()
+        #endif
+    }
+
+    private func countShows(_ text: String) -> Bool {
+        let count = element("mesh.restore.count")
+        let shown = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", text, text)
+        let expectation = XCTNSPredicateExpectation(predicate: shown, object: count)
+        return XCTWaiter.wait(for: [expectation], timeout: 5) == .completed
+    }
+
+    @discardableResult
+    private func reveal(_ id: String, attempts: Int = 6) -> XCUIElement {
+        #if os(macOS)
+            return visible(id, attempts: attempts)
+        #else
+            let target = element(id)
+            var swipes = 0
+            while !(target.exists && target.isHittable) && swipes < attempts {
+                app.swipeUp(velocity: .slow)
+                swipes += 1
+            }
+            return target
+        #endif
+    }
+
+    private func visible(_ id: String, attempts: Int = 8) -> XCUIElement {
+        let target = element(id)
+        #if os(macOS)
+            guard target.waitForExistence(timeout: 5), let view = scrollView(containing: target) else { return target }
+            var delta: CGFloat = -150
+            for _ in 0..<attempts {
+                let before = target.frame
+                let shownFrame = view.frame.insetBy(dx: 0, dy: 4)
+                if shownFrame.contains(before) { break }
+                let below = before.maxY > shownFrame.maxY
+                view.scroll(byDeltaX: 0, deltaY: delta)
+                let moved = target.frame.midY - before.midY
+                if (below && moved >= 0) || (!below && moved <= 0) { delta = -delta }
+            }
+        #endif
+        return target
+    }
+
+    #if os(macOS)
+        private func scrollView(containing target: XCUIElement) -> XCUIElement? {
+            let sheet = app.sheets.firstMatch
+            let root = sheet.exists ? sheet : app.windows.firstMatch
+            let x = target.frame.midX
+            return root.scrollViews.allElementsBoundByIndex
+                .filter { $0.frame.minX <= x && x <= $0.frame.maxX && $0.frame.height > 0 }
+                .max { $0.frame.height < $1.frame.height }
+        }
+    #endif
 
     private func goBack() {
         let back = app.navigationBars.buttons.firstMatch

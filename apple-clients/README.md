@@ -5,10 +5,10 @@ downloaded on-device model; Watch capture and playback use the paired iPhone:
 
 ```text
 AstralCore/    # SPM package: protocol, dispositions + drift guard, WS client,
-               # PKCE, device-login client, token stores, REST (swift test-able)
+               # WS client, key storage, REST (swift test-able)
 AstralApp/     # iOS (twin of android-client) + macOS (twin of windows-client)
                # — ONE multiplatform target; also embeds the watch app
-AstralWatch/   # watchOS: QR sign-in (RFC 8628 via backend broker), bounded
+AstralWatch/   # watchOS: bounded
                # ephemeral paired-phone PCM capture and playback
 ```
 
@@ -30,14 +30,7 @@ in [Computer tasks on macOS](MAC-COMPUTER-HOST.md).
 | --- | --- |
 | iOS + macOS bundle id | `com.personalailabs.astraldeep` |
 | watchOS bundle id | `com.personalailabs.astraldeep.watch` |
-| URL scheme (PKCE redirect) | `com.personalailabs.astraldeep` |
-| OAuth redirect URI | `com.personalailabs.astraldeep:/oauth2redirect` (single slash) |
-| Keycloak client — iOS | `astral-mobile` (shared with Android) |
-| Keycloak client — macOS | `astral-desktop` (shared with Windows) |
-| Keycloak client — watchOS | `astral-watch` (device-authorization grant) |
 
-The client ids are defined once in `AstralCore/Sources/AstralCore/Configuration.swift`;
-the redirect scheme is mirrored in the app's `Info.plist` `CFBundleURLSchemes`.
 
 For a separate localtest install, use `Scripts/build_localtest.sh` with the
 existing Apple team id, derived-data directory and a new staging directory:
@@ -137,17 +130,17 @@ swift test --package-path apple-clients/AstralCore
 
 ## How the endpoints are configured
 
-The server and Keycloak URLs are **build-time configuration**, not source.
+The server URL is **build-time configuration**, not source.
 `apple-clients/Config/{Base,Debug,Release}.xcconfig` define
-`ASTRAL_SERVER_BASE_URL` + `ASTRAL_KEYCLOAK_AUTHORITY`, wired as the project's
-Debug/Release `baseConfigurationReference`. They surface into BOTH Info.plists
-as `ASTRALServerBaseURL` / `ASTRALKeycloakAuthority` and are read at launch by
+`ASTRAL_SERVER_BASE_URL`, wired as the project's
+Debug/Release `baseConfigurationReference`. It surfaces into BOTH Info.plists
+as `ASTRALServerBaseURL` and is read at launch by
 `AstralCore.AstralConfig`.
 
-| Configuration | `ASTRAL_SERVER_BASE_URL` | `ASTRAL_KEYCLOAK_AUTHORITY` |
-| --- | --- | --- |
-| Debug | `http://localhost:8001` | `https://iam.ai.uky.edu/realms/Astral` |
-| Release | `https://sandbox.ai.uky.edu` | `https://iam.ai.uky.edu/realms/Astral` |
+| Configuration | `ASTRAL_SERVER_BASE_URL` |
+| --- | --- |
+| Debug | `http://localhost:8001` |
+| Release | `https://sandbox.ai.uky.edu` |
 
 Repoint a build with **no code edit** — override the key in the xcconfig, or on
 the command line (`xcodebuild … ASTRAL_SERVER_BASE_URL=…`).
@@ -224,24 +217,10 @@ Trash; an operator must treat Trash as retained sensitive data until they explic
 empty it. Do not add a temporary sandbox exception or re-enable persistent URL
 caching to automate this development-only migration.
 
-## Running against the dev backend
+## Running locally
 
-1. Backend up (`docker compose up -d`) with `.env`:
-   `FF_DEVICE_LOGIN=true`,
-   `KEYCLOAK_ALLOWED_AZP=…,astral-mobile,astral-desktop,astral-watch`,
-   `KEYCLOAK_DEVICE_CLIENTS=astral-watch`.
-2. Keycloak realm: create the three public clients per AstralDeep's
-   [`docs/keycloak-realm-settings.md`](https://github.com/AstralDeep/AstralDeep/blob/main/docs/keycloak-realm-settings.md)
-   Feature 051 section (device grant ON for `astral-watch`;
-   `com.personalailabs.astraldeep:/oauth2redirect` in the Valid redirect URIs of
-   `astral-mobile` and `astral-desktop`).
-3. iOS/macOS app: a **Debug** build already points at `http://localhost:8001`
-   (from `Config/Debug.xcconfig`); the sign-in screen can still override the
-   server + realm URL at runtime (the FR-011 override wins over the plist).
-4. Watch app: launches straight into the QR screen against its build-time
-   endpoint (Debug → `http://localhost:8001`; simulators reach the host
-   directly). Scan with a phone camera or type the short code at the realm's
-   `/device` page.
+The app opens to the personal mesh and has no sign-in. Test builds use the seeded
+test mesh and fixture servers. Build and run it with the commands above.
 
 ## App Store compliance (053)
 
@@ -376,13 +355,7 @@ activate the extracted workflow in this repository.
   machine-checked seed of the 044 parity matrix rows for ios/macos/watch.
 - Active owner CI: `.github/workflows/apple-ci.yml` runs strict recursive
   `swift-format`, the icon `--check` gate, `swift test` with coverage, and
-  unsigned `xcodebuild` tests for iOS 26.5, macOS, first-login UI, and watchOS
+  unsigned `xcodebuild` tests for iOS 26.5, macOS, mesh UI, and watchOS
   26.5 against Xcode 26.6 (build 17F113). Its fail-closed `apple-required`
   aggregate requires every platform result and matrix success marker.
 - Known gaps: `KNOWN-ISSUES.md`.
-
-### Mesh devices and protected session custody
-
-Fresh iOS/macOS sign-in exchanges the authorization code and PKCE verifier through the configured HTTPS server's `server_v1` custody endpoint. The server keeps the refresh grant; the client keeps the exact-server session cookie in a separate `ThisDeviceOnly` Keychain namespace. Restoration authenticates that cookie and owner through `/auth/session` before opening a socket. Socket handshakes send the configured server Origin and scoped cookie; refresh, server/account changes, and sign-out retire stale work. Expired access is renewed before remote logout. An offline or refused revocation remains explicitly unconfirmed after the local wipe.
-
-The shared **Mesh devices** screen offers owner management and joining-device enrollment. Generate or copy this device's public identity, create a pending request, confirm its fingerprint from another owner session, and paste the returned current-server enrollment link on the original joining device. Its account/server-scoped Ed25519 seed stays in protected Keychain storage across normal app restarts and is purged on sign-out or an account/server change. Redemption signs the exact challenge, uses a separate cookie-free transport, and proves the minted DPoP identity through `/api/mesh/me` before retaining the safe member ID. No private key, link payload, or member bearer is durably stored. This native flow manages enrollment and inventory through owner authentication; member tool invocation/session renewal remains the SDK's separate transport. Watch uses the shared explicit phone/desktop form handoff and receives no private key or grant.

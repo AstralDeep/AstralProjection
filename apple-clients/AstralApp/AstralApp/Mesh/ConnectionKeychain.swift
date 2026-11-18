@@ -21,7 +21,7 @@ nonisolated final class ConnectionKeychain: AstralKernel.HostKeystore, CustomStr
         var query = Self.itemQuery(service: service, account: account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
-        let (status, result) = Self.run(query, absentFallsBack: true) { SecItemCopyMatching($0, &$1) }
+        let (status, result) = try Self.run(query) { SecItemCopyMatching($0, &$1) }
         switch status {
         case errSecSuccess:
             guard let data = result as? Data, !data.isEmpty else {
@@ -38,16 +38,16 @@ nonisolated final class ConnectionKeychain: AstralKernel.HostKeystore, CustomStr
         guard !secret.isEmpty else { throw HostKeystoreError.Failed(message: "an empty credential is refused") }
         let update: [String: Any] = [kSecValueData as String: secret]
         let query = Self.itemQuery(service: service, account: account)
-        let (updated, _) = Self.run(query, absentFallsBack: true) { query, _ in
+        let (updated, _) = try Self.run(query) { query, _ in
             SecItemUpdate(query, update as CFDictionary)
         }
         if updated == errSecSuccess { return }
         guard updated == errSecItemNotFound else { throw Self.failure(updated) }
         let add = Self.addQuery(service: service, account: account, secret: secret)
-        let (added, _) = Self.run(add, absentFallsBack: false) { query, _ in SecItemAdd(query, nil) }
+        let (added, _) = try Self.run(add) { query, _ in SecItemAdd(query, nil) }
         if added == errSecSuccess { return }
         guard added == errSecDuplicateItem else { throw Self.failure(added) }
-        let (retried, _) = Self.run(query, absentFallsBack: true) { query, _ in
+        let (retried, _) = try Self.run(query) { query, _ in
             SecItemUpdate(query, update as CFDictionary)
         }
         guard retried == errSecSuccess else { throw Self.failure(retried) }
@@ -56,7 +56,7 @@ nonisolated final class ConnectionKeychain: AstralKernel.HostKeystore, CustomStr
     func remove(account: String) throws {
         try Self.check(account)
         let query = Self.itemQuery(service: service, account: account)
-        let (status, _) = Self.run(query, absentFallsBack: true) { query, _ in SecItemDelete(query) }
+        let (status, _) = try Self.run(query) { query, _ in SecItemDelete(query) }
         guard status == errSecSuccess || status == errSecItemNotFound else { throw Self.failure(status) }
     }
 
@@ -94,22 +94,23 @@ nonisolated final class ConnectionKeychain: AstralKernel.HostKeystore, CustomStr
 
     #if os(macOS)
         private static func run(
-            _ query: [String: Any], absentFallsBack: Bool, _ call: (CFDictionary, inout CFTypeRef?) -> OSStatus
-        ) -> (OSStatus, CFTypeRef?) {
+            _ query: [String: Any], _ call: (CFDictionary, inout CFTypeRef?) -> OSStatus
+        ) throws -> (OSStatus, CFTypeRef?) {
+            do {
+                try LegacyKeychainMigrator.shared.ensureMigrated(
+                    service: query[kSecAttrService as String] as? String ?? "", accessibility: .afterFirstUnlock)
+            } catch let error as KeychainMigrationError {
+                throw HostKeystoreError.Failed(message: "keychain migration \(error.code)")
+            }
             var scoped = query
             scoped[kSecUseDataProtectionKeychain as String] = true
             var result: CFTypeRef?
-            let status = call(scoped as CFDictionary, &result)
-            guard status == errSecMissingEntitlement || (absentFallsBack && status == errSecItemNotFound) else {
-                return (status, result)
-            }
-            var legacy: CFTypeRef?
-            return (call(query as CFDictionary, &legacy), legacy)
+            return (call(scoped as CFDictionary, &result), result)
         }
     #else
         private static func run(
-            _ query: [String: Any], absentFallsBack _: Bool, _ call: (CFDictionary, inout CFTypeRef?) -> OSStatus
-        ) -> (OSStatus, CFTypeRef?) {
+            _ query: [String: Any], _ call: (CFDictionary, inout CFTypeRef?) -> OSStatus
+        ) throws -> (OSStatus, CFTypeRef?) {
             var result: CFTypeRef?
             return (call(query as CFDictionary, &result), result)
         }

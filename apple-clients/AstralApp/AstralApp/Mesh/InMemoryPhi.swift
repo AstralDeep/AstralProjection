@@ -159,8 +159,7 @@ nonisolated final class InMemoryPhi: @unchecked Sendable {
 
     private func endpoint(
         _ text: String?, kind: MeshPhiDestinationKind, name: String, deviceId: String?, source: String
-    ) throws -> MeshPhiProposal
-    {
+    ) throws -> MeshPhiProposal {
         guard let text, let parts = URLComponents(string: text), let scheme = parts.scheme?.lowercased(),
             ["http", "https"].contains(scheme), let host = parts.host?.lowercased(), !host.isEmpty,
             parts.user == nil, parts.password == nil, parts.query == nil, parts.fragment == nil

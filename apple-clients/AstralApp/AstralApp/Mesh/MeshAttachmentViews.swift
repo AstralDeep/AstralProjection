@@ -110,7 +110,7 @@ struct MeshAttachmentView: View {
             isPresented: $exporting, document: document, contentType: contentType, defaultFilename: name
         ) { result in
             if case .failure(let error) = result, (error as NSError).code != NSUserCancelledError {
-                problem = "The file could not be saved. Try again."
+                problem = "The file couldn't be saved. Try again."
             }
             document = nil
         }
@@ -122,7 +122,7 @@ struct MeshAttachmentView: View {
         problem = nil
         defer { fetching = false }
         if await mesh.attachmentBytes(attachment) == nil {
-            problem = mesh.notice ?? "The file could not be fetched. Try when its device reconnects."
+            problem = mesh.notice ?? "The file couldn't be fetched. Try when its device reconnects."
         }
     }
 
@@ -132,7 +132,7 @@ struct MeshAttachmentView: View {
         problem = nil
         defer { fetching = false }
         guard let bytes = await mesh.attachmentBytes(attachment) else {
-            problem = mesh.notice ?? "The file could not be fetched. Try when its device reconnects."
+            problem = mesh.notice ?? "The file couldn't be fetched. Try when its device reconnects."
             return
         }
         document = MeshAttachmentDocument(bytes: bytes)

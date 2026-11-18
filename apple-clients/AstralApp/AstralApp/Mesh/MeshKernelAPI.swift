@@ -418,6 +418,7 @@ nonisolated struct MeshModelProviderConfig: Equatable, Sendable {
     let model: String
     let apiKey: String
     var recipients: [String]? = nil
+    var name: String? = nil
 }
 
 nonisolated enum MeshTurnEvent: Equatable, Sendable {
@@ -704,7 +705,9 @@ nonisolated enum MeshStepUpPlan: Equatable, Sendable {
 }
 
 nonisolated enum MeshPhiState: String, Equatable, Sendable {
-    case included, excluded, notUpgraded = "not_upgraded", notApproved = "not_approved"
+    case included, excluded
+    case notUpgraded = "not_upgraded"
+    case notApproved = "not_approved"
 }
 
 nonisolated struct MeshPhiMember: Identifiable, Equatable, Sendable {

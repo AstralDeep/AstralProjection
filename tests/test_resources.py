@@ -38,7 +38,6 @@ def test_compatibility_packages_and_public_facade_are_importable() -> None:
     ("accessor", "name"),
     [
         (resources.template_path, "shell.html"),
-        (resources.template_path, "kiosk.html"),
         (resources.static_path, "client.js"),
         (resources.static_path, "canvas-export.js"),
         (resources.static_path, "canvas-export-host.js"),

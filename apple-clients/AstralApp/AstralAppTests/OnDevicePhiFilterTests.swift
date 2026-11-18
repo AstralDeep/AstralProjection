@@ -1,11 +1,12 @@
 // Verifies the shipped host path for the PHI filter request: the answer check, refusal and absence mapping, the busy wait and the bridge deadline.
 // A scripted model stands in for Foundation Models, and the contract copy in this bundle shapes the request exactly as the Kernel sends it.
 
-@testable import AstralDeep
 import AstralKernel
 import CryptoKit
 import Foundation
 import XCTest
+
+@testable import AstralDeep
 
 private final class ScriptedPhiModel: AstralOnDeviceModel, @unchecked Sendable {
     private let lock = NSLock()

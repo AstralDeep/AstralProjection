@@ -140,7 +140,7 @@ final class MeshPushCoordinator {
             if epoch == captured {
                 requestToken(false)
                 retireLease()
-                status = "Sign in for background updates"
+                status = "Background updates need an owner session"
             }
             return
         }
@@ -179,7 +179,7 @@ final class MeshPushCoordinator {
         case .absent: revision = 0
         case .current(let value, _, _): revision = value
         case .signInRequired:
-            status = "Sign in for background updates"
+            status = "Background updates need an owner session"
             return
         case .unavailable:
             status = "Background updates unavailable: publisher unreachable"
@@ -191,7 +191,7 @@ final class MeshPushCoordinator {
         guard case .registered(let registration) = result else {
             guard await valid(context, epoch: captured) else { return }
             switch result {
-            case .signInRequired: status = "Sign in for background updates"
+            case .signInRequired: status = "Background updates need an owner session"
             case .conflict: status = "Background registration changed. Retry."
             default: status = "Background updates unavailable: publisher unreachable"
             }

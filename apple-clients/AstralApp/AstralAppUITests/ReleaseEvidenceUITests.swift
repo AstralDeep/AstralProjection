@@ -24,7 +24,6 @@ private let stagingProjectionKeys = [
     "endpoint",
     "environment_id",
     "fixture_manifest_sha256",
-    "keycloak_realm_sha256",
     "macos_personal_agent_host",
     "migrated_schema_revision",
     "representative_dataset_sha256",
@@ -1040,7 +1039,7 @@ final class ReleaseEvidenceUITests: XCTestCase {
                     message: "the terminal turn-failure notice did not surface")
             }
             let value = notice.value as? String ?? ""
-            guard value.contains("Warning. Request did not complete."),
+            guard value.contains("Warning. Request didn't complete."),
                 value.contains("The provider could not complete this request.")
             else {
                 throw EvidenceFailure(

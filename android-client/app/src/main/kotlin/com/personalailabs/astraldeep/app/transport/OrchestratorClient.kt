@@ -5,8 +5,6 @@
 package com.personalailabs.astraldeep.app.transport
 
 import android.util.Log
-import com.personalailabs.astraldeep.app.auth.ServerSessionCoordinator
-import com.personalailabs.astraldeep.app.auth.ServerSessionException
 import com.personalailabs.astraldeep.core.chrome.TurnSelection
 import com.personalailabs.astraldeep.core.protocol.ChatAttachment
 import com.personalailabs.astraldeep.core.protocol.ConversationResume
@@ -40,8 +38,6 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
-import okhttp3.Authenticator
-import okhttp3.CookieJar
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -93,21 +89,7 @@ class OrchestratorClient(
     private val url: String,
     private val client: OkHttpClient = defaultClient(),
     private val uuidFactory: () -> String = { UUID.randomUUID().toString() },
-    private val serverSession: ((String) -> ServerSessionCoordinator?)? = null,
 ) {
-    private val socketClient =
-        if (serverSession == null) {
-            client
-        } else {
-            client.newBuilder()
-                .followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false)
-                .cookieJar(CookieJar.NO_COOKIES).authenticator(Authenticator.NONE).proxyAuthenticator(Authenticator.NONE)
-                .apply {
-                    interceptors().clear()
-                    networkInterceptors().clear()
-                }.build()
-        }
-
     private data class Queued(
         val action: String,
         val frame: String,
@@ -180,15 +162,6 @@ class OrchestratorClient(
                         onQueuedSubmission,
                     ) { attempt = 0 },
                 )
-                if (_state.value == ConnectionState.AuthRequired && serverSession != null) {
-                    val custodyRequired =
-                        try {
-                            serverSession.invoke(token) != null
-                        } catch (_: ServerSessionException) {
-                            true
-                        }
-                    if (custodyRequired) return@flow
-                }
                 _state.value = ConnectionState.Disconnected
                 attempt += 1
                 delay(backoffDelayMs(attempt))
@@ -206,64 +179,35 @@ class OrchestratorClient(
         callbackFlow {
             val epoch = ownerEpoch
             _state.value = ConnectionState.Connecting
-            var custodyOwner: ServerSessionCoordinator? = null
-            val custody =
-                try {
-                    custodyOwner = serverSession?.invoke(token)
-                    custodyOwner?.socketTicket(url, token)
-                } catch (_: ServerSessionException) {
-                    _state.value = ConnectionState.AuthRequired
-                    trySend(Inbound.AuthRequired("session_required"))
-                    close()
-                    return@callbackFlow
-                }
-            val request =
-                Request.Builder().url(url).apply {
-                    if (custody != null) {
-                        header("Cookie", custody.cookie)
-                        header("Origin", custody.origin)
-                    }
-                }.build()
+            val request = Request.Builder().url(url).build()
 
-            fun current(): Boolean = custody == null || custodyOwner?.isCurrent(custody) == true
-
-            fun guarded(block: () -> Unit) {
-                if (custody == null) block() else custodyOwner?.withCurrent(custody, block)
-            }
             val listener =
                 object : WebSocketListener() {
                     override fun onOpen(
                         webSocket: WebSocket,
                         response: Response,
                     ) {
-                        try {
-                            guarded {
-                                synchronized(pending) {
-                                    if (epoch != ownerEpoch) {
-                                        webSocket.cancel()
-                                        return@synchronized
-                                    }
-                                    // register_ui must be the first frame or the server refuses the rest
-                                    val capabilities = observedDevice?.takeIf { it.deviceId == device.deviceId } ?: device
-                                    val registration = createRegistrationAttempt(token, device, sessionId())
-                                    connectionGeneration = registration.binding.connectionGeneration
-                                    onGeneration(registration.binding)
-                                    if (!webSocket.send(registration.frame)) {
-                                        webSocket.cancel()
-                                        close()
-                                        return@synchronized
-                                    }
-                                    advertisedDevice = capabilities
-                                    socket = webSocket
-                                    open = true
-                                    onOpen()
-                                    flushPending(webSocket, onGeneration, onQueuedSubmission)
-                                    _state.value = ConnectionState.Connected
-                                }
+                        synchronized(pending) {
+                            if (epoch != ownerEpoch) {
+                                webSocket.cancel()
+                                return@synchronized
                             }
-                        } catch (_: ServerSessionException) {
-                            webSocket.cancel()
-                            close()
+                            // register_ui must be the first frame or the server refuses the rest
+                            val capabilities = observedDevice?.takeIf { it.deviceId == device.deviceId } ?: device
+                            val registration = createRegistrationAttempt(token, device, sessionId())
+                            connectionGeneration = registration.binding.connectionGeneration
+                            onGeneration(registration.binding)
+                            if (!webSocket.send(registration.frame)) {
+                                webSocket.cancel()
+                                close()
+                                return@synchronized
+                            }
+                            advertisedDevice = capabilities
+                            socket = webSocket
+                            open = true
+                            onOpen()
+                            flushPending(webSocket, onGeneration, onQueuedSubmission)
+                            _state.value = ConnectionState.Connected
                         }
                     }
 
@@ -271,7 +215,7 @@ class OrchestratorClient(
                         webSocket: WebSocket,
                         text: String,
                     ) {
-                        if (epoch != ownerEpoch || !current()) return
+                        if (epoch != ownerEpoch) return
                         val msg = Wire.decode(text)
                         if (msg is Inbound.AuthRequired) _state.value = ConnectionState.AuthRequired
                         trySend(msg)
@@ -297,18 +241,11 @@ class OrchestratorClient(
                         if (epoch != ownerEpoch) return
                         open = false
                         connectionGeneration = null
-                        if (custody == null) Log.w(TAG, "WebSocket failure: ${t.message}") else Log.w(TAG, "Session WebSocket failed")
+                        Log.w(TAG, "WebSocket failure: ${t.message}")
                         close()
                     }
                 }
-            try {
-                guarded { socket = socketClient.newWebSocket(request, listener) }
-            } catch (_: ServerSessionException) {
-                _state.value = ConnectionState.AuthRequired
-                trySend(Inbound.AuthRequired("session_required"))
-                close()
-                return@callbackFlow
-            }
+            socket = client.newWebSocket(request, listener)
             val connectedSocket = socket
             awaitClose {
                 if (epoch == ownerEpoch && socket === connectedSocket) {

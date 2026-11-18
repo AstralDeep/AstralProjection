@@ -147,7 +147,9 @@ final class MeshConnectionSignInTests: XCTestCase {
             service: service, availability: .available, makeSession: Browser().factory)
         await model.signIn(connection: "c1")
         XCTAssertEqual(model.phase, .failed("This local server can only be used on the device that added it."))
-        let codes = ["connection.iss_mismatch", "connection.iss_missing", "oauth.state_mismatch", "connection.no_client_id"]
+        let codes = [
+            "connection.iss_mismatch", "connection.iss_missing", "oauth.state_mismatch", "connection.no_client_id",
+        ]
         for code in codes {
             XCTAssertFalse(KernelMapping.failureText(code: code).contains(code), code)
         }
@@ -184,8 +186,8 @@ final class MeshConnectionSignInTests: XCTestCase {
     }
 }
 
-private extension MeshConnectionSignIn.Phase {
-    var description: String { String(describing: self) }
+extension MeshConnectionSignIn.Phase {
+    fileprivate var description: String { String(describing: self) }
 }
 
 @MainActor

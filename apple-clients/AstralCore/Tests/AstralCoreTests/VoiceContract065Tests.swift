@@ -529,10 +529,10 @@ final class VoiceContract065Tests: XCTestCase {
     func testTerminalTurnNoticeUsesExplicitNonColorWordingAndPreservesServerMessage() throws {
         let fixture = try Fixture()
         let expectedTitles = [
-            "failed": "Request did not complete.",
-            "cancelled": "Request did not complete.",
-            "abandoned": "Request did not complete.",
-            "refused": "Request did not start.",
+            "failed": "Request didn't complete.",
+            "cancelled": "Request didn't complete.",
+            "abandoned": "Request didn't complete.",
+            "refused": "Request didn't start.",
         ]
 
         for (state, expectedTitle) in expectedTitles {
@@ -607,7 +607,7 @@ final class VoiceContract065Tests: XCTestCase {
         XCTAssertEqual(notice.occurredAt, "2026-07-31T12:05:00Z")
         XCTAssertTrue(notice.displayText.contains("text result may still be available"))
         XCTAssertFalse(notice.displayText.localizedCaseInsensitiveContains("request failed"))
-        XCTAssertFalse(notice.displayText.contains("Request did not complete"))
+        XCTAssertFalse(notice.displayText.contains("Request didn't complete"))
     }
 
     func testSucceededSpeechFailureUsesExactTurnAndCommittedTextGuidance() throws {
@@ -658,10 +658,10 @@ final class VoiceContract065Tests: XCTestCase {
         let notice = VoiceTerminalNoticeReducer.submissionRejected(rejection)
 
         XCTAssertEqual(notice.kind, .requestFailure)
-        XCTAssertEqual(notice.title, "Request did not start.")
+        XCTAssertEqual(notice.title, "Request didn't start.")
         XCTAssertEqual(notice.serverMessage, "Capacity is temporarily full.")
         XCTAssertNil(notice.guidance)
-        XCTAssertEqual(notice.displayText, "Warning. Request did not start. Capacity is temporarily full.")
+        XCTAssertEqual(notice.displayText, "Warning. Request didn't start. Capacity is temporarily full.")
 
         let failed = try voiceTurn(
             fixture: fixture, state: "failed", message: "Keep this newer failure.",

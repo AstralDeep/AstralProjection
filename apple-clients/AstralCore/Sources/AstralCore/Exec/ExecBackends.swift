@@ -89,7 +89,9 @@ public struct ExecFacts: Sendable, Equatable {
         guard case .object(let members) = json else { throw ExecContextError("facts must be an object") }
         let unknown = members.filter { member in !Self.keys.contains { $0.utf8.elementsEqual(member.key.utf8) } }
         if !unknown.isEmpty { throw ExecContextError("unknown facts: \(unknown.map(\.key).sorted())") }
-        guard case .string(let platform)? = json["platform"] else { throw ExecContextError("facts.platform must be a string") }
+        guard case .string(let platform)? = json["platform"] else {
+            throw ExecContextError("facts.platform must be a string")
+        }
         var mode = ExecMode.enforce
         if let given = json["mode"] {
             guard case .string(let text) = given, let parsed = ExecMode(rawValue: text) else {
@@ -146,7 +148,8 @@ public enum ExecBackends {
     ]
 
     static func refusal(
-        code: String, reason: ExecBackendReason? = nil, observed: Int? = nil, required: Int? = nil, platform: String? = nil
+        code: String, reason: ExecBackendReason? = nil, observed: Int? = nil, required: Int? = nil,
+        platform: String? = nil
     ) -> ExecRefusal {
         var text = messages[reason?.rawValue ?? code] ?? code
         if let observed { text = text.replacingOccurrences(of: "{observed}", with: String(observed)) }
@@ -156,7 +159,9 @@ public enum ExecBackends {
             code: code, reason: reason, observed: observed, required: required, platform: platform, message: text)
     }
 
-    private static func unavailable(_ reason: ExecBackendReason, observed: Int? = nil, platform: String? = nil) -> ExecSelection {
+    private static func unavailable(_ reason: ExecBackendReason, observed: Int? = nil, platform: String? = nil)
+        -> ExecSelection
+    {
         .refused(
             refusal(
                 code: "exec.backend_unavailable", reason: reason, observed: observed,

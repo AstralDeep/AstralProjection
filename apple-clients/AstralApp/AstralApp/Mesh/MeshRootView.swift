@@ -10,7 +10,6 @@ import SwiftUI
 struct MeshRootView: View {
     var start: MeshDestination?
     @Environment(MeshRuntime.self) private var mesh
-    @Environment(AppModeStore.self) private var modeStore
     @Environment(ConsentCoordinator.self) private var consent
     @Environment(AppModel.self) private var model
     @Environment(ThemeStore.self) private var theme
@@ -20,6 +19,13 @@ struct MeshRootView: View {
         Binding(
             get: { mesh.phiPrompts.pending },
             set: { if $0 == nil { mesh.phiPrompts.answer(.treatAsPhi) } })
+    }
+
+    private var exitBinding: Binding<Bool> {
+        Binding(get: { mesh.confirmingExit != nil }, set: { if !$0 { mesh.cancelExit() } })
+    }
+    private var exitFailureBinding: Binding<Bool> {
+        Binding(get: { mesh.exitFailure != nil }, set: { if !$0 { mesh.dismissExitFailure() } })
     }
 
     var body: some View {
@@ -35,6 +41,23 @@ struct MeshRootView: View {
                 .consentSheet(consent)
             }
             .consentSheet(consent)
+            .alert(
+                mesh.confirmingExit?.title ?? "", isPresented: exitBinding, presenting: mesh.confirmingExit
+            ) { exit in
+                Button(exit.confirmLabel, role: .destructive) { Task { await mesh.confirmExit(exit) } }
+                    .accessibilityIdentifier("mesh.exit.confirm")
+                Button("Cancel", role: .cancel) { mesh.cancelExit() }
+                    .accessibilityIdentifier("mesh.exit.cancel")
+            } message: { exit in
+                Text(exit.message)
+            }
+            .alert(
+                "Couldn't Leave the Mesh", isPresented: exitFailureBinding, presenting: mesh.exitFailure
+            ) { _ in
+                Button("OK", role: .cancel) { mesh.dismissExitFailure() }
+            } message: { message in
+                Text(message)
+            }
             .sheet(item: phiPromptBinding) { request in
                 MeshPhiPromptSheet(request: request, center: mesh.phiPrompts)
             }
@@ -60,7 +83,6 @@ struct MeshRootView: View {
                 Text(message).multilineTextAlignment(.center).foregroundStyle(p.error)
                     .accessibilityIdentifier("mesh.failed")
                 Button("Try again") { Task { await mesh.open() } }.accessibilityIdentifier("mesh.retry")
-                Button("Connect to a node") { modeStore.choose(.node) }.accessibilityIdentifier("mesh.node")
             }
             .padding(24)
         case .ready:

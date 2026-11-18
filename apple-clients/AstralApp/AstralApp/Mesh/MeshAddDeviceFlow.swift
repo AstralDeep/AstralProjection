@@ -145,7 +145,7 @@ struct MeshAddDeviceView: View {
                 header(
                     2, icon: "doc.on.clipboard", title: "Get the pairing code",
                     text:
-                        "A Mac cannot scan a QR code. On the new device tap Share or Copy under its code, then send it here with AirDrop or Universal Clipboard."
+                        "A Mac can't scan a QR code. On the new device tap Share or Copy under its code, then send it here with AirDrop or Universal Clipboard."
                 )
                 pasteTarget
                 if clipboardHasText {
@@ -218,7 +218,6 @@ struct MeshAddDeviceView: View {
                 .font(.system(.footnote, design: .monospaced))
                 .scrollContentBackground(.hidden)
                 .padding(10)
-                .opacity(payload.isEmpty ? 0.02 : 1)
                 .accessibilityLabel("Pairing code")
                 .accessibilityIdentifier("mesh.add.payload")
         }

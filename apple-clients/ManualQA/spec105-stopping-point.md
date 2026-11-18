@@ -8,7 +8,7 @@ This section is current. The 13 November record below it is history, and every `
 - Consent repair is finished and tested (`71b7d18`, `e66aad6`, `0787ade`). The main defect was that an idle consent host never observed an incoming request, so no sheet appeared at all. Sheets that could hide consent now host it. A closed parent sheet now cancels its request on macOS.
 - The accessibility proposal is integrated with the two fixes it exposed: the workbench Stop button is error red in a focused window, and the surface text reader composites onto an opaque background.
 - A source guard and runtime tests show no main-app voice path reaches the hosted voice server.
-- The node pack is pinned to Deep `bd197b82` and requalified with `apple-clients/NodePack/qualify/tool_turn.py`.
+- The node pack is pinned to Deep `bd197b82` and requalified with the Deep node bundle qualification.
 
 ## Gates on `8931bd8`, no retries
 

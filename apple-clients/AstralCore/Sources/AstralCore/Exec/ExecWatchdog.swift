@@ -40,7 +40,8 @@ import Foundation
             }
             if status != 0 { return nil }
             return ExecProcessUsage(
-                start: info.ri_proc_start_abstime, exited: info.ri_proc_exit_abstime != 0, footprint: info.ri_phys_footprint)
+                start: info.ri_proc_start_abstime, exited: info.ri_proc_exit_abstime != 0,
+                footprint: info.ri_phys_footprint)
         }
 
         func strings(_ pid: Int32) -> [[UInt8]]? {

@@ -77,6 +77,15 @@ nonisolated final class DeviceKeys: @unchecked Sendable {
         defaults.removeObject(forKey: restoreKey)
     }
 
+    func erase() throws {
+        lock.lock()
+        defer { lock.unlock() }
+        for account in Account.keys + [Account.custody, Account.marker] { try store.remove(account) }
+        defaults.removeObject(forKey: installKey)
+        defaults.removeObject(forKey: restoreKey)
+        restored = false
+    }
+
     func identityPublicKey() throws -> Data {
         try publicKey(account: Account.identity, context: nil)
     }

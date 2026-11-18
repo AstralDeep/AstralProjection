@@ -23,6 +23,7 @@
             let query: [String: Any] = [
                 kSecClass as String: kSecClassGenericPassword,
                 kSecAttrService as String: service,
+                kSecUseDataProtectionKeychain as String: true,
                 kSecReturnData as String: true,
                 kSecMatchLimit as String: kSecMatchLimitOne,
             ]

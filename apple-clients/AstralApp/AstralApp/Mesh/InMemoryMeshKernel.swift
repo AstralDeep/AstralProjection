@@ -60,6 +60,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     var actResult = MeshActResult(status: "ok", code: nil, text: "Done")
     var recoveryWords: [String] = (1...24).map { "word\($0)" }
     var hasLocalMesh = false
+    var refusesCreate = false
     var turnScript: [MeshTurnEvent] = [
         .started, .assistantDelta("Hello"), .assistantDelta(" there"), .assistantFinished, .finished,
     ]
@@ -161,7 +162,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         try principalGate()
         return try lock.withLock {
             guard status.hasMesh, let principalValue else {
-                throw MeshKernelError.unavailable("The mesh principal is not available.")
+                throw MeshKernelError.unavailable("The mesh principal isn't available.")
             }
             return principalValue
         }
@@ -202,8 +203,8 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         try record("createMesh")
         try consentGate()
         try lock.withLock {
-            guard !status.hasMesh || status.recoveryPending else {
-                throw MeshKernelError.refused("This device already belongs to a mesh.")
+            guard (!status.hasMesh || status.recoveryPending) && !refusesCreate else {
+                throw KernelMapping.refusal("mesh.already_enrolled")
             }
             status = MeshStatus(
                 hasMesh: false, meshId: "sha256:" + String(repeating: "a", count: 64),
@@ -360,10 +361,20 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         return lock.withLock { members }
     }
 
+    func addMember(_ member: MeshMember) { lock.withLock { members.append(member) } }
+
     func removeDevice(memberId: String) throws {
         try record("removeDevice", memberId)
         try consentGate()
-        lock.withLock { members.removeAll { $0.memberId == memberId && !$0.isThisDevice } }
+        lock.withLock {
+            guard members.contains(where: { $0.memberId == memberId && $0.isThisDevice }) else {
+                members.removeAll { $0.memberId == memberId }
+                return
+            }
+            guard members.count > 1 else { return }
+            members.removeAll { $0.memberId == memberId }
+            status.hasMesh = false
+        }
         listener.onChange(.rosterChanged)
     }
 
@@ -695,7 +706,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         try record("resumePendingMessage", chatId + "/" + messageId)
         guard try await pendingOrdinaryMessages().contains(MeshPendingMessage(chatId: chatId, messageId: messageId))
         else {
-            throw MeshKernelError.refused("That message cannot be resumed.")
+            throw MeshKernelError.refused("That message can't be resumed.")
         }
         let reply = nextId("event")
         let turnId = "turn-" + reply
@@ -723,7 +734,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
             guard var chat = chats[chatId], chat.status == .idle,
                 let index = chat.messages.lastIndex(where: { $0.author == .owner }),
                 chat.messages[index].eventId == messageId, chat.messages[index].delivery == .queued
-            else { throw MeshKernelError.refused("That message could not be stopped.") }
+            else { throw MeshKernelError.refused("That message couldn't be stopped.") }
             let message = chat.messages[index]
             chat.messages[index] = MeshChatMessage(
                 eventId: message.eventId, parentId: message.parentId, author: message.author,
@@ -751,7 +762,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     func resumeTurn(chatId: String, turnId: String) async throws {
         try record("resumeTurn", chatId + "/" + turnId)
         guard try await ordinaryResumeTargets().contains(MeshResumeTarget(chatId: chatId, turnId: turnId)) else {
-            throw MeshKernelError.refused("That turn cannot be resumed.")
+            throw MeshKernelError.refused("That turn can't be resumed.")
         }
         await turnGate()
         try driveTurn(
@@ -778,7 +789,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
                 guard let selected = chat.messages.first(where: { $0.eventId == messageId }),
                     selected.author == .owner, selected.delivery == .queued,
                     chat.messages.last(where: { $0.author == .owner })?.eventId == messageId
-                else { throw MeshKernelError.refused("That message cannot be started.") }
+                else { throw MeshKernelError.refused("That message can't be started.") }
             }
             chat.messages = chat.messages.map { message in
                 message.delivery == .queued && (messageId == nil || message.eventId == messageId)
@@ -1339,7 +1350,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     }
 
     func proposeModelConnection(_ draft: MeshModelConnectionDraft) async throws -> MeshConnectionProposal {
-        try record("proposeModelConnection", draft.endpoint)
+        try record("proposeModelConnection", "\(draft.name)/\(draft.provider)")
         try requireEnrolled()
         return try connectionBook.proposeModel(draft)
     }
@@ -1606,6 +1617,11 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
     }
 
     func emit(_ change: MeshKernelChange) { listener.onChange(change) }
+
+    func receiveProviderFromAnotherDevice(_ provider: MeshModelProvider) {
+        lock.withLock { providers.append(provider) }
+        listener.onChange(.connectionsChanged)
+    }
 
     func setChatStatus(chatId: String, _ value: MeshChatStatus) {
         lock.withLock { chats[chatId]?.status = value }

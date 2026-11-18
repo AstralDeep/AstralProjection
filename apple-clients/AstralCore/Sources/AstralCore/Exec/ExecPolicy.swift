@@ -89,7 +89,9 @@ public struct ExecPolicy: Sendable {
     }
 
     private static func requireObject(_ value: ExecJSON?, _ fields: [String], _ place: String) throws {
-        guard case .object(let members)? = value else { throw ExecPolicyError("policy.malformed", "\(place) must be an object") }
+        guard case .object(let members)? = value else {
+            throw ExecPolicyError("policy.malformed", "\(place) must be an object")
+        }
         if members.contains(where: { member in !fields.contains { $0.utf8.elementsEqual(member.key.utf8) } }) {
             throw ExecPolicyError("policy.unknown_field", place)
         }
@@ -104,7 +106,9 @@ public struct ExecPolicy: Sendable {
         if path.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F }) { return "control character" }
         if bytes.first != 0x2F { return "must be absolute" }
         for part in bytes.dropFirst().split(separator: 0x2F, omittingEmptySubsequences: false) {
-            if part.isEmpty || part.elementsEqual([0x2E]) || part.elementsEqual([0x2E, 0x2E]) { return "not normalized" }
+            if part.isEmpty || part.elementsEqual([0x2E]) || part.elementsEqual([0x2E, 0x2E]) {
+                return "not normalized"
+            }
         }
         return nil
     }
@@ -114,7 +118,9 @@ public struct ExecPolicy: Sendable {
     }
 
     private static func checkedPath(_ value: ExecJSON?, _ place: String, _ platform: String?) throws -> String {
-        guard case .string(let path)? = value else { throw ExecPolicyError("policy.malformed", "\(place) must be a string") }
+        guard case .string(let path)? = value else {
+            throw ExecPolicyError("policy.malformed", "\(place) must be a string")
+        }
         var problem = pathProblem(path)
         if problem == nil, platform == "darwin", hasUnassigned(path) { problem = "unassigned code point" }
         if let problem { throw ExecPolicyError("policy.path_invalid", "\(place): \(problem)") }
@@ -122,7 +128,9 @@ public struct ExecPolicy: Sendable {
     }
 
     private static func validatedReads(_ value: ExecJSON?, _ platform: String?) throws -> [String] {
-        guard case .array(let entries)? = value else { throw ExecPolicyError("policy.malformed", "reads must be a list") }
+        guard case .array(let entries)? = value else {
+            throw ExecPolicyError("policy.malformed", "reads must be a list")
+        }
         if entries.count > maxReads { throw ExecPolicyError("policy.too_many_entries", "reads") }
         var previous: String?
         var seen = Set<[UInt32]>()
@@ -166,7 +174,9 @@ public struct ExecPolicy: Sendable {
     }
 
     private static func validatedHosts(_ value: ExecJSON?) throws -> [Host] {
-        guard case .array(let entries)? = value else { throw ExecPolicyError("policy.malformed", "hosts must be a list") }
+        guard case .array(let entries)? = value else {
+            throw ExecPolicyError("policy.malformed", "hosts must be a list")
+        }
         if entries.count > maxHosts { throw ExecPolicyError("policy.too_many_entries", "hosts") }
         var hosts = [Host]()
         for (index, entry) in entries.enumerated() {
@@ -201,7 +211,9 @@ public struct ExecPolicy: Sendable {
             guard case .int(let number)? = value?[range.name] else {
                 throw ExecPolicyError("policy.malformed", "limits.\(range.name) must be an integer")
             }
-            if !(range.low...range.high).contains(number) { throw ExecPolicyError("policy.limit_out_of_range", range.name) }
+            if !(range.low...range.high).contains(number) {
+                throw ExecPolicyError("policy.limit_out_of_range", range.name)
+            }
             numbers.append(Int(number))
         }
         return Limits(memoryBytes: numbers[0], processes: numbers[1], openFiles: numbers[2], fileBytes: numbers[3])
@@ -212,7 +224,9 @@ public struct ExecPolicy: Sendable {
         guard case .int(let wall)? = value?["wall_ms"] else {
             throw ExecPolicyError("policy.malformed", "time.wall_ms must be an integer")
         }
-        if !(wallRange.low...wallRange.high).contains(wall) { throw ExecPolicyError("policy.time_out_of_range", "wall_ms") }
+        if !(wallRange.low...wallRange.high).contains(wall) {
+            throw ExecPolicyError("policy.time_out_of_range", "wall_ms")
+        }
         return Int(wall)
     }
 }
@@ -235,11 +249,15 @@ public struct ExecLoadedPolicy: Sendable, Equatable {
             guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
             defer { close(descriptor) }
             var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
-            guard fcntl(descriptor, F_GETPATH, &buffer) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+            guard fcntl(descriptor, F_GETPATH, &buffer) == 0 else {
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
             return String(cString: buffer)
         }
 
-        static func checkedContextPath(_ value: String, _ name: String, _ resolve: (String) throws -> String) throws -> String {
+        static func checkedContextPath(_ value: String, _ name: String, _ resolve: (String) throws -> String) throws
+            -> String
+        {
             if pathProblem(value) != nil { throw ExecContextError("\(name) must be an absolute normalized path") }
             if hasUnassigned(value) { throw ExecContextError("\(name) holds an unassigned code point") }
             let resolved: String
@@ -248,7 +266,9 @@ public struct ExecLoadedPolicy: Sendable, Equatable {
             } catch {
                 throw ExecContextError("\(name) cannot be resolved: \(error)")
             }
-            guard resolved.utf8.elementsEqual(value.utf8) else { throw ExecContextError("\(name) is not the canonical path") }
+            guard resolved.utf8.elementsEqual(value.utf8) else {
+                throw ExecContextError("\(name) is not the canonical path")
+            }
             return value
         }
 
@@ -287,7 +307,10 @@ public struct ExecLoadedPolicy: Sendable, Equatable {
         public static func load(json: Data, dataDirectory: String, home: String) throws -> ExecLoadedPolicy {
             let platform = "darwin"
             let policy = try ExecPolicy(json: json, platform: platform)
-            let named = policy.reads.enumerated().map { ("reads[\($0.offset)]", $0.element) } + [("workspace", policy.workspace)]
+            let named =
+                policy.reads.enumerated().map { ("reads[\($0.offset)]", $0.element) } + [
+                    ("workspace", policy.workspace)
+                ]
             for (place, path) in named {
                 let resolved: String
                 do {
@@ -304,7 +327,8 @@ public struct ExecLoadedPolicy: Sendable, Equatable {
             if aliasesDataDirectory(policy, dataDirectory: checkedDirectory) {
                 throw ExecRefused(ExecBackends.refusal(code: "exec.policy_overlaps_data"))
             }
-            return ExecLoadedPolicy(policy: policy, platform: platform, dataDirectory: checkedDirectory, home: checkedHome)
+            return ExecLoadedPolicy(
+                policy: policy, platform: platform, dataDirectory: checkedDirectory, home: checkedHome)
         }
     }
 #endif

@@ -59,7 +59,7 @@ nonisolated struct MeshShareCardFacts: Equatable, Sendable {
     var offersDestinationCard: Bool { phiRow == .needsDestination && proposal.verified }
 
     var summary: String {
-        isUpgrade ? "Share PHI too" : "They can read this chat. They cannot change it."
+        isUpgrade ? "Share PHI too" : "They can read this chat. They can't change it."
     }
 }
 

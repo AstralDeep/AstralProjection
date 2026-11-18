@@ -27,7 +27,9 @@ public enum ExecSeatbeltProfile {
 
     public static func render(_ policy: ExecPolicy, context: ExecSeatbeltContext) throws -> String {
         let checked = try ExecPolicy(json: policy.canonicalData, platform: "darwin")
-        if ExecPolicy.pathProblem(context.home) != nil { throw ExecContextError("home must be an absolute normalized path") }
+        if ExecPolicy.pathProblem(context.home) != nil {
+            throw ExecContextError("home must be an absolute normalized path")
+        }
         if ExecPolicy.hasUnassigned(context.home) { throw ExecContextError("home holds an unassigned code point") }
         if !checked.hosts.isEmpty && (context.proxyPort ?? 0) == 0 {
             throw ExecContextError("a policy with hosts needs a proxy port from 1 to 65535")

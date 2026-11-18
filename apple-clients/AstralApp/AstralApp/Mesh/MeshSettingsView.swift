@@ -5,10 +5,8 @@ import SwiftUI
 
 struct MeshSettingsView: View {
     @Environment(MeshRuntime.self) private var mesh
-    @Environment(AppModeStore.self) private var modeStore
     @Environment(AppModel.self) private var model
     @Environment(ThemeStore.self) private var theme
-    @State private var confirmingNode = false
     @State private var renaming = false
     @State private var draft = ""
     @State private var copied = false
@@ -142,14 +140,6 @@ struct MeshSettingsView: View {
                 .accessibilityIdentifier("mesh.settings.recovery")
             }
             MeshSafetySection()
-            Section {
-                Button("Sign in to a Server Instead") { confirmingNode = true }
-                    .accessibilityIdentifier("mesh.settings.node")
-            } header: {
-                Text("Account")
-            } footer: {
-                Text("Use an AstralDeep server account in this app. Your mesh stays on this device.")
-            }
             if let version = mesh.kernelVersion {
                 Section {
                     DisclosureGroup("Diagnostics") {
@@ -157,18 +147,17 @@ struct MeshSettingsView: View {
                     }
                 }
             }
+            Section("This Mesh") {
+                Button(mesh.exitAction.button, role: .destructive) { mesh.requestExit() }
+                    .accessibilityLabel(mesh.exitAction.button)
+                    .accessibilityIdentifier("settings.mesh.exit")
+            }
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .meshReadableWidth()
         .background(p.bg)
         .navigationTitle("Settings")
-        .confirmationDialog("Sign in to a server instead?", isPresented: $confirmingNode, titleVisibility: .visible) {
-            Button("Use a Server") { modeStore.choose(.node) }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This app will use a server account. Your mesh stays on this device.")
-        }
         .alert("Rename Device", isPresented: $renaming) {
             TextField("Name", text: $draft)
             Button("Save") {
@@ -251,17 +240,7 @@ struct MeshModelProviderView: View {
                     NavigationLink {
                         MeshProviderSharingView(provider: provider)
                     } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(provider.model).font(ConsoleTypography.headline)
-                            Text(provider.baseURL).font(ConsoleTypography.footnote).foregroundStyle(p.muted)
-                            Text(provider.hasKey ? "Key stored in sealed storage" : "No key")
-                                .font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                            Text(
-                                provider.recipients == nil
-                                    ? "All devices, including future devices" : "Selected devices"
-                            )
-                            .font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                        }
+                        MeshConfiguredProviderRow(provider: provider, palette: p)
                     }
                     .accessibilityIdentifier("mesh.models.provider.\(provider.providerId)")
                     NavigationLink("Approve for PHI") {
@@ -270,21 +249,32 @@ struct MeshModelProviderView: View {
                     .accessibilityIdentifier("mesh.models.phi.\(provider.providerId)")
                 }
             }
-            Section("OpenAI-compatible provider") {
-                TextField("Base URL", text: $editor.baseURL)
+            Section(mesh.providers.isEmpty ? "OpenAI-compatible provider" : "Add another provider") {
+                TextField("Provider name", text: $editor.providerName, prompt: Text(MeshProviderPlaceholder.name))
+                    .autocorrectionDisabled()
+                    #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                    #endif
+                    .accessibilityLabel("Provider name")
+                    .accessibilityIdentifier("provider.name.field")
+                if let nameProblem = editor.nameProblem {
+                    Text(nameProblem.message).font(ConsoleTypography.footnote).foregroundStyle(p.error)
+                        .accessibilityIdentifier("provider.name.error")
+                }
+                TextField("Base URL", text: $editor.baseURL, prompt: Text(MeshProviderPlaceholder.baseURL))
                     .autocorrectionDisabled()
                     #if os(iOS)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
                     #endif
                     .accessibilityIdentifier("mesh.models.url")
-                TextField("Model", text: $editor.model)
+                TextField("Model", text: $editor.model, prompt: Text(MeshProviderPlaceholder.model))
                     .autocorrectionDisabled()
                     #if os(iOS)
                         .textInputAutocapitalization(.never)
                     #endif
                     .accessibilityIdentifier("mesh.models.model")
-                SecureField("API key", text: $editor.key)
+                SecureField("API key", text: $editor.key, prompt: Text(MeshProviderPlaceholder.key))
                     .accessibilityIdentifier("mesh.models.key")
             }
             .disabled(editor.saving || mesh.savingProvider)
@@ -303,7 +293,7 @@ struct MeshModelProviderView: View {
                 Button("Save") {
                     Task { await editor.save(in: mesh) }
                 }
-                .disabled(editor.saving || mesh.savingProvider)
+                .disabled(!editor.canSave || mesh.savingProvider)
                 .accessibilityIdentifier("mesh.models.save")
             }
         }
@@ -312,6 +302,31 @@ struct MeshModelProviderView: View {
         .meshReadableWidth()
         .background(p.bg)
         .navigationTitle("Model provider")
+        .task { await mesh.refreshProviders() }
+    }
+}
+
+struct MeshConfiguredProviderRow: View {
+    let provider: MeshModelProvider
+    let palette: AstralPalette
+
+    private var keyLine: String {
+        if !provider.availableOnDevice { return "Not shared with this device" }
+        return provider.hasKey ? "Key sealed to this device" : "No key"
+    }
+
+    private var audienceLine: String {
+        provider.recipients == nil ? "All devices, including future devices" : "Selected devices"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(provider.providerId).font(ConsoleTypography.headline)
+            Text(provider.model).font(ConsoleTypography.subheadline).foregroundStyle(palette.muted)
+            Text(provider.baseURL).font(ConsoleTypography.footnote).foregroundStyle(palette.muted)
+            Text(keyLine).font(ConsoleTypography.caption).foregroundStyle(palette.muted)
+            Text(audienceLine).font(ConsoleTypography.caption).foregroundStyle(palette.muted)
+        }
     }
 }
 
@@ -470,7 +485,7 @@ struct MeshAllowanceView: View {
                     }
                 }
             } else {
-                Text("The allowance is not known yet.").foregroundStyle(p.muted)
+                Text("The allowance isn't known yet.").foregroundStyle(p.muted)
             }
         }
         .formStyle(.grouped)

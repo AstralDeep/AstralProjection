@@ -21,10 +21,10 @@
 
         var summary: String {
             switch self {
-            case .unreachable: return "The update policy could not be fetched."
+            case .unreachable: return "The update policy couldn't be fetched."
             case .expired: return "The update policy has expired."
-            case .signature: return "The update policy signature could not be verified."
-            case .parse: return "The update policy could not be read."
+            case .signature: return "The update policy signature couldn't be verified."
+            case .parse: return "The update policy couldn't be read."
             case .rollback: return "The update policy is older than one already seen."
             }
         }

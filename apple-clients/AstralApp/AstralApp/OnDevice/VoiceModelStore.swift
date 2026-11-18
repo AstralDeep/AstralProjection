@@ -26,9 +26,9 @@ nonisolated enum VoiceModelFailure: Equatable, Sendable {
         case .server(let status, _):
             return "The download server refused the request (\(status))."
         case .sizeMismatch, .checksumMismatch:
-            return "A downloaded file did not match its expected checksum and was discarded."
+            return "A downloaded file didn't match its expected checksum and was discarded."
         case .storage:
-            return "The voice model could not be saved on this device."
+            return "The voice model couldn't be saved on this device."
         case .manifestUnavailable:
             return "The voice model description is missing from this build."
         }

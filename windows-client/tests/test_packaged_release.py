@@ -63,7 +63,6 @@ def _offline_profile(path: Path) -> Path:
             "release_id": "windows-0.4.0-offline-smoke",
             "distribution": "generic_developer",
             "local_only": True,
-            "authority": "http://127.0.0.1:1/realms/Astral",
             "websocket_endpoint": "ws://127.0.0.1:1/ws",
         }
     )
@@ -79,12 +78,12 @@ def _offline_profile(path: Path) -> Path:
 
 def test_entrypoint_resolves_profile_and_validation_before_importing_qt():
     source = (ROOT / "main.py").read_text(encoding="utf-8")
-    assert source.index("resolve_startup(") < source.index("from astral_client.app import main")
+    assert source.index("resolve_startup(") < source.index("from astral_client.not_available import run")
     assert source.index("_restore_frozen_standard_streams()") < source.index(
         "from win_agent.byo_worker import main"
     )
     assert source.index('if "--byo-worker"') < source.index("resolve_startup(")
-    assert "--validate-deployment" not in (ROOT / "astral_client" / "app.py").read_text(
+    assert "--validate-deployment" not in (ROOT / "astral_client" / "not_available.py").read_text(
         encoding="utf-8"
     )
 

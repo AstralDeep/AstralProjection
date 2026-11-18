@@ -37,22 +37,6 @@
             </intent-filter>
         </activity>
 
-        <!--
-          AppAuth redirect receiver. The data scheme MUST match the astral-mobile
-          client's Valid Redirect URI: com.personalailabs.astraldeep:/oauth2redirect
-          (scheme is injected from the appAuthRedirectScheme manifest placeholder).
-        -->
-        <activity
-            android:name="net.openid.appauth.RedirectUriReceiverActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="${appAuthRedirectScheme}" />
-            </intent-filter>
-        </activity>
-
         <meta-data android:name="firebase_messaging_auto_init_enabled" android:value="false" />
         <meta-data android:name="firebase_analytics_collection_enabled" android:value="false" />
         <service android:name=".push.AstralFirebaseMessagingService" android:exported="false">

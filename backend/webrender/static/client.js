@@ -8,9 +8,9 @@
 
   var WS_URL = (location.protocol === "https:" ? "wss:" : "ws:") + "//" + location.host + "/ws";
   var API_URL = location.origin;
-  var TOKEN_KEY = "astraldeep.token";
-  // The shell-injected token must win over a token left in this tab by a prior principal
-  var token = window.__ASTRAL_TOKEN__ || sessionStorage.getItem(TOKEN_KEY) || "";
+  var DOWNLOADS_URL = "https://astraldeep.github.io/downloads.html";
+  var token = window.__ASTRAL_TOKEN__ || "";
+  var noticeShown = false;
 
   var ws = null, attempts = 0, activeChatId = null, streamSeq = {}, firstConnect = true;
   var timelineMode = false;
@@ -208,7 +208,7 @@
 
   function decodeTokenIdentity(rawToken, fallbackSubject) {
     if (fallbackSubject && (typeof rawToken !== "string" || rawToken.split(".").length !== 3)) {
-      return { issuer: "astraldeep://mock-keycloak", subject: fallbackSubject || "test_user" };
+      return { issuer: "astraldeep://node", subject: fallbackSubject };
     }
     if (typeof rawToken !== "string") return null;
     var pieces = rawToken.split(".");
@@ -573,25 +573,45 @@
     return true;
   }
 
-  function gotoLogin() {
-    var next = encodeURIComponent(location.pathname + location.search);
-    location.href = "/auth/login?next=" + next;
+  function showNotice() {
+    if (noticeShown) return;
+    noticeShown = true;
+    if (ws) { try { ws.close(); } catch (e) {} }
+    var panel = document.createElement("main");
+    panel.id = "astral-not-available-notice";
+    panel.setAttribute("role", "alert");
+    panel.style.cssText = "position:fixed;inset:0;z-index:2147483000;display:flex;flex-direction:column;"
+      + "align-items:center;justify-content:center;gap:16px;padding:24px;text-align:center;"
+      + "background:rgb(var(--astral-bg));color:rgb(var(--astral-text))";
+    var heading = document.createElement("h1");
+    heading.textContent = "Astral runs in the Mac and iPhone apps";
+    heading.style.cssText = "font-size:1.5rem;font-weight:600;margin:0";
+    var link = document.createElement("a");
+    link.id = "astral-downloads-link";
+    link.href = DOWNLOADS_URL;
+    link.rel = "noopener";
+    link.textContent = "Get the apps";
+    link.style.cssText = "color:rgb(var(--astral-primary));text-decoration:underline;font-size:1rem";
+    panel.appendChild(heading);
+    panel.appendChild(link);
+    document.body.appendChild(panel);
   }
 
-  function refreshToken(redirect, cb) {
+  function refreshToken(unauthenticatedNotice, cb) {
     if (accountSignedOut) { if (cb) cb(false); return; }
     fetch(API_URL + "/auth/session", { credentials: "same-origin" })
-      .then(function (r) { return r.json(); })
+      .then(function (r) { return r.ok === false ? null : r.json(); })
       .then(function (j) {
         if (accountSignedOut) { if (cb) cb(false); return; }
         if (j && j.authenticated && j.access_token) {
           token = j.access_token;
-          try { sessionStorage.setItem(TOKEN_KEY, token); } catch (e) {}
           prepareAccountIdentity(token, j.user_id).then(function (ready) {
             if (cb) cb(ready && !accountSignedOut);
           }).catch(function () { if (cb) cb(false); });
-        } else if (redirect) { gotoLogin(); }
-        else if (cb) cb(false);
+        } else {
+          if (unauthenticatedNotice || !token) showNotice();
+          if (cb) cb(false);
+        }
       })
       .catch(function () { if (cb) cb(false); });
   }
@@ -1366,7 +1386,7 @@
     speech_error: "Assistant speech failed. The text result may still be available in chat. You can keep typing messages.",
     media_error: "Voice media failed. You can retry or keep typing.",
     feature_disabled: "Voice is not enabled on this server. You can keep typing messages.",
-    authentication_required: "Sign in to use voice. You can keep typing messages.",
+    authentication_required: "Voice is not available here. You can keep typing messages.",
     worker_unavailable: "No voice worker is available right now. You can keep typing messages.",
     asr_unavailable: "The speech recognition service is unavailable right now. You can keep typing messages.",
     tts_unavailable: "The speech synthesis service is unavailable right now. You can keep typing messages.",
@@ -7978,7 +7998,7 @@
               sendRegistration(true);
             } else if (ok) { connect(); }
           });
-        } else { gotoLogin(); }
+        } else { showNotice(); }
         break;
       case "ui_stream_data": {
         if (leftTurnFrame(data)) break;
@@ -8716,7 +8736,6 @@
       token = "";
       window.__ASTRAL_TOKEN__ = "";
       try {
-        sessionStorage.removeItem(TOKEN_KEY);
         sessionStorage.removeItem(ACCOUNT_SESSION_KEY);
       } catch (e) {}
       clearActiveChatLocator("definitive_sign_out", activeChatId);
@@ -9960,7 +9979,7 @@
     reconnectTimer = null;
     reconnectSocket = null;
     if (accountSignedOut || !socket || ws !== socket) return;
-    // Refresh first so a register_ui after the access-token TTL recovers silently; a signed-out answer goes to login
+    // Refresh first so a register_ui after the access-token TTL recovers silently; an unavailable session shows the notice
     refreshToken(true, function () {
       // An owner change during the refresh clears ws, and its new owner still needs a socket
       if (!accountSignedOut && (ws === socket || ws === null)) connect();
@@ -9978,7 +9997,7 @@
   });
 
   function connect() {
-    if (accountSignedOut) return;
+    if (accountSignedOut || noticeShown) return;
     var preserveVoiceControls = !!voiceRecoverableFence() || !!voicePendingEndFence;
     voiceBinding = null;
     voiceComposer = null;

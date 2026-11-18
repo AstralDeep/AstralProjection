@@ -66,10 +66,10 @@ def test_modal_shell_escapes_authority_fields_and_preserves_trusted_body() -> No
     assert "data-mandatory" not in html
 
 
-def test_mandatory_modal_removes_close_and_keeps_signout_escape_hatch() -> None:
+def test_mandatory_modal_removes_close_and_links_nothing_to_leave() -> None:
     html = render_modal_shell("Setup", "body", mandatory=True)
     assert 'data-mandatory="1"' in html
-    assert 'href="/auth/logout"' in html
+    assert "/auth/" not in html
     assert "astral-modal-close" not in html
 
 

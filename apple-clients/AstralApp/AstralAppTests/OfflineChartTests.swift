@@ -10,74 +10,6 @@ import XCTest
 
 @MainActor
 final class OfflineChartTests: XCTestCase {
-    func testCaptureReadinessWaitsForTheCurrentResizeAndRejectsStaleCompletion() throws {
-        var readiness = OfflineChartRenderReadiness()
-        let first = UUID()
-        readiness.begin(generation: first)
-        readiness.navigationDidFinish(for: first)
-        XCTAssertFalse(readiness.isReady(for: first))
-        guard case .start(let firstEpoch) = try XCTUnwrap(readiness.beginResize(for: first)) else {
-            return XCTFail("Initial chart resize should start")
-        }
-        let resize = try XCTUnwrap(readiness.beginResize(for: first))
-        XCTAssertFalse(readiness.isReady(for: first))
-        guard case .queued = resize else { return XCTFail("Concurrent resize should queue") }
-        XCTAssertEqual(readiness.resizeDidFinish(for: first, epoch: firstEpoch, succeeded: true), .startQueued)
-        let nextResize = try XCTUnwrap(readiness.beginResize(for: first))
-        guard case .start(let nextEpoch) = nextResize else { return XCTFail("Queued resize should start") }
-        XCTAssertEqual(readiness.resizeDidFinish(for: first, epoch: nextEpoch, succeeded: true), .ready)
-        XCTAssertTrue(readiness.isReady(for: first))
-        XCTAssertTrue(readiness.beginCapture(for: first))
-        XCTAssertFalse(readiness.beginCapture(for: first))
-        XCTAssertFalse(readiness.captureRequestDidFinish(for: first))
-        XCTAssertTrue(readiness.captureInProgress)
-        XCTAssertFalse(readiness.captureJavaScriptDidFinish(for: first))
-        XCTAssertFalse(readiness.captureInProgress)
-        XCTAssertTrue(readiness.beginCapture(for: first))
-        readiness.failCapture(for: first)
-        XCTAssertFalse(readiness.canStartCapture(for: first))
-        XCTAssertTrue(readiness.captureInProgress)
-        guard case .queued = try XCTUnwrap(readiness.beginResize(for: first)) else {
-            return XCTFail("Resize must wait for the timed-out JavaScript export")
-        }
-        XCTAssertFalse(readiness.captureRequestDidFinish(for: first))
-        XCTAssertTrue(readiness.captureInProgress)
-        XCTAssertTrue(readiness.captureJavaScriptDidFinish(for: first))
-        XCTAssertFalse(readiness.captureInProgress)
-        XCTAssertFalse(readiness.resizeQueued)
-        guard case .start(let recoveryEpoch) = try XCTUnwrap(readiness.beginResize(for: first)) else {
-            return XCTFail("A failed capture must not block visual resize")
-        }
-        XCTAssertEqual(readiness.resizeDidFinish(for: first, epoch: recoveryEpoch, succeeded: true), .ready)
-        XCTAssertFalse(readiness.canStartCapture(for: first))
-
-        let second = UUID()
-        readiness.begin(generation: second)
-        readiness.navigationDidFinish(for: second)
-        guard case .start(let secondEpoch) = try XCTUnwrap(readiness.beginResize(for: second)) else {
-            return XCTFail("New generation resize should start independently")
-        }
-        XCTAssertEqual(readiness.resizeDidFinish(for: first, epoch: nextEpoch, succeeded: true), .stale)
-        XCTAssertEqual(readiness.activeResizeEpoch, secondEpoch)
-        XCTAssertFalse(readiness.isReady(for: second))
-        XCTAssertEqual(readiness.resizeDidFinish(for: second, epoch: secondEpoch, succeeded: true), .ready)
-        XCTAssertTrue(readiness.isReady(for: second))
-        XCTAssertTrue(readiness.beginCapture(for: second))
-        guard case .queued = try XCTUnwrap(readiness.beginResize(for: second)) else {
-            return XCTFail("Resize should queue behind the active capture")
-        }
-        XCTAssertFalse(readiness.captureRequestDidFinish(for: first))
-        XCTAssertFalse(readiness.captureJavaScriptDidFinish(for: first))
-        XCTAssertTrue(readiness.captureInProgress)
-        XCTAssertFalse(readiness.captureRequestDidFinish(for: second))
-        XCTAssertTrue(readiness.captureJavaScriptDidFinish(for: second))
-        XCTAssertFalse(readiness.captureInProgress)
-        guard case .start(let queuedEpoch) = try XCTUnwrap(readiness.beginResize(for: second)) else {
-            return XCTFail("Queued resize should start after both capture completions")
-        }
-        XCTAssertEqual(readiness.resizeDidFinish(for: second, epoch: queuedEpoch, succeeded: true), .ready)
-    }
-
     private func component(_ json: String) throws -> AstralComponent {
         try XCTUnwrap(AstralComponent(json: JSONValue.parse(Data(json.utf8))))
     }
@@ -200,21 +132,20 @@ final class OfflineChartTests: XCTestCase {
         defer { coordinator.dismantle(view) }
         coordinator.update(view, component: chart, viewportWidth: 390)
         _ = try await waitForState(view, expected: "ready")
-        let origin = try await view.evaluateJavaScript("performance.timeOrigin") as? Double
-        XCTAssertNotNil(origin)
+        _ = try await view.evaluateJavaScript("window.documentMarker = true; true")
         _ = try await view.evaluateJavaScript("Plotly.relayout('chart', {'yaxis.range': [1,4]}); true")
         view.frame.size = CGSize(width: 700, height: 320)
         coordinator.update(view, component: chart, viewportWidth: 1440)
         try await waitForJavaScript(view, "document.getElementById('chart')._fullLayout.height === 320")
-        let resizedOrigin = try await view.evaluateJavaScript("performance.timeOrigin") as? Double
+        let sameDocument = try await view.evaluateJavaScript("window.documentMarker === true") as? Bool
         let range =
             try await view.evaluateJavaScript("document.getElementById('chart').layout.yaxis.range") as? [Double]
-        XCTAssertEqual(resizedOrigin, origin)
+        XCTAssertEqual(sameDocument, true)
         XCTAssertEqual(range, [1, 4])
         coordinator.update(view, component: changed, viewportWidth: 1440)
         try await waitForJavaScript(view, "document.getElementById('chart').data[0].y[0] === 8")
-        let updatedOrigin = try await view.evaluateJavaScript("performance.timeOrigin") as? Double
-        XCTAssertNotEqual(updatedOrigin, origin)
+        let reloaded = try await view.evaluateJavaScript("window.documentMarker === undefined") as? Bool
+        XCTAssertEqual(reloaded, true)
         view.frame.size = CGSize(width: 390, height: 260)
         coordinator.update(view, component: changed, viewportWidth: 390)
         try await waitForJavaScript(view, "document.getElementById('chart')._fullLayout.height === 260")
@@ -232,18 +163,13 @@ final class OfflineChartTests: XCTestCase {
             "Plotly.relayout = () => Promise.reject(new Error('Synthetic failure')); true")
         coordinator.update(view, component: chart, viewportWidth: 1440)
         try await waitForJavaScript(view, "document.querySelector('p[role=alert]') !== null")
-        XCTAssertFalse(coordinator.readyForCapture)
         let message =
             try await view.evaluateJavaScript("document.querySelector('p[role=alert]').textContent") as? String
-        XCTAssertEqual(message, "This chart could not be displayed. Open it in the web client.")
+        XCTAssertEqual(message, "This chart couldn't be displayed. Open it in the web client.")
         coordinator.update(
             view, component: try component(#"{"type":"bar_chart","labels":["B"],"datasets":[{"data":[3]}]}"#),
             viewportWidth: 1440)
         _ = try await waitForState(view, expected: "ready")
-        for _ in 0..<100 where !coordinator.readyForCapture {
-            try await Task.sleep(for: .milliseconds(50))
-        }
-        XCTAssertTrue(coordinator.readyForCapture)
     }
 
     private func waitForJavaScript(_ view: WKWebView, _ expression: String) async throws {
@@ -273,13 +199,12 @@ final class OfflineChartTests: XCTestCase {
                 contentRect: NSRect(x: 0, y: 0, width: 500, height: transcriptRole == nil ? 430 : 800),
                 styleMask: .borderless, backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
-            let model = AppModel(tokenStore: InMemoryTokenStore())
+            let model = AppModel()
             if let transcriptRole {
-                model.turns = [
-                    .init(id: "synthetic-chart", role: transcriptRole, text: "", components: [try component(json)])
-                ]
+                let turn = AppModel.ChatTurn(
+                    id: "synthetic-chart", role: transcriptRole, text: "", components: [try component(json)])
                 window.contentView = NSHostingView(
-                    rootView: ChatShell().frame(width: 500, height: 800).background(theme.palette.bg)
+                    rootView: ChatBubble(turn: turn).frame(width: 500, height: 800).background(theme.palette.bg)
                         .environment(theme).environment(model)
                         .environment(\.astralViewportWidth, 500))
             } else {

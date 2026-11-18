@@ -21,7 +21,7 @@
         var body: some View {
             if !controller.isAvailable {
                 Section {
-                    Text("This build is sandboxed, so it cannot run a node. Install the direct download to host one.")
+                    Text("This build is sandboxed, so it can't run a node. Install the direct download to host one.")
                         .font(ConsoleTypography.footnote).foregroundStyle(p.muted)
                         .accessibilityIdentifier("mesh.node.unavailable")
                 } header: {

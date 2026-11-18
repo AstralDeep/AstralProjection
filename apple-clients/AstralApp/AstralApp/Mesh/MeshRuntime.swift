@@ -92,6 +92,7 @@ nonisolated final class MeshTurnLifetime: @unchecked Sendable {
 nonisolated final class MeshTurnWork: @unchecked Sendable {
     let id: UUID
     let task: Task<Result<MeshActResult?, Error>, Never>
+    var settled: Task<Void, Never>?
     private let lifetime: MeshTurnLifetime
     private let kernel: any MeshKernel
     private let chatId: String
@@ -219,6 +220,46 @@ nonisolated struct MeshRestoredMesh: Equatable, Sendable {
     let eventsImported: Int
 }
 
+nonisolated enum MeshExit: Equatable, Sendable {
+    case leave, delete, reset
+
+    var title: String {
+        switch self {
+        case .leave: return "Leave This Mesh?"
+        case .delete: return "Delete This Mesh?"
+        case .reset: return "Set this device's data aside?"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .leave:
+            return "This device leaves the mesh and its copy of your chats is set aside. "
+                + "Your chats stay on your other devices. "
+                + "To remove this device from their list, use Remove Device on one of them."
+        case .delete:
+            return "This deletes the mesh from this device. Without your recovery words it can't be recovered."
+        case .reset: return "This device starts over. Its old mesh data is kept aside and nothing is sent."
+        }
+    }
+
+    var confirmLabel: String {
+        switch self {
+        case .leave: return "Leave"
+        case .delete: return "Delete"
+        case .reset: return "Set Data Aside"
+        }
+    }
+
+    var button: String {
+        switch self {
+        case .leave: return "Leave This Mesh"
+        case .delete: return "Delete This Mesh"
+        case .reset: return "Set Data Aside"
+        }
+    }
+}
+
 nonisolated enum MeshRestoreState: Equatable, Sendable {
     case idle
     case recovering
@@ -292,6 +333,7 @@ nonisolated enum MeshRequestRefusal: String, CaseIterable, Sendable {
 }
 
 nonisolated enum MeshProviderInputError: Error, Equatable, Sendable {
+    case invalidName
     case invalidURL
     case insecureURL
     case missingModel
@@ -302,6 +344,7 @@ nonisolated enum MeshProviderInputError: Error, Equatable, Sendable {
 
     var message: String {
         switch self {
+        case .invalidName: return "Use 1 to 64 lowercase letters, numbers, - or _."
         case .invalidURL: return "Enter the base URL of an OpenAI-compatible service."
         case .insecureURL: return "Use an https address. Plain http is allowed only for this device."
         case .missingModel: return "Enter a model name."
@@ -314,9 +357,20 @@ nonisolated enum MeshProviderInputError: Error, Equatable, Sendable {
 }
 
 nonisolated enum MeshProviderInput {
-    static func validate(baseURL: String, model: String, key: String, recipients: [String]? = nil) -> Result<
-        MeshModelProviderConfig, MeshProviderInputError
-    > {
+    static func normalizedName(_ text: String) -> String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    static func isValidName(_ text: String) -> Bool {
+        let name = normalizedName(text)
+        let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789-_".unicodeScalars)
+        return (1...64).contains(name.unicodeScalars.count) && name.unicodeScalars.allSatisfy(allowed.contains)
+    }
+
+    static func validate(
+        name providerName: String? = nil, baseURL: String, model: String, key: String, recipients: [String]? = nil
+    ) -> Result<MeshModelProviderConfig, MeshProviderInputError> {
+        if let providerName, !isValidName(providerName) { return .failure(.invalidName) }
         let base = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = model.trimmingCharacters(in: .whitespacesAndNewlines)
         let secret = key.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -328,7 +382,10 @@ nonisolated enum MeshProviderInput {
         guard !name.isEmpty else { return .failure(.missingModel) }
         guard !secret.isEmpty else { return .failure(.missingKey) }
         guard recipients?.isEmpty != true else { return .failure(.missingRecipients) }
-        return .success(MeshModelProviderConfig(baseURL: base, model: name, apiKey: secret, recipients: recipients))
+        return .success(
+            MeshModelProviderConfig(
+                baseURL: base, model: name, apiKey: secret, recipients: recipients,
+                name: providerName.map(normalizedName)))
     }
 }
 
@@ -421,6 +478,10 @@ final class MeshRuntime {
     private(set) var acknowledgedOutcomes: Set<String> = []
     private(set) var spoken: [VoiceSpokenRecord] = []
     private(set) var restoredInstall = false
+    private(set) var confirmingNewMesh = false
+    private(set) var confirmingExit: MeshExit?
+    private(set) var exitFailure: String?
+    var retireStore: @Sendable (URL, Date) throws -> URL? = { try MeshStoreRetirement.retire($0, now: $1) }
     private(set) var networkNotice: String?
     var notice: String?
     @ObservationIgnored weak var speechSink: MeshSpeechSink?
@@ -437,6 +498,7 @@ final class MeshRuntime {
     @ObservationIgnored private var supersededTurns: [String: Set<String>] = [:]
     @ObservationIgnored private var recoveryScan: UUID?
     @ObservationIgnored private var endedShares: [String: MeshShareInfo] = [:]
+    @ObservationIgnored private let endedShareStore: MeshEndedShareStore
     @ObservationIgnored private var closing = false
     @ObservationIgnored private var closeWaiters: [CheckedContinuation<Void, Never>] = []
     @ObservationIgnored private(set) var speakingChatId: String?
@@ -480,6 +542,9 @@ final class MeshRuntime {
         self.onDeviceModel = onDeviceModel
         self.tools = tools
         self.dataDirectory = dataDirectory
+        let shareStore = MeshEndedShareStore(directory: dataDirectory)
+        endedShareStore = shareStore
+        endedShares = shareStore.load()
         self.deviceLabel = deviceLabel
         self.deviceKind = deviceKind
         self.defaults = defaults
@@ -670,7 +735,7 @@ final class MeshRuntime {
         contacts = []
         shares = []
         sharedItems = []
-        endedShares = [:]
+        endedShares = endedShareStore.load()
         runs = []
         proposals = []
         chatRequests = []
@@ -733,11 +798,8 @@ final class MeshRuntime {
     func refreshStatus() async {
         if let value = await attempt({ try await $0.meshStatus() }) {
             status = value
-            if value.hasMesh, join != .idle, join != .joined {
-                join = .joined
-                keys?.acknowledgeRestore()
-                restoredInstall = false
-            }
+            if value.hasMesh, join != .idle, join != .joined { join = .joined }
+            if value.hasMesh || value.recoveryPending { clearRestoreWarning() }
         }
     }
 
@@ -887,14 +949,17 @@ final class MeshRuntime {
     }
 
     func refreshConnections() async {
+        guard status.hasMesh else { return }
         if let value = await attempt({ try $0.connections() }) { connections = value }
     }
 
     func refreshContacts() async {
+        guard status.hasMesh else { return }
         if let value = await attempt({ try $0.contacts() }) { contacts = value }
     }
 
     func refreshShares() async {
+        guard status.hasMesh else { return }
         if let value = await attempt({ try $0.shares() }) {
             let live = Set(value.map(\.id))
             shares = value + endedShares.values.filter { !live.contains($0.id) }.sorted { $0.id < $1.id }
@@ -902,6 +967,7 @@ final class MeshRuntime {
     }
 
     func refreshSharedItems() async {
+        guard status.hasMesh else { return }
         if let value = await attempt({ try $0.sharedWithMe() }) { sharedItems = value }
     }
 
@@ -954,6 +1020,7 @@ final class MeshRuntime {
     func revokeShare(_ share: MeshShareInfo) async throws {
         try await call { try $0.revokeShare(id: share.id) }
         endedShares[share.id] = share.revoked()
+        endedShareStore.save(endedShares)
         await refreshShares()
     }
 
@@ -1019,6 +1086,69 @@ final class MeshRuntime {
         await refreshProposals()
     }
 
+    private func clearRestoreWarning() {
+        guard restoredInstall || keys?.wasRestored == true else { return }
+        keys?.acknowledgeRestore()
+        restoredInstall = false
+    }
+
+    func chooseCreateMesh() async {
+        if restoredInstall {
+            confirmingNewMesh = true
+        } else {
+            await createMesh()
+        }
+    }
+
+    func cancelNewMesh() { confirmingNewMesh = false }
+
+    var exitAction: MeshExit { status.hasMesh ? (members.count > 1 ? .leave : .delete) : .reset }
+
+    func requestExit() {
+        confirmingExit = exitAction
+    }
+
+    func cancelExit() { confirmingExit = nil }
+
+    func dismissExitFailure() { exitFailure = nil }
+
+    func confirmExit(_ chosen: MeshExit? = nil) async {
+        guard chosen ?? confirmingExit != nil else { return }
+        confirmingExit = nil
+        await close()
+        do {
+            _ = try retireStore(dataDirectory, now())
+            try keys?.erase()
+            keys = nil
+            endedShares = endedShareStore.load()
+            restoredInstall = false
+        } catch {
+            exitFailure = "The old data on this device couldn't be set aside. Try again."
+        }
+        await open()
+    }
+
+    func confirmNewMesh(confirmed: Bool = false) async {
+        guard confirmed || confirmingNewMesh else { return }
+        confirmingNewMesh = false
+        await close()
+        var failed = false
+        do {
+            _ = try MeshStoreRetirement.retire(dataDirectory, now: now())
+            endedShares = endedShareStore.load()
+            clearRestoreWarning()
+        } catch {
+            failed = true
+        }
+        await open()
+        guard isReady else { return }
+        if failed {
+            creation = .failed("The old data on this device couldn't be set aside. Try again.")
+        } else {
+            await createMesh()
+        }
+    }
+
     func createMesh() async {
         guard isReady, kernel != nil, creation == .idle || isFailedCreation else { return }
         let session = wakeSession
@@ -1027,8 +1157,7 @@ final class MeshRuntime {
         do {
             let kit = try await call { try $0.createMesh() }
             guard isReady, wakeSession == session else { return }
-            keys?.acknowledgeRestore()
-            restoredInstall = false
+            clearRestoreWarning()
             creation = .recovery(kit.words)
             await refreshStatus()
             await refreshRoster()
@@ -1078,8 +1207,7 @@ final class MeshRuntime {
         defer { if scoped { backup?.stopAccessingSecurityScopedResource() } }
         do {
             let result = try await call { try $0.recoverWithWords(words: phrase, backupPath: backup?.path) }
-            keys?.acknowledgeRestore()
-            restoredInstall = false
+            clearRestoreWarning()
             await refreshAll()
             let label = members.first(where: \.isThisDevice)?.label ?? deviceLabel
             restore = .restored(
@@ -1118,7 +1246,7 @@ final class MeshRuntime {
         let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
         guard kernel != nil, join == .idle || isFailedJoin else { return }
         guard !trimmed.isEmpty, trimmed.utf8.count <= 8192 else {
-            join = .failed("That is not an invitation from one of your devices.")
+            join = .failed("That isn't an invitation from one of your devices.")
             return
         }
         join = .starting
@@ -1178,7 +1306,7 @@ final class MeshRuntime {
     func previewAddDevice(payload: String) async {
         let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.utf8.count <= 8192 else {
-            addDevice = .failed("That is not a pairing code from one of your devices.")
+            addDevice = .failed("That isn't a pairing code from one of your devices.")
             return
         }
         do {
@@ -1314,7 +1442,7 @@ final class MeshRuntime {
 
     func attachmentBytes(_ attachment: MeshAttachment) async -> Data? {
         guard attachment.availability == .present else {
-            notice = "This file is not available on this device."
+            notice = "This file isn't available on this device."
             return nil
         }
         let session = wakeSession
@@ -1409,13 +1537,13 @@ final class MeshRuntime {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
         guard isReady, !status.stopped, let chatId = currentChatId, let work = turnTasks[chatId], !work.retiring else {
-            notice = "That turn did not accept the follow-up."
+            notice = "That turn didn't accept the follow-up."
             return false
         }
         let session = wakeSession
         do {
             let accepted = try await Task.detached { try work.steer(trimmed) }.value
-            if !accepted, wakeSession == session { notice = "That turn did not accept the follow-up." }
+            if !accepted, wakeSession == session { notice = "That turn didn't accept the follow-up." }
             return accepted
         } catch {
             if wakeSession == session { notice = Self.describe(error) }
@@ -1456,7 +1584,7 @@ final class MeshRuntime {
             if acknowledged {
                 turns[chatId]?.stopRequested = true
             } else {
-                notice = "That turn could not be stopped."
+                notice = "That turn couldn't be stopped."
             }
         }
     }
@@ -1498,9 +1626,10 @@ final class MeshRuntime {
                 try await $0.act(surfaceId: surfaceId, componentId: componentId, capability: capability, args: args)
             })
         let result = await work.task.value
+        await work.settled?.value
         guard isReady, wakeSession == session else { return }
         if case .success(let value) = result, let value, value.refused {
-            notice = KernelMapping.failureText(code: value.code ?? value.status, fallback: "That action did not run.")
+            notice = KernelMapping.failureText(code: value.code ?? value.status, fallback: "That action didn't run.")
         }
         if currentChatId == chatId { await reloadChat(chatId) }
     }
@@ -1628,21 +1757,23 @@ final class MeshRuntime {
         try await call { try $0.setConnectionKey(id: id, secrets: secrets, recipients: recipients) }
     }
 
-    func saveModelConnection(baseURL: String, model: String, key: String, recipients: [String]?) async
+    func saveModelConnection(name: String, baseURL: String, model: String, key: String, recipients: [String]?) async
         -> MeshProviderInputError?
     {
         guard !savingProvider else { return .saving }
-        switch MeshProviderInput.validate(baseURL: baseURL, model: model, key: key, recipients: recipients) {
+        switch MeshProviderInput.validate(
+            name: name, baseURL: baseURL, model: model, key: key, recipients: recipients)
+        {
         case .failure(let error):
             return error
         case .success(let config):
             savingProvider = true
             defer { savingProvider = false }
             let session = wakeSession
+            let providerName = config.name ?? name
             let draft = MeshModelConnectionDraft(
-                name: URL(string: config.baseURL)?.host ?? "Model", endpoint: config.baseURL,
-                provider: Self.providerSlug(config.baseURL), models: [config.model], apiKeys: [config.apiKey],
-                recipients: config.recipients)
+                name: providerName, endpoint: config.baseURL, provider: providerName,
+                models: [config.model], apiKeys: [config.apiKey], recipients: config.recipients)
             do {
                 let proposal = try await call { try await $0.proposeModelConnection(draft) }
                 _ = try await call {
@@ -1659,12 +1790,6 @@ final class MeshRuntime {
                 return .failed(Self.describe(error))
             }
         }
-    }
-
-    nonisolated static func providerSlug(_ baseURL: String) -> String {
-        let host: String = (URL(string: baseURL)?.host ?? "model").lowercased()
-        let mapped: String = String(host.map { $0.isLetter || $0.isNumber || $0 == "." || $0 == "-" ? $0 : "-" })
-        return String(mapped.prefix(48))
     }
 
     func approveConnection(proposal: String, flow: String, toolNames: [String]) async throws -> MeshConnection {
@@ -1806,7 +1931,7 @@ final class MeshRuntime {
             return
         }
         guard turn.integrity == .owner, turn.source == .deviceMicrophone || turn.source == .pairedWatchMicrophone else {
-            notice = "A transcript without a live owner microphone session is not treated as your message."
+            notice = "A transcript without a live owner microphone session isn't treated as your message."
             return
         }
         _ = await send(turn.text, speaking: true)
@@ -1916,7 +2041,7 @@ final class MeshRuntime {
             interrupt: interrupt, steer: steer, cancelPending: cancelPending, operation: operation)
         turnTasks[chatId] = work
         let worker = work.task
-        Task { [weak self] in
+        work.settled = Task { [weak self] in
             let result = await worker.value
             if work.retiring { await work.retire().value }
             guard let self, self.wakeSession == session, self.turnTasks[chatId]?.id == id else { return }
@@ -2037,6 +2162,7 @@ final class MeshRuntime {
             await recoverOrdinaryTurns(expectedSession: session)
         case .syncStateChanged:
             await refreshSync()
+            await refreshProviders()
             await refreshMailbox()
             await recoverOrdinaryTurns(expectedSession: session)
         case .consentRequested:
@@ -2053,6 +2179,7 @@ final class MeshRuntime {
             await refreshAllowance()
         case .connectionsChanged:
             await refreshConnections()
+            await refreshProviders()
         case .contactsChanged:
             await refreshContacts()
             await refreshSharedItems()
@@ -2170,7 +2297,7 @@ final class MeshRuntime {
     }
 
     private func call<T: Sendable>(_ work: @escaping @Sendable (any MeshKernel) async throws -> T) async throws -> T {
-        guard let kernel else { throw MeshKernelError.unavailable("The mesh is not open.") }
+        guard let kernel else { throw MeshKernelError.unavailable("The mesh isn't open.") }
         return try await Task.detached(priority: .userInitiated) { try await work(kernel) }.value
     }
 
@@ -2184,10 +2311,17 @@ final class MeshRuntime {
             return value
         } catch {
             guard wakeSession == session, isReady else { return nil }
+            if Self.isNotEnrolled(error), !hasMesh || join != .idle { return nil }
             notice = Self.describe(error)
             offerPhi(forCode: (error as? MeshKernelError)?.code)
             return nil
         }
+    }
+
+    nonisolated static func isNotEnrolled(_ error: Error) -> Bool {
+        guard let kernel = error as? MeshKernelError else { return false }
+        return kernel.code == "mesh.not_enrolled" || kernel.message == "mesh.not_enrolled"
+            || kernel.message == KernelMapping.failureText(code: "mesh.not_enrolled")
     }
 
     private func perform(_ work: @escaping @Sendable (any MeshKernel) async throws -> Void) async {
@@ -2204,8 +2338,8 @@ final class MeshRuntime {
         if let signing = error as? HostSigningError {
             switch signing {
             case .consentDenied: return MeshKernelError.consentDenied.message
-            case .digestMismatch: return "The approval did not match the request, so nothing was signed."
-            case .calledOnMainThread: return "The approval could not be shown."
+            case .digestMismatch: return "The approval didn't match the request, so nothing was signed."
+            case .calledOnMainThread: return "The approval couldn't be shown."
             }
         }
         return "Something went wrong. Try again."

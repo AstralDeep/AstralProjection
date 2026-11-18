@@ -174,7 +174,7 @@ final class ConsentCoordinator: ConsentPresenting {
             finish(entry.id, .approved(approval))
         case .failure:
             isAuthenticating = false
-            authenticationMessage = "Authentication did not complete. Try again or deny."
+            authenticationMessage = "Authentication didn't complete. Try again or deny."
         }
     }
 

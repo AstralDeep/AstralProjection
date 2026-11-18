@@ -52,20 +52,31 @@ struct MeshRuntimeHarness {
     init(
         hasMesh: Bool = true, recoveryPending: Bool = false, factoryError: MeshKernelError? = nil,
         mailbox: String? = nil, rejectMailbox: Bool = false,
-        onDeviceAvailable: Bool = false
+        onDeviceAvailable: Bool = false, staleStore: Bool = false
     ) {
         let box = KernelBox()
         let suite = "mesh.runtime.tests." + UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!
         if let mailbox { defaults.set(mailbox, forKey: "astral.mesh.v2.mailbox") }
         box.rejectMailbox = rejectMailbox
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true)
+        let stale = directory.appendingPathComponent("stale.db")
+        let keyStore = MeshMemorySecretStore()
+        let keyDefaults = UserDefaults(suiteName: suite)!
+        if staleStore {
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            FileManager.default.createFile(atPath: stale.path, contents: Data([1]))
+            _ = try? DeviceKeys(store: MeshMemorySecretStore(), defaults: keyDefaults, preferHardware: false)
+        }
         let factory: MeshKernelFactory = { config, _, _, _, listener in
             if let factoryError { throw factoryError }
             box.openedConfigs.append(config)
             if box.rejectMailbox, config.mailbox != nil {
                 throw KernelMapping.refusal("config.mailbox")
             }
-            let kernel = InMemoryMeshKernel(listener: listener, hasMesh: hasMesh, recoveryPending: recoveryPending)
+            let present = hasMesh && (!staleStore || FileManager.default.fileExists(atPath: stale.path))
+            let kernel = InMemoryMeshKernel(listener: listener, hasMesh: present, recoveryPending: recoveryPending)
+            kernel.refusesCreate = staleStore && FileManager.default.fileExists(atPath: stale.path)
             box.kernel = kernel
             return kernel
         }
@@ -73,17 +84,25 @@ struct MeshRuntimeHarness {
             makeKernel: factory,
             makeKeys: {
                 try DeviceKeys(
-                    store: MeshMemorySecretStore(), defaults: UserDefaults(suiteName: suite)!, preferHardware: false)
+                    store: staleStore ? keyStore : MeshMemorySecretStore(), defaults: keyDefaults,
+                    preferHardware: false)
             },
             consent: ConsentCoordinator(), onDeviceModel: FakeOnDeviceModel(available: onDeviceAvailable),
-            tools: DeviceLocalTools(), dataDirectory: FileManager.default.temporaryDirectory,
+            tools: DeviceLocalTools(), dataDirectory: directory,
             deviceLabel: "Test Mac", deviceKind: .desktop, defaults: defaults)
         self.box = box
         self.defaults = defaults
         self.suite = suite
     }
 
-    func cleanUp() { defaults.removePersistentDomain(forName: suite) }
+    func cleanUp() {
+        defaults.removePersistentDomain(forName: suite)
+        let directory = FileManager.default.temporaryDirectory
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        for name in names where name.hasPrefix(suite) {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+        }
+    }
 
     static func message(
         _ id: String, parent: String?, author: MeshAuthor = .owner, text: String = "text",

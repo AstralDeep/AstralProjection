@@ -234,7 +234,7 @@ nonisolated enum KernelMapping {
     }
 
     static func unknownOutcome(callId: String, tool: String) -> MeshUnknownOutcome {
-        MeshUnknownOutcome(stepId: callId, tool: tool, summary: "The result of \(tool) is not known.")
+        MeshUnknownOutcome(stepId: callId, tool: tool, summary: "The result of \(tool) isn't known.")
     }
 
     static func isEnrollmentComplete(_ change: KernelChange) -> Bool {
@@ -315,7 +315,7 @@ nonisolated enum KernelMapping {
                     event(
                         chat, turn,
                         .failed(
-                            failureText(code: code ?? reason, fallback: "The assistant could not finish this turn.")))
+                            failureText(code: code ?? reason, fallback: "The assistant couldn't finish this turn.")))
                 ]
             }
         }
@@ -331,7 +331,8 @@ nonisolated enum KernelMapping {
     }
 
     static func failureText(code: String, fallback: String = "The mesh refused that request.") -> String {
-        plainText(code: code) ?? fallback + " (" + code + ")"
+        guard let entry = codeTexts.first(where: { code.hasPrefix($0.0) }) else { return fallback + " (" + code + ")" }
+        return entry.0 == "provider." && entry.0 != code ? entry.1 + " (" + code + ")" : entry.1
     }
 
     private static let codeTexts: [(String, String)] = [
@@ -342,24 +343,24 @@ nonisolated enum KernelMapping {
             "attachment.chunks_unavailable",
             "Get the file from its attachment card before continuing. The device holding it must be connected."
         ),
-        ("attachment.unavailable", "An attachment in this chat could not be opened. Get the file before continuing."),
+        ("attachment.unavailable", "An attachment in this chat couldn't be opened. Get the file before continuing."),
         ("attachment.context_too_large", "The selected attachment text exceeds the 256 KiB answer limit."),
-        ("attachment.label", "Files cannot be attached to a chat that holds secrets."),
+        ("attachment.label", "Files can't be attached to a chat that holds secrets."),
         ("attachment.content_mismatch", "The file contents do not match its type."),
         ("attachment.bad_name", "Rename the file before attaching it."),
         ("attachment.mime", "Choose a PDF, image, text, Markdown, CSV or JSON file."),
-        ("attachment.", "The file could not be opened or attached."),
+        ("attachment.", "The file couldn't be opened or attached."),
         ("turn.no_provider", "Add a model provider in Settings before asking for an answer."),
         ("provider.changed", "This provider or its devices changed. Refresh and try again."),
         ("provider.unavailable_on_device", "This device no longer has access to this provider."),
         ("provider.not_found", "This provider is no longer available on this device."),
         ("credential.bad_recipients", "Select one or more current mesh devices."),
         ("provider.no_candidate", "No model on this device can take this chat. Check the model provider."),
-        ("provider.", "The model provider could not be reached or refused the request."),
+        ("provider.", "The model provider couldn't be reached or refused the request."),
         ("tool.name_ambiguous", "Multiple sources offer this tool name. Rename or remove one before using it."),
         ("mcp.version", "This server must support MCP 2026-07-28."),
         ("mcp.server_name", "Use 1 to 64 lowercase letters, digits and hyphens for the server name."),
-        ("mcp.server_missing", "That MCP server is not configured on this device."),
+        ("mcp.server_missing", "That MCP server isn't configured on this device."),
         ("mcp.server_limit", "Remove a server before adding another. This device supports 32 MCP servers."),
         ("mcp.approval_limit", "Revoke a tool approval before adding another."),
         ("mcp.tool_changed", "The tool definition changed. Refresh and review it before approving."),
@@ -367,82 +368,82 @@ nonisolated enum KernelMapping {
         ("mcp.config_changed", "The MCP server configuration changed. Refresh and review its tools again."),
         ("mcp.response_too_large", "The MCP server response exceeds the 4 MB limit."),
         ("mcp.config", "Use a valid endpoint and a bearer token without spaces or line breaks."),
-        ("mcp.", "The MCP server could not be reached or refused the request."),
+        ("mcp.", "The MCP server couldn't be reached or refused the request."),
         (
             "egress.",
-            "Use HTTPS, or HTTP on a loopback host. URLs cannot contain credentials, a query or a fragment; other private addresses are refused."
+            "Use HTTPS, or HTTP on a loopback host. URLs can't contain credentials, a query or a fragment; other private addresses are refused."
         ),
         ("allowance.", "This device has used its allowance for now."),
         ("caller.wrong_minter", "Only a computer, phone or tablet in your mesh can issue caller tickets."),
         ("caller.wrong_node", "Choose a node that belongs to your mesh."),
         ("caller.no_catalog", "That node has not published its tools yet."),
-        ("caller.unknown_tool", "One of the chosen tools is not offered by that node."),
+        ("caller.unknown_tool", "One of the chosen tools isn't offered by that node."),
         ("caller.malformed", "Check the label, tool list, holder key and lifetime."),
         ("caller.proof_", "The caller's proof was refused."),
         ("caller.mesh_mismatch", "That caller ticket belongs to a different mesh."),
         ("caller.device_removed", "The device that issued this caller ticket is no longer in your mesh."),
-        ("caller.bad_signature", "This device could not sign the caller ticket."),
-        ("caller.not_yet_valid", "That caller ticket is not valid yet. Check this device's clock."),
+        ("caller.bad_signature", "This device couldn't sign the caller ticket."),
+        ("caller.not_yet_valid", "That caller ticket isn't valid yet. Check this device's clock."),
         ("caller.tool_changed", "A tool changed since the ticket was issued. Make a new ticket."),
-        ("caller.tool_unavailable", "That node cannot run one of the chosen tools."),
+        ("caller.tool_unavailable", "That node can't run one of the chosen tools."),
         ("caller.replayed", "That caller request was already used."),
         ("caller.revoked", "That caller ticket was revoked."),
         ("caller.expired", "That caller ticket has expired."),
         ("caller.stopped", "The mesh was stopped, so caller tickets are refused."),
-        ("caller.tool_not_covered", "That caller ticket does not cover this tool."),
+        ("caller.tool_not_covered", "That caller ticket doesn't cover this tool."),
         ("caller.", "The caller ticket was refused."),
-        ("connection.keystore_unavailable", "This device cannot store sign-in credentials now. Unlock it and retry."),
-        ("connection.credential_unreadable", "The saved sign-in for this connection could not be read. Sign in again."),
-        ("connection.credential_unwritable", "The sign-in could not be saved on this device."),
+        ("connection.keystore_unavailable", "This device can't store sign-in credentials now. Unlock it and retry."),
+        ("connection.credential_unreadable", "The saved sign-in for this connection couldn't be read. Sign in again."),
+        ("connection.credential_unwritable", "The sign-in couldn't be saved on this device."),
         ("connection.changed", "The connection changed after you reviewed it. Review it again."),
         ("connection.egress_refused", "That address is outside what this connection may reach."),
         ("connection.step_up_unreviewed", "Review and approve the extra permissions before signing in again."),
         ("connection.flow_expired", "That sign-in ran out of time. Start it again."),
         ("connection.flow_unknown", "That sign-in is no longer open. Start it again."),
         ("connection.os_too_old", "Signing in from the browser needs iOS 17.4 or macOS 14.4 or later."),
-        ("connection.iss_mismatch", "The sign-in site did not identify itself correctly. The sign-in was stopped."),
-        ("connection.iss_missing", "The sign-in site did not identify itself. The sign-in was stopped."),
+        ("connection.iss_mismatch", "The sign-in site didn't identify itself correctly. The sign-in was stopped."),
+        ("connection.iss_missing", "The sign-in site didn't identify itself. The sign-in was stopped."),
         ("connection.no_client_id", "This service needs a client ID before it can sign you in."),
         ("connection.redirect_invalid", "That sign-in return address was refused."),
         ("connection.local_elsewhere", "This local server can only be used on the device that added it."),
-        ("connection.no_sign_in", "This connection does not use a sign-in."),
+        ("connection.no_sign_in", "This connection doesn't use a sign-in."),
         ("connection.too_many_flows", "Too many sign-ins are open. Finish or cancel one first."),
         ("connection.step_up_limit", "This service keeps asking for more permissions. Check it and try again later."),
         ("connection.not_signed_in", "Sign in to this connection first."),
-        ("connection.device_code_unavailable", "This device cannot sign in with a code."),
+        ("connection.device_code_unavailable", "This device can't sign in with a code."),
         ("connection.key_required", "Paste a key to continue."),
-        ("connection.no_key", "This connection does not use a pasted key."),
+        ("connection.no_key", "This connection doesn't use a pasted key."),
         ("connection.recipients_empty", "Select at least one device."),
         ("a2a.card_changed", "The agent's card changed. Review it before using the agent."),
         ("a2a.signer_changed", "A different signer now signs the agent's card. Review it."),
         ("a2a.origin_changed", "The agent's card moved to another site. Review it."),
         ("a2a.extended_changed", "The agent's extended card changed. Review it."),
         ("a2a.extended_unreviewed", "The agent's extended card needs your review."),
-        ("a2a.interface_offsite", "The agent points to a site you did not approve."),
+        ("a2a.interface_offsite", "The agent points to a site you didn't approve."),
         ("a2a.insecure_url", "Use an https address for the agent card."),
-        ("a2a.scheme_unsupported", "This agent signs in a way this device cannot use."),
-        ("oauth.state_mismatch", "That sign-in did not match the one you started. It was refused."),
-        ("connection.", "The connection could not be changed or was refused."),
-        ("oauth.browser_failed", "The browser could not open the sign-in or it did not finish."),
+        ("a2a.scheme_unsupported", "This agent signs in a way this device can't use."),
+        ("oauth.state_mismatch", "That sign-in didn't match the one you started. It was refused."),
+        ("connection.", "The connection couldn't be changed or was refused."),
+        ("oauth.browser_failed", "The browser couldn't open the sign-in or it didn't finish."),
         ("oauth.wrong_callback", "The sign-in came back to an unexpected address. It was refused."),
         ("oauth.no_authorization_url", "The service gave no sign-in address."),
-        ("oauth.", "The sign-in was refused or did not complete."),
+        ("oauth.", "The sign-in was refused or didn't complete."),
         ("contact.invite_expired", "That invitation ran out of time. Ask for a new one."),
         ("contact.invite_bad_signature", "That invitation was changed on the way. Ask for a new one."),
-        ("contact.invite_malformed", "That is not a contact invitation."),
+        ("contact.invite_malformed", "That isn't a contact invitation."),
         ("contact.invite_lifetime", "That invitation is valid for too long to trust."),
         ("contact.invitation_open", "An invitation is already open. Cancel it first."),
         ("contact.self", "That invitation is from your own mesh."),
         ("contact.too_many", "You have the most contacts a mesh can hold."),
-        ("contact.unreachable", "Their devices could not be reached. Try again when they are online."),
+        ("contact.unreachable", "Their devices couldn't be reached. Try again when they are online."),
         ("contact.exchange_unknown", "That comparison is no longer open. Start again."),
         ("contact.unverified", "Verify this contact first."),
         ("contact.device_kind", "Use a phone or computer to add contacts."),
         ("contact.roster_rejected", "This contact's devices changed in a way you have not approved."),
         ("contact.heads_missing", "This contact has not finished syncing. Try again."),
-        ("contact.", "The contact could not be changed."),
+        ("contact.", "The contact couldn't be changed."),
         ("share.contact_unverified", "Verify this contact before sharing."),
-        ("share.contact_unknown", "That contact is not in your list."),
+        ("share.contact_unknown", "That contact isn't in your list."),
         ("share.phi_not_destination", "This chat holds PHI. Approve this contact for PHI first."),
         ("share.exists", "This chat is already shared with that contact."),
         ("share.changed", "The share changed after it was shown. Review it again."),
@@ -450,24 +451,25 @@ nonisolated enum KernelMapping {
         ("share.chat_unknown", "That chat is no longer on this device."),
         ("share.grant_unknown", "That share has already ended."),
         ("share.device_kind", "Use a phone or computer to share chats."),
-        ("share.reader_kind", "This device cannot read shared chats."),
+        ("share.reader_kind", "This device can't read shared chats."),
         ("share.too_large", "This chat is too large to share."),
         ("share.too_many", "You have the most shares a mesh can hold."),
-        ("share.peer_unknown", "Their devices could not be reached. Try again when they are online."),
-        ("share.", "The share could not be changed."),
+        ("share.peer_unknown", "Their devices couldn't be reached. Try again when they are online."),
+        ("share.", "The share couldn't be changed."),
         ("phi.group_not_ready", "Set up PHI on your mesh first. Open the PHI settings to adopt it."),
         ("phi.device_excluded", "This device is excluded from PHI. Use a device that is in the PHI group."),
-        ("phi_group.node_device", "A node cannot approve PHI destinations."),
+        ("phi_group.node_device", "A node can't approve PHI destinations."),
         ("phi_destination.on_device", "That place runs on this device, so it needs no approval."),
         ("phi_destination.contact_unavailable", "Verify this contact before they can receive PHI."),
-        ("phi_destination.", "That destination cannot be approved for PHI."),
-        ("phi_group.", "The PHI group could not be changed."),
-        ("flow.phi_to_model", "PHI cannot go to this model until you approve it."),
-        ("flow.phi_to_service", "PHI cannot go to this service until you approve it."),
+        ("phi_destination.", "That destination can't be approved for PHI."),
+        ("phi_group.", "The PHI group couldn't be changed."),
+        ("flow.phi_to_model", "PHI can't go to this model until you approve it."),
+        ("flow.phi_to_service", "PHI can't go to this service until you approve it."),
         ("gate.mesh_stopped", "The mesh was stopped, so this turn was refused."),
         ("gate.", "A safety check refused this step."),
         ("consent.declined", MeshKernelError.consentDenied.message),
         ("signer.denied", MeshKernelError.consentDenied.message),
+        ("consent.unreadable", "This app can't show that request, so nothing was signed. (consent.unreadable)"),
         ("mesh.already_enrolled", "This device already belongs to a mesh."),
         ("mesh.not_enrolled", "This device has no mesh yet."),
         ("pairing.expired", "The code ran out of time."),
@@ -476,21 +478,21 @@ nonisolated enum KernelMapping {
         ("pairing.wrong_offer", "That code is for a different invitation."),
         ("pairing.", "The code was refused."),
         ("recovery.bad_length", "Enter all 24 recovery words."),
-        ("recovery.unknown_word", "One of the words is not on the recovery word list. Check the spelling."),
+        ("recovery.unknown_word", "One of the words isn't on the recovery word list. Check the spelling."),
         ("recovery.bad_checksum", "These words are not a valid recovery key. Check the order and the spelling."),
         ("recovery.mismatch", "These words do not unlock that backup."),
         ("recovery.wrong_mesh", "That backup belongs to a different mesh than this install holds."),
         ("recovery.no_roster", "Choose a backup file. This device holds no copy of your mesh."),
         ("recovery.no_keys", "The words are valid, but no key of this mesh could be opened with them."),
-        ("backup.decrypt_failed", "That backup could not be opened with these words."),
-        ("backup.malformed", "That file is not a mesh backup."),
+        ("backup.decrypt_failed", "That backup couldn't be opened with these words."),
+        ("backup.malformed", "That file isn't a mesh backup."),
         ("config.mailbox", "That mailbox address was not accepted."),
-        ("grant.malformed", "That tool name or permission could not be used."),
-        ("grant.", "That permission could not be changed."),
+        ("grant.malformed", "That tool name or permission couldn't be used."),
+        ("grant.", "That permission couldn't be changed."),
         ("request.empty", "Write the request first."),
         ("request.too_large", "That request is too long."),
-        ("request.unknown_member", "That device is not in your mesh."),
-        ("request.self_addressed", "Choose another device. This one cannot ask itself."),
+        ("request.unknown_member", "That device isn't in your mesh."),
+        ("request.self_addressed", "Choose another device. This one can't ask itself."),
         ("request.not_target", "That request is addressed to another device."),
         ("request.already_claimed", "That request is already claimed."),
         ("request.unknown", "That request is no longer in this chat."),
@@ -500,10 +502,10 @@ nonisolated enum KernelMapping {
         ("engine.steer_queue_full", "Too many follow-ups are waiting. Try again after the answer advances."),
         ("chat.empty_message", "Write a message first."),
         ("chat.message_too_large", "Shorten this message and try again."),
-        ("chat.unknown_turn", "That message is not part of this chat yet."),
+        ("chat.unknown_turn", "That message isn't part of this chat yet."),
         ("chat.", "That chat action was refused."),
-        ("net.", "The network is not available."),
-        ("store.", "This device could not read or write its mesh data."),
+        ("net.", "The network isn't available."),
+        ("store.", "This device couldn't read or write its mesh data."),
     ]
 
     static func connectionTool(_ tool: ConnectionTool) -> MeshConnectionTool {
@@ -703,9 +705,11 @@ nonisolated enum KernelMapping {
             case .Denied(let code, _):
                 if code == "gate.mesh_stopped" { return MeshKernelError.stopped }
                 return code.hasPrefix("caller.") ? refusal(code) : MeshKernelError.consentDenied
-            case .InvalidInput(let code, _), .Verification(let code, _), .Network(let code, _), .Custody(let code, _),
-                .State(let code, _), .Mesh(let code, _):
-                return refusal(code)
+            case .InvalidInput(let code, let detail), .Verification(let code, let detail),
+                .Network(let code, let detail), .Custody(let code, let detail), .State(let code, let detail),
+                .Mesh(let code, let detail):
+                let unreadable = detail.contains("consent.unreadable")
+                return refusal(unreadable ? "consent.unreadable" : code)
             case .Store(let code, _): return MeshKernelError.storage(failureText(code: code))
             }
         case let turns as TurnsError:

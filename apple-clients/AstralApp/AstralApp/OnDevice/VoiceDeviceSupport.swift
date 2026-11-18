@@ -11,12 +11,12 @@ nonisolated enum VoiceUnsupportedReason: Equatable, Sendable {
     var message: String {
         switch self {
         case .notAppleSilicon:
-            return "Voice needs a Mac with Apple silicon. This Mac cannot run the voice model."
+            return "Voice needs a Mac with Apple silicon. This Mac can't run the voice model."
         case .simulator:
-            return "Voice does not run in the simulator. Use a real device."
+            return "Voice doesn't run in the simulator. Use a real device."
         case .insufficientMemory(_, let required):
             let size = ByteCountFormatter.string(fromByteCount: Int64(required), countStyle: .memory)
-            return "This device does not have enough memory for the voice model. It needs about \(size) of RAM."
+            return "This device doesn't have enough memory for the voice model. It needs about \(size) of RAM."
         }
     }
 }

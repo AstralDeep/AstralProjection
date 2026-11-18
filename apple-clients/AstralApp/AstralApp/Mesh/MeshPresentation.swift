@@ -18,7 +18,7 @@ nonisolated enum MeshPresentation {
         case .synced: return "Synced with your other devices."
         case .waiting(let device, let since):
             return "Waiting to sync with \(device). " + lastSeen(since, now: now) + "."
-        case .unknown: return "Sync state is not known yet."
+        case .unknown: return "Sync state isn't known yet."
         }
     }
 
@@ -244,9 +244,9 @@ nonisolated enum MeshPresentation {
         case .ok: return "Working. " + lastExchange(state.lastOk, now: now)
         case .waiting: return "Waiting for the mailbox to answer."
         case .removed: return "The mailbox no longer accepts this device."
-        case .unreachable: return "The mailbox cannot be reached right now."
+        case .unreachable: return "The mailbox can't be reached right now."
         case .error: return "The mailbox refused the exchange" + (state.lastError.map { " (" + $0 + ")." } ?? ".")
-        case .unknown: return "The mailbox state is not known."
+        case .unknown: return "The mailbox state isn't known."
         }
     }
 

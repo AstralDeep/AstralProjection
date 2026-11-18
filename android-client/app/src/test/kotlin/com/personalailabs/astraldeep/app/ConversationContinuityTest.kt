@@ -102,7 +102,7 @@ class ConversationContinuityTest {
     }
 
     @Test
-    fun issuer_and_subject_come_from_the_keycloak_token_without_persisting_the_token() {
+    fun issuer_and_subject_come_from_the_bearer_token_without_persisting_the_token() {
         val payload =
             Base64.getUrlEncoder().withoutPadding().encodeToString(
                 """{"iss":"${account.issuer}","sub":"${account.subject}","email":"private@example.com"}"""

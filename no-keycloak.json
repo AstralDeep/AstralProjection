@@ -1,0 +1,20 @@
+{
+  "exclude": [
+    "specs/**",
+    "**/tests/**",
+    "backend/tests/**",
+    "scripts/tests/**",
+    "sdk/tests/**",
+    "**/*Tests/**",
+    "**/*UITests/**",
+    "**/src/test/**",
+    "**/src/androidTest/**",
+    "docs/superpowers/**",
+    "provenance/**",
+    ".gitleaksignore",
+    "no-keycloak.json",
+    "apple-clients/ManualQA/**",
+    ".github/workflows/ci.yml"
+  ],
+  "pending": []
+}

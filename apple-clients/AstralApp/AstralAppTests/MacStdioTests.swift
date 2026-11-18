@@ -264,8 +264,10 @@
         func testUnsafeServerIdsAreRefusedBeforeTouchingTheFilesystem() throws {
             let sentinel = root + "/outside/keep"
             try "keep".write(toFile: sentinel, atomically: true, encoding: .utf8)
-            let bad = ["../x", "../../outside", "a/b", String(repeating: "A", count: 32),
-                String(repeating: "a", count: 31), String(repeating: "a", count: 33), ""]
+            let bad = [
+                "../x", "../../outside", "a/b", String(repeating: "A", count: 32),
+                String(repeating: "a", count: 31), String(repeating: "a", count: 33), "",
+            ]
             for id in bad {
                 XCTAssertThrowsError(try launcher.start(request: try request(id: id)), id)
                 launcher.stop(id: id)

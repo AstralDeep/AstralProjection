@@ -12,7 +12,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 APPLE_UNIT = ROOT / "apple-clients/AstralApp/AstralAppTests/VoiceSessionController065Tests.swift"
-APPLE_UI = ROOT / "apple-clients/AstralApp/AstralAppUITests/VoiceConversationUITests.swift"
 APPLE_EVIDENCE = ROOT / "apple-clients/AstralApp/AstralAppUITests/ReleaseEvidenceUITests.swift"
 ANDROID_EVIDENCE = (
     ROOT / "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app"
@@ -91,20 +90,6 @@ def test_apple_evidence_check_records_only_identities_and_outcome_categories():
     )
 
 
-def test_apple_evidence_check_uses_only_proven_fixture_scenarios():
-    source = APPLE_EVIDENCE.read_text(encoding="utf-8")
-    producer = section(
-        source,
-        "private func runVoiceTerminalFailureEvidence(",
-        ("private func macOSPersonalAgentHostProduction(",),
-    )
-    assert '"voice-composer"' in producer
-    assert '"voice-terminal"' in producer
-    ui = APPLE_UI.read_text(encoding="utf-8")
-    for scenario in ("voice-composer", "voice-terminal"):
-        assert f'"{scenario}"' in ui, f"{scenario} must stay a proven UI fixture scenario"
-
-
 def test_evidence_producers_record_no_transcript_audio_or_credential_content():
     for path in (APPLE_EVIDENCE, ANDROID_EVIDENCE):
         source = path.read_text(encoding="utf-8")
@@ -124,7 +109,7 @@ def test_android_evidence_producer_keeps_voice_runtime_identity_framework():
 
 
 def test_new_mobile_coverage_stays_bounded_without_soak_loops():
-    for path in (APPLE_UNIT, APPLE_UI, APPLE_EVIDENCE):
+    for path in (APPLE_UNIT, APPLE_EVIDENCE):
         source = path.read_text(encoding="utf-8")
         assert "while (true)" not in source
         assert "while true" not in source

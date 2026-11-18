@@ -1,5 +1,5 @@
 """Manual live end-to-end check of the native Windows client against a running
-orchestrator: OIDC login, register_ui, chat_message, and the client-hosted win_agent
+orchestrator: register_ui, chat_message, and the client-hosted win_agent
 tools agent, run by an operator rather than CI.
 """
 
@@ -29,22 +29,9 @@ def _http_base(ws_url: str) -> str:
 
 
 def resolve_token(args) -> str:
-    if args.token:
-        return args.token
-    if args.token_file and os.path.exists(args.token_file) and not args.authority:
-        with open(args.token_file) as f:
-            return json.load(f)["access_token"]
-    if args.authority:
-        from astral_client.auth import oidc_login
-        print(f"[auth] opening browser for OIDC login (client={args.client_id})…")
-        sess = oidc_login(args.authority, client_id=args.client_id)
-        if args.token_file:
-            with open(args.token_file, "w") as f:
-                json.dump({"access_token": sess.access_token,
-                           "refresh_token": sess.refresh_token}, f)
-            print(f"[auth] token cached to {args.token_file}")
-        return sess.access_token
-    return "dev-token"
+    if not args.token:
+        raise SystemExit("--token is required")
+    return args.token
 
 
 def _decode_claims(tok: str) -> dict:
@@ -174,10 +161,7 @@ async def run(args) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Live real-auth verification of the Windows client")
     ap.add_argument("--url", default=os.getenv("ASTRAL_WS_URL", "ws://127.0.0.1:8001/ws"))
-    ap.add_argument("--authority", default=os.getenv("KEYCLOAK_AUTHORITY", ""))
-    ap.add_argument("--client-id", default=os.getenv("ASTRAL_CLIENT_ID", "astral-desktop"))
     ap.add_argument("--token", default=os.getenv("ASTRAL_TOKEN", ""))
-    ap.add_argument("--token-file", default=".astral_token.json")
     ap.add_argument("--prompt", default="roll 3 dice and show the results")
     ap.add_argument("--window", type=float, default=45.0, help="seconds to wait for each phase")
     ap.add_argument("--no-agent", action="store_true")

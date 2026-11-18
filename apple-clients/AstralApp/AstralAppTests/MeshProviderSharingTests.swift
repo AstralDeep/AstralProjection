@@ -25,6 +25,36 @@ final class MeshProviderSharingTests: XCTestCase {
         XCTAssertNil(all.recipients)
     }
 
+    func testAProviderCreatedOnAnotherDeviceAppearsWithItsPublicFields() async {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        XCTAssertTrue(h.runtime.providers.isEmpty)
+        h.kernel.receiveProviderFromAnotherDevice(
+            MeshModelProvider(
+                providerId: "uky-glm", baseURL: "https://api-llm-factory.ai.uky.edu/v1", model: "zai-org/GLM-5.3-Flash",
+                hasKey: true, isDefault: true, recipients: nil, availableOnDevice: true))
+        let shown = await eventually { h.runtime.providers.count == 1 }
+        XCTAssertTrue(shown)
+        let provider = h.runtime.providers[0]
+        XCTAssertEqual(provider.providerId, "uky-glm")
+        XCTAssertEqual(provider.baseURL, "https://api-llm-factory.ai.uky.edu/v1")
+        XCTAssertEqual(provider.model, "zai-org/GLM-5.3-Flash")
+        XCTAssertFalse(String(describing: provider).contains("key-value"))
+    }
+
+    func testAProviderSharedOnlyWithOtherDevicesIsNotListedAsUsable() async {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        h.kernel.receiveProviderFromAnotherDevice(
+            MeshModelProvider(
+                providerId: "elsewhere", baseURL: "https://provider.example.test/v1", model: "model", hasKey: false,
+                isDefault: true, recipients: ["some-other-device"], availableOnDevice: false))
+        try? await Task.sleep(for: .milliseconds(300))
+        XCTAssertTrue(h.runtime.providers.isEmpty)
+    }
+
     func testFailedProviderWriteDoesNotReturnASavedReceipt() async {
         let h = MeshRuntimeHarness()
         defer { h.cleanUp() }
@@ -111,6 +141,7 @@ final class MeshProviderSharingTests: XCTestCase {
         defer { h.cleanUp() }
         await h.runtime.open()
         let editor = MeshProviderEditor()
+        editor.providerName = "provider"
         editor.baseURL = "https://provider.example.test/v1"
         editor.model = "model"
         editor.key = "entered-key"
@@ -149,6 +180,7 @@ final class MeshProviderSharingTests: XCTestCase {
         defer { h.cleanUp() }
         await h.runtime.open()
         let editor = MeshProviderEditor()
+        editor.providerName = "provider"
         editor.baseURL = "https://provider.example.test/v1"
         editor.model = "submitted"
         editor.key = "submitted-key"
@@ -168,5 +200,61 @@ final class MeshProviderSharingTests: XCTestCase {
         XCTAssertEqual(editor.model, "new-draft-model")
         XCTAssertFalse(editor.saved)
         XCTAssertEqual(h.runtime.providers.map(\.model), ["submitted"])
+    }
+
+    func testProviderNameFollowsTheKernelNameRule() {
+        func problem(_ name: String) -> MeshProviderInputError? {
+            if case .failure(let error) = MeshProviderInput.validate(
+                name: name, baseURL: "https://api.example.com/v1", model: "m", key: "k")
+            {
+                return error
+            }
+            return nil
+        }
+        for valid in ["openai", "my-provider_2", "  Padded  ", "UPPER", "0", String(repeating: "a", count: 64)] {
+            XCTAssertNil(problem(valid), valid)
+        }
+        let tooLong = String(repeating: "a", count: 65)
+        for invalid in ["", "   ", "my.provider", "two words", "caf\u{E9}", "\u{130}", "a/b", tooLong] {
+            XCTAssertEqual(problem(invalid), .invalidName, invalid)
+        }
+        XCTAssertEqual(MeshProviderInputError.invalidName.message, "Use 1 to 64 lowercase letters, numbers, - or _.")
+        XCTAssertEqual(MeshProviderInput.normalizedName("  Open-AI "), "open-ai")
+    }
+
+    func testSavingSendsTheEnteredNameAsBothNameAndProvider() async {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        let rejected = await h.runtime.saveModelConnection(
+            name: "Bad.Name", baseURL: "https://api.example.com/v1", model: "m", key: "k", recipients: nil)
+        XCTAssertEqual(rejected, .invalidName)
+        XCTAssertFalse(h.kernel.calls.contains { $0.name == "proposeModelConnection" })
+        let accepted = await h.runtime.saveModelConnection(
+            name: " My-LLM ", baseURL: "https://api.example.com/v1", model: "m", key: "k", recipients: nil)
+        XCTAssertNil(accepted)
+        XCTAssertTrue(h.kernel.calls.contains(.init(name: "proposeModelConnection", detail: "my-llm/my-llm")))
+        XCTAssertEqual(h.runtime.connections.first?.name, "my-llm")
+    }
+
+    func testTheEditorLowercasesTheNameFlagsProblemsAndGatesSave() {
+        let editor = MeshProviderEditor()
+        XCTAssertNil(editor.nameProblem)
+        XCTAssertFalse(editor.canSave)
+        editor.providerName = "OpenAI"
+        XCTAssertEqual(editor.providerName, "openai")
+        XCTAssertTrue(editor.canSave)
+        editor.providerName = "open.ai"
+        XCTAssertEqual(editor.nameProblem, .invalidName)
+        XCTAssertFalse(editor.canSave)
+    }
+
+    func testThePlaceholdersAreOpenAIStyleHints() {
+        XCTAssertEqual(MeshProviderPlaceholder.name, "openai")
+        XCTAssertEqual(MeshProviderPlaceholder.baseURL, "https://api.openai.com/v1")
+        XCTAssertEqual(MeshProviderPlaceholder.model, "gpt-4o")
+        XCTAssertEqual(MeshProviderPlaceholder.key, "sk-...")
+        let editor = MeshProviderEditor()
+        XCTAssertEqual([editor.providerName, editor.baseURL, editor.model, editor.key], ["", "", "", ""])
     }
 }

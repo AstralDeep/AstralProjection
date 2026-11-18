@@ -13,8 +13,8 @@ nonisolated enum MeshContactLinkError: Error, Equatable, Sendable {
     var message: String {
         switch self {
         case .empty: return "Paste or scan an invitation first."
-        case .notAnInvitation: return "That is not a contact invitation."
-        case .wrongHost: return "That link is not from AstralDeep."
+        case .notAnInvitation: return "That isn't a contact invitation."
+        case .wrongHost: return "That link isn't from AstralDeep."
         case .damaged: return "That invitation looks damaged. Ask for a new one."
         }
     }

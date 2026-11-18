@@ -96,6 +96,6 @@ Coordinated acceptance still requires a locked shipping provider bridge, actual
 OS permission launcher interaction, foreground/background/terminated delivery
 on a physical Android device, notification taps to authorized sources against
 the live backend, and logout/account-switch/revocation failure cases with real
-Keycloak sessions. No provider credentials, sign-in bypass or fake enrollment is
+owner sessions. No provider credentials, sign-in bypass or fake enrollment is
 included. Local repair evidence is reported separately from CI/device/provider
 acceptance.

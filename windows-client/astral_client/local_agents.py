@@ -1,6 +1,5 @@
 """Client-local 'Agents on this PC' dialog listing the desktop's hosted personal agents
-via ByoAgentHost.inventory, with Stop and Open-folder actions; reached from a
-Settings-menu entry app.py appends after the server-owned groups.
+via ByoAgentHost.inventory, with Stop and Open-folder actions.
 """
 
 from __future__ import annotations
