@@ -232,7 +232,10 @@ nonisolated enum MeshExit: Equatable, Sendable {
 
     var message: String {
         switch self {
-        case .leave: return "This device leaves the mesh and its copy of your chats is set aside. Your chats stay on your other devices. To remove this device from their list, use Remove Device on one of them."
+        case .leave:
+            return "This device leaves the mesh and its copy of your chats is set aside. "
+                + "Your chats stay on your other devices. "
+                + "To remove this device from their list, use Remove Device on one of them."
         case .delete:
             return "This deletes the mesh from this device. Without your recovery words it can't be recovered."
         case .reset: return "This device starts over. Its old mesh data is kept aside and nothing is sent."
