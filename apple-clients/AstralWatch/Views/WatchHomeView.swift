@@ -25,7 +25,7 @@ struct WatchHomeView: View {
                     detail: "Bring it nearby to continue.", identifier: "watch-state-phone-unreachable")
             } else {
                 switch model.link {
-                case .waiting: WatchWaitingView()
+                case .waiting: waiting
                 case .noMesh: WatchNoMeshView(stopped: false)
                 case .stopped: WatchNoMeshView(stopped: true)
                 case .ready: chatList
@@ -35,6 +35,22 @@ struct WatchHomeView: View {
         .navigationTitle("AstralDeep")
         .navigationDestination(isPresented: $chatVisible) { WatchChatView() }
         .onChange(of: chatVisible) { _, visible in if !visible { model.closeChat() } }
+    }
+
+    @ViewBuilder
+    private var waiting: some View {
+        if model.phoneNotResponding {
+            VStack(spacing: 8) {
+                WatchStateView(
+                    icon: "iphone.radiowaves.left.and.right.slash", title: "Your iPhone is not responding",
+                    detail: "Open AstralDeep on it, then try again.", identifier: "watch-state-phone-not-responding")
+                Button("Try Again") { model.retryPhone() }
+                    .accessibilityIdentifier("watch-phone-retry")
+                    .accessibilityLabel("Try again")
+            }
+        } else {
+            WatchWaitingView()
+        }
     }
 
     private var chatList: some View {

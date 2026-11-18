@@ -25,8 +25,12 @@ final class WatchModel {
     private(set) var chatComponents: [AstralComponent] = []
     private(set) var runState = CompanionRunState.idle
     var phoneReachable = false {
-        didSet { if phoneReachable && !oldValue { refreshChats() } }
+        didSet {
+            if phoneReachable && !oldValue { refreshChats() }
+            armResponseWatch()
+        }
     }
+    private(set) var phoneNotResponding = false
     var pendingDictation = ""
     var statusText: String?
     var errorBanner: String?
@@ -40,6 +44,8 @@ final class WatchModel {
     @ObservationIgnored var requestSink: (@MainActor (Data) async -> Bool)?
     @ObservationIgnored private var companionVoiceAttempt = UUID()
     @ObservationIgnored private var voiceForegroundActive = true
+    @ObservationIgnored private var responseWatch: Task<Void, Never>?
+    @ObservationIgnored var responseTimeout = Duration.seconds(10)
 
     var connected: Bool { phoneReachable && link == .ready }
     var companionVoiceActive: Bool { voiceBridge.companionActive || voiceActivationBusy }
@@ -134,6 +140,7 @@ final class WatchModel {
         }
         let becameReady = next == .ready && link != .ready
         link = next
+        armResponseWatch()
         if next != .ready {
             clearChatList()
             clearOpenChat()
@@ -162,6 +169,24 @@ final class WatchModel {
         link = .waiting
         clearChatList()
         clearOpenChat()
+        armResponseWatch()
+    }
+
+    func retryPhone() {
+        armResponseWatch()
+        refreshChats()
+    }
+
+    private func armResponseWatch() {
+        responseWatch?.cancel()
+        phoneNotResponding = false
+        guard phoneReachable, link == .waiting else { return }
+        let timeout = responseTimeout
+        responseWatch = Task { [weak self] in
+            try? await Task.sleep(for: timeout)
+            guard !Task.isCancelled, let self, self.phoneReachable, self.link == .waiting else { return }
+            self.phoneNotResponding = true
+        }
     }
 
     func refreshChats() {

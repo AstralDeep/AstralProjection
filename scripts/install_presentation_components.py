@@ -212,7 +212,7 @@ def sources(deep, primitives, kernel):
     pins = json.loads(PINS.read_text())
     if set(pins) != {"format", "deep"} or pins["format"] != "astral.presentation-sources/v1" or set(pins["deep"]) != {"repository", "commit"} or pins["deep"].get("repository") != "https://github.com/AstralDeep/AstralDeep.git":
         raise ValueError("unsupported presentation source pins")
-    validator = module(ROOT / "apple-clients/NodePack/local_sources.py", "presentation_sources")
+    validator = module(ROOT / "scripts/presentation_sources.py", "presentation_sources")
     deep = validator.validate(deep, pins["deep"]["commit"])
     manifest = json.loads((deep / "config/astral-composition.json").read_text())
     roots = {"astral-primitives": primitives, "astral-kernel": kernel}

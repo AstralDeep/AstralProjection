@@ -76,7 +76,7 @@ struct MeshRuntimeHarness {
                     store: MeshMemorySecretStore(), defaults: UserDefaults(suiteName: suite)!, preferHardware: false)
             },
             consent: ConsentCoordinator(), onDeviceModel: FakeOnDeviceModel(available: onDeviceAvailable),
-            tools: DeviceLocalTools(), dataDirectory: FileManager.default.temporaryDirectory,
+            tools: DeviceLocalTools(), dataDirectory: FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true),
             deviceLabel: "Test Mac", deviceKind: .desktop, defaults: defaults)
         self.box = box
         self.defaults = defaults
