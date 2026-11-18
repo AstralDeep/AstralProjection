@@ -33,6 +33,18 @@ final class MeshExitTests: XCTestCase {
         XCTAssertFalse(kernel.calls.contains { $0.name == "removeDevice" })
     }
 
+    func testConfirmingAfterTheAlertClearsItsStateStillExits() async {
+        let h = MeshRuntimeHarness(hasMesh: true, staleStore: true)
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        h.runtime.requestExit()
+        let chosen = h.runtime.confirmingExit
+        h.runtime.cancelExit()
+        await h.runtime.confirmExit(chosen)
+        XCTAssertEqual(retired(h.suite).count, 1)
+        XCTAssertFalse(h.runtime.hasMesh)
+    }
+
     func testLeavingIsLocalRetiresTheStoreErasesTheKeysAndNeverRemovesThisDevice() async {
         let h = await withTwoDevices()
         defer { h.cleanUp() }

@@ -44,7 +44,7 @@ struct MeshRootView: View {
             .alert(
                 mesh.confirmingExit?.title ?? "", isPresented: exitBinding, presenting: mesh.confirmingExit
             ) { exit in
-                Button(exit.confirmLabel, role: .destructive) { Task { await mesh.confirmExit() } }
+                Button(exit.confirmLabel, role: .destructive) { Task { await mesh.confirmExit(exit) } }
                     .accessibilityIdentifier("mesh.exit.confirm")
                 Button("Cancel", role: .cancel) { mesh.cancelExit() }
                     .accessibilityIdentifier("mesh.exit.cancel")

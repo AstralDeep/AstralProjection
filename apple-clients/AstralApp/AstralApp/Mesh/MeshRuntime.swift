@@ -1111,8 +1111,8 @@ final class MeshRuntime {
 
     func dismissExitFailure() { exitFailure = nil }
 
-    func confirmExit() async {
-        guard confirmingExit != nil else { return }
+    func confirmExit(_ chosen: MeshExit? = nil) async {
+        guard chosen ?? confirmingExit != nil else { return }
         confirmingExit = nil
         await close()
         do {
@@ -1127,8 +1127,8 @@ final class MeshRuntime {
         await open()
     }
 
-    func confirmNewMesh() async {
-        guard confirmingNewMesh else { return }
+    func confirmNewMesh(confirmed: Bool = false) async {
+        guard confirmed || confirmingNewMesh else { return }
         confirmingNewMesh = false
         await close()
         var failed = false

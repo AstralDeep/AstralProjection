@@ -69,10 +69,8 @@ struct MeshOnboardingView: View {
         .keyboardShortcut(.defaultAction)
         .disabled(busy)
         .accessibilityIdentifier("mesh.create")
-        .confirmationDialog(
-            "Start a new mesh on this device?", isPresented: newMeshBinding, titleVisibility: .visible
-        ) {
-            Button("Start New Mesh") { Task { await mesh.confirmNewMesh() } }
+        .alert("Start a New Mesh?", isPresented: newMeshBinding) {
+            Button("Start New Mesh", role: .destructive) { Task { await mesh.confirmNewMesh(confirmed: true) } }
                 .accessibilityIdentifier("mesh.create.confirm")
             Button("Cancel", role: .cancel) { mesh.cancelNewMesh() }
                 .accessibilityIdentifier("mesh.create.cancel")
