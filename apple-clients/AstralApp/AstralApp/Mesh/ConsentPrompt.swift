@@ -18,12 +18,13 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
     let labels: [String]
     let digest: String
     let requiresBiometry: Bool
+    private(set) var summary: String?
     private var signingInputHash: Data?
 
     init(
         actionTitle: String, effect: String, target: String, arguments: String,
         untrustedSource: String? = nil, labels: [String] = [], digest: String,
-        requiresBiometry: Bool = false
+        requiresBiometry: Bool = false, summary: String? = nil
     ) {
         self.actionTitle = actionTitle
         self.effect = effect
@@ -33,6 +34,7 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
         self.labels = labels
         self.digest = digest
         self.requiresBiometry = requiresBiometry
+        self.summary = summary
         signingInputHash = nil
     }
 
@@ -158,7 +160,8 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
             actionTitle: phi ? "Share chat with PHI" : "Share chat", effect: "share.grant",
             target: "Chat " + String(chat.dropFirst("sha256:".count).prefix(8)) + " with mesh " + fingerprint(contact),
             arguments: lines.joined(separator: "\n") + "\nRecord: " + String(decoding: canonicalRecord, as: UTF8.self),
-            digest: consent.digest, requiresBiometry: true)
+            digest: consent.digest, requiresBiometry: true,
+            summary: phi ? "Share this chat and its PHI with another mesh" : "Share this chat with another mesh")
         prompt.signingInputHash = hash(signingInput)
         return prompt
     }
@@ -202,7 +205,7 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
             actionTitle: "Allow " + action.tool, effect: action.tool,
             target: "Permission: " + MeshToolScope.description(action.scope) + ", for " + action.agent,
             arguments: "Action: " + String(decoding: canonicalAction, as: UTF8.self), digest: consent.digest,
-            requiresBiometry: true)
+            requiresBiometry: true, summary: "Let " + action.agent + " use " + action.tool)
         prompt.signingInputHash = hash(signingInput)
         return prompt
     }
@@ -235,11 +238,13 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
             let body = entry["body"] as? [String: Any]
         else { throw ConsentPromptError.invalidInput }
         let target: String
+        var summary: String?
         switch header.type {
         case "add":
             guard Set(body.keys) == ["device"] else { throw ConsentPromptError.invalidInput }
             let device = try deviceRecord(body["device"])
             target = device.label + " (" + hashID(device.identity) + ")"
+            summary = "Add " + device.label + " to your mesh"
         case "remove":
             guard Set(body.keys) == ["device", "cutoff"] else { throw ConsentPromptError.invalidInput }
             let removal = try JSONDecoder().decode(Removal.self, from: data)
@@ -248,11 +253,13 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
             }
             for feed in removal.body.cutoff.keys { _ = try keyBytes(feed, count: 32) }
             target = removal.body.device
+            summary = "Remove a device from your mesh"
         case "stop", "resume":
             guard Set(body.keys) == ["counter"], let counter = body["counter"] as? Int, counter >= 1 else {
                 throw ConsentPromptError.invalidInput
             }
             target = (header.type == "stop" ? "Stop counter " : "Resume counter ") + String(counter)
+            summary = header.type == "stop" ? "Stop your mesh on every device" : "Resume your mesh on every device"
         case "phi_authority", "phi_approval":
             let described = try phi(header.type, body: body)
             return try phiPrompt(described, data: data, signingInput: signingInput)
@@ -265,7 +272,8 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
         var prompt = ConsentPrompt(
             actionTitle: titles[header.type] ?? "Roster change",
             effect: "roster." + header.type, target: target,
-            arguments: String(decoding: data, as: UTF8.self), digest: hashID(data), requiresBiometry: true)
+            arguments: String(decoding: data, as: UTF8.self), digest: hashID(data), requiresBiometry: true,
+            summary: summary)
         prompt.signingInputHash = hash(signingInput)
         return prompt
     }
@@ -274,6 +282,7 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
         let effect: String
         let title: String
         let target: String
+        let summary: String
     }
 
     private static let approvalFields: Set<String> = [
@@ -290,13 +299,16 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
             _ = try keyBytes(institution["key"], count: 65)
             return PhiChange(
                 effect: "roster.phi_register_approver", title: "Let this device approve PHI places",
-                target: String(name.dropFirst(approverPrefix.count)))
+                target: String(name.dropFirst(approverPrefix.count)),
+                summary: "Let this device approve places that can receive PHI")
         }
         guard let action = body["action"] as? String else { throw ConsentPromptError.invalidInput }
         if action == "revoke" {
             guard Set(body.keys) == ["action", "subject"], let subject = body["subject"] as? String, !subject.isEmpty
             else { throw ConsentPromptError.invalidInput }
-            return PhiChange(effect: "roster.phi_revoke", title: "Take back a PHI approval", target: subject)
+            return PhiChange(
+                effect: "roster.phi_revoke", title: "Take back a PHI approval", target: subject,
+                summary: "Take back a PHI approval")
         }
         guard action == "grant", Set(body.keys) == ["action", "attestation"],
             let statement = body["attestation"] as? [String: Any], Set(statement.keys) == approvalFields,
@@ -305,10 +317,12 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
         else { throw ConsentPromptError.invalidInput }
         switch kind {
         case "device", "node":
-            return PhiChange(effect: "roster.phi_grant", title: "Let a device read PHI", target: subject)
+            return PhiChange(effect: "roster.phi_grant", title: "Let a device read PHI", target: subject,
+                summary: "Let a device on your mesh read PHI")
         case "endpoint":
             return PhiChange(
-                effect: "roster.phi_approve_destination", title: "Let a place receive PHI", target: subject)
+                effect: "roster.phi_approve_destination", title: "Let a place receive PHI", target: subject,
+                summary: "Let " + subject + " receive PHI")
         default: throw ConsentPromptError.invalidInput
         }
     }
@@ -316,7 +330,8 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
     private static func phiPrompt(_ change: PhiChange, data: Data, signingInput: Data) throws -> ConsentPrompt {
         var prompt = ConsentPrompt(
             actionTitle: change.title, effect: change.effect, target: change.target,
-            arguments: String(decoding: data, as: UTF8.self), digest: hashID(data), requiresBiometry: true)
+            arguments: String(decoding: data, as: UTF8.self), digest: hashID(data), requiresBiometry: true,
+            summary: change.summary)
         prompt.signingInputHash = hash(signingInput)
         return prompt
     }
@@ -327,7 +342,8 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
         guard required, !requiresBiometry else { return self }
         var copy = ConsentPrompt(
             actionTitle: actionTitle, effect: effect, target: target, arguments: arguments,
-            untrustedSource: untrustedSource, labels: labels, digest: digest, requiresBiometry: true)
+            untrustedSource: untrustedSource, labels: labels, digest: digest, requiresBiometry: true,
+            summary: summary)
         copy.signingInputHash = signingInputHash
         return copy
     }
@@ -347,7 +363,8 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
         var prompt = ConsentPrompt(
             actionTitle: "Create your mesh", effect: "roster.genesis",
             target: device.label + " (" + header.author + ")",
-            arguments: String(decoding: data, as: UTF8.self), digest: hashID(data), requiresBiometry: true)
+            arguments: String(decoding: data, as: UTF8.self), digest: hashID(data), requiresBiometry: true,
+            summary: "Create your mesh on " + device.label)
         prompt.signingInputHash = hash(signingInput)
         return prompt
     }
@@ -375,6 +392,8 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
         prompt.signingInputHash = hash(signingInput)
         return prompt
     }
+
+    var summaryLine: String { summary ?? "Review the details before you approve." }
 
     var digestHex: String {
         digest.hasPrefix("sha256:") ? String(digest.dropFirst("sha256:".count)) : digest

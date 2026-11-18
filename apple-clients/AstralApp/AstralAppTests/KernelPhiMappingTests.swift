@@ -45,6 +45,7 @@ final class KernelPhiMappingTests: XCTestCase {
         let built = try KernelHostSigner.display(for: prompt(.grantPhi, input), message: input)
         XCTAssertEqual(built.effect, "roster.phi_grant")
         XCTAssertEqual(built.target, Self.other)
+        XCTAssertEqual(built.summaryLine, "Let a device on your mesh read PHI")
         XCTAssertTrue(built.requiresBiometry)
         XCTAssertTrue(built.isBound(to: input))
         XCTAssertFalse(built.isBound(to: input + Data([0])))
@@ -55,6 +56,7 @@ final class KernelPhiMappingTests: XCTestCase {
             .approvePhiDestination, type: "phi_approval", body: grant(kind: "endpoint", subject: "https://api.example"))
         XCTAssertEqual(built.effect, "roster.phi_approve_destination")
         XCTAssertEqual(built.target, "https://api.example")
+        XCTAssertEqual(built.summaryLine, "Let https://api.example receive PHI")
     }
 
     func testRevokeAndApproverRegistrationShowTheirSubjects() throws {
@@ -62,11 +64,13 @@ final class KernelPhiMappingTests: XCTestCase {
             .revokePhi, type: "phi_approval", body: #"{"action":"revoke","subject":"https://api.example"}"#)
         XCTAssertEqual(revoke.effect, "roster.phi_revoke")
         XCTAssertEqual(revoke.target, "https://api.example")
+        XCTAssertEqual(revoke.summaryLine, "Take back a PHI approval")
         let body =
             #"{"action":"add","institution":{"key":"\#(b64(Self.key))","name":"astral-device:\#(Self.device)"}}"#
         let register = try shown(.registerPhiApprover, type: "phi_authority", body: body)
         XCTAssertEqual(register.effect, "roster.phi_register_approver")
         XCTAssertEqual(register.target, Self.device)
+        XCTAssertEqual(register.summaryLine, "Let this device approve places that can receive PHI")
     }
 
     func testAPhiPromptRefusesWhatItsKindDoesNotBack() {
