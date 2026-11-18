@@ -75,7 +75,9 @@ public struct ExecLauncher: Sendable {
         if let userProcesses { self.userProcesses = userProcesses }
     }
 
-    public func run(_ loaded: ExecLoadedPolicy, argv: [String], env: [String: String], stdin: Data? = nil) async -> ExecOutcome {
+    public func run(_ loaded: ExecLoadedPolicy, argv: [String], env: [String: String], stdin: Data? = nil) async
+        -> ExecOutcome
+    {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 continuation.resume(returning: runBlocking(loaded, argv: argv, env: env, stdin: stdin))
@@ -89,7 +91,9 @@ public struct ExecLauncher: Sendable {
         }
     #endif
 
-    func runBlocking(_ loaded: ExecLoadedPolicy, argv: [String], env: [String: String], stdin: Data? = nil) -> ExecOutcome {
+    func runBlocking(_ loaded: ExecLoadedPolicy, argv: [String], env: [String: String], stdin: Data? = nil)
+        -> ExecOutcome
+    {
         #if os(macOS)
             return ExecMacRun(launcher: self, loaded: loaded, argv: argv, env: env, stdin: stdin).execute()
         #else
@@ -138,12 +142,15 @@ public struct ExecLauncher: Sendable {
             case .backend(.seatbelt): break
             }
             let marker = Self.newMarker()
-            guard let childEnvironment = childEnvironment(marker: marker), checkedArgv() else { return .failed(.launchFailed) }
+            guard let childEnvironment = childEnvironment(marker: marker), checkedArgv() else {
+                return .failed(.launchFailed)
+            }
             let port: UInt16? = policy.hosts.isEmpty ? nil : launcher.proxyPort()
             if !policy.hosts.isEmpty, port == nil { return .failed(.launchFailed) }
             let profile: String
             do {
-                profile = try ExecSeatbeltProfile.render(policy, context: ExecSeatbeltContext(home: loaded.home, proxyPort: port))
+                profile = try ExecSeatbeltProfile.render(
+                    policy, context: ExecSeatbeltContext(home: loaded.home, proxyPort: port))
             } catch {
                 return .failed(.launchFailed)
             }
@@ -180,7 +187,9 @@ public struct ExecLauncher: Sendable {
 
         func childEnvironment(marker: String) -> [String: String]? {
             for (key, value) in env {
-                if key.isEmpty || key.utf8.contains(0x3D) || key.utf8.contains(0) || value.utf8.contains(0) { return nil }
+                if key.isEmpty || key.utf8.contains(0x3D) || key.utf8.contains(0) || value.utf8.contains(0) {
+                    return nil
+                }
                 if key.hasPrefix("DYLD_") || key == ExecLauncher.markerName { return nil }
             }
             var result = env
@@ -227,7 +236,9 @@ public struct ExecLauncher: Sendable {
             var inPipe: [Int32] = [-1, -1]
             var childInput: Int32 = open("/dev/null", O_RDONLY | O_CLOEXEC)
             let needsInput = stdin.map { !$0.isEmpty } ?? false
-            guard childInput >= 0, Self.makePipe(&outPipe), Self.makePipe(&errPipe), !needsInput || Self.makePipe(&inPipe) else {
+            guard childInput >= 0, Self.makePipe(&outPipe), Self.makePipe(&errPipe),
+                !needsInput || Self.makePipe(&inPipe)
+            else {
                 Self.closeAll(outPipe + errPipe + inPipe + [childInput])
                 return .launchFailed
             }
@@ -250,7 +261,8 @@ public struct ExecLauncher: Sendable {
             let status = Self.withCStrings(command) { argvPointers in
                 Self.withCStrings(entries) { envPointers in
                     astral_exec_spawn(
-                        ExecBackends.sandboxExecPath, argvPointers, envPointers, policy.workspace, childInput, outPipe[1],
+                        ExecBackends.sandboxExecPath, argvPointers, envPointers, policy.workspace, childInput,
+                        outPipe[1],
                         errPipe[1], &limits, &pid, &step)
                 }
             }
@@ -275,7 +287,9 @@ public struct ExecLauncher: Sendable {
             for descriptor in descriptors where descriptor >= 0 { close(descriptor) }
         }
 
-        static func withCStrings<R>(_ strings: [String], _ body: (UnsafePointer<UnsafeMutablePointer<CChar>?>) -> R) -> R {
+        static func withCStrings<R>(_ strings: [String], _ body: (UnsafePointer<UnsafeMutablePointer<CChar>?>) -> R)
+            -> R
+        {
             var pointers: [UnsafeMutablePointer<CChar>?] = strings.map { strdup($0) }
             pointers.append(nil)
             defer { for pointer in pointers { free(pointer) } }
@@ -443,7 +457,9 @@ public struct ExecLauncher: Sendable {
             let exitCode: Int32? = signalled ? nil : (result >> 8) & 0xFF
             let received: Int32? = signalled ? result & 0x7F : nil
             var final = code
-            if let exitCode, ExecLauncher.sandboxExecFailures.contains(exitCode), err.starts(with: Array("sandbox-exec:".utf8)) {
+            if let exitCode, ExecLauncher.sandboxExecFailures.contains(exitCode),
+                err.starts(with: Array("sandbox-exec:".utf8))
+            {
                 return ExecOutcome(code: "exec.launch_failed", stdout: out, stderr: err, truncated: truncated)
             }
             if final == nil, received == SIGXFSZ { final = "exec.file_limit" }

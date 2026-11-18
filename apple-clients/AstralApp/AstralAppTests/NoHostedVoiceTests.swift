@@ -266,7 +266,7 @@ final class NoHostedVoiceTests: XCTestCase {
         func testMacPushToTalkCapturesOnDeviceAndNeverTouchesTheHostedController() async throws {
             let harness = try await VoiceHarness(realRest: true)
             defer { harness.tearDown() }
-                let pipeline = VoicePipeline(
+            let pipeline = VoicePipeline(
                 audio: harness.audio, transcriber: harness.transcriber, fastPath: nil, link: harness.link,
                 clock: harness.clock)
             try pipeline.start(trigger: .pushToTalk, mode: .pushToTalk)

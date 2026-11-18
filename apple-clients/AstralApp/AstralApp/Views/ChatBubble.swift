@@ -101,7 +101,6 @@ struct ReasoningSnippet: View {
     }
 }
 
-
 enum ContinuousActivityPresentation {
     static var allowsAnimatedIndicators: Bool {
         #if os(macOS)

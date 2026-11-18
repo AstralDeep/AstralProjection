@@ -150,10 +150,11 @@ private nonisolated enum BoundConsentFixture {
         let body =
             kind == "remove"
             ? #"{"cutoff":{},"device":""# + device + #""}"#
-            : kind == "stop" || kind == "resume" ? #"{"counter":2}"#
-            : #"{"device":{"cert":""# + base64(64)
-                + #"","identity":""# + base64(65, point: true) + #"","kind":"pocket","label":"Phone","ops":""#
-                + base64(32) + #"","presence":""# + base64(65, point: true) + #"","wrap":""# + base64(32) + #""}}"#
+            : kind == "stop" || kind == "resume"
+                ? #"{"counter":2}"#
+                : #"{"device":{"cert":""# + base64(64)
+                    + #"","identity":""# + base64(65, point: true) + #"","kind":"pocket","label":"Phone","ops":""#
+                    + base64(32) + #"","presence":""# + base64(65, point: true) + #"","wrap":""# + base64(32) + #""}}"#
         return Data(
             ("astral.roster/v2\n" + #"{"author":""# + device + #"","body":"# + body
                 + #","clock":{"ms":5,"n":0},"follows":[""# + mesh + #""],"mesh":""# + mesh

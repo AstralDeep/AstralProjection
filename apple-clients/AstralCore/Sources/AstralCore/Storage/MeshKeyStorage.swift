@@ -4,7 +4,10 @@
 import Foundation
 import Security
 
-public enum MeshKeyStorageError: Error, Equatable { case storage, migration(String) }
+public enum MeshKeyStorageError: Error, Equatable {
+    case storage
+    case migration(String)
+}
 
 public protocol MeshKeyStorage: Sendable {
     func load(_ key: String) throws -> Data?

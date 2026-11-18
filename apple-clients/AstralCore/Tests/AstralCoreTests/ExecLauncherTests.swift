@@ -20,15 +20,19 @@
         var calls = 0
 
         static func make() throws -> ExecRig {
-            guard let configured = ProcessInfo.processInfo.environment["ASTRAL_EXEC_TEST_PYTHON"], !configured.isEmpty else {
+            guard let configured = ProcessInfo.processInfo.environment["ASTRAL_EXEC_TEST_PYTHON"], !configured.isEmpty
+            else {
                 throw ExecRigError.pythonUnset
             }
             let root = try ExecTemporary.canonicalDirectory()
             let rig = ExecRig(
-                root: root, data: root + "/data", home: root + "/home", outside: root + "/outside", readable: root + "/readable",
+                root: root, data: root + "/data", home: root + "/home", outside: root + "/outside",
+                readable: root + "/readable",
                 python: try ExecPolicy.canonicalPath(configured), prefix: try basePrefix(of: configured),
                 source: try String(contentsOf: ExecVectors.fixtureURL("probe_tool", "py"), encoding: .utf8))
-            for directory in [rig.data + "/exec", rig.home + "/.ssh", rig.home + "/Library/Keychains", rig.outside, rig.readable] {
+            for directory in [
+                rig.data + "/exec", rig.home + "/.ssh", rig.home + "/Library/Keychains", rig.outside, rig.readable,
+            ] {
                 try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
             }
             let canaries = [
@@ -66,7 +70,8 @@
         }
 
         func loaded(
-            workspace: String, reads: [String] = [], hosts: [(String, Int)] = [], memory: Int = 536_870_912, processes: Int = 1,
+            workspace: String, reads: [String] = [], hosts: [(String, Int)] = [], memory: Int = 536_870_912,
+            processes: Int = 1,
             openFiles: Int = 256, fileBytes: Int = 104_857_600, wallMs: Int = 60000
         ) throws -> ExecLoadedPolicy {
             let readList = Set([prefix] + reads).sorted { Array($0.utf8).lexicographicallyPrecedes(Array($1.utf8)) }
@@ -81,9 +86,11 @@
 
         func argv(mode: String, workspace: String, extra: [String: Any] = [:]) throws -> [String] {
             var config: [String: Any] = [
-                "mode": mode, "workspace": workspace, "outside": outside, "readable": readable, "home": home, "data": data,
+                "mode": mode, "workspace": workspace, "outside": outside, "readable": readable, "home": home,
+                "data": data,
                 "tcp_port": 9, "echo_port": 9, "udp_port": 9, "unix_path": ExecRig.socketPath, "cert": NSNull(),
-                "python": python, "loader": NSNull(), "library": NSNull(), "parent_keys": ProcessInfo.processInfo.environment.keys.sorted(),
+                "python": python, "loader": NSNull(), "library": NSNull(),
+                "parent_keys": ProcessInfo.processInfo.environment.keys.sorted(),
                 "passed": ["PATH", "ASTRAL_PASSED"],
             ]
             for (key, value) in extra { config[key] = value }
@@ -102,7 +109,9 @@
                 for (index, byte) in socketPath.utf8.enumerated() { buffer[index] = byte }
             }
             let bound = withUnsafePointer(to: &address) {
-                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+                }
             }
             if bound != 0 || listen(descriptor, 4) != 0 { close(descriptor) }
             return descriptor
@@ -118,7 +127,9 @@
     private func checks(_ outcome: ExecOutcome) -> [String: ExecJSON] {
         var found = [String: ExecJSON]()
         for line in String(decoding: outcome.stdout, as: UTF8.self).split(separator: "\n") {
-            if let item = try? ExecJSON.parse(Data(line.utf8)), let name = item["check"]?.stringValue, let value = item["outcome"] {
+            if let item = try? ExecJSON.parse(Data(line.utf8)), let name = item["check"]?.stringValue,
+                let value = item["outcome"]
+            {
                 found[name] = value
             }
         }
@@ -152,7 +163,8 @@
         }
 
         private func run(
-            _ mode: String, processes: Int = 1, extra: [String: Any] = [:], memory: Int = 536_870_912, openFiles: Int = 256,
+            _ mode: String, processes: Int = 1, extra: [String: Any] = [:], memory: Int = 536_870_912,
+            openFiles: Int = 256,
             fileBytes: Int = 104_857_600, wallMs: Int = 60000, env: [String: String] = ExecRig.passedEnvironment,
             reads: [String] = []
         ) throws -> (ExecOutcome, String) {
@@ -160,7 +172,8 @@
             let policy = try rig.loaded(
                 workspace: workspace, reads: reads, memory: memory, processes: processes, openFiles: openFiles,
                 fileBytes: fileBytes, wallMs: wallMs)
-            let outcome = ExecLauncher().runBlocking(policy, argv: try rig.argv(mode: mode, workspace: workspace, extra: extra), env: env)
+            let outcome = ExecLauncher().runBlocking(
+                policy, argv: try rig.argv(mode: mode, workspace: workspace, extra: extra), env: env)
             return (outcome, workspace)
         }
 
@@ -169,11 +182,16 @@
             XCTAssertNil(outcome.code)
             XCTAssertEqual(outcome.exitCode, 0)
             let found = checks(outcome)
-            for allowed in ["write_workspace", "read_workspace", "read_read_root"] { XCTAssertEqual(found[allowed]?.stringValue, "ok", allowed) }
+            for allowed in ["write_workspace", "read_workspace", "read_read_root"] {
+                XCTAssertEqual(found[allowed]?.stringValue, "ok", allowed)
+            }
             for denied in [
-                "write_outside", "write_outside_existing", "write_read_root", "write_home_startup", "write_system", "write_tmp",
-                "read_outside", "read_data_dir", "read_home_ssh", "read_home_dotfile", "list_outside", "read_system_keychain",
-                "read_framework_keychain", "unix_mdnsresponder", "tcp_public", "tcp_node_port", "udp_loopback", "udp_public",
+                "write_outside", "write_outside_existing", "write_read_root", "write_home_startup", "write_system",
+                "write_tmp",
+                "read_outside", "read_data_dir", "read_home_ssh", "read_home_dotfile", "list_outside",
+                "read_system_keychain",
+                "read_framework_keychain", "unix_mdnsresponder", "tcp_public", "tcp_node_port", "udp_loopback",
+                "udp_public",
                 "unix_fixture", "listen_loopback", "listen_all", "fork", "spawn",
             ] {
                 XCTAssertEqual(found[denied]?.stringValue, "EPERM", denied)
@@ -181,7 +199,10 @@
             XCTAssertEqual(found["leaked"]?.arrayValue?.count, 0)
             let environ = (found["environ"]?.arrayValue ?? []).compactMap(\.stringValue)
             XCTAssertTrue(Set(environ).isSuperset(of: ["PATH", "ASTRAL_PASSED", ExecLauncher.markerName]))
-            XCTAssertTrue(Set(environ).isSubset(of: ["PATH", "ASTRAL_PASSED", ExecLauncher.markerName, "LC_CTYPE", "__CF_USER_TEXT_ENCODING"]))
+            XCTAssertTrue(
+                Set(environ).isSubset(of: [
+                    "PATH", "ASTRAL_PASSED", ExecLauncher.markerName, "LC_CTYPE", "__CF_USER_TEXT_ENCODING",
+                ]))
             XCTAssertFalse(FileManager.default.fileExists(atPath: rig.outside + "/escape.txt"))
             XCTAssertTrue(FileManager.default.fileExists(atPath: workspace + "/inside.txt"))
             let leftovers = (try? FileManager.default.contentsOfDirectory(atPath: rig.data + "/exec-profiles")) ?? []
@@ -215,12 +236,15 @@
         func testFileSizeIsBoundedByTheLimit() throws {
             let (outcome, workspace) = try run("file_size", extra: ["chunks": 160], fileBytes: 1_048_576)
             XCTAssertEqual(outcome.code, "exec.file_limit")
-            let size = (try FileManager.default.attributesOfItem(atPath: workspace + "/big.bin")[.size] as? Int) ?? Int.max
+            let size =
+                (try FileManager.default.attributesOfItem(atPath: workspace + "/big.bin")[.size] as? Int) ?? Int.max
             XCTAssertLessThanOrEqual(size, 1_048_576)
         }
 
         func testOpenFilesAreBoundedByTheLimit() throws {
-            let (outcome, _) = try run("open_files", extra: ["attempts": 400, "readable_file": rig.readable + "/readable.txt"], openFiles: 32, reads: [rig.readable])
+            let (outcome, _) = try run(
+                "open_files", extra: ["attempts": 400, "readable_file": rig.readable + "/readable.txt"], openFiles: 32,
+                reads: [rig.readable])
             let found = checks(outcome)
             XCTAssertEqual(found["refused"]?.stringValue, "EMFILE")
             XCTAssertLessThan(found["opened"]?.intValue ?? 99, 32)
@@ -228,7 +252,8 @@
 
         func testMoreProcessesThanTheLimitAreStoppedAndNothingSurvives() throws {
             let token = "astral-exec-limit-" + UUID().uuidString.lowercased()
-            let (outcome, _) = try run("sleepers", processes: 3, extra: ["token": token, "count": 8, "linger": 30], wallMs: 20000)
+            let (outcome, _) = try run(
+                "sleepers", processes: 3, extra: ["token": token, "count": 8, "linger": 30], wallMs: 20000)
             XCTAssertEqual(outcome.code, "exec.process_limit")
             XCTAssertFalse(stray(token))
         }
@@ -246,7 +271,8 @@
             let policy = try rig.loaded(workspace: workspace)
             let script = "import os,sys;print(os.getcwd(), sys.stdin.read())"
             let outcome = ExecLauncher().runBlocking(
-                policy, argv: [rig.python, "-I", "-B", "-S", "-c", script], env: ExecRig.passedEnvironment, stdin: Data("hello".utf8))
+                policy, argv: [rig.python, "-I", "-B", "-S", "-c", script], env: ExecRig.passedEnvironment,
+                stdin: Data("hello".utf8))
             XCTAssertNil(outcome.code)
             XCTAssertEqual(String(decoding: outcome.stdout, as: UTF8.self), "\(workspace) hello\n")
         }
@@ -267,7 +293,8 @@
             let workspace = try rig.workspace()
             let policy = try rig.loaded(workspace: workspace)
             let outcome = ExecLauncher().runBlocking(
-                policy, argv: [rig.python, "-I", "-B", "-S", "-c", "import sys;sys.stderr.write('bad');sys.exit(7)"], env: ExecRig.passedEnvironment)
+                policy, argv: [rig.python, "-I", "-B", "-S", "-c", "import sys;sys.stderr.write('bad');sys.exit(7)"],
+                env: ExecRig.passedEnvironment)
             XCTAssertNil(outcome.code)
             XCTAssertEqual(outcome.exitCode, 7)
             XCTAssertEqual(String(decoding: outcome.stderr, as: UTF8.self), "bad")
@@ -277,7 +304,8 @@
             let workspace = try rig.workspace()
             let policy = try rig.loaded(workspace: workspace)
             let outcome = ExecLauncher().runBlocking(
-                policy, argv: [rig.python, "-I", "-B", "-S", "-c", "import os,signal;os.kill(os.getpid(),signal.SIGTERM)"],
+                policy,
+                argv: [rig.python, "-I", "-B", "-S", "-c", "import os,signal;os.kill(os.getpid(),signal.SIGTERM)"],
                 env: ExecRig.passedEnvironment)
             XCTAssertNil(outcome.code)
             XCTAssertNil(outcome.exitCode)
@@ -286,7 +314,8 @@
 
         func testAMissingToolIsALaunchFailure() throws {
             let workspace = try rig.workspace()
-            let outcome = ExecLauncher().runBlocking(try rig.loaded(workspace: workspace), argv: ["/usr/bin/astral-absent-tool"], env: [:])
+            let outcome = ExecLauncher().runBlocking(
+                try rig.loaded(workspace: workspace), argv: ["/usr/bin/astral-absent-tool"], env: [:])
             XCTAssertEqual(outcome.code, "exec.launch_failed")
         }
 
@@ -295,7 +324,8 @@
             let policy = try rig.loaded(workspace: workspace)
             let shadow = ExecLauncher(
                 facts: { ExecFacts(platform: "darwin", mode: .shadow, euid: 501, sandboxExec: true) })
-            let outcome = shadow.runBlocking(policy, argv: try rig.argv(mode: "marker", workspace: workspace), env: ExecRig.passedEnvironment)
+            let outcome = shadow.runBlocking(
+                policy, argv: try rig.argv(mode: "marker", workspace: workspace), env: ExecRig.passedEnvironment)
             XCTAssertEqual(outcome.code, "exec.shadow_refused")
             XCTAssertEqual(outcome.refusal?.code, "exec.shadow_refused")
             XCTAssertNil(outcome.exitCode)
@@ -306,9 +336,15 @@
             let workspace = try rig.workspace()
             let policy = try rig.loaded(workspace: workspace)
             for (facts, reason) in [
-                (ExecFacts(platform: "darwin", euid: 501, sandboxExec: true, appSandboxed: true), ExecBackendReason.appSandboxed),
+                (
+                    ExecFacts(platform: "darwin", euid: 501, sandboxExec: true, appSandboxed: true),
+                    ExecBackendReason.appSandboxed
+                ),
                 (ExecFacts(platform: "darwin", euid: 501, sandboxExec: false), ExecBackendReason.sandboxExecMissing),
-                (ExecFacts(platform: "linux", landlockABI: 6, bwrap: true, userns: true, euid: 1000), ExecBackendReason?.none),
+                (
+                    ExecFacts(platform: "linux", landlockABI: 6, bwrap: true, userns: true, euid: 1000),
+                    ExecBackendReason?.none
+                ),
             ] {
                 let outcome = ExecLauncher(facts: { facts }).runBlocking(
                     policy, argv: try rig.argv(mode: "marker", workspace: workspace), env: ExecRig.passedEnvironment)
@@ -329,19 +365,23 @@
             let launcher = ExecLauncher()
             let cases: [([String], [String: String])] = [
                 ([], [:]), (["-p", "(version 1)(allow default)"], [:]), (["/usr/bin/true", "a\0b"], [:]),
-                (["/usr/bin/true"], ["DYLD_INSERT_LIBRARIES": "x"]), (["/usr/bin/true"], [ExecLauncher.markerName: "x"]),
+                (["/usr/bin/true"], ["DYLD_INSERT_LIBRARIES": "x"]),
+                (["/usr/bin/true"], [ExecLauncher.markerName: "x"]),
                 (["/usr/bin/true"], ["A=B": "x"]), (["/usr/bin/true"], ["": "x"]), (["/usr/bin/true"], ["A": "x\0"]),
             ]
             for (argv, env) in cases {
-                XCTAssertEqual(launcher.runBlocking(policy, argv: argv, env: env).code, "exec.launch_failed", "\(argv) \(env)")
+                XCTAssertEqual(
+                    launcher.runBlocking(policy, argv: argv, env: env).code, "exec.launch_failed", "\(argv) \(env)")
             }
         }
 
         func testHostsNeedAProxyAndTheChildSeesTheProxyEnvironment() throws {
             let workspace = try rig.workspace()
             let policy = try rig.loaded(workspace: workspace, hosts: [("example.com", 443)])
-            XCTAssertEqual(ExecLauncher().runBlocking(policy, argv: ["/usr/bin/env"], env: [:]).code, "exec.launch_failed")
-            let outcome = ExecLauncher(proxyPort: { 4242 }).runBlocking(policy, argv: ["/usr/bin/env"], env: ["KEEP": "1"])
+            XCTAssertEqual(
+                ExecLauncher().runBlocking(policy, argv: ["/usr/bin/env"], env: [:]).code, "exec.launch_failed")
+            let outcome = ExecLauncher(proxyPort: { 4242 }).runBlocking(
+                policy, argv: ["/usr/bin/env"], env: ["KEEP": "1"])
             XCTAssertNil(outcome.code)
             let lines = Set(String(decoding: outcome.stdout, as: UTF8.self).split(separator: "\n").map(String.init))
             for name in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"] {
@@ -356,7 +396,9 @@
             let policy = try rig.loaded(workspace: workspace)
             func marker() -> String {
                 let outcome = ExecLauncher().runBlocking(policy, argv: ["/usr/bin/env"], env: [:])
-                let line = String(decoding: outcome.stdout, as: UTF8.self).split(separator: "\n").first { $0.hasPrefix(ExecLauncher.markerName + "=") }
+                let line = String(decoding: outcome.stdout, as: UTF8.self).split(separator: "\n").first {
+                    $0.hasPrefix(ExecLauncher.markerName + "=")
+                }
                 return line.map { String($0.dropFirst(ExecLauncher.markerName.count + 1)) } ?? ""
             }
             let first = marker()
@@ -368,7 +410,8 @@
             let workspace = try rig.workspace()
             let policy = try rig.loaded(workspace: workspace)
             let script = "import sys\nfor _ in range(9): sys.stdout.buffer.write(b'x' * 1048576)"
-            let outcome = ExecLauncher().runBlocking(policy, argv: [rig.python, "-I", "-B", "-S", "-c", script], env: ExecRig.passedEnvironment)
+            let outcome = ExecLauncher().runBlocking(
+                policy, argv: [rig.python, "-I", "-B", "-S", "-c", script], env: ExecRig.passedEnvironment)
             XCTAssertNil(outcome.code)
             XCTAssertTrue(outcome.truncated)
             XCTAssertEqual(outcome.stdout.count, ExecLauncher.outputLimit)
@@ -385,7 +428,8 @@
             XCTAssertEqual(fcntl(high, F_GETFD) & FD_CLOEXEC, 0)
             let workspace = try rig.workspace()
             let policy = try rig.loaded(workspace: workspace, openFiles: 32)
-            let script = "import os,sys\nfor fd in range(3, 1024):\n    try:\n        os.fstat(fd)\n        print(fd)\n    except OSError:\n        pass"
+            let script =
+                "import os,sys\nfor fd in range(3, 1024):\n    try:\n        os.fstat(fd)\n        print(fd)\n    except OSError:\n        pass"
             let outcome = ExecLauncher().runBlocking(
                 policy, argv: [rig.python, "-I", "-B", "-S", "-c", script], env: ExecRig.passedEnvironment)
             XCTAssertNil(outcome.code)
@@ -397,7 +441,8 @@
             let workspace = try rig.workspace()
             let policy = try rig.loaded(workspace: workspace, processes: 2)
             let launcher = ExecLauncher(facts: nil, userProcesses: { throw POSIXError(.EIO) })
-            let outcome = launcher.runBlocking(policy, argv: try rig.argv(mode: "marker", workspace: workspace), env: ExecRig.passedEnvironment)
+            let outcome = launcher.runBlocking(
+                policy, argv: try rig.argv(mode: "marker", workspace: workspace), env: ExecRig.passedEnvironment)
             XCTAssertEqual(outcome.code, "exec.launch_failed")
             XCTAssertFalse(FileManager.default.fileExists(atPath: workspace + "/ran"))
         }
@@ -425,8 +470,10 @@
             func pids(kind: UInt32, info: UInt32) throws -> [Int32] {
                 if failListing { throw POSIXError(.EIO) }
                 switch kind {
-                case DarwinProcessTable.pgrpOnly: return processes.filter { $0.value.group == Int32(info) }.keys.sorted()
-                case DarwinProcessTable.ppidOnly: return processes.filter { $0.value.parent == Int32(info) }.keys.sorted()
+                case DarwinProcessTable.pgrpOnly:
+                    return processes.filter { $0.value.group == Int32(info) }.keys.sorted()
+                case DarwinProcessTable.ppidOnly:
+                    return processes.filter { $0.value.parent == Int32(info) }.keys.sorted()
                 default: return processes.keys.sorted()
                 }
             }
@@ -461,7 +508,9 @@
             let entry = Array("\(ExecLauncher.markerName)=abc".utf8)
             table.processes[100] = (1, 100, ExecProcessUsage(start: 1, exited: false, footprint: 10), [])
             table.processes[900] = (1, 900, ExecProcessUsage(start: 9, exited: false, footprint: 5), [entry])
-            table.processes[901] = (1, 901, ExecProcessUsage(start: 9, exited: false, footprint: 5), [Array("other".utf8)])
+            table.processes[901] = (
+                1, 901, ExecProcessUsage(start: 9, exited: false, footprint: 5), [Array("other".utf8)]
+            )
             let marked = ExecWatch(root: 100, marker: "\(ExecLauncher.markerName)=abc", table: table)
             XCTAssertEqual(try marked.sample().processes, 2)
             let unmarked = ExecWatch(root: 100, marker: nil, table: table)

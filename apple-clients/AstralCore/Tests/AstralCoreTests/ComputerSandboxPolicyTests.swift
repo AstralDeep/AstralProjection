@@ -97,7 +97,8 @@
             let absent = ComputerSandboxConfiguration.decoded(Data("{\"domains\":[\"a.io\"]}".utf8))
             XCTAssertEqual(absent.mode, .enforce)
             XCTAssertEqual(absent.executionMode, .enforce)
-            XCTAssertEqual(ComputerSandboxConfiguration.decoded(Data("{\"mode\":\"enforce\"}".utf8)).executionMode, .enforce)
+            XCTAssertEqual(
+                ComputerSandboxConfiguration.decoded(Data("{\"mode\":\"enforce\"}".utf8)).executionMode, .enforce)
         }
 
         func testIPAddressParsingAndClassificationRefusesEveryNonPublicRoutableClass() throws {

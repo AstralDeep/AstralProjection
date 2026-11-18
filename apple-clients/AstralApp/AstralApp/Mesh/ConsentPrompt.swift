@@ -287,7 +287,8 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
         else { throw ConsentPromptError.invalidInput }
         switch kind {
         case "device", "node":
-            return PhiChange(effect: "roster.phi_grant", title: "Let a device read PHI", target: subject,
+            return PhiChange(
+                effect: "roster.phi_grant", title: "Let a device read PHI", target: subject,
                 summary: "Let a device on your mesh read PHI")
         case "endpoint":
             return PhiChange(

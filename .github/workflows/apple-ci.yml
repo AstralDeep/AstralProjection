@@ -267,7 +267,11 @@ jobs:
       - name: Validate App Store icon assets
         run: python3 apple-clients/Scripts/generate_app_icons.py --check
       - name: Run AstralCore with coverage
-        run: swift test --package-path apple-clients/AstralCore --enable-code-coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          export ASTRAL_EXEC_TEST_PYTHON="$(command -v python)"
+          swift test --package-path apple-clients/AstralCore --enable-code-coverage
       - name: Stage SwiftPM coverage data
         if: always()
         shell: bash

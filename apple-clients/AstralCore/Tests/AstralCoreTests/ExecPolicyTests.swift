@@ -55,7 +55,8 @@ final class ExecPolicyTests: XCTestCase {
                 } else if let raw = item["raw"]?.stringValue {
                     policy = try ExecPolicy(json: Data(raw.utf8), platform: platform)
                 } else {
-                    policy = try ExecPolicy(json: ExecVectors.data(hex: item["bytes_hex"]?.stringValue ?? ""), platform: platform)
+                    policy = try ExecPolicy(
+                        json: ExecVectors.data(hex: item["bytes_hex"]?.stringValue ?? ""), platform: platform)
                 }
                 XCTAssertEqual(expected, "ok", label)
                 if let digest = item["digest"]?.stringValue { XCTAssertEqual(policy.digest, digest, label) }
@@ -78,7 +79,8 @@ final class ExecPolicyTests: XCTestCase {
                 case .backend(let backend):
                     XCTAssertEqual(
                         try expected.canonicalData(),
-                        try ExecJSON.object([("backend", .string(backend.rawValue)), ("ok", .bool(true))]).canonicalData(), label)
+                        try ExecJSON.object([("backend", .string(backend.rawValue)), ("ok", .bool(true))])
+                            .canonicalData(), label)
                 case .refused(let refusal):
                     XCTAssertEqual(try expected.canonicalData(), try refusal.json.canonicalData(), label)
                 }
@@ -142,10 +144,12 @@ final class ExecPolicyTests: XCTestCase {
         XCTAssertEqual(ExecSeatbeltProfile.syslogSocket, constants["syslog_socket"]?.stringValue)
         XCTAssertEqual(ExecBackends.execSubdirectory, constants["exec_subdirectory"]?.stringValue)
         XCTAssertEqual(ExecPolicy.format, constants["format"]?.stringValue)
-        XCTAssertEqual(strings("backend_reasons"), [
-            "landlock_abi", "bwrap_missing", "userns_denied", "root_node", "sandbox_exec_missing", "app_sandboxed",
-            "platform_unsupported",
-        ])
+        XCTAssertEqual(
+            strings("backend_reasons"),
+            [
+                "landlock_abi", "bwrap_missing", "userns_denied", "root_node", "sandbox_exec_missing", "app_sandboxed",
+                "platform_unsupported",
+            ])
         XCTAssertEqual(ExecBackends.requiredLandlockABI, Int(constants["landlock_abi"]?.intValue ?? 0))
         let messages = constants["messages"]
         for (code, text) in ExecBackends.messages { XCTAssertEqual(messages?[code]?.stringValue, text, code) }
@@ -161,7 +165,8 @@ final class ExecPolicyTests: XCTestCase {
     func testRenderRefusesBadContexts() throws {
         let policy = try ExecPolicy(document: ExecVectors.minimalPolicy, platform: "darwin")
         XCTAssertThrowsError(try ExecSeatbeltProfile.render(policy, context: .init(home: "relative", proxyPort: nil)))
-        XCTAssertThrowsError(try ExecSeatbeltProfile.render(policy, context: .init(home: "/Users/\u{0378}", proxyPort: nil)))
+        XCTAssertThrowsError(
+            try ExecSeatbeltProfile.render(policy, context: .init(home: "/Users/\u{0378}", proxyPort: nil)))
         let hosted = try ExecPolicy(
             document: try ExecJSON.parse(
                 Data(
@@ -171,7 +176,8 @@ final class ExecPolicyTests: XCTestCase {
                     "time":{"wall_ms":30000}}
                     """.utf8)),
             platform: "darwin")
-        XCTAssertThrowsError(try ExecSeatbeltProfile.render(hosted, context: .init(home: "/Users/test", proxyPort: nil)))
+        XCTAssertThrowsError(
+            try ExecSeatbeltProfile.render(hosted, context: .init(home: "/Users/test", proxyPort: nil)))
         XCTAssertThrowsError(try ExecSeatbeltProfile.render(hosted, context: .init(home: "/Users/test", proxyPort: 0)))
         let text = try ExecSeatbeltProfile.render(hosted, context: .init(home: "/Users/test", proxyPort: 4242))
         XCTAssertTrue(text.contains("(allow network-outbound (remote ip \"localhost:4242\"))"))
@@ -183,8 +189,10 @@ final class ExecPolicyTests: XCTestCase {
         XCTAssertThrowsError(
             try ExecFacts(
                 json: .object([
-                    ("platform", .string("darwin")), ("mode", .string("loud")), ("landlock_abi", .int(0)), ("bwrap", .bool(false)),
-                    ("userns", .bool(false)), ("euid", .int(1)), ("sandbox_exec", .bool(true)), ("app_sandboxed", .bool(false)),
+                    ("platform", .string("darwin")), ("mode", .string("loud")), ("landlock_abi", .int(0)),
+                    ("bwrap", .bool(false)),
+                    ("userns", .bool(false)), ("euid", .int(1)), ("sandbox_exec", .bool(true)),
+                    ("app_sandboxed", .bool(false)),
                 ])))
     }
 
@@ -211,7 +219,9 @@ final class ExecPolicyTests: XCTestCase {
             let data = root + "/data"
             let workspace = data + "/exec/call"
             let home = root + "/home"
-            for path in [workspace, home] { try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true) }
+            for path in [workspace, home] {
+                try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+            }
             let link = root + "/link"
             try FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: workspace)
             func policyJSON(workspace: String, reads: [String] = []) -> Data {
@@ -226,26 +236,40 @@ final class ExecPolicyTests: XCTestCase {
             let loaded = try ExecPolicy.load(json: policyJSON(workspace: workspace), dataDirectory: data, home: home)
             XCTAssertEqual(loaded.platform, "darwin")
             XCTAssertEqual(loaded.policy.workspace, workspace)
-            XCTAssertThrowsError(try ExecPolicy.load(json: policyJSON(workspace: link), dataDirectory: data, home: home)) {
+            XCTAssertThrowsError(
+                try ExecPolicy.load(json: policyJSON(workspace: link), dataDirectory: data, home: home)
+            ) {
                 XCTAssertEqual(($0 as? ExecPolicyError)?.code, "policy.path_invalid")
             }
-            XCTAssertThrowsError(try ExecPolicy.load(json: policyJSON(workspace: root + "/absent"), dataDirectory: data, home: home))
-            XCTAssertThrowsError(try ExecPolicy.load(json: policyJSON(workspace: workspace), dataDirectory: link, home: home)) {
+            XCTAssertThrowsError(
+                try ExecPolicy.load(json: policyJSON(workspace: root + "/absent"), dataDirectory: data, home: home))
+            XCTAssertThrowsError(
+                try ExecPolicy.load(json: policyJSON(workspace: workspace), dataDirectory: link, home: home)
+            ) {
                 XCTAssertTrue($0 is ExecContextError)
             }
-            XCTAssertThrowsError(try ExecPolicy.load(json: policyJSON(workspace: workspace), dataDirectory: data, home: "relative"))
-            XCTAssertThrowsError(try ExecPolicy.load(json: policyJSON(workspace: workspace, reads: [data]), dataDirectory: data, home: home)) {
+            XCTAssertThrowsError(
+                try ExecPolicy.load(json: policyJSON(workspace: workspace), dataDirectory: data, home: "relative"))
+            XCTAssertThrowsError(
+                try ExecPolicy.load(
+                    json: policyJSON(workspace: workspace, reads: [data]), dataDirectory: data, home: home)
+            ) {
                 XCTAssertEqual(($0 as? ExecPolicyError)?.code, "policy.path_invalid")
             }
             let secrets = data + "/secrets"
             try FileManager.default.createDirectory(atPath: secrets, withIntermediateDirectories: true)
-            XCTAssertThrowsError(try ExecPolicy.load(json: policyJSON(workspace: workspace, reads: [secrets]), dataDirectory: data, home: home)) {
+            XCTAssertThrowsError(
+                try ExecPolicy.load(
+                    json: policyJSON(workspace: workspace, reads: [secrets]), dataDirectory: data, home: home)
+            ) {
                 XCTAssertEqual(($0 as? ExecRefused)?.refusal.code, "exec.policy_overlaps_data")
             }
             XCTAssertNoThrow(try ExecPolicy.load(json: policyJSON(workspace: home), dataDirectory: data, home: home))
             let inside = data + "/other"
             try FileManager.default.createDirectory(atPath: inside, withIntermediateDirectories: true)
-            XCTAssertThrowsError(try ExecPolicy.load(json: policyJSON(workspace: inside), dataDirectory: data, home: home)) {
+            XCTAssertThrowsError(
+                try ExecPolicy.load(json: policyJSON(workspace: inside), dataDirectory: data, home: home)
+            ) {
                 XCTAssertEqual(($0 as? ExecRefused)?.refusal.code, "exec.policy_overlaps_data")
             }
         }

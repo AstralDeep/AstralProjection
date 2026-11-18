@@ -133,7 +133,8 @@ nonisolated final class InMemoryConnections: @unchecked Sendable {
         return lock.withLock {
             counter += 1
             let id = String(format: "%032x", counter)
-            var base = draft(id, name, endpoint, local, Server(issuer: nil, scopes: [], tools: server.tools),
+            var base = draft(
+                id, name, endpoint, local, Server(issuer: nil, scopes: [], tools: server.tools),
                 replaces: nil, record: nil)
             base.scheme = "key"
             base.redirectHost = nil
@@ -183,7 +184,8 @@ nonisolated final class InMemoryConnections: @unchecked Sendable {
                 scopes: [], resource: nil, clientId: nil, tools: [], egress: [host], flowHint: "private",
                 replaces: nil, expiresMs: nowMs + Self.proposalTTLMs, kind: "model",
                 keyItem: "astral.provider/" + draft.provider, models: draft.models, keyRecipients: draft.recipients)
-            return hold(found, base: nil, keys: ["key": Data(draft.apiKeys.joined(separator: "\n").utf8)],
+            return hold(
+                found, base: nil, keys: ["key": Data(draft.apiKeys.joined(separator: "\n").utf8)],
                 recipients: draft.recipients)
         }
     }
@@ -210,7 +212,7 @@ nonisolated final class InMemoryConnections: @unchecked Sendable {
 
     func setKey(id: String, secrets entries: [MeshConnectionSecret], recipients: [String]?) throws {
         try Self.checkRecipients(recipients)
-        try entries.forEach { try Self.checkKey($0.value) }
+        for entry in entries { try Self.checkKey(entry.value) }
         try lock.withLock {
             guard let record = records[id] else { throw Self.refused("connection.unknown") }
             guard record.proposal.scheme == "key" else { throw Self.refused("connection.no_key") }

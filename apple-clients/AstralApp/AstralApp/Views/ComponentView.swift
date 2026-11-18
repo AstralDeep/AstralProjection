@@ -1306,7 +1306,7 @@ extension ComponentView {
             CompositeFlow(spacing: 6, centered: true) {
                 ForEach(Array(items.enumerated()), id: \.offset) { offset, item in
                     ComponentView(component: item.component)
-                                    .environment(\.astralCompactChip, chips?[offset])
+                        .environment(\.astralCompactChip, chips?[offset])
                 }
             }
         } else {

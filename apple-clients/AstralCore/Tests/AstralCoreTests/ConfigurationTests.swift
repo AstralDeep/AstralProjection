@@ -85,8 +85,10 @@ final class ConfigurationResolutionTests: XCTestCase {
         var offenders: [String] = []
         for case let url as URL in files where url.pathExtension == "swift" {
             let text = try String(contentsOf: url, encoding: .utf8)
-            for forbidden in ["Keycloak", "keycloak", "oauth2redirect", "PKCE", "ServerSession", "DeviceLoginClient",
-                "TokenStorage", "MeshEnrollmentCustody", "\"server-session\""]
+            for forbidden in [
+                "Keycloak", "keycloak", "oauth2redirect", "PKCE", "ServerSession", "DeviceLoginClient",
+                "TokenStorage", "MeshEnrollmentCustody", "\"server-session\"",
+            ]
             where text.contains(forbidden) {
                 offenders.append(url.lastPathComponent + ": " + forbidden)
             }

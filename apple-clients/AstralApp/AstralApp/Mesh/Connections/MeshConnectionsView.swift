@@ -73,8 +73,8 @@ struct MeshConnectionsView: View {
     }
 }
 
-private extension MeshConnectionsView {
-    var removalShown: Binding<Bool> {
+extension MeshConnectionsView {
+    fileprivate var removalShown: Binding<Bool> {
         Binding(get: { removing != nil }, set: { shown in if !shown { removing = nil } })
     }
 }

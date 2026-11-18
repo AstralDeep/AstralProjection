@@ -78,19 +78,33 @@ final class ConsentConnectionTests: XCTestCase {
 
     func testEveryKindShowsAPlainSummaryAndItsDetails() throws {
         let cases: [(String, String, [String])] = [
-            (mcpOAuth, "Connect Research, a tool server at mcp.research.example",
-                ["Sign-in: OAuth", "Issuer: https://auth.research.example", "Scopes: a, b", "Tools: search"]),
-            (mcpNone, "Connect Local, a tool server on this device",
-                ["Sign-in: none", "Tools: none listed", "Data class: private"]),
-            (agent, "Connect Fixture Agent, an agent at agent.example.org",
-                ["Sign-in: pasted key", "Card signer pin: " + pin, "Data class: phi", "Tools: ask_fixture_agent"]),
-            (stdio, "Run Files on this Mac",
-                ["Command: /usr/local/bin/files --root /tmp", "Secrets passed: FILES_TOKEN (values never shown)",
-                    "Reaches: nothing"]),
-            (api, "Connect Lab API, an API at api.example.org",
-                ["Key sent as: Authorization: Bearer {key}", "Key: sealed, never shown here"]),
-            (model, "Connect Lab Models, a model at models.lab.example",
-                ["Key: sealed, never shown here", "Data class: phi", "Reaches: models.lab.example"]),
+            (
+                mcpOAuth, "Connect Research, a tool server at mcp.research.example",
+                ["Sign-in: OAuth", "Issuer: https://auth.research.example", "Scopes: a, b", "Tools: search"]
+            ),
+            (
+                mcpNone, "Connect Local, a tool server on this device",
+                ["Sign-in: none", "Tools: none listed", "Data class: private"]
+            ),
+            (
+                agent, "Connect Fixture Agent, an agent at agent.example.org",
+                ["Sign-in: pasted key", "Card signer pin: " + pin, "Data class: phi", "Tools: ask_fixture_agent"]
+            ),
+            (
+                stdio, "Run Files on this Mac",
+                [
+                    "Command: /usr/local/bin/files --root /tmp", "Secrets passed: FILES_TOKEN (values never shown)",
+                    "Reaches: nothing",
+                ]
+            ),
+            (
+                api, "Connect Lab API, an API at api.example.org",
+                ["Key sent as: Authorization: Bearer {key}", "Key: sealed, never shown here"]
+            ),
+            (
+                model, "Connect Lab Models, a model at models.lab.example",
+                ["Key: sealed, never shown here", "Data class: phi", "Reaches: models.lab.example"]
+            ),
         ]
         for (text, summary, details) in cases {
             let shown = try show(text)

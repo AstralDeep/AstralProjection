@@ -70,7 +70,7 @@ struct MeshRuntimeHarness {
         }
         let factory: MeshKernelFactory = { config, _, _, _, listener in
             if let factoryError { throw factoryError }
-                        box.openedConfigs.append(config)
+            box.openedConfigs.append(config)
             if box.rejectMailbox, config.mailbox != nil {
                 throw KernelMapping.refusal("config.mailbox")
             }
