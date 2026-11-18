@@ -1769,7 +1769,8 @@ final class MeshRuntime {
 
     nonisolated static func providerSlug(_ baseURL: String) -> String {
         let host: String = (URL(string: baseURL)?.host ?? "model").lowercased()
-        let mapped: String = String(host.map { $0.isLetter || $0.isNumber || $0 == "." || $0 == "-" ? $0 : "-" })
+        let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789-_")
+        let mapped: String = String(host.map { allowed.contains($0) ? $0 : "-" })
         return String(mapped.prefix(48))
     }
 

@@ -169,4 +169,20 @@ final class MeshProviderSharingTests: XCTestCase {
         XCTAssertFalse(editor.saved)
         XCTAssertEqual(h.runtime.providers.map(\.model), ["submitted"])
     }
+
+    func testProviderSlugFollowsTheKernelNameRule() {
+        let rule = try! NSRegularExpression(pattern: "^[a-z0-9_-]{1,64}$")
+        let cases: [(String, String)] = [
+            ("https://api-llm-factory.ai.uky.edu/v1", "api-llm-factory-ai-uky-edu"),
+            ("https://API.Example.com:8443/v1", "api-example-com"),
+            ("http://127.0.0.1:11434/v1", "127-0-0-1"),
+            ("https://xn--bcher-kva.example/v1", "xn--bcher-kva-example"),
+        ]
+        for (url, expected) in cases {
+            let slug = MeshRuntime.providerSlug(url)
+            XCTAssertEqual(slug, expected)
+            let range = NSRange(slug.startIndex..., in: slug)
+            XCTAssertNotNil(rule.firstMatch(in: slug, range: range), slug)
+        }
+    }
 }
