@@ -218,7 +218,6 @@ struct MeshAddDeviceView: View {
                 .font(.system(.footnote, design: .monospaced))
                 .scrollContentBackground(.hidden)
                 .padding(10)
-                .opacity(payload.isEmpty ? 0.02 : 1)
                 .accessibilityLabel("Pairing code")
                 .accessibilityIdentifier("mesh.add.payload")
         }

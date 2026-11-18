@@ -56,9 +56,12 @@
                 }
                 kernel.recoveryWords = (0..<24).map { "word" + String(UnicodeScalar(UInt8(97 + $0))) }
                 kernel.hasLocalMesh = true
-                kernel.autoJoin = MeshJoinRequest(
-                    comparisonCode: "4821 9307", deviceLabel: "New iPhone", deviceKind: .pocket,
-                    deviceId: "sha256:" + String(repeating: "e", count: 64), expiresAt: Date().addingTimeInterval(540))
+                if !ProcessInfo.processInfo.arguments.contains("--astral-ui-test-no-auto-join") {
+                    kernel.autoJoin = MeshJoinRequest(
+                        comparisonCode: "4821 9307", deviceLabel: "New iPhone", deviceKind: .pocket,
+                        deviceId: "sha256:" + String(repeating: "e", count: 64),
+                        expiresAt: Date().addingTimeInterval(540))
+                }
                 if scenario == .shell { seed(kernel) }
                 if scenario == .storedSurface { try MeshStoredSurfaceFixture.seed(kernel) }
                 if scenario == .attachments {

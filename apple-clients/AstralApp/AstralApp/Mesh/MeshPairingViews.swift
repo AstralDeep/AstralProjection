@@ -347,7 +347,6 @@ struct MeshJoinStartView: View {
                     .font(.system(.footnote, design: .monospaced))
                     .scrollContentBackground(.hidden)
                     .padding(10)
-                    .opacity(payload.isEmpty ? 0.02 : 1)
                     .accessibilityLabel("Invitation")
                     .accessibilityIdentifier("mesh.join.payload")
             #endif
