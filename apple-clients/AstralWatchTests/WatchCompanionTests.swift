@@ -48,6 +48,32 @@ final class WatchCompanionTests: XCTestCase {
         XCTAssertEqual(sent.requests, [.listChats(owner: ownerA)])
     }
 
+    func testReachablePhoneThatNeverAnswersIsReportedAsNotResponding() async throws {
+        let model = WatchModel()
+        model.responseTimeout = .milliseconds(20)
+        model.requestSink = { _ in true }
+        model.phoneReachable = true
+        XCTAssertFalse(model.phoneNotResponding)
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertTrue(model.phoneNotResponding)
+        model.receivePhoneContext(phone: try phone(ownerA, .ready), chats: nil)
+        XCTAssertFalse(model.phoneNotResponding)
+    }
+
+    func testRetryRestartsTheWaitAndLosingTheLinkClearsTheState() async throws {
+        let model = WatchModel()
+        model.responseTimeout = .milliseconds(20)
+        model.requestSink = { _ in true }
+        model.phoneReachable = true
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertTrue(model.phoneNotResponding)
+        model.responseTimeout = .seconds(60)
+        model.retryPhone()
+        XCTAssertFalse(model.phoneNotResponding)
+        model.phoneReachable = false
+        XCTAssertFalse(model.phoneNotResponding)
+    }
+
     func testListRequestWaitsForAnOwnerAndForReachability() async throws {
         let (model, sent) = make(reachable: false)
         model.receivePhoneContext(phone: try phone(ownerA, .ready), chats: nil)
