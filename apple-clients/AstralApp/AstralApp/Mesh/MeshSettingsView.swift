@@ -158,7 +158,6 @@ struct MeshSettingsView: View {
         .meshReadableWidth()
         .background(p.bg)
         .navigationTitle("Settings")
-        .meshExitConfirmation()
         .alert("Rename Device", isPresented: $renaming) {
             TextField("Name", text: $draft)
             Button("Save") {

@@ -106,7 +106,6 @@ struct MeshDeviceDetailView: View {
         .meshReadableWidth()
         .background(p.bg)
         .meshRemoveConfirmation($removing)
-        .meshExitConfirmation()
         .alert("Rename Device", isPresented: $renaming) {
             TextField("Name", text: $draft)
             Button("Save") { Task { _ = await mesh.renameDevice(member, to: draft) } }
@@ -134,27 +133,4 @@ struct MeshDeviceDetailView: View {
 
 extension String {
     fileprivate var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
-}
-
-extension View {
-    func meshExitConfirmation() -> some View { modifier(MeshExitConfirmation()) }
-}
-
-private struct MeshExitConfirmation: ViewModifier {
-    @Environment(MeshRuntime.self) private var mesh
-
-    func body(content: Content) -> some View {
-        let exit = mesh.confirmingExit
-        content.confirmationDialog(
-            exit?.title ?? "", isPresented: Binding(get: { exit != nil }, set: { if !$0 { mesh.cancelExit() } }),
-            titleVisibility: .visible
-        ) {
-            Button(exit?.button ?? "Continue", role: .destructive) { Task { await mesh.confirmExit() } }
-                .accessibilityIdentifier("mesh.exit.confirm")
-            Button("Cancel", role: .cancel) { mesh.cancelExit() }
-                .accessibilityIdentifier("mesh.exit.cancel")
-        } message: {
-            Text(exit?.message ?? "")
-        }
-    }
 }

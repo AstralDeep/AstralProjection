@@ -286,7 +286,6 @@ struct MeshJoinStartView: View {
                 .keyboardShortcut(.cancelAction)
                 .accessibilityIdentifier("mesh.join.back")
         }
-        .meshExitConfirmation()
         #if os(iOS)
             .sheet(isPresented: $scanning) {
                 NavigationStack {

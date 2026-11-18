@@ -33,7 +33,7 @@ final class MeshExitTests: XCTestCase {
         XCTAssertFalse(kernel.calls.contains { $0.name == "removeDevice" })
     }
 
-    func testLeavingSignsThisDevicesRemovalThenRetiresTheStoreAndErasesTheKeys() async {
+    func testLeavingIsLocalRetiresTheStoreErasesTheKeysAndNeverRemovesThisDevice() async {
         let h = await withTwoDevices()
         defer { h.cleanUp() }
         let kernel = h.kernel
@@ -45,9 +45,39 @@ final class MeshExitTests: XCTestCase {
         h.runtime.requestExit()
         XCTAssertEqual(h.runtime.confirmingExit, .leave)
         await h.runtime.confirmExit()
-        XCTAssertTrue(kernel.calls.contains { $0.name == "removeDevice" })
+        XCTAssertFalse(kernel.calls.contains { $0.name == "removeDevice" })
         XCTAssertEqual(retired(h.suite).count, 1)
         XCTAssertFalse(h.runtime.restoredInstall)
+        XCTAssertFalse(h.runtime.hasMesh)
+        XCTAssertEqual(h.runtime.phase, .ready)
+        XCTAssertNil(h.runtime.exitFailure)
+    }
+
+    func testLeavingWorksWhenNoMemberIsFlaggedAsThisDevice() async {
+        let h = await withTwoDevices()
+        defer { h.cleanUp() }
+        h.kernel.addMember(
+            MeshMember(
+                memberId: "sha256:" + String(repeating: "f", count: 64), label: "Phone", kind: .pocket,
+                isThisDevice: false, lastSeen: nil, path: .none))
+        await h.runtime.refreshRoster()
+        h.runtime.requestExit()
+        await h.runtime.confirmExit()
+        XCTAssertEqual(retired(h.suite).count, 1)
+        XCTAssertFalse(h.runtime.hasMesh)
+    }
+
+    func testARetireFailureSurfacesAnAlert() async {
+        let h = await withTwoDevices()
+        defer { h.cleanUp() }
+        struct Boom: Error {}
+        h.runtime.retireStore = { _, _ in throw Boom() }
+        h.runtime.requestExit()
+        await h.runtime.confirmExit()
+        XCTAssertEqual(h.runtime.exitFailure, "The old data on this device couldn't be set aside. Try again.")
+        XCTAssertTrue(retired(h.suite).isEmpty)
+        h.runtime.dismissExitFailure()
+        XCTAssertNil(h.runtime.exitFailure)
     }
 
     func testCancelChangesNothing() async {
@@ -73,7 +103,12 @@ final class MeshExitTests: XCTestCase {
 
     func testTheConfirmationsSayPlainlyWhatHappens() {
         XCTAssertEqual(
-            MeshExit.leave.message, "This device leaves the mesh. Your chats stay on your other devices.")
+            MeshExit.leave.message,
+            "This device leaves the mesh and its copy of your chats is set aside. Your chats stay on your other "
+                + "devices. To remove this device from their list, use Remove Device on one of them.")
+        XCTAssertEqual(MeshExit.leave.title, "Leave This Mesh?")
+        XCTAssertEqual(MeshExit.leave.confirmLabel, "Leave")
+        XCTAssertEqual(MeshExit.delete.confirmLabel, "Delete")
         XCTAssertTrue(MeshExit.delete.message.contains("can't be recovered"))
         XCTAssertEqual(MeshExit.delete.button, "Delete This Mesh")
     }

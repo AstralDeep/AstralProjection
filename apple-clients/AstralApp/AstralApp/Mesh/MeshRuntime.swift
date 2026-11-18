@@ -224,18 +224,26 @@ nonisolated enum MeshExit: Equatable, Sendable {
 
     var title: String {
         switch self {
-        case .leave: return "Leave this mesh?"
-        case .delete: return "Delete this mesh?"
+        case .leave: return "Leave This Mesh?"
+        case .delete: return "Delete This Mesh?"
         case .reset: return "Set this device's data aside?"
         }
     }
 
     var message: String {
         switch self {
-        case .leave: return "This device leaves the mesh. Your chats stay on your other devices."
+        case .leave: return "This device leaves the mesh and its copy of your chats is set aside. Your chats stay on your other devices. To remove this device from their list, use Remove Device on one of them."
         case .delete:
             return "This deletes the mesh from this device. Without your recovery words it can't be recovered."
         case .reset: return "This device starts over. Its old mesh data is kept aside and nothing is sent."
+        }
+    }
+
+    var confirmLabel: String {
+        switch self {
+        case .leave: return "Leave"
+        case .delete: return "Delete"
+        case .reset: return "Set Data Aside"
         }
     }
 
@@ -468,6 +476,8 @@ final class MeshRuntime {
     private(set) var restoredInstall = false
     private(set) var confirmingNewMesh = false
     private(set) var confirmingExit: MeshExit?
+    private(set) var exitFailure: String?
+    var retireStore: @Sendable (URL, Date) throws -> URL? = { try MeshStoreRetirement.retire($0, now: $1) }
     private(set) var networkNotice: String?
     var notice: String?
     @ObservationIgnored weak var speechSink: MeshSpeechSink?
@@ -1096,30 +1106,20 @@ final class MeshRuntime {
 
     func cancelExit() { confirmingExit = nil }
 
+    func dismissExitFailure() { exitFailure = nil }
+
     func confirmExit() async {
-        guard let exit = confirmingExit else { return }
+        guard confirmingExit != nil else { return }
         confirmingExit = nil
-        if exit == .leave {
-            guard let own = members.first(where: \.isThisDevice) else { return }
-            do {
-                try await call { try $0.removeDevice(memberId: own.memberId) }
-            } catch MeshKernelError.consentDenied {
-                notice = "Leaving the mesh was not approved."
-                return
-            } catch {
-                notice = Self.describe(error)
-                return
-            }
-        }
         await close()
         do {
-            _ = try MeshStoreRetirement.retire(dataDirectory, now: now())
+            _ = try retireStore(dataDirectory, now())
             try keys?.erase()
             keys = nil
             endedShares = endedShareStore.load()
             restoredInstall = false
         } catch {
-            notice = "The old data on this device couldn't be set aside. Try again."
+            exitFailure = "The old data on this device couldn't be set aside. Try again."
         }
         await open()
     }
