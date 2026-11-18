@@ -4,7 +4,7 @@
 import Foundation
 import Security
 
-public enum MeshKeyStorageError: Error { case storage }
+public enum MeshKeyStorageError: Error, Equatable { case storage, migration(String) }
 
 public protocol MeshKeyStorage: Sendable {
     func load(_ key: String) throws -> Data?
@@ -43,15 +43,30 @@ public final class KeychainMeshKeyStorage: MeshKeyStorage, @unchecked Sendable {
     public let service: String
     public init(service: String = KeychainServices.name("mesh")) { self.service = service }
 
-    private func query(_ key: String) -> [String: Any] {
-        [
+    private func query(_ key: String?) -> [String: Any] {
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: key,
         ]
+        if let key { query[kSecAttrAccount as String] = key }
+        #if os(macOS)
+            query[kSecUseDataProtectionKeychain as String] = true
+        #endif
+        return query
+    }
+
+    private func prepare() throws {
+        #if os(macOS)
+            do {
+                try LegacyKeychainMigrator.shared.ensureMigrated(service: service, accessibility: .whenUnlocked)
+            } catch let error as KeychainMigrationError {
+                throw MeshKeyStorageError.migration(error.code)
+            }
+        #endif
     }
 
     public func load(_ key: String) throws -> Data? {
+        try prepare()
         var query = query(key)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -63,6 +78,7 @@ public final class KeychainMeshKeyStorage: MeshKeyStorage, @unchecked Sendable {
     }
 
     public func save(_ value: Data, key: String) throws {
+        try prepare()
         let query = query(key)
         let attributes: [String: Any] = [
             kSecValueData as String: value,
@@ -76,16 +92,16 @@ public final class KeychainMeshKeyStorage: MeshKeyStorage, @unchecked Sendable {
     }
 
     public func remove(_ key: String) throws {
+        try prepare()
         let status = SecItemDelete(query(key) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else { throw MeshKeyStorageError.storage }
     }
 
     public func retainOnly(_ key: String?) throws {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecReturnAttributes as String: true, kSecMatchLimit as String: kSecMatchLimitAll,
-        ]
+        try prepare()
+        var query = query(nil)
+        query[kSecReturnAttributes as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitAll
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         if status == errSecItemNotFound { return }

@@ -157,6 +157,7 @@ def test_direct_download_host_keeps_store_identity_and_hardened_runtime() -> Non
     entitlements = _plist("apple-clients/AstralApp/AstralApp-DirectDownload.entitlements")
     assert entitlements == {
         "com.apple.security.device.audio-input": True,
+        "keychain-access-groups": ["$(AppIdentifierPrefix)com.personalailabs.astraldeep"],
         "com.apple.developer.associated-domains": [
             "applinks:astraldeep.github.io",
             "webcredentials:astraldeep.github.io",
