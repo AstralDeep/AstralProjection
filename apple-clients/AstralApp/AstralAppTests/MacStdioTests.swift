@@ -43,6 +43,7 @@
         private let lock = NSLock()
         private var heads: [String] = []
         private(set) var stopped = false
+        private let exited = DispatchSemaphore(value: 0)
 
         init() {
             let made = socket(AF_INET, SOCK_STREAM, 0)
@@ -70,14 +71,33 @@
         func start() throws {}
 
         func stop() {
-            lock.withLock { stopped = true }
-            close(descriptor)
+            let first = lock.withLock { () -> Bool in
+                if stopped { return false }
+                stopped = true
+                return true
+            }
+            if first { shutdown(descriptor, SHUT_RDWR) }
         }
 
+        func waitForExit(seconds: Double) -> Bool {
+            guard exited.wait(timeout: .now() + seconds) == .success else { return false }
+            exited.signal()
+            return true
+        }
+
+        // The serve thread alone closes the listener so no stop() can close a descriptor number that was reused.
         private func serve() {
-            while true {
+            defer {
+                close(descriptor)
+                exited.signal()
+            }
+            while !lock.withLock({ stopped }) {
+                var watched = pollfd(fd: descriptor, events: Int16(POLLIN), revents: 0)
+                let ready = poll(&watched, 1, 50)
+                if ready < 0 && errno != EINTR { return }
+                if ready <= 0 { continue }
                 let client = accept(descriptor, nil, nil)
-                if client < 0 { return }
+                if client < 0 { continue }
                 var buffer = [UInt8](repeating: 0, count: 512)
                 let count = read(client, &buffer, buffer.count)
                 if count > 0 {
@@ -197,6 +217,18 @@
             XCTAssertEqual(proxy?.requests, ["CONNECT allowed.example:443 HTTP/1.1"])
             let direct = try await call(server, ["check": "tcp", "port": Int(proxy?.port ?? 0) + 1])
             XCTAssertEqual(direct.1 as? String, "refused:PermissionError")
+        }
+
+        func testStoppingTheProxyTwiceNeverClosesADescriptorItDoesNotOwn() throws {
+            let recording = try XCTUnwrap(proxy)
+            recording.stop()
+            recording.stop()
+            XCTAssertTrue(recording.waitForExit(seconds: 5))
+            let reused = socket(AF_INET, SOCK_STREAM, 0)
+            XCTAssertGreaterThanOrEqual(reused, 0)
+            defer { close(reused) }
+            recording.stop()
+            XCTAssertNotEqual(fcntl(reused, F_GETFD), -1)
         }
 
         func testDirectTcpUdpAndDnsAreRefused() async throws {
