@@ -49,11 +49,6 @@ struct MeshOnboardingView: View {
     private var choices: some View {
         VStack(spacing: 8) {
             Text("Your personal mesh").font(ConsoleTypography.title2).accessibilityAddTraits(.isHeader)
-            Text("A mesh links your devices. Your chats and assistant follow you, and no server holds them.")
-                .font(ConsoleTypography.body)
-                .foregroundStyle(p.muted)
-                .multilineTextAlignment(.center)
-                .accessibilityIdentifier("mesh.explainer")
         }
         if mesh.restoredInstall {
             Label(

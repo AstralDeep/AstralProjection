@@ -354,7 +354,7 @@
             ]
             let refused = await refusal("confirmation_required", fixture, "ax_action", press)
             let message = try XCTUnwrap(refused)
-            let line = "[\(delete)] button \"Delete\" — TextEdit"
+            let line = "[\(delete)] button \"Delete\" in TextEdit"
             XCTAssertTrue(message.hasSuffix(": " + line), message)
             XCTAssertFalse(performed(fixture, kAXPressAction, on: fixture.delete))
             var reviewed = press
@@ -378,7 +378,7 @@
                 "confirmation_required", fixture, "ax_action",
                 ["ref": .string(fresh), "snapshot_id": .string(next), "action": .string("press")])
             let again = try XCTUnwrap(reissued)
-            XCTAssertTrue(again.hasSuffix("[\(fresh)] button \"Delete\" — TextEdit"))
+            XCTAssertTrue(again.hasSuffix("[\(fresh)] button \"Delete\" in TextEdit"))
         }
 
         func testBypassedRequestsSkipReviewOnlyWhenTheHostBypassIsOn() async throws {
@@ -470,7 +470,7 @@
             let trash: JSONValue = .array([.string("File"), .string("Move to Trash")])
             let refused = await refusal("confirmation_required", fixture, "menu", ["path": trash])
             let message = try XCTUnwrap(refused)
-            let line = "menu \"File › Move to Trash\" — TextEdit"
+            let line = "menu \"File › Move to Trash\" in TextEdit"
             XCTAssertTrue(message.hasSuffix(": " + line), message)
             XCTAssertFalse(performed(fixture, kAXPressAction, on: fixture.trashItem))
             let approved = try await run(
@@ -551,7 +551,7 @@
             XCTAssertEqual(
                 cues,
                 [
-                    .app("TextEdit"), .point(CGPoint(x: 130, y: 20), label: "Save — TextEdit"),
+                    .app("TextEdit"), .point(CGPoint(x: 130, y: 20), label: "Save in TextEdit"),
                     .click(CGPoint(x: 130, y: 20)),
                 ])
             let tree = try await run(fixture, "ax_tree")

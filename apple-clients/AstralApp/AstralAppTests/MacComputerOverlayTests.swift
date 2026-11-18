@@ -203,7 +203,7 @@
             overlay.cue(.app("TextEdit"))
             XCTAssertEqual(overlay.model.app, "TextEdit")
             let point = CGPoint(x: primary.midX, y: primary.midY)
-            overlay.cue(.point(point, label: "Save — TextEdit"))
+            overlay.cue(.point(point, label: "Save in TextEdit"))
             XCTAssertEqual(canvas.pointerPosition, CGPoint(x: primary.midX, y: primary.height - primary.midY))
             XCTAssertTrue(canvas.cueNames.contains("label"))
             overlay.cue(.click(point))

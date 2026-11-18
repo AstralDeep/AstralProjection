@@ -790,7 +790,7 @@
             let anchor = matched.first?.frame.flatMap { frame in
                 frame.width > 0 && frame.height > 0 ? CGPoint(x: frame.midX, y: frame.midY) : nil
             }
-            if let anchor { try await glide(to: anchor, label: "\(leaf.title) — \(app)") }
+            if let anchor { try await glide(to: anchor, label: "\(leaf.title) in \(app)") }
             try authorize()
             try MacComputerAccessibility.check(system.perform(kAXPressAction, on: leaf.element), "the menu command")
             if let anchor { await cue(.click(anchor)) }
