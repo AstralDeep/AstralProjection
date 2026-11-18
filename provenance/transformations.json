@@ -108,7 +108,7 @@
       "sourceMode": "100644",
       "task": "T056/T060",
       "reason": "Feature 088 native checkpoint: apply the existing Kotlin formatting gate now that it includes app sources; retain voice and release-evidence behavior. Feature 088 genuine Android JVM/device coverage: opt-in dedicated coverage variant, separate exact tooling lock and checksum additions, one pinned JVM agent and native full-class reporting. Normal debug/release runtime dependencies and app identities remain unchanged; protected staging uses the same retained APKs. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Single-resume proof 2026-09-28: reconnect_resume restores the completed chat through one resumed staging socket and reports trial_count 1 for AstralDeep's single-cycle floor instead of repeating twenty trials.",
-      "resultSha256": "ed6365fd8aedb8c22e2064f5645ad2f00426bca09bfa3d1b689f9da23f95e378"
+      "resultSha256": "cdcd26078741ee35f8ee989bd375e97de20998094752e20be2d7c44287275b9c"
     },
     {
       "path": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/RenderersTest.kt",
@@ -1024,7 +1024,7 @@
       "sourcePath": "apple-clients/AstralApp/AstralApp.xcodeproj/project.pbxproj",
       "sourceBlob": "9fb8c3b036fc1c2c9dfa6a822163f796aee0af78",
       "sourceMode": "100644",
-      "resultSha256": "5a1accd5a91e8085abe14a8f127a5c48ae02b16f452b6737d7047a7b56e1158d",
+      "resultSha256": "0e7fa660675fd276c7c3cdc5e70a0043b0172e79991754021a93f169361d8936",
       "task": "T013/T102/T015/T007/T008/T010/T021/T001/T002/T106",
       "reason": "Record the inherited 1.4 transformation and advance all ten Apple configurations to the 1.5 / build-61 source release candidate after App Store Connect confirmed iOS and macOS build 60; protected publication retains the monotonic store build override. Advance all ten Apple configurations to version 1.6 / build 62 for the existing App Store Connect 1.6 entries; rebuild the signed Release archives and keep export version management disabled. No app identities or runtime code change. Add an isolated simulator-only Watch navigation harness and UI-test target/scheme for real Work List, task, retry and disappearance verification. The original ten version/build configurations and shipped target dependencies remain unchanged; the four separately guarded test configurations are unsigned and excluded from archives. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Release 2026-09-27: advance all fourteen versioned Apple configurations to 1.7 / build 63 so Apple and Android share the 1.7 release number; run 62 (1.6) never uploaded. Prepare all fourteen Apple configurations as version 1.8 / build 67 after the owner confirmed the released 1.7 / build 66; retain every bundle identity and require protected publication to verify current store build collisions before upload. Integrate the explicit-consent direct-download Mac computer host with bounded existing-v1 messages, current-channel delivery and controller-only defaults for other distributions. Disable automatically injected debugger entitlements and testability in the signed DirectDownload host configuration; refuse debugger-enabled signatures at runtime. Advance Apple build numbers to 68 for the Mac transcript bubble repair while preserving registered identities and distribution gates. Advance all twenty-one Apple configurations to build 69 for the native Mac workbench copy cleanup, preserving bundle identities, signing and distribution gates. Advance all twenty-one Apple configurations to 1.9 / build 70 for macOS harness parity and add the exact Sparkle 2.10.1 package to the AstralApp target, linked and embedded for macOS only, preserving bundle identities, signing and distribution gates. Route Sparkle through the local AstralSparkle wrapper package, whose macOS-only conditional dependency keeps the binary xcframework out of iOS builds while macOS still embeds Sparkle.framework. Bundle the guidance, terminal, workspace and connections contract fixtures into the macOS unit-test target so settings snapshots never read the source tree. Complete owner/device/server-generation fenced mobile provider admission, conditional lifecycle cleanup, source navigation, registered UI presence and shared notification routing without a client-owned chrome catalog. Bind the qualified local mesh runtime, attachment presentation, on-device voice dependencies, protected key custody and stable localtest signing to the current committed Apple client bytes. Name the Developer ID provisioning profile for the DirectDownload host so the signed direct-download app carries its associated-domains entitlement. Remove the sign-in, server session and identity provider code from this file for the sign-in free clients."
     },
@@ -1303,7 +1303,7 @@
       "sourcePath": "apple-clients/AstralApp/AstralAppUITests/ReleaseEvidenceUITests.swift",
       "sourceBlob": "18e207353f54c5bfb33d55df444e20ef111cc9aa",
       "sourceMode": "100644",
-      "resultSha256": "445f889cc89e98239ac80d80b29082674a01ce9d2a787ae1feb68654bc97f030",
+      "resultSha256": "b9f18be348d08cf4a57e073f2ca075de1366866fc037a3379c046bbf8629c947",
       "task": "T063",
       "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Single-resume proof 2026-09-28: reconnect_resume proves one terminate-and-relaunch restore of the prompt and dice answer within five seconds and reports trial_count 1 instead of twenty relaunches. Rebase the voice evidence check onto the proven voice-composer and voice-terminal UI fixtures as voice_terminal_failure_and_typed_fallback, recording the surfaced terminal turn-failure notice, typed-fallback availability, server-owned composer controls, component build identity, and the exact staged voice runtime digest identities with no transcripts, audio, credentials, or PHI. Rebase the voice evidence check onto the proven voice-composer and voice-terminal UI fixtures as voice_terminal_failure_and_typed_fallback, recording the surfaced terminal turn-failure notice, typed-fallback availability, server-owned composer controls, component build identity, and the exact staged voice runtime digest identities with no transcripts, audio, credentials, or PHI."
     },
@@ -1737,7 +1737,7 @@
       "sourceMode": "100644",
       "task": "T057/T061/T015/T019/T025",
       "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Scoped viewport hydration retains the settled conversation and local interaction state while applying server-adapted layouts after correlated delivery. Fair CI 2026-09-27: lay out the wrist conversation in an eager stack; scrolling the lazy stack to its trailing Start here link re-laid it out without end and hung the catalog-to-chat UI test. Conserve wrist conversation space by collapsing redundant introductory copy under the negotiated stack presentation.",
-      "resultSha256": "abe54252f13f9a401837ff1ec4ca9e371611a5b7d6d20decd3085b42604bcd18"
+      "resultSha256": "e2228c1ce82e985d4defe29cc6c94410ab538150c695d64dc7144f0c64bc3298"
     },
     {
       "path": "apple-clients/AstralWatch/Views/WatchComponentView.swift",
@@ -1755,7 +1755,7 @@
       "sourceMode": "100644",
       "task": "T057/T061/T060/T037/T015/T019/T025",
       "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 native history: consume owner-scoped canonical ROTE rows without altering canvas or speech, request history on established sockets, and preserve same-owner HTTP fallback through reconnect while rejecting stale account results. Feature 088 committed continuation: Present the shared Work menu action and real List navigation, task loading, retry, timeout and disappearance retirement. Feature 088 private notes: preserve complete literal native guidance forms and server menu order; bind requests to the original connection and current owner surface, refuse replay, and retire values on navigation or uncertain completion. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Bind the already implemented native History cleanup that removes decorative stars and leading icon slots while retaining navigation. Fair CI 2026-09-27: the Work surface waits on the model's Work read timeout instead of its own sleep; the timer still starts with the view task and retires on cancellation. Keep native watch navigation dark for system-clock contrast while accepted palette roles own its content. Preserve a static accessible Work loading state while the bounded request, timeout and cancellation remain active.",
-      "resultSha256": "d5ddd9bd5280902d378405c0754d1cefe22aa32ac0664b1c436566c22d08800b"
+      "resultSha256": "959602fd714b47d02038f10fb676e1cf242d221acd89408deef2b9499a7efba7"
     },
     {
       "path": "apple-clients/AstralWatch/WatchModel.swift",
@@ -1764,7 +1764,7 @@
       "sourceMode": "100644",
       "task": "T057/T061/T060/T037/T015/T020/T024/T025",
       "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 native history: consume owner-scoped canonical ROTE rows without altering canvas or speech, request history on established sockets, and preserve same-owner HTTP fallback through reconnect while rejecting stale account results. Feature 088 Watch history: advertise the implemented history and loading primitives, retain owner-scoped decoding, and render existing passive detail text without adding artifact actions. Feature 088 committed continuation: Consume only negotiated Watch Work menus and current complete responses, with bounded generation/account/socket lifetimes and no queued reads. Feature 088 private notes: preserve complete literal native guidance forms and server menu order; bind requests to the original connection and current owner surface, refuse replay, and retire values on navigation or uncertain completion. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Scoped viewport hydration retains the settled conversation and local interaction state while applying server-adapted layouts after correlated delivery. Suppress retired viewport admission refusals without touching a newer conversation. Fair CI 2026-09-27: run the unchanged ten-second Work read timeout on an injectable model clock (production default SuspendingClock, matching the former Task.sleep) so unit tests prove the duration without wall time. Watch credential rotation renews the physical registered socket with current owner, server, session and connection fences, single-flight broker refresh and actual-expiry validation. Late replies cannot persist or expose retired credentials; current default read recovery rechecks the fresh declaration and preserves canonical Advanced selection without replaying queries, writes or searches. Production Keychain and clock defaults are preserved; current loopback, unit and navigation fixtures bind the repair. Authorized recent-chat fallback rejects a retired server response and retires only its own loading state without disturbing a newer read. Normal REST and voice token providers bind the captured owner and server before and after awaiting renewal; explicit old-session teardown credentials retain their original scope. Owner safety controls: preserve shared stop/resume/verify vocabulary, exact offered revision and current owner/connection delivery without offline replay; add watch controls and conformance tests. Bind the explicit Work continuity control to closed server-issued bindings, current owner/session/connection checks, fresh read-only recovery after uncertainty, and matching client dispositions. Display the explicit unavailable mesh-key voice binding instead of proposing account sign-in.",
-      "resultSha256": "219eae00bf81fe048cd525000e82ea412d8bdc8a6a9fda906d64d8a008b0bdaa"
+      "resultSha256": "70b6f663bc592721558531bbc2116e8a24a04d156515eac3c1d9dd7c74ce4701"
     },
     {
       "path": "apple-clients/AstralWatch/WatchOverrideSync.swift",
@@ -1906,7 +1906,7 @@
       "sourcePath": "apple-clients/README.md",
       "sourceBlob": "cb691c78cf96254f272637b5c6ab21f59a6cb0ed",
       "sourceMode": "100644",
-      "resultSha256": "d9f8ec53350ec0e471ed9d51f1f5e5be8757ebd59d53870d3ab3684979631dea",
+      "resultSha256": "03f9375e3833d4e1bbc1363843f732b2a1ecb46bf737d8aa37e9c6b29d27bdd9",
       "task": "T058/T188/T010/T021/T106",
       "reason": "Document active Apple owner CI, canonical Primitives identity, standalone provenance, portable fixture regeneration, and the required qualified-host gates. Feature 088 committed continuation: Document the qualified Mac Store package repair helper that preserves executable code and profile-authorized identities while correcting nested resource signatures. Projection Constitution XII: state the pinned astralprims 0.4.0 and the mirror's 38 primitives, cite Projection Principle I for the pipeline, and point the Keycloak realm and BYO-agent references at AstralDeep's docs, which do not exist in this repository. Complete shared mesh management and possession-bound enrollment using protected account/server device custody, current owner/session lifetimes, cookie-free member verification, and locked owning cryptographic dependencies. Document the explicit-consent DirectDownload Mac host, signed build and permission setup, selected workspaces, reviewed Terminal behavior, local controls and separate live qualification. Drop citations of the retired repository constitution; the stated rules are unchanged. Bind the qualified local mesh runtime, attachment presentation, on-device voice dependencies, protected key custody and stable localtest signing to the current committed Apple client bytes. Preserve the selected voice chat and callback lifetime, qualify mono voice-processing capture and explicit microphone state, and retain content-free warm mesh wake handling with stable local signing. Remove the sign-in, server session and identity provider code from this file for the sign-in free clients."
     },
@@ -2698,7 +2698,7 @@
       "sourcePath": "tooling/web-ci/tests/release-060.spec.js",
       "sourceBlob": "819f9d8d549f54c6a3b48d2c6353088f18af3324",
       "sourceMode": "100644",
-      "resultSha256": "a837ec59814f82ebe772a0b9ebe551e8987a2f15f0c5f95c09a1a50cdd2c6b18",
+      "resultSha256": "02d1cf5321be07d0f921f76e795b980dd6879e693555c49288278f76b6393378",
       "task": "T063/T106",
       "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Single-resume proof 2026-09-28: reconnect_resume proves one reload restores the transcript and canvas within five seconds without a welcome and reports trial_count 1 instead of twenty reloads. Remove the sign-in, server session and identity provider code from this file for the sign-in free clients."
     },
@@ -2743,7 +2743,7 @@
       "sourcePath": "windows-client/README.md",
       "sourceBlob": "96fa82dd5e8c38e40f60fdaf883e33ef26ae4f8b",
       "sourceMode": "100644",
-      "resultSha256": "ddf45f711e84adf00ff5a366e5df37bcaac1f6c5f48ab6924b234c1ed25d7d6e",
+      "resultSha256": "b85db2ead4dee043a7d9fd3ff77722f479c8982be31b83cc72747ea3a4bd07e2",
       "task": "T060/T062/T188/T056/T058/T104/T102/T014/T106",
       "reason": "Document standalone trust validation, reproducible Windows qualification, and the 0.5.0 release-candidate deployment profile. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Restrict frozen native dependency discovery to the selected Python and Windows directories, with tainted-path regression coverage. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes. Release 2026-09-26: advance the Windows client identity to 0.6.0 for the native UI v2 release. Remove the sign-in, server session and identity provider code from this file for the sign-in free clients."
     },
@@ -2986,7 +2986,7 @@
       "sourcePath": "windows-client/tests/release_evidence_060.py",
       "sourceBlob": "21b46644204d9d509e129dfcde32dce6bc202584",
       "sourceMode": "100644",
-      "resultSha256": "8a39671293a91d6faef576a0a8d65eb25414ef1b7bd428f4af5b98e97155ad5e",
+      "resultSha256": "41f71d28afbe43c4135f0e1539de6ce1405a6bc3b6c4de2660f9c4c4884781f5",
       "task": "T102/T014",
       "reason": "Require frozen Windows release evidence to report the 0.5.0 candidate identity. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes. Release 2026-09-26: advance the Windows client identity to 0.6.0 for the native UI v2 release. Single-resume proof 2026-09-28: reconnect_resume proves one resumed session restores the completed transcript and reports trial_count 1 instead of twenty sessions; the report description no longer carries a task ID or a stale version. Resolve the release-evidence validator and schema from the nearest ancestor that carries them, so the producer loads them inside AstralDeep."
     },
@@ -3527,7 +3527,7 @@
       "resultPaths": [
         {
           "path": ".github/workflows/apple-ci.yml",
-          "sha256": "cb1d8210a36babb575d8da86e122ce110cd95a1f98bcfc5c3d3c6da61884f295"
+          "sha256": "8026ea10d137c5abc176052df87835d370d565c83911b6ffd3023be51672ca1d"
         }
       ],
       "task": "T056/T015/T010/T024/T031/T033/T025",
@@ -3547,7 +3547,7 @@
       "sourcePath": ".github/workflows/build-windows-candidate.yml",
       "sourceBlob": "8fc92178a67ef67703b7e17e1ed7a15df5aa3867",
       "sourceMode": "100644",
-      "resultSha256": "83f65c779d4f2e2c4d7b5570ab1ac81db6a0704666655bfd8f9cd0b1efa75c6a",
+      "resultSha256": "810394f2da87618217d533511b5fbcb375f94837c5135e265fa631a75c3eb73c",
       "task": "T056/T102/T014",
       "reason": "Keep the copied Windows candidate workflow inert, read-only, and secret-free while labeling the 0.5.0 candidate. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes. Release 2026-09-26: advance the Windows client identity to 0.6.0 for the native UI v2 release."
     },
