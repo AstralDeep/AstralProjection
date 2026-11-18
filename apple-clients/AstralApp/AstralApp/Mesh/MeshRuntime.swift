@@ -1088,8 +1088,10 @@ final class MeshRuntime {
 
     func cancelNewMesh() { confirmingNewMesh = false }
 
+    var exitAction: MeshExit { status.hasMesh ? (members.count > 1 ? .leave : .delete) : .reset }
+
     func requestExit() {
-        confirmingExit = status.hasMesh ? (members.count > 1 ? .leave : .delete) : .reset
+        confirmingExit = exitAction
     }
 
     func cancelExit() { confirmingExit = nil }

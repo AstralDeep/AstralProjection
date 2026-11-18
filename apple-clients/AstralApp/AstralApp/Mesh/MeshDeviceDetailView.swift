@@ -119,7 +119,7 @@ struct MeshDeviceDetailView: View {
     private var exitSection: some View {
         let single = mesh.members.count <= 1
         return Section {
-            Button(single ? "Delete This Mesh" : "Leave This Mesh", role: .destructive) { mesh.requestExit() }
+            Button(mesh.exitAction.button, role: .destructive) { mesh.requestExit() }
                 .accessibilityIdentifier("mesh.device.exit")
         } footer: {
             Text(single ? "No other device is in this mesh." : "Your chats stay on your other devices.")

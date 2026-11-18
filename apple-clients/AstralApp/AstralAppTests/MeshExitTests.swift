@@ -77,4 +77,20 @@ final class MeshExitTests: XCTestCase {
         XCTAssertTrue(MeshExit.delete.message.contains("can't be recovered"))
         XCTAssertEqual(MeshExit.delete.button, "Delete This Mesh")
     }
+
+    func testSettingsExitActionLabelFollowsTheDeviceCount() async {
+        let h = await withTwoDevices()
+        defer { h.cleanUp() }
+        XCTAssertEqual(h.runtime.exitAction, .delete)
+        XCTAssertEqual(h.runtime.exitAction.button, "Delete This Mesh")
+        h.kernel.addMember(
+            MeshMember(
+                memberId: "sha256:" + String(repeating: "e", count: 64), label: "Phone", kind: .pocket,
+                isThisDevice: false, lastSeen: nil, path: .none))
+        await h.runtime.refreshRoster()
+        XCTAssertEqual(h.runtime.exitAction, .leave)
+        XCTAssertEqual(h.runtime.exitAction.button, "Leave This Mesh")
+        h.runtime.requestExit()
+        XCTAssertEqual(h.runtime.confirmingExit, h.runtime.exitAction)
+    }
 }

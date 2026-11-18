@@ -147,12 +147,18 @@ struct MeshSettingsView: View {
                     }
                 }
             }
+            Section("This Mesh") {
+                Button(mesh.exitAction.button, role: .destructive) { mesh.requestExit() }
+                    .accessibilityLabel(mesh.exitAction.button)
+                    .accessibilityIdentifier("settings.mesh.exit")
+            }
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .meshReadableWidth()
         .background(p.bg)
         .navigationTitle("Settings")
+        .meshExitConfirmation()
         .alert("Rename Device", isPresented: $renaming) {
             TextField("Name", text: $draft)
             Button("Save") {
