@@ -245,6 +245,8 @@ nonisolated enum MeshConnectionID {
     static let local = "mesh.connections.local"
     static let proceed = "mesh.connections.continue"
     static let add = "mesh.connections.add"
+    static let empty = "mesh.connections.empty"
+    static let legacyProblem = "mesh.connections.legacy.problem"
     static let legacy = "mesh.connections.legacy"
     static let banner = "mesh.connections.banner"
     static let signInStatus = "mesh.connections.signin.status"

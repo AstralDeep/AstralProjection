@@ -38,7 +38,7 @@ struct MeshDevicesView: View {
                     NavigationLink(value: member.memberId) { MeshDeviceRow(member: member, sync: sync(of: member)) }
                         .accessibilityIdentifier("mesh.member.\(member.memberId.suffix(8))")
                         .swipeActions {
-                            Button("Remove", role: .destructive) { removing = member }
+                            Button("Remove Device", role: .destructive) { removing = member }
                         }
                         .contextMenu {
                             Button("Remove Device", role: .destructive) { removing = member }
