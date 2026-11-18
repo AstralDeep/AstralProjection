@@ -216,6 +216,7 @@ struct MeshRecoveryView: View {
     @State private var written = false
     @State private var answers = ["", ""]
     @State private var mismatch = false
+    @State private var exporting = false
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
@@ -239,6 +240,7 @@ struct MeshRecoveryView: View {
                             .accessibilityIdentifier("mesh.recovery.word.\(index + 1)")
                     }
                 }
+                saveAsTextFile
                 Toggle("I wrote all 24 words down in order", isOn: $written)
                     .accessibilityIdentifier("mesh.recovery.written")
                 if written {
@@ -281,5 +283,25 @@ struct MeshRecoveryView: View {
             .frame(maxWidth: .infinity)
         }
         .background(p.bg)
+        .fileExporter(
+            isPresented: $exporting, document: MeshRecoveryWordsDocument(words: words), contentType: .plainText,
+            defaultFilename: MeshRecoveryWordsDocument.defaultFilename
+        ) { _ in }
+    }
+
+    private var saveAsTextFile: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                exporting = true
+            } label: {
+                Label("Save as Text File", systemImage: "square.and.arrow.down")
+            }
+            .meshBordered()
+            .accessibilityLabel("Save recovery words as a text file")
+            .accessibilityIdentifier("mesh.recovery.save")
+            Text("Anyone with this file can recover your mesh.")
+                .font(ConsoleTypography.footnote)
+                .foregroundStyle(p.muted)
+        }
     }
 }
