@@ -90,44 +90,6 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
         return prompt
     }
 
-    static func connection(canonicalRecord: Data, signingInput: Data) throws -> ConsentPrompt {
-        let record = try object(
-            canonicalRecord,
-            fields: ["auth", "device", "egress", "endpoint", "flow", "id", "kind", "local", "name", "tools", "v"])
-        let consentData = try payload(signingInput, context: "astral.consent/v1")
-        let consentObject = try object(consentData, fields: ["v", "kind", "digest", "device", "clock"])
-        let consent = try JSONDecoder().decode(ActionConsent.self, from: consentData)
-        try checkClock(consentObject["clock"], value: consent.clock)
-        guard record["v"] as? Int == 1, let name = record["name"] as? String, !name.isEmpty,
-            let endpoint = record["endpoint"] as? String, !endpoint.isEmpty,
-            let flow = record["flow"] as? String, ["private", "phi"].contains(flow),
-            let auth = record["auth"] as? [String: Any],
-            Set(auth.keys) == ["client_id", "issuer", "resource", "scheme", "scopes"],
-            let scheme = auth["scheme"] as? String, ["oauth", "none"].contains(scheme),
-            let scopes = auth["scopes"] as? [String], let tools = record["tools"] as? [[String: Any]],
-            let egress = record["egress"] as? [String], consent.v == 1, consent.kind == "connection",
-            isID(consent.device), consent.digest == hashID(canonicalRecord)
-        else { throw ConsentPromptError.invalidInput }
-        let names = try tools.map { tool -> String in
-            guard Set(tool.keys) == ["hash", "name"], let name = tool["name"] as? String else {
-                throw ConsentPromptError.invalidInput
-            }
-            return name
-        }
-        var lines = ["Server: " + endpoint, "Sign-in: " + (scheme == "oauth" ? "OAuth" : "none")]
-        if let issuer = auth["issuer"] as? String { lines.append("Issuer: " + issuer) }
-        if !scopes.isEmpty { lines.append("Scopes: " + scopes.joined(separator: ", ")) }
-        lines.append("Data class: " + flow)
-        lines.append("Reaches: " + egress.joined(separator: ", "))
-        lines.append("Tools: " + (names.isEmpty ? "none listed" : names.joined(separator: ", ")))
-        var prompt = ConsentPrompt(
-            actionTitle: "Connect " + name, effect: "connection.approve", target: name + " at " + endpoint,
-            arguments: lines.joined(separator: "\n") + "\nRecord: " + String(decoding: canonicalRecord, as: UTF8.self),
-            digest: consent.digest, requiresBiometry: true)
-        prompt.signingInputHash = hash(signingInput)
-        return prompt
-    }
-
     static func contact(canonicalRecord: Data, signingInput: Data) throws -> ConsentPrompt {
         let record = try object(canonicalRecord, fields: ["count", "heads", "mesh", "ms", "name", "state", "v"])
         let consent = try recordConsent(signingInput, kind: "contact", record: canonicalRecord)
@@ -166,7 +128,9 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
         return prompt
     }
 
-    private static func recordConsent(_ signingInput: Data, kind: String, record: Data) throws -> ActionConsent {
+    static func recordConsent(_ signingInput: Data, kind: String, record: Data) throws
+        -> (digest: String, device: String)
+    {
         let consentData = try payload(signingInput, context: "astral.consent/v1")
         let consentObject = try object(consentData, fields: ["v", "kind", "digest", "device", "clock"])
         let consent = try JSONDecoder().decode(ActionConsent.self, from: consentData)
@@ -174,7 +138,13 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
         guard consent.v == 1, consent.kind == kind, isID(consent.device), consent.digest == hashID(record) else {
             throw ConsentPromptError.invalidInput
         }
-        return consent
+        return (consent.digest, consent.device)
+    }
+
+    func bound(to signingInput: Data) -> ConsentPrompt {
+        var copy = self
+        copy.signingInputHash = Self.hash(signingInput)
+        return copy
     }
 
     static func fingerprint(_ mesh: String) -> String {
@@ -412,7 +382,7 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
         return Data(input.dropFirst(prefix.count))
     }
 
-    private static func object(_ data: Data, fields: Set<String>? = nil) throws -> [String: Any] {
+    static func object(_ data: Data, fields: Set<String>? = nil) throws -> [String: Any] {
         guard try KernelCanonicalJSON.canonicalize(data) == data,
             let value = try JSONSerialization.jsonObject(with: data) as? [String: Any],
             fields == nil || Set(value.keys) == fields
@@ -477,14 +447,14 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
         return bytes
     }
 
-    private static func isID(_ text: String) -> Bool {
+    static func isID(_ text: String) -> Bool {
         text.hasPrefix("sha256:") && text.utf8.count == 71
             && text.utf8.dropFirst(7).allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
     }
 
-    private static func hash(_ data: Data) -> Data { Data(SHA256.hash(data: data)) }
+    static func hash(_ data: Data) -> Data { Data(SHA256.hash(data: data)) }
 
-    private static func hashID(_ data: Data) -> String {
+    static func hashID(_ data: Data) -> String {
         "sha256:" + hash(data).map { String(format: "%02x", $0) }.joined()
     }
 }

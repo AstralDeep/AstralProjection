@@ -468,6 +468,7 @@ nonisolated enum KernelMapping {
         ("gate.", "A safety check refused this step."),
         ("consent.declined", MeshKernelError.consentDenied.message),
         ("signer.denied", MeshKernelError.consentDenied.message),
+        ("consent.unreadable", "This app can't show that request, so nothing was signed. (consent.unreadable)"),
         ("mesh.already_enrolled", "This device already belongs to a mesh."),
         ("mesh.not_enrolled", "This device has no mesh yet."),
         ("pairing.expired", "The code ran out of time."),
@@ -703,9 +704,10 @@ nonisolated enum KernelMapping {
             case .Denied(let code, _):
                 if code == "gate.mesh_stopped" { return MeshKernelError.stopped }
                 return code.hasPrefix("caller.") ? refusal(code) : MeshKernelError.consentDenied
-            case .InvalidInput(let code, _), .Verification(let code, _), .Network(let code, _), .Custody(let code, _),
-                .State(let code, _), .Mesh(let code, _):
-                return refusal(code)
+            case .InvalidInput(let code, let detail), .Verification(let code, let detail), .Network(let code, let detail),
+                .Custody(let code, let detail), .State(let code, let detail), .Mesh(let code, let detail):
+                let unreadable = detail.contains("consent.unreadable")
+                return refusal(unreadable ? "consent.unreadable" : code)
             case .Store(let code, _): return MeshKernelError.storage(failureText(code: code))
             }
         case let turns as TurnsError:
