@@ -3,7 +3,7 @@
 
 import XCTest
 
-@testable import AstralApp
+@testable import AstralDeep
 
 final class MeshEndedShareStoreTests: XCTestCase {
     private var directory: URL!
