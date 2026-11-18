@@ -2155,6 +2155,7 @@ final class MeshRuntime {
             await recoverOrdinaryTurns(expectedSession: session)
         case .syncStateChanged:
             await refreshSync()
+            await refreshProviders()
             await refreshMailbox()
             await recoverOrdinaryTurns(expectedSession: session)
         case .consentRequested:
@@ -2171,6 +2172,7 @@ final class MeshRuntime {
             await refreshAllowance()
         case .connectionsChanged:
             await refreshConnections()
+            await refreshProviders()
         case .contactsChanged:
             await refreshContacts()
             await refreshSharedItems()

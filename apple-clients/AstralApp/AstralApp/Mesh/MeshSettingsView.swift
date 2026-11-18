@@ -235,17 +235,7 @@ struct MeshModelProviderView: View {
                     NavigationLink {
                         MeshProviderSharingView(provider: provider)
                     } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(provider.model).font(ConsoleTypography.headline)
-                            Text(provider.baseURL).font(ConsoleTypography.footnote).foregroundStyle(p.muted)
-                            Text(provider.hasKey ? "Key stored in sealed storage" : "No key")
-                                .font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                            Text(
-                                provider.recipients == nil
-                                    ? "All devices, including future devices" : "Selected devices"
-                            )
-                            .font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                        }
+                        MeshConfiguredProviderRow(provider: provider, palette: p)
                     }
                     .accessibilityIdentifier("mesh.models.provider.\(provider.providerId)")
                     NavigationLink("Approve for PHI") {
@@ -254,7 +244,7 @@ struct MeshModelProviderView: View {
                     .accessibilityIdentifier("mesh.models.phi.\(provider.providerId)")
                 }
             }
-            Section("OpenAI-compatible provider") {
+            Section(mesh.providers.isEmpty ? "OpenAI-compatible provider" : "Add another provider") {
                 TextField("Provider name", text: $editor.providerName, prompt: Text(MeshProviderPlaceholder.name))
                     .autocorrectionDisabled()
                     #if os(iOS)
@@ -307,6 +297,31 @@ struct MeshModelProviderView: View {
         .meshReadableWidth()
         .background(p.bg)
         .navigationTitle("Model provider")
+        .task { await mesh.refreshProviders() }
+    }
+}
+
+struct MeshConfiguredProviderRow: View {
+    let provider: MeshModelProvider
+    let palette: AstralPalette
+
+    private var keyLine: String {
+        if !provider.availableOnDevice { return "Not shared with this device" }
+        return provider.hasKey ? "Key sealed to this device" : "No key"
+    }
+
+    private var audienceLine: String {
+        provider.recipients == nil ? "All devices, including future devices" : "Selected devices"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(provider.providerId).font(ConsoleTypography.headline)
+            Text(provider.model).font(ConsoleTypography.subheadline).foregroundStyle(palette.muted)
+            Text(provider.baseURL).font(ConsoleTypography.footnote).foregroundStyle(palette.muted)
+            Text(keyLine).font(ConsoleTypography.caption).foregroundStyle(palette.muted)
+            Text(audienceLine).font(ConsoleTypography.caption).foregroundStyle(palette.muted)
+        }
     }
 }
 

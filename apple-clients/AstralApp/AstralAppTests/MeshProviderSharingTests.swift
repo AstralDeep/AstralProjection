@@ -25,6 +25,36 @@ final class MeshProviderSharingTests: XCTestCase {
         XCTAssertNil(all.recipients)
     }
 
+    func testAProviderCreatedOnAnotherDeviceAppearsWithItsPublicFields() async {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        XCTAssertTrue(h.runtime.providers.isEmpty)
+        h.kernel.receiveProviderFromAnotherDevice(
+            MeshModelProvider(
+                providerId: "uky-glm", baseURL: "https://api-llm-factory.ai.uky.edu/v1", model: "zai-org/GLM-5.3-Flash",
+                hasKey: true, isDefault: true, recipients: nil, availableOnDevice: true))
+        let shown = await eventually { h.runtime.providers.count == 1 }
+        XCTAssertTrue(shown)
+        let provider = h.runtime.providers[0]
+        XCTAssertEqual(provider.providerId, "uky-glm")
+        XCTAssertEqual(provider.baseURL, "https://api-llm-factory.ai.uky.edu/v1")
+        XCTAssertEqual(provider.model, "zai-org/GLM-5.3-Flash")
+        XCTAssertFalse(String(describing: provider).contains("key-value"))
+    }
+
+    func testAProviderSharedOnlyWithOtherDevicesIsNotListedAsUsable() async {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        h.kernel.receiveProviderFromAnotherDevice(
+            MeshModelProvider(
+                providerId: "elsewhere", baseURL: "https://provider.example.test/v1", model: "model", hasKey: false,
+                isDefault: true, recipients: ["some-other-device"], availableOnDevice: false))
+        try? await Task.sleep(for: .milliseconds(300))
+        XCTAssertTrue(h.runtime.providers.isEmpty)
+    }
+
     func testFailedProviderWriteDoesNotReturnASavedReceipt() async {
         let h = MeshRuntimeHarness()
         defer { h.cleanUp() }

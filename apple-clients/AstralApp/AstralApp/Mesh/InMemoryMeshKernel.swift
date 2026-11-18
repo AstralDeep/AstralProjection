@@ -1618,6 +1618,11 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
 
     func emit(_ change: MeshKernelChange) { listener.onChange(change) }
 
+    func receiveProviderFromAnotherDevice(_ provider: MeshModelProvider) {
+        lock.withLock { providers.append(provider) }
+        listener.onChange(.connectionsChanged)
+    }
+
     func setChatStatus(chatId: String, _ value: MeshChatStatus) {
         lock.withLock { chats[chatId]?.status = value }
         listener.onChange(.chatChanged(chatId: chatId))
