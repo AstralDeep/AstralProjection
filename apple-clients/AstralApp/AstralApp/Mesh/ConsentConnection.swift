@@ -108,7 +108,8 @@ extension ConsentPrompt {
         let here = device == approver
         var lines = ["Command: " + ([command] + args).joined(separator: " ")]
         lines.append("Runs on: " + (here ? "this device" : device))
-        lines.append("Secrets passed: " + (env.isEmpty ? "none" : env.joined(separator: ", ") + " (values never shown)"))
+        let secrets = env.isEmpty ? "none" : env.joined(separator: ", ") + " (values never shown)"
+        lines.append("Secrets passed: " + secrets)
         let place = here ? "on this Mac" : "on another device in your mesh"
         return ConnectionDisplay(
             title: "Run " + name, summary: "Run " + name + " " + place, target: name + " " + place, lines: lines)

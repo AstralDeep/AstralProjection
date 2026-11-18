@@ -24,7 +24,9 @@ final class ConsentConnectionTests: XCTestCase {
         return Data("astral.consent/v1\n".utf8) + Data(body.utf8)
     }
 
-    private func show(_ text: String, digest: String? = nil, consentDevice: String? = nil) throws -> AstralDeep.ConsentPrompt {
+    private func show(_ text: String, digest: String? = nil, consentDevice: String? = nil) throws
+        -> AstralDeep.ConsentPrompt
+    {
         let record = Data(text.utf8)
         let signing = input(record, digest: digest, consentDevice: consentDevice)
         let prompt = AstralKernel.ConsentPrompt(
@@ -35,10 +37,12 @@ final class ConsentConnectionTests: XCTestCase {
     }
 
     private var mcpOAuth: String {
-        #"{"auth":{"client_id":null,"issuer":"https://auth.research.example","resource":"https://mcp.research.example/mcp","#
-            + #""scheme":"oauth","scopes":["a","b"]},"device":null,"egress":["auth.research.example","#
+        #"{"auth":{"client_id":null,"issuer":"https://auth.research.example","#
+            + #""resource":"https://mcp.research.example/mcp","scheme":"oauth","scopes":["a","b"]},"#
+            + #""device":null,"egress":["auth.research.example","#
             + #""mcp.research.example"],"endpoint":"https://mcp.research.example/mcp","flow":"private","id":"\#(id)","#
-            + #""kind":"mcp-http","local":false,"name":"Research","tools":[{"hash":"\#(toolHash)","name":"search"}],"v":1}"#
+            + #""kind":"mcp-http","local":false,"name":"Research","#
+            + #""tools":[{"hash":"\#(toolHash)","name":"search"}],"v":1}"#
     }
 
     private var mcpNone: String {
@@ -57,7 +61,8 @@ final class ConsentConnectionTests: XCTestCase {
 
     private var stdio: String {
         #"{"args":["--root","/tmp"],"command":"/usr/local/bin/files","device":"\#(device)","egress":[],"#
-            + #""env":["FILES_TOKEN"],"flow":"private","id":"\#(id)","kind":"mcp-stdio","name":"Files","tools":[],"v":1}"#
+            + #""env":["FILES_TOKEN"],"flow":"private","id":"\#(id)","kind":"mcp-stdio","#
+            + #""name":"Files","tools":[],"v":1}"#
     }
 
     private var api: String {

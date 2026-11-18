@@ -704,8 +704,9 @@ nonisolated enum KernelMapping {
             case .Denied(let code, _):
                 if code == "gate.mesh_stopped" { return MeshKernelError.stopped }
                 return code.hasPrefix("caller.") ? refusal(code) : MeshKernelError.consentDenied
-            case .InvalidInput(let code, let detail), .Verification(let code, let detail), .Network(let code, let detail),
-                .Custody(let code, let detail), .State(let code, let detail), .Mesh(let code, let detail):
+            case .InvalidInput(let code, let detail), .Verification(let code, let detail),
+                .Network(let code, let detail), .Custody(let code, let detail), .State(let code, let detail),
+                .Mesh(let code, let detail):
                 let unreadable = detail.contains("consent.unreadable")
                 return refusal(unreadable ? "consent.unreadable" : code)
             case .Store(let code, _): return MeshKernelError.storage(failureText(code: code))
