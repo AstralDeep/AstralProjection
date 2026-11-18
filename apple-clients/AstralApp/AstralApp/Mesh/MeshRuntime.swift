@@ -437,6 +437,7 @@ final class MeshRuntime {
     @ObservationIgnored private var supersededTurns: [String: Set<String>] = [:]
     @ObservationIgnored private var recoveryScan: UUID?
     @ObservationIgnored private var endedShares: [String: MeshShareInfo] = [:]
+    @ObservationIgnored private let endedShareStore: MeshEndedShareStore
     @ObservationIgnored private var closing = false
     @ObservationIgnored private var closeWaiters: [CheckedContinuation<Void, Never>] = []
     @ObservationIgnored private(set) var speakingChatId: String?
@@ -480,6 +481,9 @@ final class MeshRuntime {
         self.onDeviceModel = onDeviceModel
         self.tools = tools
         self.dataDirectory = dataDirectory
+        let shareStore = MeshEndedShareStore(directory: dataDirectory)
+        endedShareStore = shareStore
+        endedShares = shareStore.load()
         self.deviceLabel = deviceLabel
         self.deviceKind = deviceKind
         self.defaults = defaults
@@ -670,7 +674,7 @@ final class MeshRuntime {
         contacts = []
         shares = []
         sharedItems = []
-        endedShares = [:]
+        endedShares = endedShareStore.load()
         runs = []
         proposals = []
         chatRequests = []
@@ -954,6 +958,7 @@ final class MeshRuntime {
     func revokeShare(_ share: MeshShareInfo) async throws {
         try await call { try $0.revokeShare(id: share.id) }
         endedShares[share.id] = share.revoked()
+        endedShareStore.save(endedShares)
         await refreshShares()
     }
 

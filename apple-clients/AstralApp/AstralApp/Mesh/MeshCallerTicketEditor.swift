@@ -151,6 +151,9 @@ private struct MeshCallerMintSection: View {
             }
             .disabled(!model.canMint)
             .accessibilityIdentifier("mesh.caller.editor.mint")
+        } footer: {
+            Text("Removing any device from your mesh stops every caller ticket.")
+                .accessibilityIdentifier("mesh.caller.editor.device-removal")
         }
     }
 }
