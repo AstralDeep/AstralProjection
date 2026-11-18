@@ -156,7 +156,6 @@ function stagingEnvironment(stage, baseUrl) {
     "endpoint",
     "environment_id",
     "fixture_manifest_sha256",
-    "keycloak_realm_sha256",
     "macos_personal_agent_host",
     "migrated_schema_revision",
     "representative_dataset_sha256",

@@ -485,9 +485,23 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  no-keycloak:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          repository: AstralDeep/AstralDeep
+          path: .deep-checker
+          persist-credentials: false
+      - run: python3 .deep-checker/scripts/check_no_keycloak.py --repo . --config no-keycloak.json
+
   required:
     if: always()
-    needs: [python, web, windows-tests, windows-package]
+    needs: [python, web, windows-tests, windows-package, no-keycloak]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -498,3 +512,4 @@ jobs:
           [[ '${{ needs.web.result }}' == 'success' ]]
           [[ '${{ needs.windows-tests.result }}' == 'success' ]]
           [[ '${{ needs.windows-package.result }}' == 'success' ]]
+          [[ '${{ needs.no-keycloak.result }}' == 'success' ]]

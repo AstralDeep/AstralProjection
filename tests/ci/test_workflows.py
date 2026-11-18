@@ -665,6 +665,7 @@ def test_core_ci_is_active_read_only_and_projection_owned() -> None:
         "web",
         "windows-tests",
         "windows-package",
+        "no-keycloak",
         "required",
     }
     _assert_core_trigger_and_python_coverage(text)
@@ -714,10 +715,10 @@ def test_core_ci_runs_qualified_owner_gates() -> None:
     _assert_windows_native_contract(text)
     required = _job_block(text, "required")
     assert "if: always()" in required
-    assert "needs: [python, web, windows-tests, windows-package]" in required
-    for job in ("python", "web", "windows-tests", "windows-package"):
+    assert "needs: [python, web, windows-tests, windows-package, no-keycloak]" in required
+    for job in ("python", "web", "windows-tests", "windows-package", "no-keycloak"):
         assert f"[[ '${{{{ needs.{job}.result }}}}' == 'success' ]]" in required
-    assert text.count("== 'success'") == 4
+    assert text.count("== 'success'") == 5
 
 
 def test_python_ci_invokes_pytest_as_a_module_for_top_level_scripts() -> None:

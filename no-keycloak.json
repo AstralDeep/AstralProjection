@@ -13,13 +13,8 @@
     "provenance/**",
     ".gitleaksignore",
     "no-keycloak.json",
-    "apple-clients/ManualQA/**"
+    "apple-clients/ManualQA/**",
+    ".github/workflows/ci.yml"
   ],
-  "pending": [
-    {
-      "path": "workflows-disabled/build-windows-candidate.yml",
-      "until": "T8.6",
-      "bound_by": "workflows-disabled/release-windows.yml"
-    }
-  ]
+  "pending": []
 }

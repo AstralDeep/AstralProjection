@@ -158,62 +158,15 @@ jobs:
           }
           Get-Content $report
 
-      # Minted HERE, not at job start: the build above takes ~30 minutes, and a
-      # Keycloak access token is typically valid for 5-15. A token supplied by
-      # the caller was usually already expired by the time the smoke steps ran.
-      - name: Mint a fresh staging smoke token
+      - name: Carry the staging smoke token
         id: smoke_token
         shell: pwsh
         env:
           PREMINTED_TOKEN: ""
-          ASTRAL_STAGING_USERNAME: ""
-          ASTRAL_STAGING_PASSWORD: ""
         run: |
           $ErrorActionPreference = "Stop"
-          if ([string]::IsNullOrWhiteSpace($env:ASTRAL_STAGING_USERNAME) -or
-              [string]::IsNullOrWhiteSpace($env:ASTRAL_STAGING_PASSWORD)) {
-            # No credentials — carry the caller's pre-minted token through
-            # unchanged. Byte-compatible with the previous behaviour.
-            Write-Host "no staging credentials supplied; using the pre-minted token"
-            "ASTRAL_WINDOWS_SMOKE_TOKEN=$env:PREMINTED_TOKEN" |
-              Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-            exit 0
-          }
-          # Authority and client id come from the SAME release profile that is
-          # baked into the exe, so CI can never authenticate against a different
-          # realm than the client it is testing.
-          $profile = Get-Content windows-client\deployment\release-profile.json -Raw | ConvertFrom-Json
-          $authority = $profile.authority
-          $clientId = $profile.client_id
-          if ([string]::IsNullOrWhiteSpace($authority) -or [string]::IsNullOrWhiteSpace($clientId)) {
-            throw "release-profile.json is missing authority/client_id"
-          }
-          Write-Host "minting a staging token from $authority as client $clientId"
-          $body = @{
-            grant_type = 'password'
-            client_id  = $clientId
-            scope      = 'openid'
-            username   = $env:ASTRAL_STAGING_USERNAME
-            password   = $env:ASTRAL_STAGING_PASSWORD
-          }
-          try {
-            $resp = Invoke-RestMethod -Method Post `
-              -Uri "$authority/protocol/openid-connect/token" `
-              -Body $body -ContentType 'application/x-www-form-urlencoded'
-          } catch {
-            # Never echo the response body — it can contain credential material.
-            throw "minting the staging token failed: $($_.Exception.Message). Confirm the account exists and that Direct Access Grants are enabled for '$clientId'."
-          }
-          $token = $resp.access_token
-          if ([string]::IsNullOrWhiteSpace($token)) {
-            throw "the token endpoint returned no access_token"
-          }
-          # Mask before the value can reach any later log line, and keep it out
-          # of step outputs/artifacts — it only ever travels through the env.
-          Write-Host "::add-mask::$token"
-          "ASTRAL_WINDOWS_SMOKE_TOKEN=$token" |
+          "ASTRAL_WINDOWS_SMOKE_TOKEN=$env:PREMINTED_TOKEN" |
             Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          Write-Host "minted a fresh staging token (expires_in=$($resp.expires_in)s)"
 
       - name: Run frozen worker, no-dialog, rendered-chat, offline, and termination smoke
         shell: pwsh
