@@ -171,7 +171,7 @@ final class OnDeviceVoiceControllerTests: XCTestCase {
         await controller.activate()
         XCTAssertFalse(controller.isRunning)
         XCTAssertFalse(controller.isPreparing)
-        XCTAssertEqual(controller.message, "The voice model could not start. Try downloading it again.")
+        XCTAssertEqual(controller.message, "The voice model couldn't start. Try downloading it again.")
     }
 
     func testAudioStartFailureDoesNotAskForAnotherModelDownload() async throws {
@@ -189,7 +189,7 @@ final class OnDeviceVoiceControllerTests: XCTestCase {
         XCTAssertTrue(controller.showingSetup)
         XCTAssertEqual(
             controller.message,
-            "The microphone and speaker could not start. Check the selected audio devices, then try again.")
+            "The microphone and speaker couldn't start. Check the selected audio devices, then try again.")
         XCTAssertNotNil(store.installedDirectory)
     }
 

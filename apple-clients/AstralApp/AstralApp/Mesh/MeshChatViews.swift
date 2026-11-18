@@ -139,7 +139,7 @@ struct MeshChatDetailView: View {
             case .success(let url): Task { _ = await mesh.attachFile(url) }
             case .failure(let error):
                 if (error as NSError).code != NSUserCancelledError {
-                    fileProblem = "The file could not be opened. Try again."
+                    fileProblem = "The file couldn't be opened. Try again."
                 }
             }
         }

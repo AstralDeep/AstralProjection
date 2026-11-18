@@ -132,6 +132,39 @@ final class MeshConnectionModelTests: XCTestCase {
         XCTAssertEqual(row.otherLines, ["Signed in on Mac"])
     }
 
+    func testUnavailableReasonsFollowKindSchemeAndState() {
+        let device = MeshConnectionDeviceState(
+            device: "d1", label: "Phone", state: "not_signed_in", reason: nil, issuer: nil, atMs: 0)
+        let elsewhere = MeshConnectionDeviceState(
+            device: "d2", label: "Mac", state: "signed_in", reason: nil, issuer: nil, atMs: 1)
+        func make(_ kind: String, _ scheme: String?, _ supported: Bool, _ others: [MeshConnectionDeviceState])
+            -> MeshConnection
+        {
+            MeshConnection(
+                id: "c", server: "s", name: "n", kind: kind, endpoint: "https://x.example/mcp", local: false,
+                device: nil, scheme: scheme, issuer: nil, scopes: [], clientId: nil, flow: "private", egress: [],
+                tools: [],
+                approvedBy: "d1", approvedByRemovedDevice: false, unsupported: nil, supportedHere: supported,
+                thisDevice: device, attention: nil, otherDevices: others, pendingTools: nil)
+        }
+        #if os(iOS)
+            XCTAssertNil(MeshConnectionRowFacts.unavailableReason(make("mcp-remote", "key", true, [])))
+            XCTAssertNil(MeshConnectionRowFacts.unavailableReason(make("mcp-stdio", nil, false, [])))
+            XCTAssertEqual(
+                MeshConnectionRowFacts.unavailableReason(make("mcp-remote", "key", false, [elsewhere])),
+                "Key is on another device")
+            XCTAssertEqual(
+                MeshConnectionRowFacts.unavailableReason(make("mcp-remote", "oauth", false, [])),
+                "Sign-in happens on your Mac")
+            XCTAssertEqual(
+                MeshConnectionRowFacts.unavailableReason(make("a2a", nil, false, [])), "Needs your Mac or node")
+            let row = MeshConnectionRowFacts(make("a2a", nil, false, []))
+            XCTAssertEqual(row.unavailableLine, "Not available on this device")
+        #else
+            XCTAssertNil(MeshConnectionRowFacts.unavailableReason(make("a2a", nil, false, [])))
+        #endif
+    }
+
     func testLegacyServersAreListedWithoutAnyWrite() async throws {
         let h = await harness()
         defer { h.cleanUp() }

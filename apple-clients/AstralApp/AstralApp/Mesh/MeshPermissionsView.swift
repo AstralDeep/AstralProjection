@@ -27,7 +27,7 @@ struct MeshPermissionsView: View {
                 Text("This device")
             } footer: {
                 Text(
-                    "A granted tool runs without asking each time. Granting asks for your approval. Revoking does not.")
+                    "A granted tool runs without asking each time. Granting asks for your approval. Revoking doesn't.")
             }
             if remoteByDevice.isEmpty {
                 Section("Other devices") {

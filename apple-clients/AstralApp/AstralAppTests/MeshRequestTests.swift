@@ -114,7 +114,7 @@ final class MeshRequestTests: XCTestCase {
             lastSeen: nil, path: .none)
         let sent = await h.runtime.sendRequest("hello", to: gone)
         XCTAssertFalse(sent)
-        XCTAssertEqual(h.runtime.notice, "That device is not in your mesh.")
+        XCTAssertEqual(h.runtime.notice, "That device isn't in your mesh.")
     }
 
     func testAnsweringClaimsTheRequestThenRunsATurn() async throws {
@@ -215,7 +215,7 @@ final class MeshRequestTests: XCTestCase {
         let cases: [(String, String)] = [
             ("request.empty", "Write the request first."),
             ("request.too_large", "That request is too long."),
-            ("request.self_addressed", "Choose another device. This one cannot ask itself."),
+            ("request.self_addressed", "Choose another device. This one can't ask itself."),
             ("request.already_claimed", "That request is already claimed."),
             ("request.unknown", "That request is no longer in this chat."),
             ("request.answered", "That request can no longer change."),

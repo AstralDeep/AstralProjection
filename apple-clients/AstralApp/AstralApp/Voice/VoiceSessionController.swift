@@ -853,7 +853,7 @@ final class AppleVoiceSessionController {
         guard localSession != nil else { return }
         teardownLocalSession(
             phase: "unavailable",
-            message: "Voice stopped because request acceptance could not be confirmed. Typed chat remains available.")
+            message: "Voice stopped because request acceptance couldn't be confirmed. Typed chat remains available.")
     }
 
     private func localFence(_ session: AppleLocalVoiceSession) -> AppleLocalVoiceFence? {
@@ -1536,7 +1536,7 @@ final class AppleVoiceSessionController {
             do { try await Task.sleep(nanoseconds: timeout) } catch { return }
             guard let self, self.pendingChatHydration?.epoch == expectedActivationEpoch else { return }
             self.invalidateActivation()
-            self.feedback("error", "chat_context_unavailable", "The conversation did not load. Please try again.")
+            self.feedback("error", "chat_context_unavailable", "The conversation didn't load. Please try again.")
         }
     }
 
@@ -1996,7 +1996,7 @@ final class AppleVoiceSessionController {
                 guard media.authorize(announcement) else {
                     reportAnnouncementSpeechFailure(
                         announcement,
-                        "Assistant audio could not be matched. Typed chat is still available.")
+                        "Assistant audio couldn't be matched. Typed chat is still available.")
                     return
                 }
             }
@@ -2124,7 +2124,7 @@ final class AppleVoiceSessionController {
         if dropped {
             feedback(
                 "error", "stale_generation",
-                "That spoken request could not be restored. Please say it again.")
+                "That spoken request couldn't be restored. Please say it again.")
         }
     }
 
@@ -2625,7 +2625,7 @@ final class AppleVoiceSessionController {
             nextGrant.generation == refreshed.generation,
             future(refreshed.leaseExpiresAt), future(nextGrant.expiresAt)
         else {
-            feedback("error", "network_interrupted", "Voice could not reconnect. End it and start again.")
+            feedback("error", "network_interrupted", "Voice couldn't reconnect. End it and start again.")
             return
         }
 
@@ -2710,7 +2710,7 @@ final class AppleVoiceSessionController {
     }
 
     private func feedbackRecoveryExhausted() {
-        feedback("error", "media_error", "Voice could not reconnect. End it and start again.")
+        feedback("error", "media_error", "Voice couldn't reconnect. End it and start again.")
     }
 
     private func retireTerminalMediaSession() {
@@ -2962,7 +2962,7 @@ final class AppleVoiceSessionController {
         case "media_error": "Voice media ended. Start a new voice conversation or keep typing."
         case "ended_by_user": "Voice conversation ended. Accepted requests keep running."
         case "backgrounded": "Voice is paused while this app is in the background."
-        case "feature_disabled": "Voice is not enabled on this server. You can keep typing."
+        case "feature_disabled": "Voice isn't enabled on this server. You can keep typing."
         case "worker_unavailable", "media_unavailable", "voice_unavailable",
             "asr_unavailable", "tts_unavailable":
             "Voice is temporarily unavailable. You can keep typing."

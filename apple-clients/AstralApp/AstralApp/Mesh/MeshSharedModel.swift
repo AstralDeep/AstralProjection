@@ -41,10 +41,10 @@ nonisolated struct MeshSharedRowFacts: Identifiable, Equatable, Sendable {
 }
 
 nonisolated enum MeshSharedCopy {
-    static let withheld = "Some of this chat is not shared."
+    static let withheld = "Some of this chat isn't shared."
     static let stopped = "No longer shared"
     static let stoppedDetail = "The owner stopped sharing this chat. What it held is no longer shown here."
-    static let readOnly = "You can read this chat. You cannot reply to it."
+    static let readOnly = "You can read this chat. You can't reply to it."
 }
 
 @MainActor

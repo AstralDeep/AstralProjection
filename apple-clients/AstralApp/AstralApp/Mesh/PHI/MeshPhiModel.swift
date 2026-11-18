@@ -63,7 +63,7 @@ nonisolated enum MeshPhiCopy {
         switch fact {
         case .notOwnerRun: return "You do not run this."
         case .leavesDevices: return "PHI will leave your devices."
-        case .unseenHandling: return "Astral cannot see what it does with it."
+        case .unseenHandling: return "Astral can't see what it does with it."
         }
     }
 
@@ -208,9 +208,9 @@ nonisolated struct MeshPhiDestinationRowFacts: Identifiable, Equatable, Sendable
         case .approved: statusLine = "Approved"
         case .revoked: statusLine = "Approval taken back"
         case .expired: statusLine = "Approval expired"
-        case .legacyAuthority: statusLine = "Approved by an institution before this update. It cannot be approved here."
-        case .unsupported: statusLine = "This kind of place cannot receive PHI."
-        case .invalid: statusLine = "This approval is not valid."
+        case .legacyAuthority: statusLine = "Approved by an institution before this update. It can't be approved here."
+        case .unsupported: statusLine = "This kind of place can't receive PHI."
+        case .invalid: statusLine = "This approval isn't valid."
         case .authorityRemoved, .approverRemoved: statusLine = "The device that approved it was removed."
         case .deviceRemoved: statusLine = "The device it belongs to was removed."
         case .contactMissing: statusLine = "The contact is no longer in your mesh."

@@ -177,6 +177,7 @@ nonisolated struct MeshConnectionRowFacts: Equatable, Identifiable, Sendable {
     let hereLine: String
     let otherLines: [String]
     let unavailableLine: String?
+    let unavailableReason: String?
     let needsReview: Bool
     let holdsPhi: Bool
 
@@ -188,6 +189,7 @@ nonisolated struct MeshConnectionRowFacts: Equatable, Identifiable, Sendable {
         hereLine = connection.thisDevice.state == "signed_in" ? "Signed in here" : "Not signed in here"
         otherLines = connection.otherDevices.filter { $0.state == "signed_in" }.map { "Signed in on \($0.label)" }
         unavailableLine = Self.unavailable(connection)
+        unavailableReason = Self.unavailableReason(connection)
         let pending: Bool = !(connection.pendingTools ?? []).isEmpty
         needsReview = pending || MeshConnectionAttentionFacts(connection)?.needsReview == true
     }
@@ -200,6 +202,21 @@ extension MeshConnectionRowFacts {
         #else
             if connection.kind == "mcp-stdio" { return "Runs on your Mac" }
             return connection.supportedHere ? nil : "Not available on this device"
+        #endif
+    }
+}
+
+extension MeshConnectionRowFacts {
+    static func unavailableReason(_ connection: MeshConnection) -> String? {
+        #if os(macOS)
+            return nil
+        #else
+            if connection.supportedHere || connection.kind == "mcp-stdio" { return nil }
+            let signedInElsewhere: Bool = connection.otherDevices.contains { $0.state == "signed_in" }
+            if connection.scheme == "key" && signedInElsewhere { return "Key is on another device" }
+            let browserSchemes: Set<String> = ["oauth", "oidc", "openid", "openid-connect"]
+            if let scheme = connection.scheme, browserSchemes.contains(scheme) { return "Sign-in happens on your Mac" }
+            return "Needs your Mac or node"
         #endif
     }
 }

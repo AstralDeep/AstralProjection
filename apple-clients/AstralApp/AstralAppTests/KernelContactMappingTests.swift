@@ -70,7 +70,7 @@ final class KernelContactMappingTests: XCTestCase {
             XCTAssertEqual(shown.effect, "share.grant")
             XCTAssertTrue(shown.target.hasSuffix("with mesh 1111 1111 1111 1111"))
             XCTAssertTrue(shown.arguments.contains("Chat: Notes with Ada"))
-            XCTAssertTrue(shown.arguments.contains(phi ? "PHI is included" : "PHI is not included"))
+            XCTAssertTrue(shown.arguments.contains(phi ? "PHI is included" : "PHI isn't included"))
             XCTAssertTrue(shown.isBound(to: input))
         }
     }
@@ -168,7 +168,7 @@ final class KernelContactMappingTests: XCTestCase {
         XCTAssertEqual(
             KernelMapping.failureText(code: "phi_destination.contact_unavailable"),
             "Verify this contact before they can receive PHI.")
-        XCTAssertEqual(KernelMapping.failureText(code: "share.surprise"), "The share could not be changed.")
-        XCTAssertEqual(KernelMapping.failureText(code: "contact.surprise"), "The contact could not be changed.")
+        XCTAssertEqual(KernelMapping.failureText(code: "share.surprise"), "The share couldn't be changed.")
+        XCTAssertEqual(KernelMapping.failureText(code: "contact.surprise"), "The contact couldn't be changed.")
     }
 }

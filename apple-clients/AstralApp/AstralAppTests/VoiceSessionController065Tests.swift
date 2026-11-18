@@ -559,7 +559,7 @@ final class VoiceSessionController065Tests: XCTestCase {
                     state: "failed", message: "The safe server explanation remains visible.",
                     occurredAt: "2099-07-31T12:05:00Z")))
         let failedNotice = try XCTUnwrap(controller.terminalNotice)
-        XCTAssertEqual(failedNotice.title, "Request did not complete.")
+        XCTAssertEqual(failedNotice.title, "Request didn't complete.")
         XCTAssertEqual(
             failedNotice.serverMessage, "The safe server explanation remains visible.")
 
@@ -595,7 +595,7 @@ final class VoiceSessionController065Tests: XCTestCase {
                     state: "refused", turnId: nextTurn, sequence: 3,
                     message: "This request needs a different permission.",
                     occurredAt: "2099-07-31T12:05:02Z")))
-        XCTAssertEqual(controller.terminalNotice?.title, "Request did not start.")
+        XCTAssertEqual(controller.terminalNotice?.title, "Request didn't start.")
         XCTAssertEqual(
             controller.terminalNotice?.serverMessage,
             "This request needs a different permission.")
@@ -657,7 +657,7 @@ final class VoiceSessionController065Tests: XCTestCase {
                     retryPolicy: "explicit_user_retry")))
 
         XCTAssertEqual(controller.awaitingAcceptance, 0)
-        XCTAssertEqual(controller.terminalNotice?.title, "Request did not start.")
+        XCTAssertEqual(controller.terminalNotice?.title, "Request didn't start.")
         XCTAssertEqual(
             controller.terminalNotice?.serverMessage, "Capacity is temporarily full.")
         XCTAssertNotNil(controller.terminalNotice)
@@ -909,7 +909,7 @@ final class VoiceSessionController065Tests: XCTestCase {
             controller.terminalNotice?.displayText.contains(
                 "text result is still available") == true)
         XCTAssertFalse(
-            controller.terminalNotice?.displayText.contains("Request did not complete") == true)
+            controller.terminalNotice?.displayText.contains("Request didn't complete") == true)
         XCTAssertTrue(sent.compactMap(InboundFrame.parse).allSatisfy { $0.name != "voice_playout_event" })
 
         let dropped = try XCTUnwrap(media.authorized.first)

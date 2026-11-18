@@ -751,7 +751,7 @@ public enum VoiceTerminalNoticeReducer {
             occurredAt: occurredAt,
             title: "Speech playback failed.",
             serverMessage: resolvedMessage(
-                message, fallback: "Assistant speech could not be played."),
+                message, fallback: "Assistant speech couldn't be played."),
             guidance: textResultCommitted
                 ? "The text result is still available in the conversation."
                 : "The text result may still be available in the conversation.")
@@ -764,7 +764,7 @@ public enum VoiceTerminalNoticeReducer {
             kind: .requestFailure,
             turnId: rejection.turnId,
             occurredAt: rejection.occurredAt,
-            title: "Request did not start.",
+            title: "Request didn't start.",
             serverMessage: resolvedMessage(
                 rejection.message,
                 fallback: "That spoken request was not accepted."))
@@ -798,7 +798,7 @@ public enum VoiceTerminalNoticeReducer {
             kind: .requestFailure,
             turnId: turn.turnId,
             occurredAt: turn.occurredAt,
-            title: refused ? "Request did not start." : "Request did not complete.",
+            title: refused ? "Request didn't start." : "Request didn't complete.",
             serverMessage: resolvedMessage(
                 turn.message,
                 fallback: refused

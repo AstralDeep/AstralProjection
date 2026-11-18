@@ -193,7 +193,7 @@ struct MeshSharedAttachmentView: View {
         .fileExporter(isPresented: $exporting, document: document, contentType: .data, defaultFilename: name) {
             result in
             if case .failure(let error) = result, (error as NSError).code != NSUserCancelledError {
-                problem = "The file could not be saved. Try again."
+                problem = "The file couldn't be saved. Try again."
             }
             document = nil
         }
@@ -209,7 +209,7 @@ struct MeshSharedAttachmentView: View {
         problem = nil
         defer { fetching = false }
         guard let bytes = await model.attachment(attachment) else {
-            problem = model.refreshProblem ?? "The file could not be fetched. Try again."
+            problem = model.refreshProblem ?? "The file couldn't be fetched. Try again."
             return
         }
         document = MeshAttachmentDocument(bytes: bytes)

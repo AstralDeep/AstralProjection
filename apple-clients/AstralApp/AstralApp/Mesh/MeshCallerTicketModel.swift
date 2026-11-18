@@ -63,8 +63,8 @@ nonisolated enum MeshCallerLifetime: CaseIterable, Identifiable, Equatable, Send
 }
 
 nonisolated enum MeshCallerText {
-    static let generic = "The caller ticket could not be changed. Try again."
-    static let labelRefused = "The label cannot hold control or invisible characters."
+    static let generic = "The caller ticket couldn't be changed. Try again."
+    static let labelRefused = "The label can't hold control or invisible characters."
     static let labelTooLong = "Use 64 characters or fewer for the label."
     static let tooManyTools = "Choose at most 32 tools."
 

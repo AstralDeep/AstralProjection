@@ -80,7 +80,7 @@ struct MeshRestoreView: View {
                 backup = url
                 fileProblem = nil
             case .failure:
-                fileProblem = "That file could not be opened."
+                fileProblem = "That file couldn't be opened."
             }
         }
     }

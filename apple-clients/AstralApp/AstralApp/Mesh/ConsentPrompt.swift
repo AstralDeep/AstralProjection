@@ -153,7 +153,7 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
             item["kind"] as? String == "chat", let chat = item["chat"] as? String, isID(chat)
         else { throw ConsentPromptError.invalidInput }
         var lines = ["Chat: " + String(label.prefix(200)), "With mesh: " + fingerprint(contact)]
-        lines.append(phi ? "This chat holds PHI and PHI is included." : "Read only. PHI is not included.")
+        lines.append(phi ? "This chat holds PHI and PHI is included." : "Read only. PHI isn't included.")
         var prompt = ConsentPrompt(
             actionTitle: phi ? "Share chat with PHI" : "Share chat", effect: "share.grant",
             target: "Chat " + String(chat.dropFirst("sha256:".count).prefix(8)) + " with mesh " + fingerprint(contact),

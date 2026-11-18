@@ -166,7 +166,7 @@ final class OfflineChartTests: XCTestCase {
         try await waitForJavaScript(view, "document.querySelector('p[role=alert]') !== null")
         let message =
             try await view.evaluateJavaScript("document.querySelector('p[role=alert]').textContent") as? String
-        XCTAssertEqual(message, "This chart could not be displayed. Open it in the web client.")
+        XCTAssertEqual(message, "This chart couldn't be displayed. Open it in the web client.")
         coordinator.update(
             view, component: try component(#"{"type":"bar_chart","labels":["B"],"datasets":[{"data":[3]}]}"#),
             viewportWidth: 1440)

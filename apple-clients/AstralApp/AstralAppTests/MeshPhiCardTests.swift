@@ -64,7 +64,7 @@ final class MeshPhiCardTests: XCTestCase {
         XCTAssertEqual(model.facts?.endpoint, "https://api.example/v1")
         XCTAssertEqual(
             model.facts?.lines,
-            ["You do not run this.", "PHI will leave your devices.", "Astral cannot see what it does with it."])
+            ["You do not run this.", "PHI will leave your devices.", "Astral can't see what it does with it."])
     }
 
     func testApproveCallsTheKernelOnceForOneDestinationAndRaisesPresence() async {

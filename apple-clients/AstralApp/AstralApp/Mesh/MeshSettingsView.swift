@@ -454,7 +454,7 @@ struct MeshAllowanceView: View {
                     }
                 }
             } else {
-                Text("The allowance is not known yet.").foregroundStyle(p.muted)
+                Text("The allowance isn't known yet.").foregroundStyle(p.muted)
             }
         }
         .formStyle(.grouped)

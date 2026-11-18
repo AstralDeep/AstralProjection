@@ -1039,7 +1039,7 @@ final class ReleaseEvidenceUITests: XCTestCase {
                     message: "the terminal turn-failure notice did not surface")
             }
             let value = notice.value as? String ?? ""
-            guard value.contains("Warning. Request did not complete."),
+            guard value.contains("Warning. Request didn't complete."),
                 value.contains("The provider could not complete this request.")
             else {
                 throw EvidenceFailure(

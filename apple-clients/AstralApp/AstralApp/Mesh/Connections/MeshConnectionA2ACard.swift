@@ -32,7 +32,7 @@ nonisolated struct MeshA2ACardFacts: Equatable, Sendable {
         return signer.map { "Signed by \($0)" } ?? "Signed"
     }
 
-    var unsignedWarning: String { "This card is not signed. Anyone could have changed it." }
+    var unsignedWarning: String { "This card isn't signed. Anyone could have changed it." }
 
     var schemeLine: String {
         switch scheme {

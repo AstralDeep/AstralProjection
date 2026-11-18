@@ -228,9 +228,9 @@ final class MeshRuntimeTests: XCTestCase {
         defer { h.cleanUp() }
         await h.runtime.open()
         await h.runtime.previewAddDevice(payload: "   ")
-        XCTAssertEqual(h.runtime.addDevice, .failed("That is not a pairing code from one of your devices."))
+        XCTAssertEqual(h.runtime.addDevice, .failed("That isn't a pairing code from one of your devices."))
         await h.runtime.previewAddDevice(payload: String(repeating: "a", count: 9000))
-        XCTAssertEqual(h.runtime.addDevice, .failed("That is not a pairing code from one of your devices."))
+        XCTAssertEqual(h.runtime.addDevice, .failed("That isn't a pairing code from one of your devices."))
         await h.runtime.previewAddDevice(payload: "garbage")
         XCTAssertEqual(h.runtime.addDevice, .failed("pairing.malformed"))
         await h.runtime.approveAddDevice()
@@ -447,7 +447,7 @@ final class MeshRuntimeTests: XCTestCase {
         await h.runtime.settle()
         h.kernel.consentGate = { throw HostSigningError.digestMismatch }
         await h.runtime.review(request)
-        XCTAssertEqual(h.runtime.notice, "The approval did not match the request, so nothing was signed.")
+        XCTAssertEqual(h.runtime.notice, "The approval didn't match the request, so nothing was signed.")
         XCTAssertFalse(h.kernel.calls.contains(.init(name: "resolveConsent", detail: "r3:deny")))
     }
 
@@ -865,12 +865,12 @@ final class MeshRuntimeTests: XCTestCase {
         await h.runtime.act(surfaceId: "s", componentId: "c", capability: "cap")
         XCTAssertEqual(
             h.runtime.notice,
-            KernelMapping.failureText(code: "gate.permission_denied", fallback: "That action did not run."))
+            KernelMapping.failureText(code: "gate.permission_denied", fallback: "That action didn't run."))
         XCTAssertTrue(h.runtime.notice?.contains("safety check") == true)
         h.runtime.notice = nil
         h.kernel.actResult = MeshActResult(status: "error", code: nil, text: "boom")
         await h.runtime.act(surfaceId: "s", componentId: "c", capability: "cap")
-        XCTAssertEqual(h.runtime.notice, "That action did not run. (error)")
+        XCTAssertEqual(h.runtime.notice, "That action didn't run. (error)")
     }
 
     func testAHaltedMeshCanBeResumedThroughTheConsentGate() async {

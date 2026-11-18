@@ -76,11 +76,11 @@ final class MeshPermissionsTests: XCTestCase {
         defer { h.cleanUp() }
         let bad = MeshToolEntry(name: "", summary: "", effect: .meshRead, deviceId: nil)
         await h.runtime.grant(bad)
-        XCTAssertEqual(h.runtime.notice, "That tool name or permission could not be used.")
+        XCTAssertEqual(h.runtime.notice, "That tool name or permission couldn't be used.")
         XCTAssertTrue(h.runtime.grantedTools.isEmpty)
         h.runtime.notice = nil
         await h.runtime.revoke(bad)
-        XCTAssertEqual(h.runtime.notice, "That tool name or permission could not be used.")
+        XCTAssertEqual(h.runtime.notice, "That tool name or permission couldn't be used.")
     }
 
     func testRevokeWorksForAGrantMadeElsewhere() async throws {

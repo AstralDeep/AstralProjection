@@ -123,9 +123,9 @@ final class MeshSharedModelTests: XCTestCase {
         let item = MeshSharedItem(
             grant: "g", contact: contactMeshId("a"), contactName: "Alice", chat: "c", title: "Notes", phi: false,
             withheldPhi: 1, withheldFields: 0, withheldKeys: 0, state: .ready, events: 2, updatedAt: Date())
-        XCTAssertEqual(MeshSharedRowFacts(item).withheldLine, "Some of this chat is not shared.")
+        XCTAssertEqual(MeshSharedRowFacts(item).withheldLine, "Some of this chat isn't shared.")
         let model = MeshSharedChatModel(item: item, service: KernelContactService(ContactPair.make().bob))
-        XCTAssertEqual(model.withheldNotice, "Some of this chat is not shared.")
+        XCTAssertEqual(model.withheldNotice, "Some of this chat isn't shared.")
         let harness = MeshRuntimeHarness()
         defer { harness.cleanUp() }
         await harness.runtime.open()
@@ -140,6 +140,6 @@ final class MeshSharedModelTests: XCTestCase {
         XCTAssertEqual(MeshSharedID.badge, "mesh.shared.badge")
         XCTAssertEqual(MeshSharedID.verify, "mesh.shared.verify")
         XCTAssertEqual(MeshSharedID.row("g"), "mesh.shared.row.g")
-        XCTAssertEqual(MeshSharedCopy.readOnly, "You can read this chat. You cannot reply to it.")
+        XCTAssertEqual(MeshSharedCopy.readOnly, "You can read this chat. You can't reply to it.")
     }
 }

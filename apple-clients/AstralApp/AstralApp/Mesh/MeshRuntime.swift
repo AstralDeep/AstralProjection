@@ -1123,7 +1123,7 @@ final class MeshRuntime {
         let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
         guard kernel != nil, join == .idle || isFailedJoin else { return }
         guard !trimmed.isEmpty, trimmed.utf8.count <= 8192 else {
-            join = .failed("That is not an invitation from one of your devices.")
+            join = .failed("That isn't an invitation from one of your devices.")
             return
         }
         join = .starting
@@ -1183,7 +1183,7 @@ final class MeshRuntime {
     func previewAddDevice(payload: String) async {
         let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.utf8.count <= 8192 else {
-            addDevice = .failed("That is not a pairing code from one of your devices.")
+            addDevice = .failed("That isn't a pairing code from one of your devices.")
             return
         }
         do {
@@ -1319,7 +1319,7 @@ final class MeshRuntime {
 
     func attachmentBytes(_ attachment: MeshAttachment) async -> Data? {
         guard attachment.availability == .present else {
-            notice = "This file is not available on this device."
+            notice = "This file isn't available on this device."
             return nil
         }
         let session = wakeSession
@@ -1414,13 +1414,13 @@ final class MeshRuntime {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
         guard isReady, !status.stopped, let chatId = currentChatId, let work = turnTasks[chatId], !work.retiring else {
-            notice = "That turn did not accept the follow-up."
+            notice = "That turn didn't accept the follow-up."
             return false
         }
         let session = wakeSession
         do {
             let accepted = try await Task.detached { try work.steer(trimmed) }.value
-            if !accepted, wakeSession == session { notice = "That turn did not accept the follow-up." }
+            if !accepted, wakeSession == session { notice = "That turn didn't accept the follow-up." }
             return accepted
         } catch {
             if wakeSession == session { notice = Self.describe(error) }
@@ -1461,7 +1461,7 @@ final class MeshRuntime {
             if acknowledged {
                 turns[chatId]?.stopRequested = true
             } else {
-                notice = "That turn could not be stopped."
+                notice = "That turn couldn't be stopped."
             }
         }
     }
@@ -1505,7 +1505,7 @@ final class MeshRuntime {
         let result = await work.task.value
         guard isReady, wakeSession == session else { return }
         if case .success(let value) = result, let value, value.refused {
-            notice = KernelMapping.failureText(code: value.code ?? value.status, fallback: "That action did not run.")
+            notice = KernelMapping.failureText(code: value.code ?? value.status, fallback: "That action didn't run.")
         }
         if currentChatId == chatId { await reloadChat(chatId) }
     }
@@ -1811,7 +1811,7 @@ final class MeshRuntime {
             return
         }
         guard turn.integrity == .owner, turn.source == .deviceMicrophone || turn.source == .pairedWatchMicrophone else {
-            notice = "A transcript without a live owner microphone session is not treated as your message."
+            notice = "A transcript without a live owner microphone session isn't treated as your message."
             return
         }
         _ = await send(turn.text, speaking: true)
@@ -2175,7 +2175,7 @@ final class MeshRuntime {
     }
 
     private func call<T: Sendable>(_ work: @escaping @Sendable (any MeshKernel) async throws -> T) async throws -> T {
-        guard let kernel else { throw MeshKernelError.unavailable("The mesh is not open.") }
+        guard let kernel else { throw MeshKernelError.unavailable("The mesh isn't open.") }
         return try await Task.detached(priority: .userInitiated) { try await work(kernel) }.value
     }
 
@@ -2209,8 +2209,8 @@ final class MeshRuntime {
         if let signing = error as? HostSigningError {
             switch signing {
             case .consentDenied: return MeshKernelError.consentDenied.message
-            case .digestMismatch: return "The approval did not match the request, so nothing was signed."
-            case .calledOnMainThread: return "The approval could not be shown."
+            case .digestMismatch: return "The approval didn't match the request, so nothing was signed."
+            case .calledOnMainThread: return "The approval couldn't be shown."
             }
         }
         return "Something went wrong. Try again."

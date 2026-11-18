@@ -142,7 +142,7 @@ enum OfflineChartDocument {
         let message =
             isolationUnavailable
             ? "Chart isolation is unavailable."
-            : "This chart could not be displayed. Open it in the web client."
+            : "This chart couldn't be displayed. Open it in the web client."
         return """
             <html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
             <style>p{font:14px system-ui;padding:12px}</style>

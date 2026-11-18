@@ -391,14 +391,14 @@
             case .ownerMismatch: return "This node belongs to a different mesh."
             case .rateLimited: return "Too many pairing attempts. Wait a minute and try again."
             case .unknownDescriptorFormat: return "This node is too old. Update the node pack."
-            case .ownerBindingUnavailable: return "The node cannot read its owner yet. Try again in a moment."
-            case .profileInactive: return "This node is not set up for a personal mesh."
+            case .ownerBindingUnavailable: return "The node can't read its owner yet. Try again in a moment."
+            case .profileInactive: return "This node isn't set up for a personal mesh."
             case .meshUnavailable(let code):
                 switch code {
                 case "node_not_running": return "Start the node first."
-                case "mesh_peer_unavailable": return "This node cannot join a mesh."
-                case "mesh_unavailable": return "The node's mesh is not ready yet. Try again in a moment."
-                default: return "The node cannot join a mesh yet (\(code))."
+                case "mesh_peer_unavailable": return "This node can't join a mesh."
+                case "mesh_unavailable": return "The node's mesh isn't ready yet. Try again in a moment."
+                default: return "The node can't join a mesh yet (\(code))."
                 }
             case .notLoopback, .refused, .unexpectedResponse, nil: return "The node refused the request."
             }
@@ -407,24 +407,24 @@
         static func describe(_ error: Error) -> String {
             switch error as? NodePackError {
             case .unsupportedURL: return "The pack address must be https, or http on this Mac."
-            case .descriptorInvalid(let reason): return "The pack description is not valid (\(reason))."
-            case .descriptorPinMismatch: return "The pack description does not match the pinned digest."
+            case .descriptorInvalid(let reason): return "The pack description isn't valid (\(reason))."
+            case .descriptorPinMismatch: return "The pack description doesn't match the pinned digest."
             case .platformMismatch(let platform): return "This pack is for \(platform), not this Mac."
             case .insufficientSpace(let needed, let available):
                 let format = { (bytes: Int64) in ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file) }
                 return "Not enough free space. It needs \(format(needed)) and \(format(available)) is free."
             case .downloadFailed(let reason): return "The download failed (\(reason))."
             case .sizeMismatch: return "The download has the wrong size and was discarded."
-            case .digestMismatch(let what): return "The \(what) digest does not match and the download was discarded."
-            case .extractionFailed: return "The pack could not be unpacked."
+            case .digestMismatch(let what): return "The \(what) digest doesn't match and the download was discarded."
+            case .extractionFailed: return "The pack couldn't be unpacked."
             case .treeMismatch(let problems):
-                return "The unpacked pack does not match its manifest (\(problems.first ?? "unknown"))."
-            case .notInstalled: return "The node pack is not installed."
+                return "The unpacked pack doesn't match its manifest (\(problems.first ?? "unknown"))."
+            case .notInstalled: return "The node pack isn't installed."
             case nil: break
             }
             switch error as? NodeHostError {
-            case .homeSetupFailed(let output): return "The node home could not be prepared (\(output))."
-            case .launchFailed(let reason): return "The node could not start (\(reason))."
+            case .homeSetupFailed(let output): return "The node home couldn't be prepared (\(output))."
+            case .launchFailed(let reason): return "The node couldn't start (\(reason))."
             case .noFreePort: return "No free loopback port was available."
             case nil: return "\(error.localizedDescription)"
             }

@@ -109,7 +109,7 @@ struct VoiceModelSetupView: View {
                     .disabled(controller.isPreparing || controller.isRunning)
                     .accessibilityIdentifier("voice-model-start")
             } else {
-                Text("Voice is not ready in this conversation yet.").foregroundStyle(.secondary)
+                Text("Voice isn't ready in this conversation yet.").foregroundStyle(.secondary)
             }
         }
     }

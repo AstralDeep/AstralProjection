@@ -1150,7 +1150,7 @@
       "sourcePath": "apple-clients/AstralApp/AstralApp/Voice/VoiceSessionController.swift",
       "sourceBlob": "f361e8ffee74f4cecccd6cd2b7b5b39850f35f8a",
       "sourceMode": "100644",
-      "resultSha256": "c9e7783c91e762deeca2b85b2256d3d7439dd0dc858768c7fb57000418f451a0",
+      "resultSha256": "7b4fc416a73ebee856cd5fb5b6d9de66e8c68eccf88b36d42d64a2b5382d78fa",
       "task": "T065/T066/T015/T067/T068",
       "reason": "Fence delayed Apple voice activation across End, close, authentication expiry, and connection replacement, and compensating-end stale successful start or takeover results before media can connect. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Reconcile this draft client-local speech source with qualified Projection main while retaining its native implementation and outstanding qualification blockers. Repair combined Android and Apple local speech native compilation and formatting, Unicode scalar validation and lifecycle fencing while preserving the existing speech contract."
     },
@@ -1267,7 +1267,7 @@
       "sourcePath": "apple-clients/AstralApp/AstralAppTests/VoiceSessionController065Tests.swift",
       "sourceBlob": "15e7fd2c45ca86e47444913e7a836f4fb29fc2d1",
       "sourceMode": "100644",
-      "resultSha256": "bd054ea9092f07e6a5ef229a4226c694920160ccf13c53f5c87fe2e809bef369",
+      "resultSha256": "c232a7495ca9f84dfd328ee5fb6cadc383ae52fb5a2e59e4fcb4f532060f567c",
       "task": "T065/T066/T060/T015/T106",
       "reason": "Cover delayed permission, start, and takeover completions across Apple End, close, authentication expiry, and connection replacement, including exact compensating session-fence cleanup and no media reconnection. Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Reconcile this draft client-local speech source with qualified Projection main while retaining its native implementation and outstanding qualification blockers. Repair combined Android and Apple local speech native compilation and formatting, Unicode scalar validation and lifecycle fencing while preserving the existing speech contract. Retain current main interruption-during-speech bounded recovery and correlated accepted-turn regression, including its pinned formatter repair. Bind the qualified local mesh runtime, attachment presentation, on-device voice dependencies, protected key custody and stable localtest signing to the current committed Apple client bytes. Count hosted voice session and takeover requests in the fake voice API so every voice entry point can prove the hosted controller stays idle. Remove the sign-in, server session and identity provider code from this file for the sign-in free clients."
     },
@@ -1303,7 +1303,7 @@
       "sourcePath": "apple-clients/AstralApp/AstralAppUITests/ReleaseEvidenceUITests.swift",
       "sourceBlob": "18e207353f54c5bfb33d55df444e20ef111cc9aa",
       "sourceMode": "100644",
-      "resultSha256": "b9f18be348d08cf4a57e073f2ca075de1366866fc037a3379c046bbf8629c947",
+      "resultSha256": "784f535b63b6eab279ada495e5735a0d0045a5de3c149e121b124a9a568c4f90",
       "task": "T063",
       "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Single-resume proof 2026-09-28: reconnect_resume proves one terminate-and-relaunch restore of the prompt and dice answer within five seconds and reports trial_count 1 instead of twenty relaunches. Rebase the voice evidence check onto the proven voice-composer and voice-terminal UI fixtures as voice_terminal_failure_and_typed_fallback, recording the surfaced terminal turn-failure notice, typed-fallback availability, server-owned composer controls, component build identity, and the exact staged voice runtime digest identities with no transcripts, audio, credentials, or PHI. Rebase the voice evidence check onto the proven voice-composer and voice-terminal UI fixtures as voice_terminal_failure_and_typed_fallback, recording the surfaced terminal turn-failure notice, typed-fallback availability, server-owned composer controls, component build identity, and the exact staged voice runtime digest identities with no transcripts, audio, credentials, or PHI."
     },
@@ -1492,7 +1492,7 @@
       "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Voice.swift",
       "sourceBlob": "d19d554b034c250545b3c018df3039a8d7e2091c",
       "sourceMode": "100644",
-      "resultSha256": "70c259e874b3ee3d20ddcec9006fedecd3fef057b88514d3976842894f01dd76",
+      "resultSha256": "f9c28d0989ae63dba9c3fd1616b202992ad9242d7974bb973078d08544d338a4",
       "task": "T050/T071/T065/T066",
       "reason": "Implement strict Apple client-local voice capability, frame, disposition, bound-final, and canonical content-free playout protocol models. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Feature AP-03: count local voice final limits in Unicode scalars exactly on every client and reject malformed scalar sequences without changing valid submitted bytes: the Android decoder replaces the UTF-16 String.length check with code-point counting that fails closed on unpaired surrogates, the Apple voice_local_final guard counts scalars through strict UTF-8 validation and InboundFrame.parse now rejects ill-formed UTF-8 bytes and unpaired JSON surrogate escapes before decoding, the Windows client rejects surrogate code points in voice_local_final text, and the shared voice_075 conformance fixture gains 8000/8001-scalar ASCII, supplementary-plane, combining mark and ZWJ boundary vectors with matching drift guards in every client. Reconcile this draft client-local speech source with qualified Projection main while retaining its native implementation and outstanding qualification blockers. Repair combined Android and Apple local speech native compilation and formatting, Unicode scalar validation and lifecycle fencing while preserving the existing speech contract."
     },
@@ -1663,7 +1663,7 @@
       "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/VoiceContract065Tests.swift",
       "sourceBlob": "9b3048e2704f78c916bb1c48f789602c075bbd1d",
       "sourceMode": "100644",
-      "resultSha256": "e2c80bb9166e52a9aae89360d493c8a6be7cb232ed24fd860cc5dde81b4a1121",
+      "resultSha256": "3ab867822a64c6c456213e7d931a1645d69f7f5da723abbc8b3828776dca0451",
       "task": "T049/T071/T015",
       "reason": "Exercise Apple client-local fixture parsing, bound-final construction, canonical playout phases, semantic denials, and unchanged remote-v1 proof behavior. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Feature AP-03: count local voice final limits in Unicode scalars exactly on every client and reject malformed scalar sequences without changing valid submitted bytes: the Android decoder replaces the UTF-16 String.length check with code-point counting that fails closed on unpaired surrogates, the Apple voice_local_final guard counts scalars through strict UTF-8 validation and InboundFrame.parse now rejects ill-formed UTF-8 bytes and unpaired JSON surrogate escapes before decoding, the Windows client rejects surrogate code points in voice_local_final text, and the shared voice_075 conformance fixture gains 8000/8001-scalar ASCII, supplementary-plane, combining mark and ZWJ boundary vectors with matching drift guards in every client. Unwrap materialized inbound fixture frames, test supplementary text at the exact 8000-scalar boundary, and replace repaired native-string rejection assertions with malformed raw JSON escape denials and a valid UTF-16 supplementary-pair round trip."
     },

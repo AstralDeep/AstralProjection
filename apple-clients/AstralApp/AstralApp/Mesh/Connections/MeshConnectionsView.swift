@@ -97,6 +97,10 @@ struct MeshConnectionRow: View {
             if let line = facts.unavailableLine {
                 Text(line).font(ConsoleTypography.caption).foregroundStyle(.secondary)
             }
+            if let reason = facts.unavailableReason {
+                Text(reason).font(ConsoleTypography.caption).foregroundStyle(.secondary)
+                    .accessibilityLabel("Unavailable here. \(reason)")
+            }
             if let attention = MeshConnectionAttentionFacts(connection) {
                 MeshConnectionAttentionBadge(facts: attention)
             }
