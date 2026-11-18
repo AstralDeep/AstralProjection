@@ -921,6 +921,7 @@ def test_mac_native_union_refuses_relabelled_platform_binary_lane_or_architectur
 _QOS_WARNING = "[Internal] Thread running at User-interactive quality-of-service class waiting on a lower QoS thread running at Default quality-of-service class. Investigate ways to avoid priority inversions"
 _REAL_MESH_QOS_WARNING = "Thread running at User-initiated quality-of-service class waiting on a lower QoS thread running at Default quality-of-service class. Investigate ways to avoid priority inversions"
 _FOCUS_WARNING = "Accessing FocusState's value outside of the body of a View. This will result in a constant Binding of the initial value and will not update."
+_PHI_BRIDGE_QOS_WARNING = "Thread running at User-interactive quality-of-service class waiting on a lower QoS thread running at Default quality-of-service class. Investigate ways to avoid priority inversions"
 
 
 @pytest.mark.parametrize("filename,line,text", [
@@ -983,7 +984,7 @@ def test_mac_unit_prefixed_warning_keeps_source_and_message_allowlists_closed(mu
         domain.test_identity(summary, tests, lane, platform="macos", architecture="arm64")
 
 
-@pytest.mark.parametrize("text", [_QOS_WARNING, _FOCUS_WARNING])
+@pytest.mark.parametrize("text", [_QOS_WARNING, _FOCUS_WARNING, _PHI_BRIDGE_QOS_WARNING])
 @pytest.mark.parametrize(
     "location",
     [
