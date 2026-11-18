@@ -135,7 +135,7 @@ orchestrator.
 
 ```bash
 python -m venv .venv
-.venv/Scripts/python -m pip install --require-hashes -r ../apple-clients/NodePack/build-requirements.lock
+.venv/Scripts/python -m pip install --require-hashes -r ../tooling/python-ci/build-requirements.lock
 .venv/Scripts/python ../scripts/install_presentation_components.py install --deep-source <pinned-Deep> --primitives-source <pinned-Primitives> --kernel-source <pinned-Kernel>
 .venv/Scripts/python main.py    # uses the bundled production profile
 # Explicit local development uses a complete schema-conforming local profile:
@@ -158,7 +158,7 @@ The first-party speech helper uses the repository-pinned .NET SDK from
 committed lock, then publish the warning-clean product before freezing Python:
 
 ```powershell
-.venv\Scripts\python -m pip install --require-hashes -r ..\apple-clients\NodePack\build-requirements.lock
+.venv\Scripts\python -m pip install --require-hashes -r ..\tooling\python-ci\build-requirements.lock
 .venv\Scripts\python ..\scripts\install_presentation_components.py install `
   --deep-source <pinned-Deep> --primitives-source <pinned-Primitives> --kernel-source <pinned-Kernel>
 dotnet restore asr-helper\tests\AstralSpeechHelper.Tests.csproj --locked-mode

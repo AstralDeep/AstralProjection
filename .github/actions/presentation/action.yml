@@ -63,7 +63,7 @@ runs:
         if [[ "$PRESENTATION_PYTHON" == */* && "$PRESENTATION_PYTHON" != /* && "$PRESENTATION_PYTHON" != ?:* ]]; then
           PRESENTATION_PYTHON="$GITHUB_WORKSPACE/$PRESENTATION_PYTHON"
         fi
-        "$PRESENTATION_PYTHON" -m pip install --require-hashes -r apple-clients/NodePack/build-requirements.lock
+        "$PRESENTATION_PYTHON" -m pip install --require-hashes -r tooling/python-ci/build-requirements.lock
         runner=("$PRESENTATION_PYTHON")
         if [[ "$PRESENTATION_MEASURE_COVERAGE" == "true" ]]; then
           [[ "$PRESENTATION_EXTERNAL_LOCK" == "tooling/python-ci/requirements.lock.txt" ]] || { echo "coverage requires the Python owner CI lock" >&2; exit 2; }

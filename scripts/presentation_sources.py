@@ -1,6 +1,5 @@
-"""Validates explicit local source checkouts before node-pack builds or committed-tree exports.
-The builder still consumes pinned Git objects, so generated or uncommitted files cannot enter a pack.
-"""
+"""Validates explicit local source checkouts before committed-tree exports.
+The presentation installer in install_presentation_components.py imports it to refuse generated or uncommitted files."""
 
 import re
 import subprocess
