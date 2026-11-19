@@ -30,6 +30,7 @@ struct AstralApp: App {
     #if os(iOS)
         @UIApplicationDelegateAdaptor(PushNotificationAppDelegate.self) private var pushAppDelegate
         @State private var meshWake: MeshBackgroundWake?
+        @State private var localNotices: IOSNotificationAdapter?
     #endif
     private let unitTestHost =
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
@@ -52,18 +53,31 @@ struct AstralApp: App {
         #endif
         #if os(iOS)
             let wakeRuntime = _mesh.wrappedValue
+            let notices = IOSNotificationAdapter.live()
+            notices.onToken = { [weak launchModel] in launchModel?.meshPush.receivedToken($0) }
+            notices.onRoute = { [weak wakeRuntime] route in
+                guard let wakeRuntime, wakeRuntime.isReady, wakeRuntime.hasMesh else { return false }
+                if let chat = route.chatId { Task { await wakeRuntime.openChat(chat) } }
+                return true
+            }
             let wake = MeshBackgroundWake(
                 authorized: { [weak wakeRuntime] in
                     wakeRuntime?.isReady == true
                         && wakeRuntime?.hasMesh == true && UIApplication.shared.isProtectedDataAvailable
                 },
-                synchronize: { [weak wakeRuntime] in
+                synchronize: { [weak wakeRuntime, weak notices] in
                     guard let wakeRuntime else { return false }
-                    return try await wakeRuntime.synchronizeAfterWake()
+                    let changed = try await wakeRuntime.synchronizeAfterWake()
+                    if changed, let notices, let notice = wakeRuntime.wakeNotice() {
+                        await notices.post(notice.ref, chatId: notice.chatId)
+                    }
+                    return changed
                 })
             _meshWake = State(initialValue: wake)
+            _localNotices = State(initialValue: notices)
             if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
                 MeshBackgroundWake.active = wake
+                IOSNotificationAdapter.active = notices
             }
         #endif
         #if os(macOS)
@@ -106,6 +120,9 @@ struct AstralApp: App {
                 )
                 .preferredColorScheme(model.themeStore.colorScheme)
                 .task {
+                    #if os(iOS)
+                        if !unitTestHost { await localNotices?.start() }
+                    #endif
                     await model.onDeviceVoice.store?.attach()
                     #if os(macOS)
                         if !unitTestHost, let requirement = await updates.enforce(UpdatePolicyGate()) {
@@ -120,7 +137,17 @@ struct AstralApp: App {
                     case .inactive, .background: model.voiceSceneBecameInactive()
                     @unknown default: model.voiceSceneBecameInactive()
                     }
+                    #if os(iOS)
+                        if phase == .active {
+                            Task { await localNotices?.sceneDidBecomeActive() }
+                        } else if phase == .background {
+                            localNotices?.sceneDidEnterBackground()
+                        }
+                    #endif
                 }
+                #if os(iOS)
+                    .onChange(of: mesh.isReady) { _, _ in localNotices?.resolvePendingRoute() }
+                #endif
                 #if os(iOS)
                     .onReceive(
                         NotificationCenter.default.publisher(
