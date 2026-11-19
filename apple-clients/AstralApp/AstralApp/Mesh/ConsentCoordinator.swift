@@ -85,6 +85,7 @@ final class ConsentCoordinator: ConsentPresenting {
     private(set) var authenticationMessage: String?
     private(set) var presentationOwner: UUID?
 
+    @ObservationIgnored private var pendingChallenges: Set<String> = []
     @ObservationIgnored private var queue: [Entry] = []
     @ObservationIgnored private var active: Entry?
     @ObservationIgnored private var timeoutTask: Task<Void, Never>?
@@ -136,12 +137,22 @@ final class ConsentCoordinator: ConsentPresenting {
             && presentation.generation == presentationGeneration
     }
 
+    func updatePendingChallenges(_ ids: Set<String>) {
+        pendingChallenges = ids
+        for entry in queue where !canPresent(entry.prompt) { finish(entry.id, .denied(.cancelled)) }
+        if let active, !canPresent(active.prompt) { finish(active.id, .denied(.cancelled)) }
+    }
+
+    private func canPresent(_ prompt: ConsentPrompt) -> Bool {
+        prompt.relayChallenge.map { pendingChallenges.contains($0) } ?? true
+    }
+
     func requestConsent(_ prompt: ConsentPrompt) async -> ConsentDecision {
         let id = UUID()
         return await withTaskCancellationHandler {
             await withCheckedContinuation(isolation: MainActor.shared) { continuation in
                 MainActor.assumeIsolated {
-                    guard !Task.isCancelled else {
+                    guard !Task.isCancelled, canPresent(prompt) else {
                         continuation.resume(returning: .denied(.cancelled))
                         return
                     }

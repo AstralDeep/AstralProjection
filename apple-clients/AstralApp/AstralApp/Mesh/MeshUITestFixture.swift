@@ -11,6 +11,7 @@
             case firstLaunch
             case legacyLogin
             case shell
+            case nodeConsent
             case attachments
             case storedSurface
         }
@@ -63,6 +64,7 @@
                         expiresAt: Date().addingTimeInterval(540))
                 }
                 if scenario == .shell { seed(kernel) }
+                if scenario == .nodeConsent { try seedNodeConsent(kernel, signer: signer) }
                 if scenario == .storedSurface { try MeshStoredSurfaceFixture.seed(kernel) }
                 if scenario == .attachments {
                     let chat = try kernel.createChat(title: "Shared files")
@@ -180,7 +182,44 @@
                 ])
         }
 
-        private static func pendingConsent() -> MeshPendingConsent {
+        private nonisolated static func seedNodeConsent(_ kernel: InMemoryMeshKernel, signer: any AstralHostSigning)
+            throws
+        {
+            let fixture = pendingConsent()
+            let owner = ConsentPrompt.hashID(try signer.identityPublicKey())
+            let action = try ConsentPrompt.object(fixture.canonicalAction)
+            guard let node = action["device"] as? String, let turn = action["turn"] as? String else {
+                throw ConsentPromptError.invalidInput
+            }
+            let challenge = ConsentPrompt.hashID(Data("challenge".utf8))
+            let relay = [
+                "challenge": challenge,
+                "request": ConsentPrompt.hashID(Data("request".utf8)),
+                "node": node, "turn": turn, "call": "send-status",
+            ]
+            let record: [String: Any] = [
+                "v": 2, "kind": "action", "digest": ConsentPrompt.hashID(fixture.canonicalAction),
+                "device": owner, "clock": ["ms": 1, "n": 0], "relay": relay,
+            ]
+            let message =
+                Data("astral.consent/v1\n".utf8)
+                + (try JSONSerialization.data(withJSONObject: record, options: [.sortedKeys, .withoutEscapingSlashes]))
+            kernel.actionSigner = { pending in
+                let display = try ConsentPrompt.action(
+                    canonicalAction: pending.canonicalAction, canonicalArguments: pending.canonicalArguments,
+                    signingInput: message, signingDevice: { owner })
+                _ = try signer.presenceSign(prompt: display, message: message)
+            }
+            kernel.setPending(
+                [
+                    MeshPendingConsent(
+                        requestId: challenge, chatId: nil, kind: .action,
+                        canonicalAction: fixture.canonicalAction,
+                        canonicalArguments: fixture.canonicalArguments, signingInput: Data())
+                ], notifying: .chatChanged(chatId: nil))
+        }
+
+        private nonisolated static func pendingConsent() -> MeshPendingConsent {
             func id(_ byte: String) -> String { "sha256:" + String(repeating: byte, count: 32) }
             func hash(_ data: Data) -> String {
                 "sha256:" + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()

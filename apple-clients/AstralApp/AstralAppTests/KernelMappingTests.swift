@@ -221,6 +221,9 @@ final class KernelMappingTests: XCTestCase {
         XCTAssertEqual(
             KernelMapping.error(KernelError.Denied(code: "signer.denied", message: "x")) as? MeshKernelError,
             .consentDenied)
+        XCTAssertEqual(
+            KernelMapping.error(KernelError.State(code: "consent.declined", message: "x")) as? MeshKernelError,
+            .consentDenied)
         let refused = KernelMapping.error(KernelError.State(code: "mesh.already_enrolled", message: "x"))
         XCTAssertEqual(refused as? MeshKernelError, KernelMapping.refusal("mesh.already_enrolled"))
         XCTAssertEqual(

@@ -791,6 +791,7 @@ jobs:
               MeshModeUITests/testRemoteMCPManagerIsReachableFromSettings
               MeshModeUITests/testPermissionsAndMailboxLiveInSettings
               MeshModeUITests/testReviewOpensTheConsentSheetWithTheActionAndDenyClosesIt
+              MeshModeUITests/testNodeApprovalShowsTheExecutingNodeAndLetsTheOwnerDecline
               MeshModeUITests/testDenyOnTheBannerDismissesTheApprovalWithoutASheet
               MeshModeUITests/testOutcomeUnknownCardOffersCheckOrLeave
           - name: iOS 26.5 shard 3
@@ -1051,6 +1052,7 @@ jobs:
           [[ -n "$runtime_id" ]] || { echo "watchOS ${WATCHOS_RUNTIME} runtime not found" >&2; exit 1; }
           xcrun simctl delete "astral-watch-060" 2>/dev/null || true
           udid="$(xcrun simctl create "astral-watch-060" "Apple Watch Series 11 (46mm)" "$runtime_id")"
+          xcrun simctl bootstatus "$udid" -b
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
       - name: Run Watch continuity and navigation with coverage
         shell: bash

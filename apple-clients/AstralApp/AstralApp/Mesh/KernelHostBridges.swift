@@ -21,14 +21,20 @@ nonisolated final class KernelHostSigner: AstralKernel.HostSigner, @unchecked Se
 
     func presenceSign(prompt: AstralKernel.ConsentPrompt, message: Data) throws -> Data {
         let display: ConsentPrompt
-        do { display = try Self.display(for: prompt, message: message) } catch {
+        do {
+            display = try Self.display(for: prompt, message: message) {
+                ConsentPrompt.hashID(try self.signer.identityPublicKey())
+            }
+        } catch {
             throw HostSignerError.Failed(
                 message: "consent.unreadable: the request could not be shown, so nothing was signed")
         }
         do { return try signer.presenceSign(prompt: display, message: message) } catch { throw Self.signerError(error) }
     }
 
-    static func display(for prompt: AstralKernel.ConsentPrompt, message: Data) throws -> ConsentPrompt {
+    static func display(
+        for prompt: AstralKernel.ConsentPrompt, message: Data, signingDevice: () throws -> String? = { nil }
+    ) throws -> ConsentPrompt {
         guard prompt.signingInput == message else { throw ConsentPromptError.invalidInput }
         let built: ConsentPrompt
         switch prompt.kind {
@@ -62,7 +68,7 @@ nonisolated final class KernelHostSigner: AstralKernel.HostSigner, @unchecked Se
             } else {
                 built = try ConsentPrompt.action(
                     canonicalAction: prompt.canonicalAction, canonicalArguments: prompt.canonicalArguments,
-                    signingInput: message)
+                    signingInput: message, signingDevice: signingDevice)
             }
         case .connection:
             built = try ConsentPrompt.connection(canonicalRecord: prompt.canonicalAction, signingInput: message)
