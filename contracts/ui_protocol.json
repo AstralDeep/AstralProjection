@@ -37,8 +37,7 @@
                 "properties": {
                   "data": {"type": "string", "maxLength": 4096}
                 },
-                "required": ["data"],
-                "additionalProperties": false
+                "required": ["data"]
               }
             },
             "resize": {
@@ -48,15 +47,22 @@
                   "cols": {"type": "integer", "minimum": 1, "maximum": 500},
                   "rows": {"type": "integer", "minimum": 1, "maximum": 500}
                 },
-                "required": ["cols", "rows"],
-                "additionalProperties": false
+                "required": ["cols", "rows"]
               }
             },
             "interrupt": {
-              "payload_schema": {"type": "object", "additionalProperties": false}
+              "payload_schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
             },
             "close": {
-              "payload_schema": {"type": "object", "additionalProperties": false}
+              "payload_schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
             }
           }
         }

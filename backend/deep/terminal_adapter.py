@@ -2,7 +2,7 @@
 Defines the Deep‑side adapter for the `terminal/v1` contract.
 It validates the incoming action, checks explicit consent, and forwards the request
 to the target peer via the normal dispatch mechanism.
-''' 
+'''
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ class TerminalAdapter:
         # ---------------------------------------------------------------------
         # 1️⃣  Authorization – only callers with explicit consent may issue a
         #     terminal control command. The helper encapsulates the roster‑list
-        #     and mesh‑ticket checks introduced in Spec 106.
+        #     and mesh‑ticket checks introduced in Spec 106.
         # ---------------------------------------------------------------------
         if not authorize_terminal_control(context):
             raise PermissionError("Caller lacks permission for terminal control")
@@ -66,21 +66,14 @@ class TerminalAdapter:
             raise ValueError("Missing target peer identifier in request context")
 
         # ---------------------------------------------------------------------
-        # 4️⃣  Forward the request – we reuse the generic ``dispatch_action``
-        #     helper which routes the payload through the normal Deep dispatch
-        #     pipeline, preserving audit logging and replay safety.
+        # 4️⃣  Forward the request to the dispatch layer.
         # ---------------------------------------------------------------------
-        dispatch_action(
-            target_peer,
-            {
-                "type": "terminal_control",
-                "action": action,
-                "payload": payload,
-                "origin": context.get("caller_id"),
-            },
+        result = dispatch_action(
+            contract=TerminalAdapter.CONTRACT,
+            action=action,
+            payload=payload,
+            target_peer=target_peer,
+            context=context,
         )
 
-        # ---------------------------------------------------------------------
-        # 5️⃣  Acknowledge receipt to the client.
-        # ---------------------------------------------------------------------
-        return {"status": "queued", "action": action}
+        return {"status": "queued", "request_id": result.get("request_id")}
