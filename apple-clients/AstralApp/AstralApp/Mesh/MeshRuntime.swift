@@ -775,8 +775,6 @@ final class MeshRuntime {
         return false
     }
 
-    /// The opaque local-notice reference for the latest synced change, plus the in-process chat it touched.
-    /// The reference is derived from this device's mesh scope and a random change token, so it names no content.
     func wakeNotice() -> (ref: LocalNoticeRef, chatId: String?)? {
         guard isReady, status.hasMesh, let meshId = status.meshId, let deviceId = status.deviceId else { return nil }
         let ref = LocalNoticeRef.derive(

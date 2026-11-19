@@ -84,8 +84,6 @@
                 action: UNNotificationDefaultActionIdentifier)
         }
 
-        // MARK: Success
-
         func testGrantRegisterTokenPresentTapAndRouteEndToEnd() async {
             let adapter = make()
             await adapter.start()
@@ -132,8 +130,6 @@
             XCTAssertEqual(result, .posted)
         }
 
-        // MARK: Flag
-
         func testDisabledAdapterIsInertAndTheShippedFlagIsOff() async {
             XCTAssertFalse(IOSNotificationAdapter.enabled(), "the product must not advertise push before #52")
             let adapter = make(enabled: false)
@@ -154,8 +150,6 @@
             XCTAssertNil(adapter.permission)
             XCTAssertTrue(retries.isEmpty)
         }
-
-        // MARK: Denial and revocation
 
         func testDenialNeverPromptsAgainOrPosts() async {
             center.status = .denied
@@ -209,8 +203,6 @@
             let recovered = await adapter.post(refB)
             XCTAssertEqual(recovered, .posted)
         }
-
-        // MARK: Token rotation and registration errors
 
         func testTokenRotationReportsOnlyChangesAndKeepsOnlyAFingerprint() async {
             center.status = .authorized
@@ -267,8 +259,6 @@
             XCTAssertEqual(registrar.registrations, 1)
         }
 
-        // MARK: Malformed and duplicate payloads
-
         func testMalformedPayloadsAreRejectedSafely() async {
             center.status = .authorized
             let adapter = make()
@@ -317,8 +307,6 @@
             XCTAssertTrue(routes.isEmpty && center.removed.isEmpty)
         }
 
-        // MARK: Dismissal and handling
-
         func testDismissalRemovesTheNoticeAndForgetsItsSource() async {
             center.status = .authorized
             let adapter = make()
@@ -346,8 +334,6 @@
             await adapter.sceneDidBecomeActive()
             XCTAssertTrue(routes.isEmpty)
         }
-
-        // MARK: Lifecycle
 
         func testForegroundSuppressesOSNoticesAndBackgroundAllowsThem() async {
             center.status = .authorized
@@ -490,8 +476,6 @@
             await fulfillment(of: [done], timeout: 5)
         }
 
-        // MARK: OS seam (app host only: the OS center needs an application bundle)
-
         func testSystemCenterReadsTheOSWithoutPrompting() async {
             let system = SystemLocalNoticeCenter()
             let status = await system.authorizationStatus()
@@ -501,8 +485,6 @@
             let delivered = await system.deliveredIdentifiers()
             XCTAssertFalse(delivered.contains("astral-mesh-absent-ref"))
         }
-
-        // MARK: Mesh wake reference
 
         func testMeshWakeNoticeIsOpaqueAndChangesWithEachSyncedChange() async throws {
             let h = MeshRuntimeHarness()

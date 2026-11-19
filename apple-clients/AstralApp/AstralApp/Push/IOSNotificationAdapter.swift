@@ -8,7 +8,6 @@
     import UIKit
     import UserNotifications
 
-    /// The `UNUserNotificationCenter` surface the adapter uses, so tests can supply a fake.
     @MainActor
     protocol LocalNoticeCenter: AnyObject {
         func authorizationStatus() async -> LocalNoticePermission.Reported
@@ -19,7 +18,6 @@
         func removeDelivered(_ identifiers: [String])
     }
 
-    /// The `UIApplication` remote-notification surface the adapter uses, so tests can supply a fake.
     @MainActor
     protocol RemoteNotificationRegistrar: AnyObject {
         func register()
@@ -28,7 +26,6 @@
     @MainActor
     final class SystemLocalNoticeCenter: LocalNoticeCenter {
         private let injected: UNUserNotificationCenter?
-        /// Resolved on first use so a disabled adapter never touches the OS notification center.
         private var center: UNUserNotificationCenter { injected ?? .current() }
 
         init(center: UNUserNotificationCenter? = nil) { injected = center }
@@ -62,7 +59,6 @@
 
     @MainActor
     final class IOSNotificationAdapter {
-        /// The opaque reference that was tapped and, when still known in this process, the chat it was posted for.
         struct Route: Equatable {
             let ref: LocalNoticeRef
             let chatId: String?
@@ -80,7 +76,6 @@
             case exhausted
         }
 
-        /// Info.plist Boolean that enables the adapter. Absent or false keeps OS notices fully inactive.
         static let infoKey = "ASTRALLocalMeshNotifications"
         static let categoryIdentifier = "astral.mesh.notice"
         static let title = "AstralDeep"
@@ -98,10 +93,8 @@
         private(set) var foreground = false
         private(set) var lastRejection: LocalNoticeRejection?
 
-        /// Receives the hex APNs token on first registration and on every rotation (never on an unchanged token).
         var onToken: ((String) -> Void)?
         var onPermissionChange: ((LocalNoticePermission) -> Void)?
-        /// Existing source navigation. Returns false while it cannot open yet; the route then stays pending.
         var onRoute: ((Route) -> Bool)? {
             didSet { resolvePendingRoute() }
         }
@@ -145,10 +138,6 @@
             }
         }
 
-        // MARK: Startup and permission
-
-        /// Cold start or relaunch after termination: install the dismiss-aware category, read permission, rebuild
-        /// duplicate suppression from notices the OS still shows, and request a token.
         func start() async {
             guard isEnabled else { return }
             let category = UNNotificationCategory(
@@ -163,7 +152,6 @@
             requestRegistration()
         }
 
-        /// Prompts only before any decision; denied and revoked states are left to Settings.
         func requestAuthorizationIfNeeded() async {
             guard isEnabled, permission == nil || permission?.canRequest == true else { return }
             if permission == nil { await refreshPermission() }
@@ -181,8 +169,6 @@
             if next == .revoked { await clearDelivered() }
             onPermissionChange?(next)
         }
-
-        // MARK: Registration
 
         func requestRegistration() {
             guard isEnabled, registration != .requested else { return }
@@ -231,10 +217,6 @@
             }
         }
 
-        // MARK: Posting
-
-        /// Posts one generic, content-free notice for a synced change. Only the opaque reference reaches the OS;
-        /// the chat id stays in this process for routing.
         @discardableResult
         func post(_ ref: LocalNoticeRef, chatId: String? = nil) async -> PostResult {
             guard isEnabled else { return .disabled }
@@ -261,8 +243,6 @@
             return .posted
         }
 
-        // MARK: Delegate callbacks (forwarded by the app's single UNUserNotificationCenterDelegate)
-
         func willPresent(userInfo: [AnyHashable: Any]) -> UNNotificationPresentationOptions {
             guard isEnabled, accept(userInfo) != nil else { return [] }
             return [.banner, .list]
@@ -283,7 +263,6 @@
             }
         }
 
-        /// The source was opened another way; drop its OS notice.
         func markHandled(_ ref: LocalNoticeRef) {
             chats[ref] = nil
             if pendingRoute?.ref == ref { pendingRoute = nil }
@@ -307,10 +286,6 @@
             }
         }
 
-        // MARK: Lifecycle
-
-        /// Foreground entry re-reads permission (detecting Settings revocation or regrant), retries an exhausted
-        /// registration, and completes a tap that arrived during cold launch or while in the background.
         func sceneDidBecomeActive() async {
             foreground = true
             guard isEnabled else { return }
@@ -325,7 +300,6 @@
 
         func sceneDidEnterBackground() { foreground = false }
 
-        /// Process end: in-memory routing is discarded; `start()` rebuilds duplicate suppression from the OS.
         func applicationWillTerminate() {
             foreground = false
             pendingRoute = nil

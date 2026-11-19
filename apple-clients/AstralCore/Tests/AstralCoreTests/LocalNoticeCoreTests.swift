@@ -7,7 +7,6 @@ import XCTest
 @testable import AstralCore
 
 final class LocalNoticeCoreTests: XCTestCase {
-    // MARK: Permission
 
     func testPermissionGrantDenialRevocationAndRegrant() {
         var state = LocalNoticePermission.next(previous: nil, reported: .notDetermined)
@@ -45,8 +44,6 @@ final class LocalNoticeCoreTests: XCTestCase {
         XCTAssertFalse(LocalNoticePermission.denied.allowsPosting)
         XCTAssertFalse(LocalNoticePermission.denied.canRequest)
     }
-
-    // MARK: References and payloads
 
     func testReferenceValidationAndOpaqueDerivation() {
         XCTAssertNotNil(LocalNoticeRef("abcdefgh"))
@@ -93,8 +90,6 @@ final class LocalNoticeCoreTests: XCTestCase {
         return nil
     }
 
-    // MARK: Ledger
-
     func testLedgerSuppressesDuplicatesAndStaysBounded() {
         var ledger = LocalNoticeLedger(capacity: 2)
         let a = LocalNoticeRef("ref-aaaaaaaa")!
@@ -117,8 +112,6 @@ final class LocalNoticeCoreTests: XCTestCase {
         XCTAssertEqual(ledger.count, 0)
         XCTAssertEqual(LocalNoticeLedger().capacity, 256)
     }
-
-    // MARK: Token
 
     func testTokenFirstUnchangedRotatedInvalidAndRedaction() {
         var tracker = LocalNoticeTokenTracker()
@@ -151,8 +144,6 @@ final class LocalNoticeCoreTests: XCTestCase {
         tracker.reset()
         guard case .first = tracker.receive(tokenB) else { return XCTFail("reset forgets the token") }
     }
-
-    // MARK: Retry
 
     func testRetryBackoffIsCappedAndExhausts() {
         let policy = LocalNoticeRetryPolicy(baseSeconds: 5, maxSeconds: 60, maxAttempts: 6)
