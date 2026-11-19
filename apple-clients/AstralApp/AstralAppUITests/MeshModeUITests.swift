@@ -25,6 +25,15 @@ final class MeshModeUITests: XCTestCase {
 
     private func element(_ id: String) -> XCUIElement { app.descendants(matching: .any)[id] }
 
+    private func pressConsentButton(_ button: XCUIElement) {
+        #if os(macOS)
+            app.activate()
+            button.click()
+        #else
+            button.tap()
+        #endif
+    }
+
     func testFirstLaunchShowsCreateAndJoinBeforeAnyServerLogin() {
         launch("firstLaunch")
         XCTAssertTrue(element("mesh.create").waitForExistence(timeout: 10))
@@ -213,7 +222,7 @@ final class MeshModeUITests: XCTestCase {
         launch("shell")
         let review = element("mesh.consent.review")
         XCTAssertTrue(review.waitForExistence(timeout: 10))
-        review.tap()
+        pressConsentButton(review)
         XCTAssertTrue(element("consent.sheet").waitForExistence(timeout: 10))
         XCTAssertTrue(element("consent.title").exists)
         XCTAssertTrue(element("consent.summary").exists)
@@ -221,7 +230,7 @@ final class MeshModeUITests: XCTestCase {
         XCTAssertTrue(element("consent.approve").exists)
         XCTAssertTrue(element("consent.deny").exists)
         attach("mesh-consent-sheet")
-        element("consent.deny").tap()
+        pressConsentButton(element("consent.deny"))
         XCTAssertTrue(element("mesh.consent.review").waitForNonExistence(timeout: 10))
         XCTAssertFalse(element("consent.sheet").exists)
     }
@@ -230,20 +239,11 @@ final class MeshModeUITests: XCTestCase {
         launch("nodeConsent")
         let review = element("mesh.consent.review")
         XCTAssertTrue(review.waitForExistence(timeout: 10))
-        #if os(macOS)
-            app.activate()
-            review.click()
-        #else
-            review.tap()
-        #endif
+        pressConsentButton(review)
         let summary = element("consent.summary")
         XCTAssertTrue(summary.waitForExistence(timeout: 10))
         XCTAssertTrue(shown(summary).contains("Approve mail.send on node 2222 2222 2222 2222"))
-        #if os(macOS)
-            element("consent.deny").click()
-        #else
-            element("consent.deny").tap()
-        #endif
+        pressConsentButton(element("consent.deny"))
         XCTAssertTrue(review.waitForNonExistence(timeout: 10))
         XCTAssertFalse(element("consent.sheet").exists)
     }
