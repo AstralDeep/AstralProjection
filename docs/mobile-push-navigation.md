@@ -34,7 +34,7 @@ Under Spec 105 the push carries no content: the device syncs, then posts a local
 |---|---|---|
 | iOS (iPhone) | Supported (flag off) | This adapter. |
 | iPadOS | Supported (flag off) | The same `AstralApp` target (`TARGETED_DEVICE_FAMILY = 1,2`) and code path. |
-| macOS | Deferred for APNs | The multiplatform target excludes this iOS-only adapter. Mac local notices already come from `MacWorkNotificationService`. A Mac mesh node runs continuously, so it doesn't need wake pushes. |
+| macOS | Deferred | The multiplatform target excludes this iOS-only adapter. The Mac app posts no OS notifications today. A Mac mesh node runs continuously, so it doesn't need wake pushes. |
 | watchOS | Not applicable | The watch targets don't link AstralKernel or hold a mesh. iOS mirrors iPhone notices to a paired watch. |
 | visionOS, tvOS | Not applicable | The repository has no such target. |
 
