@@ -569,6 +569,7 @@ def _assert_apple_platform_contract(apple: str) -> None:
     assert "name: Required · watchOS 26.5 continuity coverage" in watch
     assert 'xcrun simctl list runtimes available | grep -F "watchOS ${WATCHOS_RUNTIME}"' in watch
     assert "os.environ['WATCHOS_RUNTIME']" in watch
+    assert watch.index('xcrun simctl bootstatus "$udid" -b') < watch.index("-scheme AstralWatch")
     assert "-scheme AstralWatch" in watch
     assert watch.count(
         '-destination "platform=watchOS Simulator,id=${{ steps.watch_sim.outputs.udid }}"'
