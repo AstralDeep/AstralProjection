@@ -419,6 +419,93 @@ final class MeshRuntimeTests: XCTestCase {
         XCTAssertTrue(h.kernel.calls.contains(.init(name: "resolveConsent", detail: "r1:deny")))
     }
 
+    func testSyncedConsentAppearsWithoutALocalTurnAndDisappearsWhenResolvedOrRevoked() async {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        let request = MeshPendingConsent(
+            requestId: "from-node", chatId: "remote-chat", kind: .action, canonicalAction: Data(),
+            canonicalArguments: Data(), signingInput: Data())
+        for change: MeshKernelChange in [.chatChanged(chatId: nil), .rosterChanged, .syncStateChanged] {
+            h.kernel.setPending([request], notifying: .chatChanged(chatId: nil))
+            await h.runtime.settle()
+            XCTAssertEqual(h.runtime.pendingConsents, [request])
+            h.kernel.setPending([], notifying: change)
+            await h.runtime.settle()
+            XCTAssertTrue(h.runtime.pendingConsents.isEmpty)
+        }
+        XCTAssertFalse(h.kernel.calls.contains { $0.name == "resolveConsent" })
+    }
+
+    func testRemoteConsentProgressNeverCreatesALocalTurnAndResolvedProgressClearsTheWaitingLabel() async {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        let request = MeshPendingConsent(
+            requestId: "request", chatId: "chat", kind: .action, canonicalAction: Data(),
+            canonicalArguments: Data(), signingInput: Data())
+        let waiting = MeshKernelChange.turnProgress(
+            .init(chatId: "chat", turnId: "turn", event: .awaitingConsent(requestId: "request")))
+        h.kernel.emit(waiting)
+        h.kernel.setPending([request])
+        await h.runtime.settle()
+        XCTAssertNil(h.runtime.turns["chat"])
+        XCTAssertEqual(h.runtime.pendingConsents, [request])
+        h.kernel.emit(.turnProgress(.init(chatId: "chat", turnId: "turn", event: .started)))
+        h.kernel.emit(waiting)
+        await h.runtime.settle()
+        XCTAssertEqual(h.runtime.turns["chat"]?.awaitingConsent, request.requestId)
+        h.kernel.setPending([], notifying: .consentRequested(requestId: request.requestId))
+        await h.runtime.settle()
+        XCTAssertNil(h.runtime.turns["chat"]?.awaitingConsent)
+    }
+
+    func testOlderSnapshotCannotRestoreConsentAfterASyncedDecision() async {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        await h.runtime.open()
+        let request = MeshPendingConsent(
+            requestId: "already-decided", chatId: "chat", kind: .action, canonicalAction: Data(),
+            canonicalArguments: Data(), signingInput: Data())
+        h.kernel.setPending([request])
+        await h.runtime.settle()
+        let gate = ResumeWriteGate()
+        h.kernel.consentReadGate = { if !gate.entered { gate.wait() } }
+        let stale = Task { await h.runtime.refreshConsents() }
+        guard await waitUntil({ gate.entered }) else {
+            gate.release()
+            await stale.value
+            return XCTFail("The first consent read did not start")
+        }
+        h.kernel.setPending([], notifying: .chatChanged(chatId: nil))
+        await h.runtime.settle()
+        XCTAssertTrue(h.runtime.pendingConsents.isEmpty)
+        gate.release()
+        await stale.value
+        XCTAssertTrue(h.runtime.pendingConsents.isEmpty)
+    }
+
+    func testUnreadableConsentListHidesDetailsAndRetriesOnTheNextSync() async {
+        let h = MeshRuntimeHarness()
+        defer { h.cleanUp() }
+        let sink = RecordingSpeechSink()
+        h.runtime.speechSink = sink
+        await h.runtime.open()
+        let request = MeshPendingConsent(
+            requestId: "retry", chatId: "chat", kind: .action, canonicalAction: Data(),
+            canonicalArguments: Data(), signingInput: Data())
+        h.kernel.setPending([request])
+        await h.runtime.settle()
+        h.kernel.failure = .unavailable("Offline")
+        await h.runtime.refreshConsents()
+        XCTAssertTrue(h.runtime.pendingConsents.isEmpty)
+        XCTAssertEqual(sink.risky.last, true)
+        h.kernel.failure = nil
+        h.kernel.emit(.syncStateChanged)
+        await h.runtime.settle()
+        XCTAssertEqual(h.runtime.pendingConsents, [request])
+    }
+
     func testReviewApprovesThroughTheKernelAndDeniedBiometricsSettleAsDenied() async {
         let h = MeshRuntimeHarness()
         defer { h.cleanUp() }

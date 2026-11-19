@@ -17,7 +17,8 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
     let untrustedSource: String?
     let labels: [String]
     let digest: String
-    let requiresBiometry: Bool
+    private(set) var requiresBiometry: Bool
+    private(set) var relayChallenge: String?
     private(set) var summary: String?
     private var signingInputHash: Data?
 
@@ -38,7 +39,10 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
         signingInputHash = nil
     }
 
-    static func action(canonicalAction: Data, canonicalArguments: Data, signingInput: Data) throws -> ConsentPrompt {
+    static func action(
+        canonicalAction: Data, canonicalArguments: Data, signingInput: Data,
+        signingDevice: () throws -> String? = { nil }
+    ) throws -> ConsentPrompt {
         _ = try object(
             canonicalAction,
             fields: [
@@ -46,26 +50,49 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
             ])
         let action = try JSONDecoder().decode(Action.self, from: canonicalAction)
         let consentData = try payload(signingInput, context: "astral.consent/v1")
-        let consentObject = try object(consentData, fields: ["v", "kind", "digest", "device", "clock"])
         let consent = try JSONDecoder().decode(ActionConsent.self, from: consentData)
+        var fields: Set<String> = ["v", "kind", "digest", "device", "clock"]
+        if consent.v == 2 { fields.insert("relay") }
+        let consentObject = try object(consentData, fields: fields)
         guard try KernelCanonicalJSON.canonicalize(canonicalArguments) == canonicalArguments else {
             throw ConsentPromptError.invalidInput
         }
         try checkClock(consentObject["clock"], value: consent.clock)
-        guard action.v == 1, consent.v == 1, consent.kind == "action",
+        guard action.v == 1, consent.kind == "action",
             isID(action.mesh), isID(action.device), isID(action.turn), isID(action.toolDef),
             !action.agent.isEmpty, !action.tool.isEmpty,
             action.influence == Array(Set(action.influence)).sorted(), action.influence.allSatisfy(isID),
-            action.argsDigest == hashID(canonicalArguments), consent.digest == hashID(canonicalAction),
-            consent.device == action.device
+            action.argsDigest == hashID(canonicalArguments), consent.digest == hashID(canonicalAction)
         else { throw ConsentPromptError.invalidInput }
+        let summary: String?
+        let relayChallenge: String?
+        switch consent.v {
+        case 1:
+            guard consent.device == action.device else { throw ConsentPromptError.invalidInput }
+            summary = nil
+            relayChallenge = nil
+        case 2:
+            guard let relay = consentObject["relay"] as? [String: String],
+                Set(relay.keys) == ["challenge", "request", "turn", "call", "node"],
+                let challenge = relay["challenge"], isID(challenge),
+                let request = relay["request"], isID(request),
+                let call = relay["call"], (1...256).contains(call.utf8.count),
+                relay["node"] == action.device, relay["turn"] == action.turn,
+                consent.device == (try signingDevice()), isID(consent.device), consent.device != action.device
+            else { throw ConsentPromptError.invalidInput }
+            relayChallenge = challenge
+            summary = "Approve " + action.tool + " on node " + fingerprint(action.device)
+        default:
+            throw ConsentPromptError.invalidInput
+        }
         var prompt = ConsentPrompt(
             actionTitle: "Approve " + action.tool, effect: action.tool,
             target: action.mesh + " / " + action.agent,
             arguments: "Action: " + String(decoding: canonicalAction, as: UTF8.self)
                 + "\nArguments: " + String(decoding: canonicalArguments, as: UTF8.self),
             untrustedSource: action.influence.isEmpty ? nil : action.influence.joined(separator: ", "),
-            digest: consent.digest)
+            digest: consent.digest, summary: summary)
+        prompt.relayChallenge = relayChallenge
         prompt.signingInputHash = hash(signingInput)
         return prompt
     }
@@ -310,12 +337,8 @@ nonisolated struct ConsentPrompt: Equatable, Sendable {
     private static let approverPrefix = "astral-device:"
 
     func requiringBiometry(_ required: Bool) -> ConsentPrompt {
-        guard required, !requiresBiometry else { return self }
-        var copy = ConsentPrompt(
-            actionTitle: actionTitle, effect: effect, target: target, arguments: arguments,
-            untrustedSource: untrustedSource, labels: labels, digest: digest, requiresBiometry: true,
-            summary: summary)
-        copy.signingInputHash = signingInputHash
+        var copy = self
+        copy.requiresBiometry = requiresBiometry || required
         return copy
     }
 

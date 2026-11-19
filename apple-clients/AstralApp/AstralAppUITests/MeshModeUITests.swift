@@ -226,6 +226,28 @@ final class MeshModeUITests: XCTestCase {
         XCTAssertFalse(element("consent.sheet").exists)
     }
 
+    func testNodeApprovalShowsTheExecutingNodeAndLetsTheOwnerDecline() {
+        launch("nodeConsent")
+        let review = element("mesh.consent.review")
+        XCTAssertTrue(review.waitForExistence(timeout: 10))
+        #if os(macOS)
+            app.activate()
+            review.click()
+        #else
+            review.tap()
+        #endif
+        let summary = element("consent.summary")
+        XCTAssertTrue(summary.waitForExistence(timeout: 10))
+        XCTAssertTrue(shown(summary).contains("Approve mail.send on node 2222 2222 2222 2222"))
+        #if os(macOS)
+            element("consent.deny").click()
+        #else
+            element("consent.deny").tap()
+        #endif
+        XCTAssertTrue(review.waitForNonExistence(timeout: 10))
+        XCTAssertFalse(element("consent.sheet").exists)
+    }
+
     func testDenyOnTheBannerDismissesTheApprovalWithoutASheet() {
         launch("shell")
         let deny = element("mesh.consent.deny")

@@ -65,6 +65,7 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         .started, .assistantDelta("Hello"), .assistantDelta(" there"), .assistantFinished, .finished,
     ]
     var turnReply = "Hello there"
+    var consentReadGate: @Sendable () -> Void = {}
     var consentGate: @Sendable () throws -> Void = {}
     var attachmentFetchGate: @Sendable () async -> Void = {}
     var actionSigner: (@Sendable (MeshPendingConsent) throws -> Void)?
@@ -869,7 +870,9 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
 
     func pendingConsents() throws -> [MeshPendingConsent] {
         try record("pendingConsents")
-        return lock.withLock { consents }
+        let snapshot = lock.withLock { consents }
+        consentReadGate()
+        return snapshot
     }
 
     func resolveConsent(requestId: String, approve: Bool) throws {
@@ -1574,9 +1577,13 @@ nonisolated final class InMemoryMeshKernel: MeshKernel, @unchecked Sendable {
         lock.withLock { proposalsValue = value }
     }
 
-    func setPending(_ requests: [MeshPendingConsent]) {
+    func setPending(_ requests: [MeshPendingConsent], notifying change: MeshKernelChange? = nil) {
         lock.withLock { consents = requests }
-        for request in requests { listener.onChange(.consentRequested(requestId: request.requestId)) }
+        if let change {
+            listener.onChange(change)
+        } else {
+            for request in requests { listener.onChange(.consentRequested(requestId: request.requestId)) }
+        }
     }
 
     func setSync(_ value: MeshSyncState) {

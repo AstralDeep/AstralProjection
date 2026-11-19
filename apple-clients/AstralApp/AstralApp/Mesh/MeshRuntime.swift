@@ -488,6 +488,8 @@ final class MeshRuntime {
 
     @ObservationIgnored private var kernel: (any MeshKernel)?
     @ObservationIgnored private var keys: DeviceKeys?
+    @ObservationIgnored private var consentReadID: UUID?
+    @ObservationIgnored private var recheckConsentsOnSync = false
     @ObservationIgnored private var wakeSession = UUID()
     @ObservationIgnored private var wakeSessionGate = MeshSessionGate()
     @ObservationIgnored private var wakeDataRevision = UUID()
@@ -697,6 +699,10 @@ final class MeshRuntime {
             return
         }
         closing = true
+        consentReadID = nil
+        consent.updatePendingChallenges([])
+        recheckConsentsOnSync = false
+        speechSink?.setRiskyActionPending(false)
         defer {
             closing = false
             let waiters = closeWaiters
@@ -942,10 +948,19 @@ final class MeshRuntime {
     }
 
     func refreshConsents() async {
-        if let value = await attempt({ try $0.pendingConsents() }) {
-            pendingConsents = value
-            speechSink?.setRiskyActionPending(!value.isEmpty)
+        guard isReady else { return }
+        let readID = UUID()
+        consentReadID = readID
+        let value = await attempt { try $0.pendingConsents() }
+        guard consentReadID == readID, isReady else { return }
+        pendingConsents = value ?? []
+        let pendingIDs = Set(pendingConsents.map(\.requestId))
+        consent.updatePendingChallenges(pendingIDs)
+        for (chat, state) in turns {
+            if let waiting = state.awaitingConsent, !pendingIDs.contains(waiting) { turns[chat]?.awaitingConsent = nil }
         }
+        recheckConsentsOnSync = value.map { !$0.isEmpty } ?? status.hasMesh
+        speechSink?.setRiskyActionPending(recheckConsentsOnSync)
     }
 
     func refreshConnections() async {
@@ -1590,9 +1605,11 @@ final class MeshRuntime {
     }
 
     func review(_ request: MeshPendingConsent) async {
+        let session = wakeSession
         do {
             try await call { try $0.resolveConsent(requestId: request.requestId, approve: true) }
         } catch {
+            guard wakeSession == session, isReady, pendingConsents.contains(request) else { return }
             if case MeshKernelError.consentDenied = error {
                 await perform { try $0.resolveConsent(requestId: request.requestId, approve: false) }
             } else if let hosting = error as? HostSigningError, case .consentDenied = hosting {
@@ -2156,11 +2173,13 @@ final class MeshRuntime {
         guard kernel != nil, wakeSession == session, isReady else { return }
         switch change {
         case .chatChanged(let chatId):
+            if chatId == nil { await refreshConsents() }
             await refreshChats()
             await refreshRequests()
             if let current = currentChatId, chatId == nil || chatId == current { await reloadChat(current) }
             await recoverOrdinaryTurns(expectedSession: session)
         case .syncStateChanged:
+            if recheckConsentsOnSync { await refreshConsents() }
             await refreshSync()
             await refreshProviders()
             await refreshMailbox()
@@ -2168,6 +2187,7 @@ final class MeshRuntime {
         case .consentRequested:
             await refreshConsents()
         case .rosterChanged:
+            await refreshConsents()
             await refreshStatus()
             await refreshRoster()
             if isReady, wakeSession == session { meshAuthorityRevision = UUID() }
@@ -2237,10 +2257,8 @@ final class MeshRuntime {
             }
             if speaking { speechSink?.toolFinished(id: id) }
         case .awaitingConsent(let requestId):
+            guard turns[progress.chatId]?.running == true else { return }
             state.awaitingConsent = requestId
-            turns[progress.chatId] = state
-            await refreshConsents()
-            guard turns[progress.chatId]?.turnId == progress.turnId else { return }
         case .outcomeUnknown(let outcome):
             if !state.unknown.contains(outcome) { state.unknown.append(outcome) }
         case .incomplete:

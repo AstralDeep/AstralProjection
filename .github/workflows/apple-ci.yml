@@ -791,6 +791,7 @@ jobs:
               MeshModeUITests/testRemoteMCPManagerIsReachableFromSettings
               MeshModeUITests/testPermissionsAndMailboxLiveInSettings
               MeshModeUITests/testReviewOpensTheConsentSheetWithTheActionAndDenyClosesIt
+              MeshModeUITests/testNodeApprovalShowsTheExecutingNodeAndLetsTheOwnerDecline
               MeshModeUITests/testDenyOnTheBannerDismissesTheApprovalWithoutASheet
               MeshModeUITests/testOutcomeUnknownCardOffersCheckOrLeave
           - name: iOS 26.5 shard 3

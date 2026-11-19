@@ -203,6 +203,105 @@ final class ConsentPromptBindingTests: XCTestCase {
         XCTAssertFalse(makePrompt(BoundConsentFixture.digest).isBound(to: BoundConsentFixture.message))
     }
 
+    private func relayMessage(
+        to owner: String, with fields: [String: Any] = [:], relayFields: [String: Any] = [:]
+    ) throws -> Data {
+        let relay: [String: Any] = [
+            "challenge": ConsentPrompt.hashID(Data("challenge".utf8)),
+            "request": ConsentPrompt.hashID(Data("request".utf8)),
+            "turn": "sha256:" + String(repeating: "33", count: 32),
+            "node": BoundConsentFixture.device, "call": "call-1",
+        ]
+        let record: [String: Any] = [
+            "v": 2, "kind": "action", "device": owner, "digest": BoundConsentFixture.digest,
+            "clock": ["ms": 5, "n": 0], "relay": relay.merging(relayFields) { _, new in new },
+        ]
+        let bytes = try JSONSerialization.data(withJSONObject: record.merging(fields) { _, new in new })
+        return Data("astral.consent/v1\n".utf8) + (try KernelCanonicalJSON.canonicalize(bytes))
+    }
+
+    private func relayPrompt(_ input: Data) -> AstralKernel.ConsentPrompt {
+        AstralKernel.ConsentPrompt(
+            kind: .toolEffect, title: "ignored", target: "ignored",
+            canonicalAction: BoundConsentFixture.action, canonicalArguments: BoundConsentFixture.arguments,
+            signingInput: input, digest: "ignored", untrustedSources: [], labels: [], requiresBiometry: false, batch: 1)
+    }
+
+    func testRelayConsentBindsTheReceivingDeviceAndShowsTheExecutingNode() async throws {
+        let suite = "consent.relay." + UUID().uuidString
+        defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let keys = try DeviceKeys(
+            store: MeshMemorySecretStore(), defaults: UserDefaults(suiteName: suite)!, preferHardware: false)
+        let owner = ConsentPrompt.hashID(try keys.identityPublicKey())
+        let presenter = RecordingPresenter()
+        presenter.approve = false
+        let signer = KernelHostSigner(MeshHostSigner(keys: keys, presenter: presenter))
+        let input = try relayMessage(to: owner)
+        let native = relayPrompt(input)
+        let shown = try KernelHostSigner.display(for: native, message: input) { owner }
+        XCTAssertEqual(shown.effect, "mail.send")
+        XCTAssertEqual(shown.digest, BoundConsentFixture.digest)
+        XCTAssertTrue(shown.summaryLine.contains(ConsentPrompt.fingerprint(BoundConsentFixture.device)))
+        XCTAssertTrue(shown.isBound(to: input))
+        let other = try relayMessage(to: ConsentPrompt.hashID(Data("another owner device".utf8)))
+        let otherPrompt = relayPrompt(other)
+        let refusedOther = await Task.detached {
+            (try? signer.presenceSign(prompt: otherPrompt, message: other)) == nil
+        }.value
+        XCTAssertTrue(refusedOther)
+        XCTAssertTrue(presenter.prompts.isEmpty)
+        let denied = await Task.detached { (try? signer.presenceSign(prompt: native, message: input)) == nil }.value
+        XCTAssertTrue(denied)
+        XCTAssertEqual(presenter.prompts, [shown])
+        presenter.approve = true
+        let signed = try await Task.detached { try signer.presenceSign(prompt: native, message: input) }.value
+        let signature = try P256.Signing.ECDSASignature(rawRepresentation: signed)
+        let publicKey = try P256.Signing.PublicKey(x963Representation: keys.presencePublicKey())
+        XCTAssertTrue(publicKey.isValidSignature(signature, for: input))
+        XCTAssertFalse(publicKey.isValidSignature(signature, for: other))
+    }
+
+    func testRevokedRelayChallengeDismissesTheVisibleSheetAndRefusesDelayedCallbacks() async throws {
+        let owner = ConsentPrompt.hashID(Data("owner".utf8))
+        let input = try relayMessage(to: owner)
+        let shown = try KernelHostSigner.display(for: relayPrompt(input), message: input) { owner }
+        let challenge = try XCTUnwrap(shown.relayChallenge)
+        let coordinator = ConsentCoordinator(authenticator: StubAuthenticator(succeeds: false))
+        coordinator.registerPresenter(UUID(), depth: 0)
+        coordinator.updatePendingChallenges([challenge])
+        let pending = Task { await coordinator.requestConsent(shown) }
+        let visible = await waitUntil { coordinator.current == shown }
+        XCTAssertTrue(visible)
+        coordinator.updatePendingChallenges([])
+        guard case .denied(.cancelled) = await pending.value else { return XCTFail("Expected cancellation") }
+        XCTAssertNil(coordinator.current)
+        guard case .denied(.cancelled) = await coordinator.requestConsent(shown) else {
+            return XCTFail("A retired prompt reached the sheet")
+        }
+        XCTAssertNil(coordinator.current)
+    }
+
+    func testRelayConsentRefusesMalformedBindingsBeforeDisplayingTheAction() throws {
+        let owner = ConsentPrompt.hashID(Data("owner".utf8))
+        let samples = try [
+            relayMessage(to: owner, with: ["extra": true]), relayMessage(to: owner, with: ["v": 1]),
+            relayMessage(to: owner, with: ["v": 3]), relayMessage(to: owner, with: ["kind": "grant"]),
+            relayMessage(to: owner, with: ["digest": owner]), relayMessage(to: owner, with: ["relay": NSNull()]),
+            relayMessage(to: BoundConsentFixture.device), relayMessage(to: owner, relayFields: ["extra": "x"]),
+            relayMessage(to: owner, relayFields: ["node": owner]),
+            relayMessage(to: owner, relayFields: ["turn": owner]),
+            relayMessage(to: owner, relayFields: ["request": ""]), relayMessage(to: owner, relayFields: ["call": ""]),
+            relayMessage(to: owner, relayFields: ["challenge": "invalid"]),
+            relayMessage(to: owner, relayFields: ["call": String(repeating: "é", count: 129)]),
+        ]
+        for input in samples {
+            XCTAssertThrowsError(try KernelHostSigner.display(for: relayPrompt(input), message: input) { owner })
+        }
+        let valid = try relayMessage(to: owner)
+        XCTAssertThrowsError(try KernelHostSigner.display(for: relayPrompt(valid), message: valid))
+        XCTAssertThrowsError(try KernelHostSigner.display(for: relayPrompt(valid), message: Data()) { owner })
+    }
+
     func testActionRejectsDifferentArgumentsAndDifferentAction() {
         XCTAssertThrowsError(
             try ConsentPrompt.action(

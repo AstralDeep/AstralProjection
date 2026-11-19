@@ -408,6 +408,7 @@ FIRST_LOGIN_UI_CLASSES = (
     "MeshModeUITests/testRemoteMCPManagerIsReachableFromSettings",
     "MeshModeUITests/testPermissionsAndMailboxLiveInSettings",
     "MeshModeUITests/testReviewOpensTheConsentSheetWithTheActionAndDenyClosesIt",
+    "MeshModeUITests/testNodeApprovalShowsTheExecutingNodeAndLetsTheOwnerDecline",
     "MeshModeUITests/testDenyOnTheBannerDismissesTheApprovalWithoutASheet",
     "MeshModeUITests/testOutcomeUnknownCardOffersCheckOrLeave",
     "MeshModeUITests/testTheLargestTextSizeKeepsEveryMeshScreenUsable",

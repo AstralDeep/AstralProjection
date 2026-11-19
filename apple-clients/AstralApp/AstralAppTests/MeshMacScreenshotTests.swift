@@ -197,6 +197,33 @@
             await shell("chat") { .chat($0.chats.first?.chatId ?? "") }
         }
 
+        func testRelayedNodeReviewShowsTheSignedNodeAndDismissesAfterDenial() async throws {
+            let rig = Rig(.nodeConsent)
+            await rig.runtime.open()
+            let root = rig.host(MeshRootView(start: .devices), width: 1100, height: 700)
+            let mount = SurfaceMount(root, model: rig.model, size: CGSize(width: 1100, height: 700))
+            defer { mount.window.close() }
+            await rig.runtime.settle()
+            let ready = await eventually { (try? mount.textFrame("Review", exact: true)) != nil }
+            XCTAssertTrue(ready)
+            try mount.click(text: "Review", exact: true)
+            let presented = await eventually { mount.window.attachedSheet?.contentView != nil }
+            XCTAssertTrue(presented)
+            let sheet = try XCTUnwrap(mount.window.attachedSheet)
+            let content = try XCTUnwrap(sheet.contentView)
+            let visible = await eventually {
+                (try? self.statusText(in: content))?.contains("on node 2222 2222 2222 2222") == true
+            }
+            XCTAssertTrue(visible)
+            try mount.snapshot(self, name: "mac-node-consent", in: sheet)
+            try mount.click(text: "Deny", in: sheet, exact: true)
+            let dismissed = await eventually {
+                rig.runtime.pendingConsents.isEmpty && mount.window.attachedSheet == nil
+            }
+            XCTAssertTrue(dismissed)
+            await rig.runtime.close()
+        }
+
         func testProviderSharingScreens() async throws {
             let rig = Rig(.shell)
             await rig.runtime.open()

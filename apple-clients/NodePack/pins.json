@@ -2,6 +2,6 @@
   "format": "astral.nodepack-pins/v1",
   "kernel": {
     "repository": "https://github.com/AstralDeep/AstralKernel.git",
-    "commit": "eb9821f41e8d84b642110c098a12dcb54eced665"
+    "commit": "d3ae8f3d6f8603f55b4728bb15a5db2a6ded8856"
   }
 }
