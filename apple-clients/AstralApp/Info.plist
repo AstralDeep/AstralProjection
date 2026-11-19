@@ -4,6 +4,9 @@
 <dict>
 	<key>ASTRALMeshPushPublisherURL</key>
 	<string>$(ASTRAL_MESH_PUSH_PUBLISHER_URL)</string>
+	<!-- iOS local mesh notices (#51) stay off until coordinated owner/source integration (#52) qualifies. -->
+	<key>ASTRALLocalMeshNotifications</key>
+	<false/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

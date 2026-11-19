@@ -459,19 +459,8 @@ jobs:
           python -m pytest `
             windows-client\tests\test_packaged_release.py `
             windows-client\tests\test_helper_integrity_075.py `
-            -q -p no:cacheprovider -k "not test_actual_frozen_gui_retains_selected_profile_during_offline_retry"
+            -q -p no:cacheprovider
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          for ($attempt = 1; $attempt -le 2; $attempt++) {
-            python -m pytest `
-              windows-client\tests\test_packaged_release.py::test_actual_frozen_gui_retains_selected_profile_during_offline_retry `
-              -q -p no:cacheprovider
-            if ($LASTEXITCODE -eq 0) {
-              $disposition = if ($attempt -eq 1) { 'first attempt passed' } else { 'passed after retry' }
-              Add-Content $env:GITHUB_STEP_SUMMARY "Windows frozen smoke: $disposition (attempt $attempt)"
-              exit 0
-            }
-          }
-          exit $LASTEXITCODE
 
       - name: Retain Windows native coverage evidence
         if: always()
