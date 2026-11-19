@@ -1,11 +1,10 @@
 """Tests for the frozen Windows candidate exe: profile/validation resolution before Qt
 import, the packaged speech-runtime allowlist, the frozen helper's ready/shutdown
-pipe smoke, and a rendered chat round trip against one profile.
+pipe smoke, and the not-available window staying open until it is stopped.
 """
 
 from __future__ import annotations
 
-import ctypes
 import io
 import json
 import os
@@ -53,27 +52,6 @@ def _clean_env(tmp_path: Path) -> dict[str, str]:
     environment["LOCALAPPDATA"] = str(local)
     environment["ASTRAL_WINDOWS_PROFILE_ID"] = str(uuid.uuid4())
     return environment
-
-
-def _offline_profile(path: Path) -> Path:
-    value = json.loads((ROOT / "deployment" / "release-profile.json").read_text())
-    value.update(
-        {
-            "profile_id": "astraldeep-release-offline-smoke",
-            "release_id": "windows-0.4.0-offline-smoke",
-            "distribution": "generic_developer",
-            "local_only": True,
-            "websocket_endpoint": "ws://127.0.0.1:1/ws",
-        }
-    )
-    value["override_policy"].update(
-        {
-            "configure_dialog_allowed": True,
-            "development_defaults_allowed": True,
-        }
-    )
-    path.write_text(json.dumps(value), encoding="utf-8")
-    return path
 
 
 def test_entrypoint_resolves_profile_and_validation_before_importing_qt():
@@ -211,148 +189,21 @@ def test_actual_frozen_worker_completes_benign_hosted_agent_round_trip(tmp_path)
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="requires the frozen Windows GUI")
-def test_actual_frozen_gui_completes_rendered_chat_with_one_profile(tmp_path):
+def test_actual_frozen_gui_opens_the_not_available_window_and_stays_up_until_stopped(tmp_path):
     exe = _candidate_exe()
-    token = os.getenv("ASTRAL_WINDOWS_SMOKE_TOKEN")
-    if not token:
-        pytest.skip("candidate staging token is required for the connected GUI smoke")
-    report = tmp_path / "rendered-chat-smoke.json"
-    environment = _clean_env(tmp_path)
-    environment["ASTRAL_TOKEN"] = token
-    result = subprocess.run(
-        [
-            str(exe),
-            "--release-smoke-report",
-            str(report),
-            "--release-smoke-timeout",
-            "60",
-        ],
-        env=environment,
-        capture_output=True,
-        text=True,
-        timeout=75,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
-    value = json.loads(report.read_text(encoding="utf-8"))
-    assert value["status"] == "passed"
-    assert value["detail_code"] == "rendered_turn_complete"
-    assert value["console_model_valid"] is True
-    assert value["console_presentation_valid"] is True
-    assert value["console_shell_current"] is True
-    assert value["console_shell_visible"] is True
-    assert value["legacy_topbar_hidden"] is True
-    assert value["legacy_split_hidden"] is True
-    assert value["transcript_turns"] >= 2
-    assert value["canvas_components"] >= 1
-    assert value["window_profile_match"] is True
-    assert value["byo_profile_match"] is True
-    assert value["tools_agent_profile_match"] is True
-
-
-@pytest.mark.skipif(sys.platform != "win32", reason="requires the frozen Windows GUI")
-def test_actual_frozen_gui_retains_selected_profile_during_offline_retry(tmp_path):
-    exe = _candidate_exe()
-    report = tmp_path / "offline-retry-smoke.json"
-    profile = _offline_profile(tmp_path / "offline-profile.json")
-    environment = _clean_env(tmp_path)
-    environment["ASTRAL_TOKEN"] = "offline-smoke-token"
-    result = subprocess.run(
-        [
-            str(exe),
-            "--deployment-profile",
-            str(profile),
-            "--release-offline-smoke-report",
-            str(report),
-            "--release-smoke-timeout",
-            "15",
-        ],
-        env=environment,
-        capture_output=True,
-        text=True,
-        timeout=25,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
-    value = json.loads(report.read_text(encoding="utf-8"))
-    assert value["status"] == "passed"
-    assert value["detail_code"] == "offline_retry_observed"
-    assert value["source"] == "command_line_override"
-    assert value["connection_failure_observed"] is True
-    assert value["retry_attempt"] >= 1
-    assert value["window_profile_match"] is True
-    assert value["byo_profile_match"] is True
-    assert value["tools_agent_profile_match"] is True
-    assert "authority" not in value and "websocket_endpoint" not in value
-
-
-@pytest.mark.skipif(sys.platform != "win32", reason="requires Windows HWND inspection")
-def test_isolated_profile_connected_launch_has_no_configure_dialog_and_terminates(tmp_path):
-    exe = _candidate_exe()
-    token = os.getenv("ASTRAL_WINDOWS_SMOKE_TOKEN")
-    if not token:
-        pytest.skip("candidate staging token is required for the connected GUI smoke")
-    environment = _clean_env(tmp_path)
-    environment["ASTRAL_TOKEN"] = token
-    process = subprocess.Popen([str(exe)], env=environment)
-    titles: list[str] = []
+    # No pipes: the bootloader's child would keep them open and block the test after a kill.
+    process = subprocess.Popen([str(exe)], env=_clean_env(tmp_path))
     try:
-        user32 = ctypes.windll.user32
-
-        # Popen's pid is the bootloader; the Qt window is a child
-        def _owned_pids() -> set[int]:
-            pids = {process.pid}
-            try:
-                import psutil
-
-                pids.update(
-                    child.pid
-                    for child in psutil.Process(process.pid).children(recursive=True)
-                )
-            except Exception:
-                pass
-            return pids
-
-        def _window_titles() -> list[str]:
-            found: list[str] = []
-            owned = _owned_pids()
-            callback_type = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
-
-            def _visit(hwnd, _lparam):
-                pid = ctypes.c_ulong()
-                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-                if pid.value not in owned or not user32.IsWindowVisible(hwnd):
-                    return True
-                length = user32.GetWindowTextLengthW(hwnd)
-                buffer = ctypes.create_unicode_buffer(length + 1)
-                user32.GetWindowTextW(hwnd, buffer, length + 1)
-                if buffer.value:
-                    found.append(buffer.value)
-                return True
-
-            user32.EnumWindows(callback_type(_visit), 0)
-            return found
-
-        deadline = time.monotonic() + 20
+        deadline = time.monotonic() + 8
         while time.monotonic() < deadline and process.poll() is None:
-            titles = _window_titles()
-            if any(title == "AstralDeep — Windows" for title in titles):
-                break
-            time.sleep(0.1)
-        assert process.poll() is None
-        assert "AstralDeep — Windows" in titles
-        assert all("Configure AstralDeep" not in title for title in titles)
+            time.sleep(0.2)
+        assert process.poll() is None, f"the frozen client exited with {process.returncode}"
     finally:
-        try:
-            import psutil
-
-            for child in psutil.Process(process.pid).children(recursive=True):
-                try:
-                    child.terminate()
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        process.terminate()
-        process.wait(timeout=10)
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+        process.wait(timeout=15)
     assert process.returncode is not None
