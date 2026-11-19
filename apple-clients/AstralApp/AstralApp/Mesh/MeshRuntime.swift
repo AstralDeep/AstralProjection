@@ -493,6 +493,7 @@ final class MeshRuntime {
     @ObservationIgnored private var wakeSession = UUID()
     @ObservationIgnored private var wakeSessionGate = MeshSessionGate()
     @ObservationIgnored private var wakeDataRevision = UUID()
+    @ObservationIgnored private var wakeChangedChatId: String?
     @ObservationIgnored private let relay = MeshChangeRelay()
     @ObservationIgnored nonisolated(unsafe) private var consumer: Task<Void, Never>?
     @ObservationIgnored nonisolated(unsafe) private var turnTasks: [String: MeshTurnWork] = [:]
@@ -778,6 +779,13 @@ final class MeshRuntime {
             try await waitForChange()
         }
         return false
+    }
+
+    func wakeNotice() -> (ref: LocalNoticeRef, chatId: String?)? {
+        guard isReady, status.hasMesh, let meshId = status.meshId, let deviceId = status.deviceId else { return nil }
+        let ref = LocalNoticeRef.derive(
+            namespace: meshId + "\u{0}" + deviceId, change: wakeDataRevision.uuidString)
+        return (ref, wakeChangedChatId)
     }
 
     func refreshAll() async {
@@ -2223,7 +2231,12 @@ final class MeshRuntime {
         }
         guard wakeSession == session, isReady else { return }
         switch change {
-        case .chatChanged, .rosterChanged, .allowanceChanged, .runProgress: wakeDataRevision = UUID()
+        case .chatChanged(let chatId):
+            wakeChangedChatId = chatId
+            wakeDataRevision = UUID()
+        case .rosterChanged, .allowanceChanged, .runProgress:
+            wakeChangedChatId = nil
+            wakeDataRevision = UUID()
         default: break
         }
     }

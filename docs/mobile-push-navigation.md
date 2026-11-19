@@ -17,3 +17,25 @@ Every lifecycle revoke captures the authoritative enrollment response generation
 Phone clients publish `POST /api/notifications/presence` with the current accepted `register_ui` device and connection generation, a strict positive monotonic sequence and a boolean foreground flag. Foreground heartbeats run every 15 seconds; the server lease is at most 45 seconds. Background/logout sends false and disconnect retires eligibility. Presence never grants client authority or creates a new WebSocket frame.
 
 Deterministic tests cover malformed/foreign/stale/denied responses, late callbacks, permission decisions, real Android notification/PendingIntent behavior and the production iOS service through injected OS/HTTP seams. These tests do not replace physical FCM/APNs delivery, real source authorization, staging/UI acceptance on web, Windows, Android, iOS, macOS and watchOS, or the exact required Apple toolchain gates. Retain those qualification requirements with the candidate's actual evidence.
+
+## iOS local mesh notices (#51)
+
+Under Spec 105 the push carries no content: the device syncs, then posts a local notification. `IOSNotificationAdapter` (`apple-clients/AstralApp/AstralApp/Push/`) is the iOS OS adapter for that last step, with the platform-neutral decisions in AstralCore `LocalNoticeCore.swift`. It is off unless the app's Info.plist Boolean `ASTRALLocalMeshNotifications` is true. The shipped value is `false`, so no prompt, registration, notice or product surface appears until the coordinated owner and source-navigation integration (#52) is qualified.
+
+- **Permission.** The adapter asks only while the state is not yet determined. It re-reads the OS status every time the app becomes active. A denial that follows a grant counts as `revoked`; the adapter then withdraws only its own delivered notices and posts nothing more until the user grants permission again. Provisional permission may post.
+- **Registration.** It calls `registerForRemoteNotifications`. The first token and every changed token are reported upward to the existing `MeshPushCoordinator`. Logs and state keep only a SHA-256 fingerprint prefix, never the token itself. Failures retry with capped backoff (5 s doubling up to 300 s, at most 6 attempts). Returning to the app requests registration again after the retries run out.
+- **Payload.** The APNs wake still accepts only `{"aps":{"content-available":1}}` (see `MeshBackgroundWake`). A local notice contains generic text and exactly one `astral_local_ref` opaque reference, which is a hash of the mesh/device scope and a random change token. Any other field, type or format is rejected. Duplicates are dropped through a bounded list of seen refs, which is rebuilt from the notices the OS still shows after a relaunch.
+- **Presentation.** No notice is posted while the app is in the foreground, because the in-app mesh UI already shows the change. While the flag is on, `PushNotificationAppDelegate` is the `UNUserNotificationCenterDelegate` and passes on only payloads that carry the local ref. With the flag off it leaves the notification center alone. A tap removes the notice and hands `(ref, chatId?)` to the existing mesh source navigation (`MeshRuntime.openChat`). The chat id stays in memory and never reaches the OS. A dismissal removes the notice. The adapter adds no authorization; #52 owns that.
+- **Lifecycle.** A tap during cold launch or in the background waits until the app is in the foreground and the mesh is open. Termination discards in-memory routing.
+
+### Apple target dispositions
+
+| Target | Disposition | Reason |
+|---|---|---|
+| iOS (iPhone) | Supported (flag off) | This adapter. |
+| iPadOS | Supported (flag off) | The same `AstralApp` target (`TARGETED_DEVICE_FAMILY = 1,2`) and code path. |
+| macOS | Deferred | The multiplatform target excludes this iOS-only adapter. The Mac app posts no OS notifications today. A Mac mesh node runs continuously, so it doesn't need wake pushes. |
+| watchOS | Not applicable | The watch targets don't link AstralKernel or hold a mesh. iOS mirrors iPhone notices to a paired watch. |
+| visionOS, tvOS | Not applicable | The repository has no such target. |
+
+The physical-device checklist is in `apple-clients/ManualQA/ios-local-notices-51.md`. Deterministic tests do not establish APNs sandbox or production delivery.
