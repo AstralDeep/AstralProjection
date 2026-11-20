@@ -1,4 +1,4 @@
-// Covers the kernel's LFM2.5 on-device model: every refusal the LFM3 model enforced, the bounded request it forwards, shared loading with the voice path and honest failures.
+// Covers the kernel's LFM2.5 on-device model: every refusal the retired model enforced, the bounded request it forwards, shared loading with the voice path and honest failures.
 // A fake text model behind a real VoiceModelOwner stands in for AstralVoiceRuntime.
 
 import AstralVoiceRuntime
@@ -105,7 +105,7 @@ final class LFM25OnDeviceModelTests: XCTestCase {
         let harness = RumbleHarness(scheduler: scheduler)
         let lfm = model(harness)
         let voice = OwnedTextGenerator(owner: harness.owner)
-        let acknowledgement = MLXVoiceAcknowledgementModel(inference: voice)
+        let acknowledgement = VoiceAcknowledgementModel(generator: voice)
         _ = await lfm.complete(rumbleRequest())
         let spoken = await acknowledgement.complete(rumbleRequest("Call the clinic."))
         let direct = try await voice.generate(rumbleRequest()).collected()

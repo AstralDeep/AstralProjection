@@ -59,10 +59,9 @@ private final class VoiceHarness {
     private(set) var connection = ""
 
     init(realRest: Bool = false) async throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        self.root = root
-        let store = try await Self.installedStore(root: root)
+        let installed = try await VoicePackTestFixture.make(installed: true)
+        root = installed.root
+        let store = installed.store
         let audio = audio
         let transcriber = transcriber
         let clock = clock
@@ -70,7 +69,7 @@ private final class VoiceHarness {
         let permissions = permissions
         let link = link
         let onDevice = OnDeviceVoiceController(
-            store: store, requestPermission: { true },
+            store: store, parts: .silent, requestPermission: { true },
             makePipeline: { _, link in
                 let pipeline = VoicePipeline(
                     audio: audio, transcriber: transcriber, fastPath: nil, link: link, clock: clock)
@@ -141,29 +140,6 @@ private final class VoiceHarness {
         clock.advance(0.7)
         pipeline.tick()
         pipeline.handleRecognizer(.final(text))
-    }
-
-    private static func installedStore(root: URL) async throws -> VoiceModelStore {
-        let bytes = Data("x".utf8)
-        let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
-        let manifest = VoiceModelManifest(
-            displayName: "LFM3-Audio-2B (3-bit)", format: VoiceModelManifest.supportedFormat,
-            id: "lfm3-audio-2b-3bit-mlx", license: "LFM Open License v1.0",
-            repository: "Kentucky-Open-Science/LFM3-Audio-2B-MLX-3bit", revision: "main", runtime: "mlx",
-            source: "LiquidAI/LFM3-Audio-2B-MLX-bf16", totalBytes: Int64(VoiceModelManifest.requiredFiles.count),
-            files: VoiceModelManifest.requiredFiles.map { .init(path: $0, bytes: 1, sha256: digest) })
-        let device = VoiceDeviceProfile(
-            platform: .mac, isAppleSilicon: true, isSimulator: false, physicalMemoryBytes: 16 << 30)
-        let store = VoiceModelStore(manifest: manifest, root: root, device: device, freeSpace: { _ in .max })
-        for file in manifest.files {
-            let url = store.stagingDirectory.appendingPathComponent(file.path)
-            try FileManager.default.createDirectory(
-                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try bytes.write(to: url)
-        }
-        await store.startDownload(allowMetered: false)
-        guard store.state == .installed else { throw CocoaError(.fileWriteUnknown) }
-        return store
     }
 }
 
@@ -238,7 +214,7 @@ final class NoHostedVoiceTests: XCTestCase {
         let api = FakeVoiceAPI()
         let media = FakeVoiceMedia()
         let hosted = AppleVoiceSessionController(api: api, media: media)
-        let onDevice = OnDeviceVoiceController(store: nil)
+        let onDevice = OnDeviceVoiceController(store: nil, parts: .silent)
         let model = AppModel(
             voiceController: hosted, onDeviceVoiceController: onDevice)
         await model.onDeviceVoice.activate()

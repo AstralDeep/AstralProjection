@@ -219,19 +219,7 @@ final class RumbleTranscriberTests: XCTestCase {
         XCTAssertEqual(calls.map(\.language), ["ja"])
     }
 
-    func testTheLegacyTranscriberKeepsItsKindAndFixedLanguage() async throws {
-        let recognizer = ScriptedRecognizer()
-        let legacy = MLXVoiceTranscriber(inference: recognizer, language: .english)
-        XCTAssertEqual(legacy.kind, .mlx)
-        XCTAssertEqual(RumbleTranscriber(recognizer: recognizer).kind, .rumble)
-        let recorded = Recorded()
-        legacy.setEventHandler { recorded.append($0) }
-        defer { legacy.shutdown() }
-        try legacy.beginSegment()
-        legacy.append(try buffer(samples: 500))
-        legacy.endSegment()
-        await recorded.wait(for: 1)
-        let calls = await recognizer.calls
-        XCTAssertEqual(calls.map(\.language), ["en"])
+    func testTheTranscriberReportsTheRumbleKind() {
+        XCTAssertEqual(RumbleTranscriber(recognizer: ScriptedRecognizer()).kind, .rumble)
     }
 }

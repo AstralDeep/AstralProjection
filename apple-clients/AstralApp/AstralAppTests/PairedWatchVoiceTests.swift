@@ -23,7 +23,7 @@ final class PairedWatchVoiceTests: XCTestCase {
     func testMeshKeyBindingRefusalReachesWatchWithoutInvokingVoice() async throws {
         let channel = PhoneCompanionChannel()
         let controller = OnDeviceVoiceController(
-            store: nil,
+            store: nil, parts: .silent,
             requestPermission: {
                 XCTFail("Unsupported binding cannot request the microphone")
                 return false
@@ -269,7 +269,7 @@ final class PairedWatchVoiceTests: XCTestCase {
     func testMissingModelAndUnboundPrincipalRefuseTruthfullyWithoutPhoneMicrophone() async throws {
         let channel = PhoneCompanionChannel()
         let controller = OnDeviceVoiceController(
-            store: nil,
+            store: nil, parts: .silent,
             requestPermission: {
                 XCTFail("phone microphone")
                 return false
@@ -381,11 +381,70 @@ final class PairedWatchVoiceTests: XCTestCase {
     }
 
     private func drain() async { for _ in 0..<50 { await Task.yield() } }
+
+    func testASessionOpensAndClosesTheModelsOncePerWatchSession() async throws {
+        let h = try await PhoneCompanionHarness.installed()
+        defer { h.close() }
+        try await h.start()
+        await h.wait(for: .ready, in: self)
+        XCTAssertEqual(h.fixture.recorder.events, ["begin"])
+        h.relay.unbind()
+        for _ in 0..<200 where h.fixture.recorder.events != ["begin", "end"] { await Task.yield() }
+        XCTAssertEqual(h.fixture.recorder.events, ["begin", "end"])
+    }
+
+    func testSpeechAtAnotherSampleRateIsResampledToTwentyFourKilohertzBeforePacking() async throws {
+        for (rate, count) in [(48_000, 4_800), (22_050, 2_205), (24_000, 2_400)] {
+            let packed = PackedSpeech()
+            let audio = PairedWatchVoiceAudio(voice: RateSpeech(rate: rate, count: count)) { kind, payload in
+                packed.record(kind, payload)
+            }
+            try audio.start()
+            audio.speak(index: 0, text: "Hello there.")
+            for _ in 0..<2_000 where packed.frames == nil { try await Task.sleep(for: .milliseconds(5)) }
+            let frames = try XCTUnwrap(packed.frames, "rate \(rate)")
+            XCTAssertTrue((2_380...2_420).contains(frames), "rate \(rate) gave \(frames) frames")
+            for _ in 0..<2_000 where packed.pcmBytes < frames * 2 { try await Task.sleep(for: .milliseconds(5)) }
+            XCTAssertEqual(packed.pcmBytes, frames * 2)
+            audio.stop()
+        }
+    }
+}
+
+private final class PackedSpeech: @unchecked Sendable {
+    private let lock = NSLock()
+    private var announced: Int?
+    private var bytes = 0
+    var frames: Int? { lock.withLock { announced } }
+    var pcmBytes: Int { lock.withLock { bytes } }
+    func record(_ kind: CompanionVoicePacket.Kind, _ payload: Data) {
+        lock.withLock {
+            if kind == .speechStart { announced = CompanionVoiceSpeech(data: payload)?.frames }
+            if kind == .speechPCM { bytes += payload.count }
+        }
+    }
+}
+
+private struct RateSpeech: VoiceSpeaking {
+    let rate: Int
+    let count: Int
+    func speak(_ sentence: String) async throws -> AsyncThrowingStream<SpeechAudioBuffer, Error> {
+        let rate = rate
+        let count = count
+        return AsyncThrowingStream { continuation in
+            let half = count / 2
+            for range in [0..<half, half..<count] {
+                let samples = range.map { 0.3 * sin(Float($0) * 2 * .pi * 220 / Float(rate)) }
+                continuation.yield(SpeechAudioBuffer(samples: samples, sampleRate: rate))
+            }
+            continuation.finish()
+        }
+    }
 }
 
 @MainActor
 private final class PhoneCompanionHarness {
-    let fixture: VoiceModelTestFixture
+    let fixture: VoicePackTestFixture
     let controller: OnDeviceVoiceController
     let link = FakeKernelLink()
     let channel = PhoneCompanionChannel()
@@ -399,17 +458,19 @@ private final class PhoneCompanionHarness {
     }
     private var sequence: UInt64 = 0
 
-    private init(fixture: VoiceModelTestFixture) {
+    private init(fixture: VoicePackTestFixture) {
         self.fixture = fixture
         controller = OnDeviceVoiceController(
-            store: fixture.controller.store,
+            store: fixture.store,
+            parts: .recording(
+                fixture.recorder, recognizer: CompanionInference(), textGenerator: CompanionInference(),
+                speech: CompanionInference()),
             requestPermission: {
                 XCTFail("paired voice requested the phone microphone")
                 return false
             })
         controller.connect(link: link)
-        relay = PairedWatchVoiceRelay(
-            controller: controller, channel: channel, inference: { _ in CompanionInference() })
+        relay = PairedWatchVoiceRelay(controller: controller, channel: channel)
         relay.bind(
             prepare: { [weak self] owner in
                 guard let self, owner == self.owner, self.current else { throw CompanionVoiceError.rejected }
@@ -422,7 +483,7 @@ private final class PhoneCompanionHarness {
             })
     }
     static func installed() async throws -> PhoneCompanionHarness {
-        try await PhoneCompanionHarness(fixture: VoiceModelTestFixture.installed())
+        try await PhoneCompanionHarness(fixture: VoicePackTestFixture.make(installed: true))
     }
     func start() async throws {
         try await deliver(.start, CompanionVoiceActivation(owner: owner, mode: .conversation).encoded())
@@ -466,7 +527,7 @@ private final class PhoneCompanionChannel: CompanionVoiceChannel {
     }
 }
 
-private struct CompanionInference: VoiceModelInference {
+private struct CompanionInference: VoiceRecognizing, VoiceSpeaking, VoiceTextGenerating {
     func recognize(_ audio: [Float], language: RecognitionLanguage) async throws -> String {
         "yes approve the payment"
     }

@@ -1,4 +1,4 @@
-// Answers the kernel's on-device requests from LFM2.5 through the generator VoiceModelOwner shares with the voice session, under the same plain-text limits the LFM3 model enforced.
+// Answers the kernel's on-device requests from LFM2.5 through the generator VoiceModelOwner shares with the voice session, under plain-text limits: no structured schemas and bounded input and output.
 // RumbleVoiceModels builds it, RumbleTextModel wraps AstralVoiceRuntime's TextGenerator, and OwnedTextGenerator is the voice path's view of the same loaded model.
 
 import AstralVoiceRuntime

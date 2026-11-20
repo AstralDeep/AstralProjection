@@ -682,22 +682,21 @@ final class VoicePackStoreTests: XCTestCase {
 }
 
 final class VoiceBackgroundEventsRoutingTests: XCTestCase {
-    func testBothStoresClaimTheirSessionAndHoldTheHandlerUntilCompletion() async {
-        for identifier in [VoiceModelStore.backgroundIdentifier, VoicePackStore.backgroundIdentifier] {
-            let handled = expectation(description: "handler for \(identifier)")
-            let early = expectation(description: "handler called before the session finished")
-            early.isInverted = true
-            let ran = LockedFlag()
-            VoiceModelBackgroundEvents.route(identifier) {
-                ran.set()
-                handled.fulfill()
-                early.fulfill()
-            }
-            await fulfillment(of: [early], timeout: 0.2)
-            XCTAssertFalse(ran.value)
-            VoiceModelBackgroundEvents.complete(identifier)
-            await fulfillment(of: [handled], timeout: 2)
+    func testThePackStoreClaimsItsSessionAndHoldsTheHandlerUntilCompletion() async {
+        let identifier = VoicePackStore.backgroundIdentifier
+        let handled = expectation(description: "handler for \(identifier)")
+        let early = expectation(description: "handler called before the session finished")
+        early.isInverted = true
+        let ran = LockedFlag()
+        VoiceModelBackgroundEvents.route(identifier) {
+            ran.set()
+            handled.fulfill()
+            early.fulfill()
         }
+        await fulfillment(of: [early], timeout: 0.2)
+        XCTAssertFalse(ran.value)
+        VoiceModelBackgroundEvents.complete(identifier)
+        await fulfillment(of: [handled], timeout: 2)
     }
 
     func testAnUnrelatedSessionIsAnsweredAtOnce() {
@@ -706,11 +705,11 @@ final class VoiceBackgroundEventsRoutingTests: XCTestCase {
         XCTAssertTrue(ran)
     }
 
-    func testTheTwoStoresUseDistinctSessionIdentifiers() {
-        XCTAssertNotEqual(VoiceModelStore.backgroundIdentifier, VoicePackStore.backgroundIdentifier)
-        XCTAssertEqual(
-            VoiceModelBackgroundEvents.identifiers,
-            [VoiceModelStore.backgroundIdentifier, VoicePackStore.backgroundIdentifier])
+    func testARetiredSessionIdentifierIsAnsweredAtOnce() {
+        var ran = false
+        VoiceModelBackgroundEvents.route("com.personalailabs.astraldeep.voice-model") { ran = true }
+        XCTAssertTrue(ran)
+        XCTAssertEqual(VoiceModelBackgroundEvents.identifiers, [VoicePackStore.backgroundIdentifier])
     }
 }
 

@@ -258,7 +258,7 @@ final class MeshVoiceLinkTests: XCTestCase {
     func testAttachingVoiceConnectsTheControllerToTheRuntime() async {
         let h = MeshRuntimeHarness()
         defer { h.cleanUp() }
-        let controller = OnDeviceVoiceController(store: nil)
+        let controller = OnDeviceVoiceController(store: nil, parts: .silent)
         h.runtime.attachVoice(controller)
         XCTAssertTrue(controller.conversationReady)
         h.runtime.detachVoice(controller)
