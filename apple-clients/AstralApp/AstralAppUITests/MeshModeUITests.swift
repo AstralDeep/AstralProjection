@@ -54,24 +54,29 @@ final class MeshModeUITests: XCTestCase {
         XCTAssertTrue(chat.waitForExistence(timeout: 10))
         XCTAssertTrue(shown(chat).contains("Shared files"))
         chat.tap()
-        XCTAssertTrue(element("mesh.composer.attach").waitForExistence(timeout: 5))
+        let addFile = app.buttons["mesh.composer.attach"]
+        XCTAssertTrue(addFile.waitForExistence(timeout: 5))
         XCTAssertTrue(text("notes.txt").waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Save notes.txt"].isEnabled)
         attach("mesh-file-attachment")
-        element("mesh.composer.attach").tap()
+        addFile.tap()
         #if os(macOS)
             XCTAssertTrue(
                 waitUntil(5) {
                     self.app.sheets.count > 0 || self.app.dialogs.count > 0 || !self.element("mesh.composer").isHittable
                 })
+            attach("mesh-file-picker")
         #else
-            XCTAssertTrue(
-                waitUntil(10) {
-                    !self.element("mesh.composer").isHittable || self.app.navigationBars["Recents"].exists
-                        || self.app.buttons["Browse"].exists || self.app.staticTexts["No Recents"].exists
-                })
+            let cancel = app.buttons["Cancel"]
+            guard cancel.waitForExistence(timeout: 10) else {
+                XCTFail("The document picker did not present its Cancel button.")
+                return
+            }
+            attach("mesh-file-picker", screenshot: XCUIScreen.main.screenshot())
+            cancel.tap()
+            XCTAssertTrue(cancel.waitForNonExistence(timeout: 5))
+            XCTAssertTrue(addFile.isHittable)
         #endif
-        attach("mesh-file-picker")
     }
 
     func testCreatingAMeshShowsRecoveryWordsOnceAndRequiresConfirmation() {
@@ -455,8 +460,9 @@ final class MeshModeUITests: XCTestCase {
 
     private func replace(_ field: XCUIElement, with text: String) {
         field.tap()
-        let current = (field.value as? String) ?? ""
-        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count) + text)
+        field.typeKey("a", modifierFlags: .command)
+        field.typeText(text)
+        XCTAssertEqual(field.value as? String, text)
     }
 
     private func selectTab(_ name: String) {
@@ -577,8 +583,8 @@ final class MeshModeUITests: XCTestCase {
         if back.exists { back.tap() }
     }
 
-    private func attach(_ name: String) {
-        let shot = XCTAttachment(screenshot: app.screenshot())
+    private func attach(_ name: String, screenshot: XCUIScreenshot? = nil) {
+        let shot = XCTAttachment(screenshot: screenshot ?? app.screenshot())
         shot.name = name
         shot.lifetime = .keepAlways
         add(shot)

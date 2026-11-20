@@ -466,6 +466,7 @@
         private final class Table: ExecProcessTable {
             var processes: [Int32: (parent: Int32, group: Int32, usage: ExecProcessUsage, strings: [[UInt8]])] = [:]
             var failListing = false
+            var onMarkerScan: (() -> Void)?
 
             func pids(kind: UInt32, info: UInt32) throws -> [Int32] {
                 if failListing { throw POSIXError(.EIO) }
@@ -474,7 +475,9 @@
                     return processes.filter { $0.value.group == Int32(info) }.keys.sorted()
                 case DarwinProcessTable.ppidOnly:
                     return processes.filter { $0.value.parent == Int32(info) }.keys.sorted()
-                default: return processes.keys.sorted()
+                default:
+                    onMarkerScan?()
+                    return processes.keys.sorted()
                 }
             }
 
@@ -515,6 +518,42 @@
             XCTAssertEqual(try marked.sample().processes, 2)
             let unmarked = ExecWatch(root: 100, marker: nil, table: table)
             XCTAssertEqual(try unmarked.sample().processes, 1)
+        }
+
+        func testStoppingWaitsForAnInFlightMarkerScan() {
+            let table = Table()
+            let root = Int32.max
+            let watch = ExecWatch(root: root, marker: "marker", table: table)
+            table.processes[root] = (1, root, ExecProcessUsage(start: 1, exited: true, footprint: 0), [])
+            let sampleEntered = DispatchSemaphore(value: 0)
+            let releaseSample = DispatchSemaphore(value: 0)
+            let endStarted = DispatchSemaphore(value: 0)
+            let endEntered = DispatchSemaphore(value: 0)
+            let sampling = DispatchQueue(label: "ExecWatchTests.sampling")
+            let sampleKey = DispatchSpecificKey<Bool>()
+            sampling.setSpecific(key: sampleKey, value: true)
+            table.onMarkerScan = {
+                if DispatchQueue.getSpecific(key: sampleKey) == true {
+                    sampleEntered.signal()
+                    releaseSample.wait()
+                } else {
+                    endEntered.signal()
+                }
+            }
+            let finished = DispatchGroup()
+            sampling.async(group: finished) {
+                XCTAssertEqual(try? watch.sample().processes, 0)
+            }
+            XCTAssertEqual(sampleEntered.wait(timeout: .now() + 5), .success)
+            DispatchQueue.global().async(group: finished) {
+                endStarted.signal()
+                XCTAssertEqual(try? watch.end(), [])
+            }
+            XCTAssertEqual(endStarted.wait(timeout: .now() + 5), .success)
+            XCTAssertEqual(endEntered.wait(timeout: .now() + 0.1), .timedOut)
+            releaseSample.signal()
+            XCTAssertEqual(finished.wait(timeout: .now() + 5), .success)
+            XCTAssertEqual(endEntered.wait(timeout: .now()), .success)
         }
 
         func testUserProcessCountListsThisUsersProcesses() throws {

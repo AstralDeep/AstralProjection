@@ -67,6 +67,7 @@ import Foundation
         private let own = getpid()
         private let uid = geteuid()
         private let rootStart: UInt64?
+        private let discoveryLock = NSLock()
         private var known: [Int32: UInt64] = [:]
         private var scanned = Set<Int32>()
         var started: Bool { rootStart != nil }
@@ -102,6 +103,8 @@ import Foundation
         }
 
         private func discover(every: Bool) throws -> [Int32: ExecProcessUsage] {
+            discoveryLock.lock()
+            defer { discoveryLock.unlock() }
             var fresh = groupIsOurs ? try table.pids(kind: DarwinProcessTable.pgrpOnly, info: UInt32(root)) : []
             if marker != nil { fresh += try marked(every: every) }
             var pending = known.keys.map { ($0, false) } + fresh.map { ($0, true) }

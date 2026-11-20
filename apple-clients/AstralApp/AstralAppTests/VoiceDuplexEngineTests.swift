@@ -15,6 +15,7 @@ final class VoiceDuplexEngineTests: XCTestCase {
         XCTAssertFalse(format.isInterleaved)
         XCTAssertEqual(format.sampleRate, 48_000)
         let engine = AVAudioEngine()
+        try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: 1_024)
         let player = AVAudioPlayerNode()
         engine.attach(player)
         let speech = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 24_000, channels: 1))
@@ -32,9 +33,9 @@ final class VoiceDuplexEngineTests: XCTestCase {
         let player = AVAudioPlayerNode()
         let source = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 24_000, channels: 1))
         let output = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1))
+        try engine.enableManualRenderingMode(.offline, format: output, maximumFrameCount: 1_024)
         engine.attach(player)
         VoiceDuplexEngine.connectPlayback(in: engine, player: player, playbackFormat: source, duplexFormat: output)
-        try engine.enableManualRenderingMode(.offline, format: output, maximumFrameCount: 1_024)
         try engine.start()
         defer { engine.stop() }
         let sentence = VoiceSentenceAudio(player: player, format: source)
@@ -80,11 +81,11 @@ final class VoiceDuplexEngineTests: XCTestCase {
         let player = AVAudioPlayerNode()
         let source = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 24_000, channels: 1))
         let capture = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1))
+        try engine.enableManualRenderingMode(.offline, format: capture, maximumFrameCount: 1_024)
         engine.attach(player)
         VoiceDuplexEngine.connectPlayback(in: engine, player: player, playbackFormat: source, duplexFormat: capture)
         XCTAssertEqual(engine.mainMixerNode.outputFormat(forBus: 0), capture)
         XCTAssertEqual(engine.outputNode.inputFormat(forBus: 0), capture)
-        try engine.enableManualRenderingMode(.offline, format: capture, maximumFrameCount: 1_024)
         let speech = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: source, frameCapacity: 2_400))
         speech.frameLength = speech.frameCapacity
         for index in 0..<Int(speech.frameLength) {
