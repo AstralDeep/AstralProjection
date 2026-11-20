@@ -1,5 +1,5 @@
 // Downloads, verifies, installs and deletes the voice pack as two units, the three model files and the on-device voice, each staged, checked against its SHA-256 and swapped in atomically.
-// It reuses the voice model store's download delegate, digest and gates, keeps the model usable when the voice is still pending, and retries only the voice later; it is the only code that fetches pack files.
+// It reuses the shared download delegate, digest and gates, keeps the model usable when the voice is still pending, and retries only the voice later; it is the only code that fetches pack files.
 
 import Foundation
 import Observation
@@ -17,6 +17,13 @@ nonisolated enum VoicePackState: Equatable, Sendable {
     case modelOnly(VoicePackVoiceStatus)
     case installed
     case failed(VoiceModelFailure)
+
+    var canStartVoice: Bool {
+        switch self {
+        case .installed, .modelOnly: true
+        default: false
+        }
+    }
 }
 
 @MainActor
@@ -56,8 +63,8 @@ final class VoicePackStore {
         manifest: VoicePackManifest, root: URL, device: VoiceDeviceProfile = .current,
         localVoiceSupported: Bool = VoicePackStore.systemSupportsLocalVoice,
         network: VoiceModelNetworkCost = PathMonitorNetworkCost(),
-        mirror: @escaping @Sendable () -> URL? = { VoiceModelManifest.configuredMirror() },
-        freeSpace: @escaping @Sendable (URL) -> Int64? = VoiceModelStore.systemFreeSpace,
+        mirror: @escaping @Sendable () -> URL? = { VoiceDownloadSupport.configuredMirror() },
+        freeSpace: @escaping @Sendable (URL) -> Int64? = VoiceDownloadSupport.systemFreeSpace,
         makeSession: @escaping (VoiceModelDownloadDelegate) -> URLSession = VoicePackStore.systemSession
     ) {
         self.manifest = manifest
@@ -98,6 +105,8 @@ final class VoicePackStore {
     }
 
     var isDownloading: Bool { running }
+
+    var sizeDescription: String { ByteCountFormatter.string(fromByteCount: requiredBytes, countStyle: .file) }
 
     var requiredBytes: Int64 { units.reduce(0) { $0 + manifest.bytes(in: $1) } }
 
@@ -162,7 +171,7 @@ final class VoicePackStore {
         operation = UUID()
         do {
             try FileManager.default.createDirectory(at: stagingDirectory, withIntermediateDirectories: true)
-            VoiceModelStore.excludeFromBackup(root)
+            VoiceDownloadSupport.excludeFromBackup(root)
         } catch {
             failure = .storage("create_failed")
             publish()
@@ -500,7 +509,7 @@ final class VoicePackStore {
             } else {
                 try fileManager.moveItem(at: staged, to: destination)
             }
-            VoiceModelStore.excludeFromBackup(root)
+            VoiceDownloadSupport.excludeFromBackup(root)
             installed.insert(unit)
             publish()
             return true

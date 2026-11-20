@@ -107,7 +107,7 @@ nonisolated struct VoicePackManifest: Codable, Equatable, Sendable {
             guard file.repository == Self.rumbleRepository || file.repository == Self.voiceRepository else {
                 throw Invalid.unexpectedRepository(file.repository)
             }
-            guard VoiceModelManifest.isSafePath(file.path) else { throw Invalid.unsafePath(file.path) }
+            guard Self.isSafePath(file.path) else { throw Invalid.unsafePath(file.path) }
             let folded = file.path.lowercased()
             guard seen.insert(folded).inserted,
                 !seen.contains(where: { $0.hasPrefix(folded + "/") || folded.hasPrefix($0 + "/") })
@@ -135,6 +135,17 @@ nonisolated struct VoicePackManifest: Codable, Equatable, Sendable {
         where !present.contains(required) {
             throw Invalid.missingRequiredFile(required)
         }
+    }
+
+    static func isSafePath(_ path: String) -> Bool {
+        let parts = path.split(separator: "/", omittingEmptySubsequences: false)
+        return !path.isEmpty && !path.hasPrefix("/")
+            && !parts.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." })
+            && path.unicodeScalars.allSatisfy({
+                CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_/.")
+                    .contains($0)
+            })
+            && ![".installed.json", "NOTICE"].contains(path) && !path.hasSuffix(".resume")
     }
 
     static func isCommit(_ revision: String) -> Bool {
