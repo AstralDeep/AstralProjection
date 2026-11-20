@@ -638,7 +638,7 @@ def test_runtime_manifests_bind_exact_owning_dependency_inventory() -> None:
             "fe4a7c9955f1b4c6995b792601df76c1d9998103e99ed7f4eaec6ba4c5f30540"
         ),
         "apple-clients/AstralApp/AstralApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved": (
-            "57f78f15b8bc2154677a1bca15a9b26895e0f2cb9ca7c51749027c63122f90c2"
+            "2dad2dd6a4b4ab9a514702605734e5f43c183dff4953a5ee186a309ff4ce1d93"
         ),
         "pyproject.toml": (
             "555ed6fde85a0e95eaca783c59a94bdd79ae54edcbe0bf5971083f92702bef17"
