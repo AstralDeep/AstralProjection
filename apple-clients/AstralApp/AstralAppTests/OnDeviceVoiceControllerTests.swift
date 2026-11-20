@@ -46,7 +46,9 @@ final class OnDeviceVoiceControllerTests: XCTestCase {
         await made.controller.activate()
         XCTAssertTrue(made.controller.showingSetup)
         XCTAssertEqual(made.controller.downloadSize, made.store.sizeDescription)
-        XCTAssertEqual(made.controller.downloadSize, ByteCountFormatter.string(fromByteCount: made.manifest.totalBytes, countStyle: .file))
+        XCTAssertEqual(
+            made.controller.downloadSize,
+            ByteCountFormatter.string(fromByteCount: made.manifest.totalBytes, countStyle: .file))
         XCTAssertEqual(permissions, 0)
         XCTAssertEqual(made.store.state, .notInstalled)
         XCTAssertFalse(made.controller.isRunning)

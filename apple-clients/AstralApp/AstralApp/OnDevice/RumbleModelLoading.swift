@@ -9,7 +9,8 @@ nonisolated struct RumbleModelLoading: Sendable {
     static let audioEncoderPath = "rumble/mmproj-Rumble-2-Flash-Q8_0.gguf"
     static let textPath = "chat-1.2b/LFM2.5-1.2B-Instruct-Q4_K_M.gguf"
 
-    typealias RecognizerLoad = @Sendable (URL, URL, RuntimeConfiguration, RuntimeScheduler) async throws ->
+    typealias RecognizerLoad =
+        @Sendable (URL, URL, RuntimeConfiguration, RuntimeScheduler) async throws ->
         SpeechRecognizer
     typealias GeneratorLoad = @Sendable (URL, RuntimeConfiguration, RuntimeScheduler) async throws -> TextGenerator
 

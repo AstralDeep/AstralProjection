@@ -39,14 +39,18 @@ final class RumbleModelLoadingTests: XCTestCase {
         var files: [VoicePackManifest.File] = []
         for (path, text) in contents.sorted(by: { $0.key < $1.key }) {
             try install(path, text: text)
-            let digest = try VoiceModelDigest.sha256(of: root.appendingPathComponent("model").appendingPathComponent(path))
+            let digest = try VoiceModelDigest.sha256(
+                of: root.appendingPathComponent("model").appendingPathComponent(path))
             files.append(
                 VoicePackManifest.File(
-                    repository: VoicePackManifest.rumbleRepository, revision: String(repeating: "a", count: 40), path: path,
-                    bytes: Int64(text.utf8.count), sha256: digest, part: path.hasPrefix("chat") ? .localText : .recognition))
+                    repository: VoicePackManifest.rumbleRepository, revision: String(repeating: "a", count: 40),
+                    path: path,
+                    bytes: Int64(text.utf8.count), sha256: digest,
+                    part: path.hasPrefix("chat") ? .localText : .recognition))
         }
         return VoicePackManifest(
-            displayName: "Test", format: VoicePackManifest.supportedFormat, id: "test", origin: VoicePackManifest.origin,
+            displayName: "Test", format: VoicePackManifest.supportedFormat, id: "test",
+            origin: VoicePackManifest.origin,
             totalBytes: files.reduce(0) { $0 + $1.bytes }, files: files)
     }
 
@@ -65,7 +69,8 @@ final class RumbleModelLoadingTests: XCTestCase {
             },
             loadGenerator: { model, configuration, _ in
                 throw HookReached(
-                    paths: [relative(model)], compute: configuration.compute, contextTokens: configuration.contextTokens)
+                    paths: [relative(model)], compute: configuration.compute, contextTokens: configuration.contextTokens
+                )
             })
     }
 

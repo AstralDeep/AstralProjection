@@ -31,7 +31,8 @@ nonisolated final class RumbleVoiceModels: Sendable {
             let unavailable = VoiceModelRuntimeError.filesMissing("voice-pack-manifest.json")
             return RumbleVoiceModels(
                 owner: VoiceModelOwner(
-                    loaders: VoiceModelOwner.Loaders(recognizer: { _ in throw unavailable }, generator: { _ in throw unavailable })),
+                    loaders: VoiceModelOwner.Loaders(
+                        recognizer: { _ in throw unavailable }, generator: { _ in throw unavailable })),
                 installed: { false })
         }
         let loading = RumbleModelLoading(manifest: manifest, root: root, device: device)

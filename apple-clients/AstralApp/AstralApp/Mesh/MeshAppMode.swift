@@ -101,7 +101,8 @@ enum MeshRuntimeBuilder {
         #endif
         return MeshRuntime(
             makeKernel: factory, makeKeys: { try DeviceKeys() }, consent: consent,
-            onDeviceModel: PreferredOnDeviceModel(fallback: RumbleVoiceModels.shared.onDeviceModel), tools: DeviceLocalTools(),
+            onDeviceModel: PreferredOnDeviceModel(fallback: RumbleVoiceModels.shared.onDeviceModel),
+            tools: DeviceLocalTools(),
             dataDirectory: dataDirectory(), deviceLabel: label, deviceKind: kind, phiPrompts: center)
     }
 }

@@ -37,7 +37,8 @@ final class VoiceAcknowledgementModelTests: XCTestCase {
     }
 
     func testAGeneratorFailureIsReportedAsAFailedGeneration() async {
-        let model = VoiceAcknowledgementModel(generator: ScriptedGenerator(result: .failure(CocoaError(.fileReadUnknown))))
+        let model = VoiceAcknowledgementModel(
+            generator: ScriptedGenerator(result: .failure(CocoaError(.fileReadUnknown))))
         let response = await model.complete(VoiceAcknowledgement.request(for: "Call the clinic tomorrow."))
         XCTAssertEqual(response, .failed(.generationFailed))
     }
