@@ -1,5 +1,5 @@
 // Owns the loaded recognizer and text generator so the voice session and the kernel's on-device model share one LFM2.5 instance and one RuntimeScheduler.
-// The next layer supplies loaders built on AstralVoiceRuntime; this file only decides when they run, when their models unload and how a load that was overtaken by an unload is discarded.
+// RumbleModelLoading supplies the loaders built on AstralVoiceRuntime; this file only decides when they run, when their models unload, how a load that was overtaken by an unload is discarded and how a model that reported a failure is dropped for a rebuild.
 
 import AstralVoiceRuntime
 import Foundation
@@ -102,6 +102,22 @@ actor VoiceModelOwner {
 
     func memoryPressure() async {
         await unload()
+    }
+
+    func discard(_ failed: any VoiceRecognitionModel) async {
+        guard let load = recognizerLoad, let current = try? await load.value, recognizerLoad == load,
+            current as AnyObject === failed as AnyObject
+        else { return }
+        recognizerLoad = nil
+        await current.unload()
+    }
+
+    func discard(_ failed: any VoiceTextModel) async {
+        guard let load = generatorLoad, let current = try? await load.value, generatorLoad == load,
+            current as AnyObject === failed as AnyObject
+        else { return }
+        generatorLoad = nil
+        await current.unload()
     }
 
     func unload() async {

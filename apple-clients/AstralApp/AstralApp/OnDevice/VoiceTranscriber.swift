@@ -12,6 +12,7 @@ nonisolated enum VoiceRecognizerEvent: Equatable, Sendable {
 
 nonisolated enum VoiceTranscriberKind: String, Equatable, Sendable {
     case mlx
+    case rumble
     case speechAnalyzer = "speech_analyzer"
     case onDeviceRecognizer = "on_device_recognizer"
 }
