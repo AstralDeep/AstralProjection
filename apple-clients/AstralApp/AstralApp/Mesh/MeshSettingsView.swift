@@ -172,8 +172,8 @@ struct MeshSettingsView: View {
     private var voiceStatus: String {
         guard let store = model.onDeviceVoice.store else { return "Not available" }
         switch store.state {
-        case .installed: return "Installed"
-        case .notInstalled: return "Download " + store.manifest.sizeDescription
+        case .installed, .modelOnly: return "Installed"
+        case .notInstalled: return "Download " + store.sizeDescription
         case .downloading(let progress): return "Downloading " + Int(progress.fraction * 100).formatted() + "%"
         case .failed: return "Needs attention"
         case .unsupported: return "Not available"

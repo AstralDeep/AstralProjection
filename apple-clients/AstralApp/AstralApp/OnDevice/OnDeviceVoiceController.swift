@@ -1,5 +1,5 @@
-// Owns the first-microphone model offer and starts an MLX voice pipeline only after installation, permission and conversation readiness.
-// AppModel supplies the current kernel link; lifecycle changes retire capture and fence any pending model load.
+// Owns the first-microphone pack offer and starts a voice pipeline only after installation, permission and conversation readiness.
+// AppModel supplies the current kernel link; lifecycle changes retire capture, fence any pending model load and close the model session.
 
 import AVFoundation
 import Foundation
@@ -10,7 +10,7 @@ import Observation
 @Observable
 final class OnDeviceVoiceController {
     private static let log = Logger(subsystem: "com.personalailabs.astraldeep.voice", category: "controller")
-    let store: VoiceModelStore?
+    let store: VoicePackStore?
     var showingSetup = false
     var showingMeteredConfirmation = false
     private(set) var isRunning = false
@@ -19,7 +19,9 @@ final class OnDeviceVoiceController {
     var onSessionStopped: (() -> Void)?
     var onTranscript: ((String, Bool) -> Void)?
     @ObservationIgnored private let requestPermission: () async -> Bool
-    @ObservationIgnored private let makePipeline: @MainActor (URL, VoiceKernelLink) async throws -> VoicePipeline
+    @ObservationIgnored private let parts: VoiceSessionParts
+    @ObservationIgnored private let makePipeline: PipelineFactory
+    @ObservationIgnored private var sessionOpen = false
     @ObservationIgnored private var link: VoiceKernelLink?
     @ObservationIgnored private var pipeline: VoicePipeline?
     @ObservationIgnored private var generation = 0
@@ -28,24 +30,28 @@ final class OnDeviceVoiceController {
     @ObservationIgnored private var locked = false
     @ObservationIgnored private var companion = false
 
+    typealias PipelineFactory = @MainActor (VoiceSessionParts, VoiceKernelLink) async throws -> VoicePipeline
+
     init(
-        store: VoiceModelStore?,
+        store: VoicePackStore?, parts: VoiceSessionParts,
         requestPermission: @escaping () async -> Bool = OnDeviceVoiceController.microphonePermission,
-        makePipeline: @escaping @MainActor (URL, VoiceKernelLink) async throws -> VoicePipeline = MLXVoiceRuntime
-            .pipeline
+        makePipeline: @escaping PipelineFactory = { $0.pipeline(link: $1) }
     ) {
         self.store = store
+        self.parts = parts
         self.requestPermission = requestPermission
         self.makePipeline = makePipeline
         if store == nil { message = VoiceModelFailure.manifestUnavailable.message }
     }
 
     convenience init() {
-        let manifest = try? VoiceModelManifest.bundled()
-        self.init(store: manifest.map { VoiceModelStore(manifest: $0, root: VoiceModelStore.defaultRoot()) })
+        let manifest = try? VoicePackManifest.bundled()
+        let store = manifest.map { VoicePackStore(manifest: $0, root: VoicePackStore.defaultRoot()) }
+        self.init(
+            store: store, parts: .standard(folder: { await MainActor.run { store?.voicePackDirectory } }))
     }
 
-    var downloadSize: String? { store?.manifest.sizeDescription }
+    var downloadSize: String? { store?.sizeDescription }
     var conversationReady: Bool { link != nil }
     private var eligible: Bool { foreground && !interrupted && !locked }
 
@@ -65,18 +71,13 @@ final class OnDeviceVoiceController {
         await start(makePipeline: makePipeline, needsPhoneMicrophone: true)
     }
 
-    func activateForPairedWatch(
-        makePipeline: @escaping @MainActor (URL, VoiceKernelLink) async throws -> VoicePipeline
-    ) async {
+    func activateForPairedWatch(makePipeline: @escaping PipelineFactory) async {
         stop()
         companion = true
         await start(makePipeline: makePipeline, needsPhoneMicrophone: false)
     }
 
-    private func start(
-        makePipeline: @escaping @MainActor (URL, VoiceKernelLink) async throws -> VoicePipeline,
-        needsPhoneMicrophone: Bool
-    ) async {
+    private func start(makePipeline: @escaping PipelineFactory, needsPhoneMicrophone: Bool) async {
         Self.log.info(
             "voice_start requested foreground=\(self.foreground, privacy: .public) interrupted=\(self.interrupted, privacy: .public) locked=\(self.locked, privacy: .public) preparing=\(self.isPreparing, privacy: .public) running=\(self.isRunning, privacy: .public)"
         )
@@ -103,7 +104,7 @@ final class OnDeviceVoiceController {
         case .notInstalled, .failed, .downloading:
             showingSetup = true
             return
-        case .installed: break
+        case .installed, .modelOnly: break
         }
         guard let link else {
             message = "Voice isn't ready in this conversation yet."
@@ -117,10 +118,10 @@ final class OnDeviceVoiceController {
         defer { if generation == attempt { isPreparing = false } }
         await store.refresh()
         Self.log.info(
-            "voice_start verified_model installed=\(store.installedDirectory != nil, privacy: .public) current=\(self.generation == attempt, privacy: .public) eligible=\(self.eligible, privacy: .public)"
+            "voice_start verified_model installed=\(store.modelDirectory != nil, privacy: .public) current=\(self.generation == attempt, privacy: .public) eligible=\(self.eligible, privacy: .public)"
         )
         guard generation == attempt, eligible, !Task.isCancelled else { return }
-        guard let directory = store.installedDirectory else {
+        guard store.modelDirectory != nil else {
             message = "The voice model needs to be downloaded again."
             showingSetup = true
             return
@@ -140,12 +141,19 @@ final class OnDeviceVoiceController {
         do {
             try await link.prepareForOwnerSession()
             guard generation == attempt, eligible, !Task.isCancelled else { return }
-            let prepared = try await makePipeline(directory, link)
+            sessionOpen = true
+            await parts.begin()
+            guard generation == attempt, eligible, !Task.isCancelled else {
+                closeSession()
+                return
+            }
+            let prepared = try await makePipeline(parts, link)
             Self.log.info(
                 "voice_start pipeline_prepared current=\(self.generation == attempt, privacy: .public) eligible=\(self.eligible, privacy: .public)"
             )
             guard generation == attempt, eligible, !Task.isCancelled else {
                 prepared.stop()
+                closeSession()
                 return
             }
             prepared.onFailure = { [weak self] reason in
@@ -174,7 +182,11 @@ final class OnDeviceVoiceController {
             Self.log.info("voice_start listening")
         } catch {
             Self.log.error("voice_start failed type=\(String(reflecting: type(of: error)), privacy: .public)")
-            guard generation == attempt else { return }
+            guard generation == attempt else {
+                closeSession()
+                return
+            }
+            closeSession()
             if error is VoiceDuplexError {
                 message =
                     "The microphone and speaker couldn't start. Check the selected audio devices, then try again."
@@ -201,6 +213,7 @@ final class OnDeviceVoiceController {
         generation &+= 1
         pipeline?.stop()
         pipeline = nil
+        closeSession()
         isRunning = false
         isPreparing = false
         message = nil
@@ -240,9 +253,16 @@ final class OnDeviceVoiceController {
 
     func deleteModel() async {
         stop()
-        await VoiceInferenceCache.shared.beginDeletion()
+        await parts.unload()
         await store?.delete()
-        await VoiceInferenceCache.shared.endDeletion()
+        await parts.unload()
+    }
+
+    private func closeSession() {
+        guard sessionOpen else { return }
+        sessionOpen = false
+        let end = parts.end
+        Task { await end() }
     }
 
     func answerDelta(_ text: String) { pipeline?.answerDelta(text) }
