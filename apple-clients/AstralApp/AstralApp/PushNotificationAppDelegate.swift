@@ -79,11 +79,7 @@
             _ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
             completionHandler: @escaping () -> Void
         ) {
-            if identifier == VoiceModelStore.backgroundIdentifier {
-                VoiceModelBackgroundEvents.store(completionHandler, for: identifier)
-            } else {
-                completionHandler()
-            }
+            VoiceModelBackgroundEvents.route(identifier, completionHandler: completionHandler)
         }
     }
 #endif

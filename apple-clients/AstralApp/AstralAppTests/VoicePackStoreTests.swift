@@ -680,3 +680,43 @@ final class VoicePackStoreTests: XCTestCase {
         XCTAssertTrue(server.requests.isEmpty)
     }
 }
+
+final class VoiceBackgroundEventsRoutingTests: XCTestCase {
+    func testBothStoresClaimTheirSessionAndHoldTheHandlerUntilCompletion() async {
+        for identifier in [VoiceModelStore.backgroundIdentifier, VoicePackStore.backgroundIdentifier] {
+            let handled = expectation(description: "handler for \(identifier)")
+            let early = expectation(description: "handler called before the session finished")
+            early.isInverted = true
+            let ran = LockedFlag()
+            VoiceModelBackgroundEvents.route(identifier) {
+                ran.set()
+                handled.fulfill()
+                early.fulfill()
+            }
+            await fulfillment(of: [early], timeout: 0.2)
+            XCTAssertFalse(ran.value)
+            VoiceModelBackgroundEvents.complete(identifier)
+            await fulfillment(of: [handled], timeout: 2)
+        }
+    }
+
+    func testAnUnrelatedSessionIsAnsweredAtOnce() {
+        var ran = false
+        VoiceModelBackgroundEvents.route("com.example.other") { ran = true }
+        XCTAssertTrue(ran)
+    }
+
+    func testTheTwoStoresUseDistinctSessionIdentifiers() {
+        XCTAssertNotEqual(VoiceModelStore.backgroundIdentifier, VoicePackStore.backgroundIdentifier)
+        XCTAssertEqual(
+            VoiceModelBackgroundEvents.identifiers,
+            [VoiceModelStore.backgroundIdentifier, VoicePackStore.backgroundIdentifier])
+    }
+}
+
+private final class LockedFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var flag = false
+    var value: Bool { lock.withLock { flag } }
+    func set() { lock.withLock { flag = true } }
+}

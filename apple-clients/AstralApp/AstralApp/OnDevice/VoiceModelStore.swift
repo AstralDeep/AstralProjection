@@ -99,6 +99,16 @@ nonisolated enum VoiceModelBackgroundEvents {
         lock.withLock { handlers[identifier] = handler }
     }
 
+    static let identifiers: Set<String> = [VoiceModelStore.backgroundIdentifier, VoicePackStore.backgroundIdentifier]
+
+    static func route(_ identifier: String, completionHandler: @escaping () -> Void) {
+        if identifiers.contains(identifier) {
+            store(completionHandler, for: identifier)
+        } else {
+            completionHandler()
+        }
+    }
+
     static func complete(_ identifier: String) {
         let handler = lock.withLock { handlers.removeValue(forKey: identifier) }
         DispatchQueue.main.async { handler?() }
