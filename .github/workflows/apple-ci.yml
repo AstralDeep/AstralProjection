@@ -322,7 +322,7 @@ jobs:
           [[ "$(xcodebuild -version | sed -n '1p')" == "Xcode ${XCODE_VERSION}" ]]
           [[ "$(xcodebuild -version | sed -n '2p')" == "Build version ${XCODE_BUILD}" ]]
       - name: Build the llama.cpp runtime at its pinned revision
-        run: apple-clients/Scripts/build-voice-runtime.sh
+        run: apple-clients/Scripts/build-voice-runtime.sh --slices macos
       - name: Run AstralVoiceRuntime on real inference with the fixture models
         run: swift test --package-path apple-clients/AstralVoiceRuntime
       - name: Run AstralVoiceSpeech

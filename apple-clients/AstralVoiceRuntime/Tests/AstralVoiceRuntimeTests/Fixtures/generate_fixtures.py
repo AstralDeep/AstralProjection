@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from gguf import GGUFWriter, GGMLQuantizationType, GGUFValueType
+from gguf import GGUFValueType, GGUFWriter
 
 HIDDEN = 32
 HEADS = 2

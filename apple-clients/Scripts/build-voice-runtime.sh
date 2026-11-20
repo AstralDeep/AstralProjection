@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the pinned llama.cpp with libmtmd for iPhone, iPhone simulator and Mac, then assembles AstralVoiceRuntime/Artifacts/LlamaRuntime.xcframework.
-# Usage: Scripts/build-voice-runtime.sh [--jobs N]; reruns reuse the cached source and per-slice builds, and a checkout at any other revision stops the script.
+# Usage: Scripts/build-voice-runtime.sh [--jobs N] [--slices ios,ios-simulator,macos]; reruns reuse the cached source and per-slice builds, and a checkout at any other revision stops the script.
 set -euo pipefail
 
 REVISION=8af68d486a9473820d24d00af8f33334ca80124d
@@ -13,11 +13,13 @@ ARTIFACTS="$PACKAGE/Artifacts"
 WORK="$ARTIFACTS/work"
 SOURCE="$WORK/llama.cpp"
 JOBS=$(sysctl -n hw.ncpu)
+WANTED=ios,ios-simulator,macos
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --jobs) [ "$#" -ge 2 ] || { echo "missing --jobs value" >&2; exit 64; }; JOBS=$2; shift 2 ;;
-    --help) echo "Scripts/build-voice-runtime.sh [--jobs N]"; exit 0 ;;
+    --slices) [ "$#" -ge 2 ] || { echo "missing --slices value" >&2; exit 64; }; WANTED=$2; shift 2 ;;
+    --help) echo "Scripts/build-voice-runtime.sh [--jobs N] [--slices ios,ios-simulator,macos]"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 64 ;;
   esac
 done
@@ -44,12 +46,22 @@ if [ -n "$(git -C "$SOURCE" status --porcelain)" ]; then
   exit 1
 fi
 
-# slice name | cmake sysroot | deployment target | metal | xcframework library identifier
-SLICES=(
+KNOWN=(
   "ios|iphoneos|$IOS_TARGET|ON"
   "ios-simulator|iphonesimulator|$IOS_TARGET|OFF"
   "macos|macosx|$MACOS_TARGET|ON"
 )
+SLICES=()
+IFS=',' read -r -a requested <<<"$WANTED"
+[ "${#requested[@]}" -gt 0 ] || { echo "no slices requested" >&2; exit 64; }
+for name in "${requested[@]}"; do
+  match=""
+  for entry in "${KNOWN[@]}"; do
+    [ "${entry%%|*}" = "$name" ] && match=$entry
+  done
+  [ -n "$match" ] || { echo "unknown slice: $name" >&2; exit 64; }
+  SLICES+=("$match")
+done
 
 build_slice() {
   local name=$1 sysroot=$2 target=$3 metal=$4

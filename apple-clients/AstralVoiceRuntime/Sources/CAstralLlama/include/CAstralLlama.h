@@ -54,7 +54,6 @@ void avr_model_free(avr_model *model);
 int32_t avr_model_context_tokens(const avr_model *model);
 int32_t avr_model_audio_sample_rate(const avr_model *model);
 
-/* Renders a chat with the model's own template into a malloc'd string, or returns NULL and sets status. */
 char *avr_model_chat_prompt(const avr_model *model, const char *const *roles, const char *const *contents, size_t count, avr_status *status);
 void avr_string_free(char *string);
 
@@ -62,7 +61,6 @@ void avr_string_free(char *string);
 avr_status avr_begin_text(avr_model *model, const char *prompt, avr_sampling sampling, avr_cancel *cancel, int32_t *prompt_tokens);
 avr_status avr_begin_audio(avr_model *model, const char *prompt, const float *samples, size_t sample_count, avr_sampling sampling, avr_cancel *cancel, int32_t *prompt_tokens);
 
-/* Produces the next token's text bytes in piece. Returns AVR_TOKEN, AVR_END, AVR_CONTEXT_FULL, AVR_CANCELLED or an error. */
 avr_status avr_next(avr_model *model, char *piece, int32_t capacity, int32_t *length);
 
 #ifdef __cplusplus
