@@ -295,6 +295,39 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  voice-packages:
+    needs: [changes]
+    if: needs.changes.outputs.apple == 'true'
+    name: Required · voice runtime and speech packages
+    runs-on: macos-26
+    timeout-minutes: 25
+    steps:
+      - name: Check out candidate
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Select exact Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          selected=""
+          for candidate in /Applications/Xcode_26.6.app /Applications/Xcode_26.6*.app /Applications/Xcode.app; do
+            [[ -d "$candidate" ]] || continue
+            if [[ "$("$candidate/Contents/Developer/usr/bin/xcodebuild" -version | sed -n '1p')" == "Xcode ${XCODE_VERSION}" ]] && \
+               [[ "$("$candidate/Contents/Developer/usr/bin/xcodebuild" -version | sed -n '2p')" == "Build version ${XCODE_BUILD}" ]]; then
+              selected="$candidate"
+              break
+            fi
+          done
+          [[ -n "$selected" ]] || { echo "Xcode ${XCODE_VERSION} (${XCODE_BUILD}) is required" >&2; exit 1; }
+          sudo xcode-select --switch "$selected/Contents/Developer"
+          [[ "$(xcodebuild -version | sed -n '1p')" == "Xcode ${XCODE_VERSION}" ]]
+          [[ "$(xcodebuild -version | sed -n '2p')" == "Build version ${XCODE_BUILD}" ]]
+      - name: Build the llama.cpp runtime at its pinned revision
+        run: apple-clients/Scripts/build-voice-runtime.sh
+      - name: Run AstralVoiceRuntime on real inference with the fixture models
+        run: swift test --package-path apple-clients/AstralVoiceRuntime
+      - name: Run AstralVoiceSpeech
+        run: swift test --package-path apple-clients/AstralVoiceSpeech
+
   core-ios-tests:
     needs: [changes]
     if: needs.changes.outputs.apple == 'true'
@@ -1139,6 +1172,7 @@ jobs:
       - changes
       - swift-lint
       - core-tests
+      - voice-packages
       - core-ios-tests
       - app-unit-tests
       - ios-ui-build
@@ -1155,7 +1189,7 @@ jobs:
         run: |
           [[ '${{ needs.changes.result }}' == 'success' ]]
           python3 scripts/ci_lanes.py --applicable '${{ needs.changes.outputs.apple }}' \
-            --results '${{ needs.swift-lint.result }}' '${{ needs.core-tests.result }}' '${{ needs.core-ios-tests.result }}' '${{ needs.app-unit-tests.result }}' '${{ needs.ios-ui-build.result }}' '${{ needs.macos-app-build.result }}' '${{ needs.first-login-ui.result }}' '${{ needs.watch-continuity.result }}' '${{ needs.kernel-slices.result }}' '${{ needs.kernel-apple.result }}' >> "$GITHUB_STEP_SUMMARY"
+            --results '${{ needs.swift-lint.result }}' '${{ needs.core-tests.result }}' '${{ needs.voice-packages.result }}' '${{ needs.core-ios-tests.result }}' '${{ needs.app-unit-tests.result }}' '${{ needs.ios-ui-build.result }}' '${{ needs.macos-app-build.result }}' '${{ needs.first-login-ui.result }}' '${{ needs.watch-continuity.result }}' '${{ needs.kernel-slices.result }}' '${{ needs.kernel-apple.result }}' >> "$GITHUB_STEP_SUMMARY"
       # `needs.<matrix-job>.result` can report the result of only one matrix
       # child. Requiring one current-run artifact from every child prevents a
       # later successful sibling from hiding a failed platform.
