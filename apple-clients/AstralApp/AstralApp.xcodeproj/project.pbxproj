@@ -9,7 +9,6 @@
 /* Begin PBXBuildFile section */
 		AB00000000000000000000F4 /* AstralKernel in Frameworks */ = {isa = PBXBuildFile; productRef = AB00000000000000000000F2 /* AstralKernel */; };
 		AA00000000000000000000A4 /* AstralCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA00000000000000000000A2 /* AstralCore */; };
-		AF1030000000000000000003 /* AstralVoiceModel in Frameworks */ = {isa = PBXBuildFile; productRef = AF1030000000000000000002 /* AstralVoiceModel */; };
 		AF1090000000000000000003 /* AstralVoiceRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = AF1090000000000000000002 /* AstralVoiceRuntime */; };
 		AF1090000000000000000006 /* AstralVoiceSpeech in Frameworks */ = {isa = PBXBuildFile; productRef = AF1090000000000000000005 /* AstralVoiceSpeech */; };
 		AA00000000000000000000A5 /* AstralCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA00000000000000000000A3 /* AstralCore */; };
@@ -129,7 +128,6 @@
 			files = (
 				AA00000000000000000000A4 /* AstralCore in Frameworks */,
 				AB00000000000000000000F4 /* AstralKernel in Frameworks */,
-				AF1030000000000000000003 /* AstralVoiceModel in Frameworks */,
 				AF1090000000000000000003 /* AstralVoiceRuntime in Frameworks */,
 				AF1090000000000000000006 /* AstralVoiceSpeech in Frameworks */,
 				AF1020000000000000000006 /* AstralSparkle in Frameworks */,
@@ -241,7 +239,6 @@
 			packageProductDependencies = (
 				AA00000000000000000000A2 /* AstralCore */,
 				AB00000000000000000000F2 /* AstralKernel */,
-				AF1030000000000000000002 /* AstralVoiceModel */,
 				AF1090000000000000000002 /* AstralVoiceRuntime */,
 				AF1090000000000000000005 /* AstralVoiceSpeech */,
 				AF1020000000000000000005 /* AstralSparkle */,
@@ -417,7 +414,6 @@
 				AA00000000000000000000A1 /* XCLocalSwiftPackageReference "../AstralCore" */,
 				AB00000000000000000000F1 /* XCLocalSwiftPackageReference "../AstralKernel" */,
 				AF1020000000000000000004 /* XCLocalSwiftPackageReference "../AstralSparkle" */,
-				AF1030000000000000000001 /* XCLocalSwiftPackageReference "../AstralVoiceModel" */,
 				AF1090000000000000000001 /* XCLocalSwiftPackageReference "../AstralVoiceRuntime" */,
 				AF1090000000000000000004 /* XCLocalSwiftPackageReference "../AstralVoiceSpeech" */,
 			);
@@ -1281,10 +1277,6 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../AstralSparkle;
 		};
-		AF1030000000000000000001 /* XCLocalSwiftPackageReference "../AstralVoiceModel" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = ../AstralVoiceModel;
-		};
 		AF1090000000000000000001 /* XCLocalSwiftPackageReference "../AstralVoiceRuntime" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../AstralVoiceRuntime;
@@ -1318,11 +1310,6 @@
 			productName = AstralSparkle;
 		};
 		AD0881000000000000000002 /* AstralCore */ = {isa = XCSwiftPackageProductDependency; productName = AstralCore; };
-		AF1030000000000000000002 /* AstralVoiceModel */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = AF1030000000000000000001 /* XCLocalSwiftPackageReference "../AstralVoiceModel" */;
-			productName = AstralVoiceModel;
-		};
 		AF1090000000000000000002 /* AstralVoiceRuntime */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = AF1090000000000000000001 /* XCLocalSwiftPackageReference "../AstralVoiceRuntime" */;

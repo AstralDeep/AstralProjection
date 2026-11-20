@@ -1,5 +1,5 @@
 {
-  "originHash" : "869e1180489900fa4a09c3766141c9ba3e864ba472ed93ab7b26c36c5c81b4b0",
+  "originHash" : "279727a763882129b93241b49127a31fa6f00dab8e903479203e52e4e2a921b7",
   "pins" : [
     {
       "identity" : "fluidaudio",
@@ -10,30 +10,12 @@
       }
     },
     {
-      "identity" : "mlx-swift",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/ml-explore/mlx-swift",
-      "state" : {
-        "revision" : "7ede4fd6d05f63305c1c0ebf4f8c1909a637c574",
-        "version" : "0.33.0"
-      }
-    },
-    {
       "identity" : "sparkle",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/sparkle-project/Sparkle",
       "state" : {
         "revision" : "ab7d71291238df6e0492143b120c9b696a35f603",
         "version" : "2.10.1"
-      }
-    },
-    {
-      "identity" : "swift-numerics",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/apple/swift-numerics",
-      "state" : {
-        "revision" : "0c0290ff6b24942dadb83a929ffaaa1481df04a2",
-        "version" : "1.1.1"
       }
     }
   ],
