@@ -1,0 +1,129 @@
+{
+  "display_name": "Rumble 2 Flash with Phonon 31m English",
+  "files": [
+    {
+      "bytes": 730895168,
+      "part": "local_text",
+      "path": "chat-1.2b/LFM2.5-1.2B-Instruct-Q4_K_M.gguf",
+      "repository": "Kentucky-Open-Science/Rumble-2-Flash-Astral",
+      "revision": "b1b5a9dea24885fa348a7fa9f8ce23efefb08b2c",
+      "sha256": "b1b3de114215d9507409a662a501a631095a479a419584e8a2ded6304b19b4f5"
+    },
+    {
+      "bytes": 283424640,
+      "part": "recognition",
+      "path": "rumble/Rumble-2-Flash-AD-Q5_K_M.gguf",
+      "repository": "Kentucky-Open-Science/Rumble-2-Flash-Astral",
+      "revision": "b1b5a9dea24885fa348a7fa9f8ce23efefb08b2c",
+      "sha256": "c49430ce4eb24ca6e6ff154f135c63a0dd98fc2247746824f40d96df7d2bd7ee"
+    },
+    {
+      "bytes": 214393024,
+      "part": "audio_encoder",
+      "path": "rumble/mmproj-Rumble-2-Flash-Q8_0.gguf",
+      "repository": "Kentucky-Open-Science/Rumble-2-Flash-Astral",
+      "revision": "b1b5a9dea24885fa348a7fa9f8ce23efefb08b2c",
+      "sha256": "97116d3656cbe4912ac9aee43eb4a887832121e2a2c07c5ee61617052bdd30f8"
+    },
+    {
+      "bytes": 811,
+      "part": "voice",
+      "path": "phonon/phonon-31m-en/arch.json",
+      "repository": "FluidInference/pocket-tts-coreml",
+      "revision": "c2e998e269e4d4b51f74061faddb8450cd8f9a9a",
+      "sha256": "15f402005db3f2cf2274cfa6173c3661ee906111b2a7722d967af30e188e32d8"
+    },
+    {
+      "bytes": 128,
+      "part": "voice",
+      "path": "phonon/phonon-31m-en/constants_bin/bos_emb.bin",
+      "repository": "FluidInference/pocket-tts-coreml",
+      "revision": "c2e998e269e4d4b51f74061faddb8450cd8f9a9a",
+      "sha256": "1010476e005ac8b08a2fb3d73d853327148d818ec09e4df99611840233081fac"
+    },
+    {
+      "bytes": 3073840,
+      "part": "voice",
+      "path": "phonon/phonon-31m-en/constants_bin/default.safetensors",
+      "repository": "FluidInference/pocket-tts-coreml",
+      "revision": "c2e998e269e4d4b51f74061faddb8450cd8f9a9a",
+      "sha256": "97e27eac43ac5b9e789db9a4789e2d1c80205bee59db9f51161309b53a3cc5eb"
+    },
+    {
+      "bytes": 8194048,
+      "part": "voice",
+      "path": "phonon/phonon-31m-en/constants_bin/text_embed_table.bin",
+      "repository": "FluidInference/pocket-tts-coreml",
+      "revision": "c2e998e269e4d4b51f74061faddb8450cd8f9a9a",
+      "sha256": "4a41cf481b98ddad78ec6f50dda7eca2a5033ea75cd1fa54d7381231d65818e7"
+    },
+    {
+      "bytes": 65045,
+      "part": "voice",
+      "path": "phonon/phonon-31m-en/constants_bin/tokenizer.model",
+      "repository": "FluidInference/pocket-tts-coreml",
+      "revision": "c2e998e269e4d4b51f74061faddb8450cd8f9a9a",
+      "sha256": "82e4572006d64d483317074c22c368e87779640b6f3a9dcd07b7caae32b030ce"
+    },
+    {
+      "bytes": 1852,
+      "part": "voice",
+      "path": "phonon/phonon-31m-en/mimi_decoder.mlmodelc/coremldata.bin",
+      "repository": "FluidInference/pocket-tts-coreml",
+      "revision": "c2e998e269e4d4b51f74061faddb8450cd8f9a9a",
+      "sha256": "89525846d461c4dbc7a593c9719bfee18a7284b8d11f464d8860f37199dc875a"
+    },
+    {
+      "bytes": 95070,
+      "part": "voice",
+      "path": "phonon/phonon-31m-en/mimi_decoder.mlmodelc/model.mil",
+      "repository": "FluidInference/pocket-tts-coreml",
+      "revision": "c2e998e269e4d4b51f74061faddb8450cd8f9a9a",
+      "sha256": "f6ca7ee07fe0cacb6fea7558a1f5c8b10ed80e8e94f965585946326f731db830"
+    },
+    {
+      "bytes": 44897216,
+      "part": "voice",
+      "path": "phonon/phonon-31m-en/mimi_decoder.mlmodelc/weights/weight.bin",
+      "repository": "FluidInference/pocket-tts-coreml",
+      "revision": "c2e998e269e4d4b51f74061faddb8450cd8f9a9a",
+      "sha256": "fc998dd13becc51a05e74b2f7efd4bc0f05defafdc6baefe0a424ee6f7427e5a"
+    },
+    {
+      "bytes": 2918,
+      "part": "voice",
+      "path": "phonon/phonon-31m-en/pocket_state.json",
+      "repository": "FluidInference/pocket-tts-coreml",
+      "revision": "c2e998e269e4d4b51f74061faddb8450cd8f9a9a",
+      "sha256": "9675b15fd9d221ea935df8f9ed60698735e14a5855693c65de2a125efab3b62c"
+    },
+    {
+      "bytes": 4771,
+      "part": "voice",
+      "path": "phonon/phonon-31m-en/pocket_state.mlmodelc/coremldata.bin",
+      "repository": "FluidInference/pocket-tts-coreml",
+      "revision": "c2e998e269e4d4b51f74061faddb8450cd8f9a9a",
+      "sha256": "10091f1e21e7be6ad7be9f7509697b8ff075cdce3806f2eef3f582f5d45556c2"
+    },
+    {
+      "bytes": 744313,
+      "part": "voice",
+      "path": "phonon/phonon-31m-en/pocket_state.mlmodelc/model.mil",
+      "repository": "FluidInference/pocket-tts-coreml",
+      "revision": "c2e998e269e4d4b51f74061faddb8450cd8f9a9a",
+      "sha256": "70df3c50476ba5c9526bfc3e5a9f8a2d2912652bb8d4a41f91904f45a1d23070"
+    },
+    {
+      "bytes": 79068864,
+      "part": "voice",
+      "path": "phonon/phonon-31m-en/pocket_state.mlmodelc/weights/weight.bin",
+      "repository": "FluidInference/pocket-tts-coreml",
+      "revision": "c2e998e269e4d4b51f74061faddb8450cd8f9a9a",
+      "sha256": "cbe7fe8d1843021a9ad2995fda682ef85f949290ef65a58b8976b2c2e2a64502"
+    }
+  ],
+  "format": "astral.voice-pack-manifest/v1",
+  "id": "rumble-2-flash-phonon-31m-en",
+  "origin": "https://huggingface.co",
+  "total_bytes": 1364861708
+}
