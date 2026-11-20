@@ -30,7 +30,7 @@ final class VoiceSessionPartsTests: XCTestCase {
         let harness = RumbleHarness()
         let probe = FolderProbe()
         let parts = VoiceSessionParts.standard(folder: { probe.ask() }, models: models(harness))
-        await parts.begin()
+        try await parts.begin()
         XCTAssertEqual(harness.recognition.created.count, 1)
         XCTAssertEqual(harness.generation.created.count, 1)
         for _ in 0..<2_000 where probe.calls == 0 { try await Task.sleep(for: .milliseconds(5)) }
@@ -40,7 +40,7 @@ final class VoiceSessionPartsTests: XCTestCase {
     func testTheModelsUnloadOnTheIdleRuleAfterTheSessionEnds() async throws {
         let harness = RumbleHarness()
         let parts = VoiceSessionParts.standard(folder: { nil }, models: models(harness))
-        await parts.begin()
+        try await parts.begin()
         let recognizer = try XCTUnwrap(harness.recognition.created.first)
         let generator = try XCTUnwrap(harness.generation.created.first)
         await parts.end()
@@ -57,13 +57,30 @@ final class VoiceSessionPartsTests: XCTestCase {
     func testUnloadReleasesTheModelsAtOnceAndTheNextSessionLoadsThemAgain() async throws {
         let harness = RumbleHarness()
         let parts = VoiceSessionParts.standard(folder: { nil }, models: models(harness))
-        await parts.begin()
+        try await parts.begin()
         let first = try XCTUnwrap(harness.recognition.created.first)
         await parts.unload()
         await first.unloads.wait(for: 1)
-        await parts.begin()
+        try await parts.begin()
         XCTAssertEqual(harness.recognition.created.count, 2)
         XCTAssertEqual(harness.generation.created.count, 2)
+    }
+
+    func testAModelThatCannotLoadSurfacesFromBeginAndTheNextSessionRetries() async throws {
+        let harness = RumbleHarness()
+        harness.recognition.failure = VoiceModelRuntimeError.filesMissing("rumble")
+        let parts = VoiceSessionParts.standard(folder: { nil }, models: models(harness))
+        do {
+            try await parts.begin()
+            XCTFail("a missing model file must fail the session start")
+        } catch {
+            XCTAssertEqual(error as? VoiceModelRuntimeError, .filesMissing("rumble"))
+        }
+        await parts.end()
+        harness.recognition.failure = nil
+        try await parts.begin()
+        let text = try await parts.recognizer.recognize([0], language: .english)
+        XCTAssertEqual(text, "heard")
     }
 
     func testThePhoneAndWatchPipelinesAreBuiltFromTheSamePartsAndTheRumbleTranscriber() async throws {

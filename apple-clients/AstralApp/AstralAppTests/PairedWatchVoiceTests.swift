@@ -389,7 +389,9 @@ final class PairedWatchVoiceTests: XCTestCase {
         await h.wait(for: .ready, in: self)
         XCTAssertEqual(h.fixture.recorder.events, ["begin"])
         h.relay.unbind()
-        for _ in 0..<200 where h.fixture.recorder.events != ["begin", "end"] { await Task.yield() }
+        for _ in 0..<2_000 where h.fixture.recorder.events != ["begin", "end"] {
+            try await Task.sleep(for: .milliseconds(5))
+        }
         XCTAssertEqual(h.fixture.recorder.events, ["begin", "end"])
     }
 

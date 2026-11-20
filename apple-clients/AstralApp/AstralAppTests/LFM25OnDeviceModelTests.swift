@@ -116,6 +116,20 @@ final class LFM25OnDeviceModelTests: XCTestCase {
         XCTAssertTrue(harness.generation.schedulers[0] === scheduler)
     }
 
+    func testARemovedPackNeverAnswersAfterTheOwnerUnloads() async throws {
+        let harness = RumbleHarness()
+        let lfm = model(harness)
+        let first = await lfm.complete(rumbleRequest())
+        XCTAssertEqual(first, .text("four"))
+        let loaded = try XCTUnwrap(harness.generation.created.first)
+        harness.generation.failure = VoiceModelRuntimeError.filesMissing("chat-1.2b")
+        await harness.owner.unload()
+        await loaded.unloads.wait(for: 1)
+        let after = await lfm.complete(rumbleRequest())
+        XCTAssertEqual(after, .unavailable(.modelNotReady))
+        XCTAssertEqual(harness.generation.created.count, 1)
+    }
+
     func testTheKernelPathUnloadsAfterTheIdleLimitWithNoSessionOpen() async throws {
         let harness = RumbleHarness()
         _ = await model(harness).complete(rumbleRequest())

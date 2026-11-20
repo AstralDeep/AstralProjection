@@ -180,6 +180,39 @@ final class OnDeviceVoiceControllerTests: XCTestCase {
         try await settle { made.recorder.events == ["begin", "end"] }
     }
 
+    func testAMissingModelFileOnTheStandardPathStopsBeforeListeningAndTellsThePersonToDownloadAgain() async throws {
+        let harness = RumbleHarness()
+        harness.recognition.failure = VoiceModelRuntimeError.filesMissing("rumble")
+        let memory = AsyncStream<Void>.makeStream()
+        let background = AsyncStream<Void>.makeStream()
+        let models = RumbleVoiceModels(
+            owner: harness.owner, installed: { true },
+            lifecycle: .init(memoryWarnings: memory.stream, backgrounded: background.stream))
+        let audio = FakeDuplexAudio()
+        let made = try await VoicePackTestFixture.make(
+            installed: true, makePipeline: { [self] _, link in pipeline(audio, link: link) },
+            parts: { _ in .standard(folder: { nil }, models: models) })
+        roots.append(made.root)
+        made.controller.connect(link: FakeKernelLink())
+        await made.controller.activate()
+        XCTAssertFalse(made.controller.isRunning)
+        XCTAssertFalse(audio.started)
+        XCTAssertTrue(made.controller.showingSetup)
+        XCTAssertEqual(made.controller.message, "The voice model couldn't start. Try downloading it again.")
+    }
+
+    func testAFailedModelOpenClosesTheSessionOnce() async throws {
+        let made = try await VoicePackTestFixture.make(
+            installed: true, makePipeline: { [self] _, link in pipeline(link: link) },
+            parts: { recorder in .recording(recorder, beginError: CocoaError(.fileReadCorruptFile)) })
+        roots.append(made.root)
+        made.controller.connect(link: FakeKernelLink())
+        await made.controller.activate()
+        XCTAssertFalse(made.controller.isRunning)
+        XCTAssertEqual(made.controller.message, "The voice model couldn't start. Try downloading it again.")
+        try await settle { made.recorder.events == ["begin", "end"] }
+    }
+
     func testAudioStartFailureDoesNotAskForAnotherDownloadAndClosesTheModelSession() async throws {
         let audio = FakeDuplexAudio()
         audio.startError = .audioStartFailed

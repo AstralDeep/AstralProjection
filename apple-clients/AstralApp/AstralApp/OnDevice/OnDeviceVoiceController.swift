@@ -142,7 +142,7 @@ final class OnDeviceVoiceController {
             try await link.prepareForOwnerSession()
             guard generation == attempt, eligible, !Task.isCancelled else { return }
             sessionOpen = true
-            await parts.begin()
+            try await parts.begin()
             guard generation == attempt, eligible, !Task.isCancelled else {
                 closeSession()
                 return

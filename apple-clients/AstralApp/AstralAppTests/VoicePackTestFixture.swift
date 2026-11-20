@@ -34,11 +34,15 @@ nonisolated struct SilentSpeech: VoiceSpeaking {
 extension VoiceSessionParts {
     static func recording(
         _ recorder: SessionRecorder = SessionRecorder(), recognizer: any VoiceRecognizing = SilentRecognizer(),
-        textGenerator: any VoiceTextGenerating = SilentGenerator(), speech: any VoiceSpeaking = SilentSpeech()
+        textGenerator: any VoiceTextGenerating = SilentGenerator(), speech: any VoiceSpeaking = SilentSpeech(),
+        beginError: (any Error)? = nil
     ) -> VoiceSessionParts {
         VoiceSessionParts(
             recognizer: recognizer, textGenerator: textGenerator, speech: speech,
-            begin: { recorder.record("begin") }, end: { recorder.record("end") },
+            begin: {
+                recorder.record("begin")
+                if let beginError { throw beginError }
+            }, end: { recorder.record("end") },
             unload: { recorder.record("unload") })
     }
 

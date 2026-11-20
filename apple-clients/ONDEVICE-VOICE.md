@@ -114,10 +114,6 @@ Run the portable protocol package and the Metal-backed voice package on macOS:
 
 ```sh
 swift test --package-path apple-clients/AstralCore
-cd apple-clients/AstralVoiceModel
-TEST_RUNNER_ASTRAL_LFM3_MODEL_DIR="$VOICE_MODEL_DIRECTORY" \
-  xcodebuild -scheme AstralVoiceModel -destination 'platform=macOS' \
-  CODE_SIGNING_ALLOWED=NO test
 ```
 
 Without a local model directory, real-weight parity tests skip with an explicit

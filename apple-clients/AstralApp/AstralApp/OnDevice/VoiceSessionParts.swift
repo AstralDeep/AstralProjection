@@ -7,7 +7,7 @@ nonisolated struct VoiceSessionParts: Sendable {
     let recognizer: any VoiceRecognizing
     let textGenerator: any VoiceTextGenerating
     let speech: any VoiceSpeaking
-    let begin: @Sendable () async -> Void
+    let begin: @Sendable () async throws -> Void
     let end: @Sendable () async -> Void
     let unload: @Sendable () async -> Void
 
@@ -25,6 +25,8 @@ nonisolated struct VoiceSessionParts: Sendable {
             begin: {
                 Task { await speech.warmUp() }
                 await models.beginSession()
+                _ = try await models.owner.recognizer()
+                _ = try await models.owner.textGenerator()
             },
             end: { await models.endSession() },
             unload: {
