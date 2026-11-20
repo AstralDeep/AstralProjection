@@ -1,6 +1,7 @@
 // Gathers the recognizer, the local text generator and the one shared voice that every voice pipeline is built from, with the calls that open, close and unload the models around a conversation.
 // OnDeviceVoiceController builds the phone pipeline from it and PairedWatchVoiceRelay builds the Watch pipeline from the same parts.
 
+import AstralVoiceSpeech
 import Foundation
 
 nonisolated struct VoiceSessionParts: Sendable {
@@ -12,12 +13,15 @@ nonisolated struct VoiceSessionParts: Sendable {
     let unload: @Sendable () async -> Void
 
     static func standard(
-        folder: @escaping LocalVoiceSpeech.FolderProvider, models: RumbleVoiceModels = .shared
+        folder: @escaping LocalVoiceSpeech.FolderProvider, models: RumbleVoiceModels = .shared,
+        synthesizer: any SpeechSynthesizer = PhononSpeech(), system: any SwitchableVoice = SystemVoiceSpeech(),
+        language: @escaping @Sendable () -> ConversationLanguage = { ConversationLanguage.saved() }
     ) -> VoiceSessionParts {
-        let local = LocalVoiceSpeech(folder: folder)
+        let local = LocalVoiceSpeech(synthesizer: synthesizer, folder: folder)
+        models.owner.unloadObservers.add { await local.unload() }
         let speech = AutomaticVoiceSpeech(
-            local: local, system: SystemVoiceSpeech(),
-            language: { ConversationLanguage.saved() },
+            local: local, system: system,
+            language: language,
             englishChoice: { .automatic },
             onSwitch: { _ in })
         return VoiceSessionParts(
@@ -31,7 +35,7 @@ nonisolated struct VoiceSessionParts: Sendable {
             end: { await models.endSession() },
             unload: {
                 await speech.cancel()
-                await local.unload()
+                await local.unload(force: true)
                 await models.owner.unload()
             })
     }

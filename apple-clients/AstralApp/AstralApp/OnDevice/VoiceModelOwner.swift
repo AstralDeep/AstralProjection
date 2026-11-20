@@ -1,5 +1,5 @@
 // Owns the loaded recognizer and text generator so the voice session and the kernel's on-device model share one LFM2.5 instance and one RuntimeScheduler.
-// RumbleModelLoading supplies the loaders built on AstralVoiceRuntime; this file only decides when they run, when their models unload, how a load that was overtaken by an unload is discarded and how a model that reported a failure is dropped for a rebuild.
+// RumbleModelLoading supplies the loaders built on AstralVoiceRuntime; this file only decides when they run, when their models unload, how a load that was overtaken by an unload is discarded and how a model that reported a failure is dropped for a rebuild, and it tells registered observers such as the local voice whenever it unloads.
 
 import AstralVoiceRuntime
 import Foundation
@@ -12,6 +12,20 @@ nonisolated protocol VoiceRecognitionModel: VoiceRecognizing, LoadedVoiceModel {
 
 nonisolated protocol VoiceTextModel: VoiceTextGenerating, LoadedVoiceModel {}
 
+nonisolated final class UnloadObservers: @unchecked Sendable {
+    private let lock = NSLock()
+    private var observers: [@Sendable () async -> Void] = []
+
+    func add(_ observer: @escaping @Sendable () async -> Void) {
+        lock.withLock { observers.append(observer) }
+    }
+
+    func notify() async {
+        let current = lock.withLock { observers }
+        for observer in current { await observer() }
+    }
+}
+
 actor VoiceModelOwner {
     struct Loaders: Sendable {
         let recognizer: @Sendable (RuntimeScheduler) async throws -> any VoiceRecognitionModel
@@ -21,6 +35,7 @@ actor VoiceModelOwner {
     static let defaultIdleLimit = Duration.seconds(60)
 
     nonisolated let scheduler: RuntimeScheduler
+    nonisolated let unloadObservers = UnloadObservers()
     private let loaders: Loaders
     private let idleLimit: Duration
     private let sleep: @Sendable (Duration) async throws -> Void
@@ -131,6 +146,7 @@ actor VoiceModelOwner {
         generator?.cancel()
         if let model = try? await recognizer?.value { await model.unload() }
         if let model = try? await generator?.value { await model.unload() }
+        await unloadObservers.notify()
     }
 
     private func idleLimitReached(_ epoch: Int) async {

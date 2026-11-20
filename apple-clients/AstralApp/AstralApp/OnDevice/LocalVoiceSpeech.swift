@@ -1,5 +1,5 @@
 // Speaks one sentence at a time with the on-device Phonon voice, loaded from the folder the voice pack store reports.
-// It answers the VoiceSpeaking seam, reports why it cannot speak, and applies one fixed playback gain, never a per-sentence level.
+// It answers the VoiceSpeaking seam, reports why it cannot speak, applies one fixed playback gain, never a per-sentence level, and defers an unload until the sentence being spoken has ended.
 
 import AstralVoiceSpeech
 import Foundation
@@ -13,6 +13,8 @@ actor LocalVoiceSpeech: SwitchableVoice {
     private var failedFolder: URL?
     private var loadedFolder: URL?
     private var loading: Task<Void, Error>?
+    private var speaking = 0
+    private var unloadPending = false
 
     init(synthesizer: any SpeechSynthesizer = PhononSpeech(), folder: @escaping FolderProvider) {
         self.synthesizer = synthesizer
@@ -30,16 +32,27 @@ actor LocalVoiceSpeech: SwitchableVoice {
     }
 
     func speak(_ sentence: String) async throws -> AsyncThrowingStream<SpeechAudioBuffer, Error> {
-        _ = try await ready()
-        let stream = try await synthesizer.synthesize(sentence: sentence)
-        return Self.scaled(stream, by: Self.playbackGain)
+        speaking += 1
+        do {
+            _ = try await ready()
+            let stream = try await synthesizer.synthesize(sentence: sentence)
+            return Self.scaled(stream, by: Self.playbackGain) { [self] in await finishedSpeaking() }
+        } catch {
+            await finishedSpeaking()
+            throw error
+        }
     }
 
     func cancel() async {
         await synthesizer.cancel()
     }
 
-    func unload() async {
+    func unload(force: Bool = false) async {
+        if speaking > 0, !force {
+            unloadPending = true
+            return
+        }
+        unloadPending = false
         loading?.cancel()
         loading = nil
         loadedFolder = nil
@@ -74,11 +87,16 @@ actor LocalVoiceSpeech: SwitchableVoice {
         }
     }
 
+    private func finishedSpeaking() async {
+        speaking -= 1
+        if speaking == 0, unloadPending { await unload() }
+    }
+
     private static func scaled(
-        _ stream: AsyncThrowingStream<SpeechAudioBuffer, Error>, by gain: Float
+        _ stream: AsyncThrowingStream<SpeechAudioBuffer, Error>, by gain: Float,
+        onEnd: @escaping @Sendable () async -> Void
     ) -> AsyncThrowingStream<SpeechAudioBuffer, Error> {
-        guard gain != 1 else { return stream }
-        return AsyncThrowingStream { continuation in
+        AsyncThrowingStream { continuation in
             let task = Task {
                 do {
                     for try await buffer in stream {
@@ -89,6 +107,7 @@ actor LocalVoiceSpeech: SwitchableVoice {
                 } catch {
                     continuation.finish(throwing: error)
                 }
+                await onEnd()
             }
             continuation.onTermination = { _ in task.cancel() }
         }
