@@ -60,6 +60,8 @@ Run both from this directory after building the artifacts. Set `ASTRAL_VOICE_RUN
 | `ASTRAL_VOICE_SAMPLE_WAV` | A 16 kHz mono 16-bit WAV |
 | `ASTRAL_VOICE_SAMPLE_TEXT` | Words the transcript must contain, compared case-insensitively word by word without punctuation |
 
+A clip cut in the middle of a word can end on a misheard word, so the short-cut test checks every word but the last. Callers treat the last word of a partial transcript as provisional.
+
 ```text
 ASTRAL_VOICE_MODELS_DIR=... ASTRAL_VOICE_SAMPLE_WAV=... ASTRAL_VOICE_SAMPLE_TEXT="remember trail marker blue" swift test --filter RealModelTests
 ```

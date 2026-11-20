@@ -21,14 +21,14 @@ final class RealModelTests: XCTestCase {
         XCTAssertEqual(result.stop, .endOfSequence)
     }
 
-    func testAShortCutAddsNoWordThatIsAbsentFromTheFullTranscript() async throws {
+    func testAShortCutAgreesWithTheFullTranscriptExceptItsLastWord() async throws {
         let models = try RealModels.fromEnvironment()
         let rumble = try await recognizer(models)
         let full = try await rumble.transcribe(models.samples, language: .english)
         let cut = try await rumble.transcribe(Array(models.samples.prefix(9_600)), language: .english)
         print("full: \(full.text)\ncut:  \(cut.text)")
         let fullWords = Set(words(in: full.text))
-        for word in words(in: cut.text) { XCTAssertTrue(fullWords.contains(word), "\"\(word)\" from the cut is not in \"\(full.text)\"") }
+        for word in words(in: cut.text).dropLast() { XCTAssertTrue(fullWords.contains(word), "\"\(word)\" from the cut is not in \"\(full.text)\"") }
     }
 
     func testLFM25AnswersThroughItsChatTemplateWithinTheLimit() async throws {
