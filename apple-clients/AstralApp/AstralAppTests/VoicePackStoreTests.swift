@@ -1,9 +1,10 @@
 // Exercises the voice pack manifest and its two-repository store against a stubbed network that serves tiny files.
 // No test contacts a model service, downloads production weights or asserts how long anything takes.
 
-@testable import AstralDeep
 import CryptoKit
 import XCTest
+
+@testable import AstralDeep
 
 private nonisolated final class PackServer: @unchecked Sendable {
     enum Reply {
