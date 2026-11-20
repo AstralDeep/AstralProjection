@@ -10,6 +10,8 @@
 		AB00000000000000000000F4 /* AstralKernel in Frameworks */ = {isa = PBXBuildFile; productRef = AB00000000000000000000F2 /* AstralKernel */; };
 		AA00000000000000000000A4 /* AstralCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA00000000000000000000A2 /* AstralCore */; };
 		AF1030000000000000000003 /* AstralVoiceModel in Frameworks */ = {isa = PBXBuildFile; productRef = AF1030000000000000000002 /* AstralVoiceModel */; };
+		AF1090000000000000000003 /* AstralVoiceRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = AF1090000000000000000002 /* AstralVoiceRuntime */; };
+		AF1090000000000000000006 /* AstralVoiceSpeech in Frameworks */ = {isa = PBXBuildFile; productRef = AF1090000000000000000005 /* AstralVoiceSpeech */; };
 		AA00000000000000000000A5 /* AstralCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA00000000000000000000A3 /* AstralCore */; };
 		AA00000000000000000000C1 /* AstralWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000B1 /* AstralWatch.app */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		AF1020000000000000000006 /* AstralSparkle in Frameworks */ = {isa = PBXBuildFile; productRef = AF1020000000000000000005 /* AstralSparkle */; };
@@ -128,6 +130,8 @@
 				AA00000000000000000000A4 /* AstralCore in Frameworks */,
 				AB00000000000000000000F4 /* AstralKernel in Frameworks */,
 				AF1030000000000000000003 /* AstralVoiceModel in Frameworks */,
+				AF1090000000000000000003 /* AstralVoiceRuntime in Frameworks */,
+				AF1090000000000000000006 /* AstralVoiceSpeech in Frameworks */,
 				AF1020000000000000000006 /* AstralSparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -222,6 +226,7 @@
 				222F50242FFD60D80016B0D6 /* Frameworks */,
 				222F50252FFD60D80016B0D6 /* Resources */,
 				AA00000000000000000000C2 /* Embed Watch Content */,
+				AF1090000000000000000007 /* Strip voice GPL resources */,
 			);
 			buildRules = (
 			);
@@ -237,6 +242,8 @@
 				AA00000000000000000000A2 /* AstralCore */,
 				AB00000000000000000000F2 /* AstralKernel */,
 				AF1030000000000000000002 /* AstralVoiceModel */,
+				AF1090000000000000000002 /* AstralVoiceRuntime */,
+				AF1090000000000000000005 /* AstralVoiceSpeech */,
 				AF1020000000000000000005 /* AstralSparkle */,
 			);
 			productName = AstralApp;
@@ -411,6 +418,8 @@
 				AB00000000000000000000F1 /* XCLocalSwiftPackageReference "../AstralKernel" */,
 				AF1020000000000000000004 /* XCLocalSwiftPackageReference "../AstralSparkle" */,
 				AF1030000000000000000001 /* XCLocalSwiftPackageReference "../AstralVoiceModel" */,
+				AF1090000000000000000001 /* XCLocalSwiftPackageReference "../AstralVoiceRuntime" */,
+				AF1090000000000000000004 /* XCLocalSwiftPackageReference "../AstralVoiceSpeech" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 222F50282FFD60D80016B0D6 /* Products */;
@@ -461,6 +470,29 @@
 		AD088100000000000000000C /* Navigation test PBXResourcesBuildPhase */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 		AD088100000000000000000D /* Navigation test PBXResourcesBuildPhase */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		AF1090000000000000000007 /* Strip voice GPL resources */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/FluidAudio_LuxTtsG2pResources.bundle",
+			);
+			name = "Strip voice GPL resources";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${SRCROOT}/../AstralVoiceSpeech/Scripts/strip-voice-gpl-resources.sh\" \"${CODESIGNING_FOLDER_PATH}\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		222F50232FFD60D80016B0D6 /* Sources */ = {
@@ -1253,6 +1285,14 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../AstralVoiceModel;
 		};
+		AF1090000000000000000001 /* XCLocalSwiftPackageReference "../AstralVoiceRuntime" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../AstralVoiceRuntime;
+		};
+		AF1090000000000000000004 /* XCLocalSwiftPackageReference "../AstralVoiceSpeech" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../AstralVoiceSpeech;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -1282,6 +1322,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AF1030000000000000000001 /* XCLocalSwiftPackageReference "../AstralVoiceModel" */;
 			productName = AstralVoiceModel;
+		};
+		AF1090000000000000000002 /* AstralVoiceRuntime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AF1090000000000000000001 /* XCLocalSwiftPackageReference "../AstralVoiceRuntime" */;
+			productName = AstralVoiceRuntime;
+		};
+		AF1090000000000000000005 /* AstralVoiceSpeech */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AF1090000000000000000004 /* XCLocalSwiftPackageReference "../AstralVoiceSpeech" */;
+			productName = AstralVoiceSpeech;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -19,7 +19,7 @@ SCRIPT_NAME = "strip-voice-gpl-resources.sh"
 PRODUCT_DEPENDENCY = re.compile(
     r"([0-9A-Fa-f]{24}) /\*[^*]*\*/ = \{[^{}]*?isa = XCSwiftPackageProductDependency;[^{}]*?productName = (\w+);[^{}]*?\}"
 )
-OBJECT = re.compile(r"^\t\t([0-9A-Fa-f]{24}) /\* (.*?) \*/ = \{\n(.*?)^\t\t\};$", re.M | re.S)
+OBJECT = re.compile(r"^\t\t([0-9A-Fa-f]{24}) /\* ([^\n]*?) \*/ = \{\n(.*?)^\t\t\};$", re.M | re.S)
 ID_LIST = r"{name} = \(\n(.*?)\n\t\t\t\);"
 ID = re.compile(r"[0-9A-Fa-f]{24}")
 
