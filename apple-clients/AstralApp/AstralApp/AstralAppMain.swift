@@ -36,6 +36,9 @@ struct AstralApp: App {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 
     init() {
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+            LegacyVoiceModelCleanup.runOnce()
+        }
         let launchModel = AppModel()
         _model = State(initialValue: launchModel)
         let coordinator = ConsentCoordinator()
