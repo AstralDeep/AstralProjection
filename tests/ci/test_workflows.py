@@ -1008,6 +1008,7 @@ def test_native_ci_is_active_and_uses_standalone_paths() -> None:
         "kernel-apple",
         "swift-lint",
         "core-tests",
+        "voice-packages",
         "core-ios-tests",
         "app-unit-tests",
         "swift-package-prewarm",
