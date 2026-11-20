@@ -2,6 +2,7 @@
 // Every test file uses these so inference always runs on the committed tiny models without downloads.
 import AstralVoiceRuntime
 import Foundation
+import XCTest
 
 enum Fixtures {
     static func url(_ name: String) -> URL {
@@ -80,4 +81,62 @@ final class Counter: @unchecked Sendable {
 
 func waitUntil(_ condition: () async -> Bool) async {
     while !(await condition()) { await Task.yield() }
+}
+
+struct RealModels {
+    let rumble: URL
+    let encoder: URL
+    let chat: URL
+    let samples: [Float]
+    let expectedWords: [String]
+
+    static func fromEnvironment() throws -> RealModels {
+        let env = ProcessInfo.processInfo.environment
+        guard let directory = env["ASTRAL_VOICE_MODELS_DIR"], let wav = env["ASTRAL_VOICE_SAMPLE_WAV"], let text = env["ASTRAL_VOICE_SAMPLE_TEXT"] else {
+            throw XCTSkip("Set ASTRAL_VOICE_MODELS_DIR, ASTRAL_VOICE_SAMPLE_WAV and ASTRAL_VOICE_SAMPLE_TEXT to run the real model tests.")
+        }
+        let root = URL(fileURLWithPath: directory)
+        return RealModels(
+            rumble: root.appendingPathComponent("rumble/Rumble-2-Flash-AD-Q5_K_M.gguf"),
+            encoder: root.appendingPathComponent("rumble/mmproj-Rumble-2-Flash-Q8_0.gguf"),
+            chat: root.appendingPathComponent("chat-1.2b/LFM2.5-1.2B-Instruct-Q4_K_M.gguf"),
+            samples: try readWave16kMono(URL(fileURLWithPath: wav)),
+            expectedWords: words(in: text)
+        )
+    }
+}
+
+func words(in text: String) -> [String] {
+    text.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber && $0 != "'" }).map(String.init)
+}
+
+func readWave16kMono(_ url: URL) throws -> [Float] {
+    let data = try Data(contentsOf: url)
+    func u16(_ at: Int) -> Int { Int(data[at]) | Int(data[at + 1]) << 8 }
+    func u32(_ at: Int) -> Int { u16(at) | u16(at + 2) << 16 }
+    guard data.count > 44, String(decoding: data[0..<4], as: UTF8.self) == "RIFF", String(decoding: data[8..<12], as: UTF8.self) == "WAVE" else {
+        throw WaveError.notWave
+    }
+    var offset = 12
+    var format: (channels: Int, rate: Int, bits: Int)?
+    while offset + 8 <= data.count {
+        let id = String(decoding: data[offset..<offset + 4], as: UTF8.self)
+        let size = u32(offset + 4)
+        let body = offset + 8
+        if id == "fmt " {
+            guard u16(body) == 1 else { throw WaveError.unsupported }
+            format = (u16(body + 2), u32(body + 4), u16(body + 14))
+        } else if id == "data" {
+            guard let format, format.channels == 1, format.rate == 16_000, format.bits == 16 else { throw WaveError.unsupported }
+            let end = min(body + size, data.count)
+            return stride(from: body, to: end - 1, by: 2).map { Float(Int16(truncatingIfNeeded: u16($0))) / 32_768 }
+        }
+        offset = body + size + (size & 1)
+    }
+    throw WaveError.notWave
+}
+
+enum WaveError: Error {
+    case notWave
+    case unsupported
 }

@@ -49,3 +49,17 @@ xcodebuild test -scheme AstralVoiceRuntime -destination 'platform=iOS Simulator,
 ```
 
 Run both from this directory after building the artifacts. Set `ASTRAL_VOICE_RUNTIME_LOG=1` to see llama.cpp's own log.
+
+## Real model tests
+
+`RealModelTests` runs the real Rumble and LFM2.5 models and skips unless these variables are set. Nothing is downloaded and no audio or model is committed.
+
+| Variable | Meaning |
+| --- | --- |
+| `ASTRAL_VOICE_MODELS_DIR` | A folder holding `rumble/Rumble-2-Flash-AD-Q5_K_M.gguf`, `rumble/mmproj-Rumble-2-Flash-Q8_0.gguf` and `chat-1.2b/LFM2.5-1.2B-Instruct-Q4_K_M.gguf` |
+| `ASTRAL_VOICE_SAMPLE_WAV` | A 16 kHz mono 16-bit WAV |
+| `ASTRAL_VOICE_SAMPLE_TEXT` | Words the transcript must contain, compared case-insensitively word by word without punctuation |
+
+```text
+ASTRAL_VOICE_MODELS_DIR=... ASTRAL_VOICE_SAMPLE_WAV=... ASTRAL_VOICE_SAMPLE_TEXT="remember trail marker blue" swift test --filter RealModelTests
+```
