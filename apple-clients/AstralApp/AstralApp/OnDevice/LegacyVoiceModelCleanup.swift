@@ -1,10 +1,17 @@
-// Deletes the retired voice model's weights, staging files and install markers from Application Support, once, on the first launch of this version.
+// Stops any download the retired voice model left in its background session, then deletes its weights, staging files and install markers from Application Support, once, on the first launch of this version.
 // AstralApp starts it at launch; it removes only the old model folder, never touches the voice pack folder beside it and never follows a symbolic link out of the folder.
 
 import Foundation
 
 nonisolated enum LegacyVoiceModelCleanup {
     static let completedKey = "astral.voice.legacy-model-removed"
+    static let backgroundIdentifier = "com.personalailabs.astraldeep.voice-model"
+
+    static func cancelBackgroundDownload(identifier: String) {
+        #if os(iOS)
+            URLSession(configuration: .background(withIdentifier: identifier)).invalidateAndCancel()
+        #endif
+    }
 
     static func legacyRoot(fileManager: FileManager = .default) -> URL {
         let support = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -13,9 +20,13 @@ nonisolated enum LegacyVoiceModelCleanup {
     }
 
     @discardableResult
-    static func runOnce(root: URL = legacyRoot(), defaults: UserDefaults = .standard) -> Task<Void, Never>? {
+    static func runOnce(
+        root: URL = legacyRoot(), defaults: UserDefaults = .standard,
+        cancelDownload: @escaping @Sendable (String) -> Void = cancelBackgroundDownload
+    ) -> Task<Void, Never>? {
         guard !defaults.bool(forKey: completedKey) else { return nil }
         return Task.detached(priority: .utility) {
+            cancelDownload(backgroundIdentifier)
             if remove(root) { defaults.set(true, forKey: completedKey) }
         }
     }

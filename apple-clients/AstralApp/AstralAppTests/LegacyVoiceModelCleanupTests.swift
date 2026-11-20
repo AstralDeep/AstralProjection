@@ -1,5 +1,5 @@
 // Checks that the one-time cleanup removes exactly the retired model folder, leaves the voice pack and every sibling alone, and never follows a symbolic link out of the folder.
-// A fixture tree in a temporary directory stands in for Application Support, and the completion flag lives in an isolated defaults suite.
+// A fixture tree in a temporary directory stands in for Application Support, the completion flag lives in an isolated defaults suite, and a recorder stands in for the background session cancellation.
 
 import XCTest
 
@@ -66,6 +66,38 @@ final class LegacyVoiceModelCleanupTests: XCTestCase {
         XCTAssertTrue(exists(support.appendingPathComponent("AstralDeep/Other/keep.txt")))
         XCTAssertTrue(exists(support.appendingPathComponent("unrelated.txt")))
         XCTAssertTrue(defaults.bool(forKey: LegacyVoiceModelCleanup.completedKey))
+    }
+
+    func testTheOldBackgroundDownloadIsCancelledOnceBeforeTheFolderIsRemoved() throws {
+        try installLegacyTree()
+        let recorder = CancelRecorder()
+        let folder = legacy
+        let task = try XCTUnwrap(
+            LegacyVoiceModelCleanup.runOnce(
+                root: legacy, defaults: defaults,
+                cancelDownload: { identifier in
+                    recorder.record(identifier, folderPresent: FileManager.default.fileExists(atPath: folder.path))
+                }))
+        let done = expectation(description: "cleanup finished")
+        Task {
+            await task.value
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 5)
+        XCTAssertEqual(recorder.identifiers, ["com.personalailabs.astraldeep.voice-model"])
+        XCTAssertEqual(recorder.folderPresent, [true])
+        XCTAssertFalse(exists(legacy))
+        XCTAssertNil(
+            LegacyVoiceModelCleanup.runOnce(
+                root: legacy, defaults: defaults, cancelDownload: { _ in XCTFail("must run once") }))
+        XCTAssertEqual(recorder.identifiers.count, 1)
+    }
+
+    func testTheOldIdentifierIsNeverTheVoicePacksAndLateEventsForItAreStillAnswered() {
+        XCTAssertNotEqual(LegacyVoiceModelCleanup.backgroundIdentifier, VoicePackStore.backgroundIdentifier)
+        var answered = false
+        VoiceModelBackgroundEvents.route(LegacyVoiceModelCleanup.backgroundIdentifier) { answered = true }
+        XCTAssertTrue(answered)
     }
 
     func testItRunsOnceAndNeverTouchesAFolderCreatedAfterwards() throws {
@@ -145,5 +177,19 @@ final class LegacyVoiceModelCleanupTests: XCTestCase {
         wait(for: [retried], timeout: 5)
         XCTAssertFalse(exists(legacy))
         XCTAssertTrue(defaults.bool(forKey: LegacyVoiceModelCleanup.completedKey))
+    }
+}
+
+private final class CancelRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var ids: [String] = []
+    private var present: [Bool] = []
+    var identifiers: [String] { lock.withLock { ids } }
+    var folderPresent: [Bool] { lock.withLock { present } }
+    func record(_ identifier: String, folderPresent: Bool) {
+        lock.withLock {
+            ids.append(identifier)
+            present.append(folderPresent)
+        }
     }
 }
