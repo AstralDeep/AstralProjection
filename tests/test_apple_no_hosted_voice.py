@@ -50,7 +50,11 @@ HOSTED_MEMBERS_NEVER_STARTING = {
     "updateVisibleChatLocally",
 }
 
-ALWAYS_FORBIDDEN = re.compile(r"api/voice|LiveKit|\b(?:AVSpeechSynthesizer|SFSpeechRecognizer|SpeechAnalyzer|SpeechTranscriber)\s*\(")
+SYSTEM_VOICE_FILE = "AstralApp/AstralApp/OnDevice/SystemVoiceSpeech.swift"
+SYSTEM_SYNTHESIZER = re.compile(r"\bAVSpeechSynthesizer\b")
+SYSTEM_SPEAK_CALL = re.compile(r"\.\s*speak\s*\(")
+PERSONAL_VOICE_AUTHORIZATION = re.compile(r"requestPersonalVoiceAuthorization|personalVoiceAuthorizationStatus|PersonalVoiceAuthorization", re.I)
+ALWAYS_FORBIDDEN = re.compile(r"api/voice|LiveKit|\b(?:SFSpeechRecognizer|SpeechAnalyzer|SpeechTranscriber)\s*\(")
 
 
 @pytest.mark.parametrize("pattern", [r"api/voice", r"\bimport\s+LiveKit\b", r"\b(?:AVSpeechSynthesizer|SFSpeechRecognizer|SpeechAnalyzer|SpeechTranscriber)\s*\("])
@@ -141,6 +145,7 @@ def violations(relative: str, text: str, hosted_symbols: set[str]) -> list[str]:
         f"{relative}: reaches {match.group(0)!r}"
         for match in ALWAYS_FORBIDDEN.finditer(strip_comments(text))
     ]
+    found.extend(system_voice_violations(relative, text))
     if "/Voice/" in relative or relative.startswith("AstralWatch/"):
         found.extend(f"{relative}: restores a voice network client" for _ in re.finditer(r"\bURLSession\b", strip_comments(text)))
     if relative in ALLOWED_FILES:
@@ -159,6 +164,15 @@ def violations(relative: str, text: str, hosted_symbols: set[str]) -> list[str]:
             f"{relative}: aliases the hosted voice controller"
             for _ in HOSTED_CONTROLLER_ALIAS.finditer(code)
         )
+    return found
+
+
+def system_voice_violations(relative: str, text: str) -> list[str]:
+    code = strip_comments(text)
+    if relative != SYSTEM_VOICE_FILE:
+        return [f"{relative}: reaches {match.group(0)!r}" for match in SYSTEM_SYNTHESIZER.finditer(code)]
+    found = [f"{relative}: speaks through the system" for _ in SYSTEM_SPEAK_CALL.finditer(code)]
+    found.extend(f"{relative}: touches personal voice authorization" for _ in PERSONAL_VOICE_AUTHORIZATION.finditer(code))
     return found
 
 
@@ -261,6 +275,7 @@ def test_retired_and_watch_files_cannot_restore_a_hosted_transport():
         assert violations(relative, 'path: "api/voice/sessions"', SYMBOLS)
         assert violations(relative, "import LiveKit", SYMBOLS)
         assert violations(relative, "let speech = AVSpeechSynthesizer()", SYMBOLS)
+        assert violations(relative, "let kind = AVSpeechSynthesizer.self", SYMBOLS)
         assert violations(relative, "let network = URLSession.shared", SYMBOLS)
 
 
@@ -268,3 +283,62 @@ def test_string_scanner_keeps_code_after_a_url_literal():
     assert violations(
         "AstralApp/AstralApp/X.swift", 'let u = "https://e.test" + "api/voice"', SYMBOLS
     )
+
+
+def test_the_system_voice_file_exists_and_is_the_only_source_naming_the_system_synthesizer():
+    sources = production_sources()
+    assert SYSTEM_VOICE_FILE in sources
+    assert SYSTEM_SYNTHESIZER.search(strip_comments(sources[SYSTEM_VOICE_FILE]))
+    assert [path for path, text in sources.items() if SYSTEM_SYNTHESIZER.search(strip_comments(text)) and path != SYSTEM_VOICE_FILE] == []
+
+
+def test_the_system_voice_file_only_renders_buffers_and_never_asks_for_personal_voices():
+    code = strip_comments(production_sources()[SYSTEM_VOICE_FILE])
+    assert ".write(" in code
+    assert SYSTEM_SPEAK_CALL.findall(code) == []
+    assert PERSONAL_VOICE_AUTHORIZATION.findall(code) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "let renderer = AVSpeechSynthesizer()",
+        "let type = AVSpeechSynthesizer.self",
+        "var synth: AVSpeechSynthesizer?",
+    ],
+)
+def test_the_system_synthesizer_is_reported_outside_the_one_system_voice_file(source):
+    assert system_voice_violations("AstralApp/AstralApp/OnDevice/VoiceDuplexEngine.swift", source)
+    assert system_voice_violations("AstralApp/AstralApp/Voice/AppleLocalSpeech.swift", source)
+    assert system_voice_violations(SYSTEM_VOICE_FILE, source) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "synthesizer.speak(utterance)",
+        "self.synth\n    .speak(utterance)",
+        "AVSpeechSynthesizer.requestPersonalVoiceAuthorization { _ in }",
+        "let s = AVSpeechSynthesizer.personalVoiceAuthorizationStatus",
+    ],
+)
+def test_the_system_voice_file_is_reported_when_it_speaks_or_asks_for_personal_voices(source):
+    assert system_voice_violations(SYSTEM_VOICE_FILE, source)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "synthesizer.write(utterance) { _ in }",
+        "// synthesizer.speak(utterance) and requestPersonalVoiceAuthorization",
+        'let note = "AVSpeechSynthesizer"',
+        "func speak(_ sentence: String) async throws {}",
+    ],
+)
+def test_rendering_comments_and_declarations_in_the_system_voice_file_are_not_reported(source):
+    assert system_voice_violations(SYSTEM_VOICE_FILE, source) == []
+
+
+def test_other_recognition_and_hosted_symbols_stay_forbidden_in_the_system_voice_file():
+    for source in ["let r = SFSpeechRecognizer()", "let a = SpeechAnalyzer()", 'let u = "api/voice"', "import LiveKit"]:
+        assert violations(SYSTEM_VOICE_FILE, source, SYMBOLS)

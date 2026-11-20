@@ -112,7 +112,21 @@ final class VoiceDuplexEngine: VoiceDuplexAudio {
 
     init(speech: any VoiceSpeaking) {
         self.speech = speech
-        playbackFormat = AVAudioFormat(standardFormatWithSampleRate: 24_000, channels: 1)!
+        playbackFormat = AVAudioFormat(standardFormatWithSampleRate: Self.playbackSampleRate, channels: 1)!
+    }
+
+    nonisolated static let playbackSampleRate: Double = 24_000
+
+    nonisolated static func playbackSamples(
+        of speech: any VoiceSpeaking, text: String, emit: ([Float]) -> Void
+    ) async throws {
+        let resampler = SpeechResampler(targetRate: playbackSampleRate)
+        for try await buffer in try await speech.speak(text) {
+            let samples = try resampler.resample(buffer)
+            if !samples.isEmpty { emit(samples) }
+        }
+        let tail = try resampler.finish()
+        if !tail.isEmpty { emit(tail) }
     }
 
     func start() throws {
@@ -257,12 +271,7 @@ final class VoiceDuplexEngine: VoiceDuplexAudio {
         let speech = speech
         synthesis = Task.detached {
             do {
-                for try await buffer in try await speech.speak(text) {
-                    guard buffer.sampleRate == 24_000 else {
-                        throw SpeechSynthesisError.synthesisFailed("unsupported sample rate \(buffer.sampleRate)")
-                    }
-                    continuation.yield(.audio(buffer.samples))
-                }
+                try await Self.playbackSamples(of: speech, text: text) { continuation.yield(.audio($0)) }
                 if !Task.isCancelled { continuation.yield(.finished) }
             } catch {
                 if !Task.isCancelled { continuation.yield(.failed) }

@@ -1,6 +1,7 @@
 // Proves every voice entry point of the app model leaves the hosted voice controller, its REST client and its media client idle.
 // A URLProtocol recorder fails every HTTP request, and the on-device session is driven with the existing fakes and no microphone.
 
+import AVFoundation
 import AstralCore
 import CryptoKit
 import XCTest
@@ -199,6 +200,29 @@ final class NoHostedVoiceTests: XCTestCase {
             HostedVoiceRequestRecorder.requests,
             ["/api/voice/sessions", "/api/voice/sessions", "/ordinary-speech-endpoint", "/ordinary-speech-endpoint"])
         HostedVoiceRequestRecorder.reset()
+    }
+
+    func testTheAutomaticVoiceSwitchRendersLocallyAndNeverRequestsAHostedEndpoint() async throws {
+        let renderer = ScriptedVoiceRenderer(voices: [
+            SystemVoiceDescriptor(
+                identifier: "en", language: "en-US", quality: .standard, isPersonal: false, isNovelty: false,
+                isLocaleDefault: true)
+        ])
+        let automatic = AutomaticVoiceSpeech(
+            local: LocalVoiceSpeech(synthesizer: FakeSpeechSynthesizer()) { nil },
+            system: SystemVoiceSpeech(language: { .english }, renderer: renderer), language: { .english })
+        let stream = try await automatic.speak("hello")
+        let format = try XCTUnwrap(
+            AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 22_050, channels: 1, interleaved: false))
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 8))
+        buffer.frameLength = 8
+        renderer.emit(buffer)
+        buffer.frameLength = 0
+        renderer.emit(buffer)
+        var frames = 0
+        for try await part in stream { frames += part.samples.count }
+        XCTAssertEqual(frames, 8)
+        XCTAssertEqual(HostedVoiceRequestRecorder.requests, [])
     }
 
     func testActivateVoiceStartsOnlyTheOnDevicePipeline() async throws {
