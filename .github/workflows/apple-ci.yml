@@ -295,8 +295,48 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  voice-packages:
+  voice-runtime:
     needs: [changes]
+    if: needs.changes.outputs.apple == 'true'
+    name: Build and verify the voice runtime once
+    runs-on: macos-26
+    timeout-minutes: 25
+    steps:
+      - name: Check out candidate
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Select exact Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          selected=""
+          for candidate in /Applications/Xcode_26.6.app /Applications/Xcode_26.6*.app /Applications/Xcode.app; do
+            [[ -d "$candidate" ]] || continue
+            if [[ "$("$candidate/Contents/Developer/usr/bin/xcodebuild" -version | sed -n '1p')" == "Xcode ${XCODE_VERSION}" ]] && \
+               [[ "$("$candidate/Contents/Developer/usr/bin/xcodebuild" -version | sed -n '2p')" == "Build version ${XCODE_BUILD}" ]]; then
+              selected="$candidate"
+              break
+            fi
+          done
+          [[ -n "$selected" ]] || { echo "Xcode ${XCODE_VERSION} (${XCODE_BUILD}) is required" >&2; exit 1; }
+          sudo xcode-select --switch "$selected/Contents/Developer"
+          [[ "$(xcodebuild -version | sed -n '1p')" == "Xcode ${XCODE_VERSION}" ]]
+          [[ "$(xcodebuild -version | sed -n '2p')" == "Build version ${XCODE_BUILD}" ]]
+      - name: Build the llama.cpp runtime at its pinned revision, universal on Mac and the simulator
+        run: apple-clients/Scripts/build-voice-runtime.sh
+      - name: Verify the pinned revision and every slice architecture
+        run: apple-clients/Scripts/verify-voice-runtime.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: apple-voice-runtime-artifacts
+          path: |
+            apple-clients/AstralVoiceRuntime/Artifacts/LlamaRuntime.xcframework
+            apple-clients/AstralVoiceRuntime/Artifacts/llama.cpp-revision
+            apple-clients/AstralVoiceRuntime/Artifacts/llama.cpp-LICENSE
+          if-no-files-found: error
+          retention-days: 1
+
+  voice-packages:
+    needs: [changes, voice-runtime]
     if: needs.changes.outputs.apple == 'true'
     name: Required · voice runtime and speech packages
     runs-on: macos-26
@@ -321,8 +361,13 @@ jobs:
           sudo xcode-select --switch "$selected/Contents/Developer"
           [[ "$(xcodebuild -version | sed -n '1p')" == "Xcode ${XCODE_VERSION}" ]]
           [[ "$(xcodebuild -version | sed -n '2p')" == "Build version ${XCODE_BUILD}" ]]
-      - name: Build the llama.cpp runtime at its pinned revision
-        run: apple-clients/Scripts/build-voice-runtime.sh --slices macos
+      - name: Download the same-run voice runtime
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: apple-voice-runtime-artifacts
+          path: apple-clients/AstralVoiceRuntime/Artifacts
+      - name: Verify the voice runtime revision and slices
+        run: apple-clients/Scripts/verify-voice-runtime.sh
       - name: Run AstralVoiceRuntime on real inference with the fixture models
         run: swift test --package-path apple-clients/AstralVoiceRuntime
       - name: Run AstralVoiceSpeech
@@ -434,7 +479,7 @@ jobs:
           fi
 
   app-unit-tests:
-    needs: [changes, swift-package-prewarm, kernel-apple, ios-ui-build, macos-app-build]
+    needs: [changes, swift-package-prewarm, kernel-apple, ios-ui-build, macos-app-build, voice-runtime]
     if: needs.changes.outputs.apple == 'true'
     name: Required · ${{ matrix.name }} app continuity/unit coverage
     runs-on: macos-26
@@ -476,6 +521,13 @@ jobs:
           path: apple-clients/AstralKernel/Artifacts
       - name: Verify Kernel source, toolchain and complete payloads
         run: python3 scripts/ci_kernel_apple.py verify --repo "$PWD" --artifacts "$PWD/apple-clients/AstralKernel/Artifacts"
+      - name: Download the same-run voice runtime
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: apple-voice-runtime-artifacts
+          path: apple-clients/AstralVoiceRuntime/Artifacts
+      - name: Verify the voice runtime revision and slices
+        run: apple-clients/Scripts/verify-voice-runtime.sh
       - name: Restore pinned Swift package clones
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -604,7 +656,7 @@ jobs:
           fi
 
   swift-package-prewarm:
-    needs: [changes, kernel-apple]
+    needs: [changes, kernel-apple, voice-runtime]
     if: needs.changes.outputs.apple == 'true'
     name: Required · prewarm pinned app Swift packages
     runs-on: macos-26
@@ -636,6 +688,13 @@ jobs:
           path: apple-clients/AstralKernel/Artifacts
       - name: Verify Kernel source, toolchain and complete payloads
         run: python3 scripts/ci_kernel_apple.py verify --repo "$PWD" --artifacts "$PWD/apple-clients/AstralKernel/Artifacts"
+      - name: Download the same-run voice runtime
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: apple-voice-runtime-artifacts
+          path: apple-clients/AstralVoiceRuntime/Artifacts
+      - name: Verify the voice runtime revision and slices
+        run: apple-clients/Scripts/verify-voice-runtime.sh
       - name: Restore or save pinned Swift package clones
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -653,7 +712,7 @@ jobs:
             -skipPackageUpdates
 
   ios-ui-build:
-    needs: [changes, swift-package-prewarm, kernel-apple]
+    needs: [changes, swift-package-prewarm, kernel-apple, voice-runtime]
     if: needs.changes.outputs.apple == 'true'
     name: Required · build iOS UI test Products once
     runs-on: macos-26
@@ -685,6 +744,13 @@ jobs:
           path: apple-clients/AstralKernel/Artifacts
       - name: Verify Kernel source, toolchain and complete payloads
         run: python3 scripts/ci_kernel_apple.py verify --repo "$PWD" --artifacts "$PWD/apple-clients/AstralKernel/Artifacts"
+      - name: Download the same-run voice runtime
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: apple-voice-runtime-artifacts
+          path: apple-clients/AstralVoiceRuntime/Artifacts
+      - name: Verify the voice runtime revision and slices
+        run: apple-clients/Scripts/verify-voice-runtime.sh
       - name: Restore pinned Swift package clones
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -733,7 +799,7 @@ jobs:
           retention-days: 1
 
   macos-app-build:
-    needs: [changes, swift-package-prewarm, kernel-apple]
+    needs: [changes, swift-package-prewarm, kernel-apple, voice-runtime]
     if: needs.changes.outputs.apple == 'true'
     name: Required · build macOS app test Products once
     runs-on: macos-26
@@ -765,6 +831,13 @@ jobs:
           path: apple-clients/AstralKernel/Artifacts
       - name: Verify Kernel source, toolchain and complete payloads
         run: python3 scripts/ci_kernel_apple.py verify --repo "$PWD" --artifacts "$PWD/apple-clients/AstralKernel/Artifacts"
+      - name: Download the same-run voice runtime
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: apple-voice-runtime-artifacts
+          path: apple-clients/AstralVoiceRuntime/Artifacts
+      - name: Verify the voice runtime revision and slices
+        run: apple-clients/Scripts/verify-voice-runtime.sh
       - name: Restore pinned Swift package clones
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -796,7 +869,7 @@ jobs:
           retention-days: 1
 
   first-login-ui:
-    needs: [changes, swift-package-prewarm, ios-ui-build, macos-app-build, kernel-apple]
+    needs: [changes, swift-package-prewarm, ios-ui-build, macos-app-build, kernel-apple, voice-runtime]
     if: needs.changes.outputs.apple == 'true'
     name: Required · ${{ matrix.name }} first-login and voice UI
     runs-on: macos-26
@@ -874,6 +947,13 @@ jobs:
           path: apple-clients/AstralKernel/Artifacts
       - name: Verify Kernel source, toolchain and complete payloads
         run: python3 scripts/ci_kernel_apple.py verify --repo "$PWD" --artifacts "$PWD/apple-clients/AstralKernel/Artifacts"
+      - name: Download the same-run voice runtime
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: apple-voice-runtime-artifacts
+          path: apple-clients/AstralVoiceRuntime/Artifacts
+      - name: Verify the voice runtime revision and slices
+        run: apple-clients/Scripts/verify-voice-runtime.sh
       - name: Restore pinned Swift package clones
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -1035,7 +1115,7 @@ jobs:
           fi
 
   watch-continuity:
-    needs: [changes, kernel-apple]
+    needs: [changes, kernel-apple, voice-runtime]
     if: needs.changes.outputs.apple == 'true'
     name: Required · watchOS 26.5 continuity coverage
     runs-on: macos-26
@@ -1067,6 +1147,13 @@ jobs:
           path: apple-clients/AstralKernel/Artifacts
       - name: Verify Kernel source, toolchain and complete payloads
         run: python3 scripts/ci_kernel_apple.py verify --repo "$PWD" --artifacts "$PWD/apple-clients/AstralKernel/Artifacts"
+      - name: Download the same-run voice runtime
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: apple-voice-runtime-artifacts
+          path: apple-clients/AstralVoiceRuntime/Artifacts
+      - name: Verify the voice runtime revision and slices
+        run: apple-clients/Scripts/verify-voice-runtime.sh
       - name: Provision a dedicated watchOS simulator
         id: watch_sim
         shell: bash
@@ -1172,6 +1259,7 @@ jobs:
       - changes
       - swift-lint
       - core-tests
+      - voice-runtime
       - voice-packages
       - core-ios-tests
       - app-unit-tests
@@ -1189,7 +1277,7 @@ jobs:
         run: |
           [[ '${{ needs.changes.result }}' == 'success' ]]
           python3 scripts/ci_lanes.py --applicable '${{ needs.changes.outputs.apple }}' \
-            --results '${{ needs.swift-lint.result }}' '${{ needs.core-tests.result }}' '${{ needs.voice-packages.result }}' '${{ needs.core-ios-tests.result }}' '${{ needs.app-unit-tests.result }}' '${{ needs.ios-ui-build.result }}' '${{ needs.macos-app-build.result }}' '${{ needs.first-login-ui.result }}' '${{ needs.watch-continuity.result }}' '${{ needs.kernel-slices.result }}' '${{ needs.kernel-apple.result }}' >> "$GITHUB_STEP_SUMMARY"
+            --results '${{ needs.swift-lint.result }}' '${{ needs.core-tests.result }}' '${{ needs.voice-runtime.result }}' '${{ needs.voice-packages.result }}' '${{ needs.core-ios-tests.result }}' '${{ needs.app-unit-tests.result }}' '${{ needs.ios-ui-build.result }}' '${{ needs.macos-app-build.result }}' '${{ needs.first-login-ui.result }}' '${{ needs.watch-continuity.result }}' '${{ needs.kernel-slices.result }}' '${{ needs.kernel-apple.result }}' >> "$GITHUB_STEP_SUMMARY"
       # `needs.<matrix-job>.result` can report the result of only one matrix
       # child. Requiring one current-run artifact from every child prevents a
       # later successful sibling from hiding a failed platform.

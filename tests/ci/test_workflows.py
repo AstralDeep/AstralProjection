@@ -470,13 +470,13 @@ def _assert_apple_platform_contract(apple: str) -> None:
     assert "-resolvePackageDependencies" in package_prewarm
     assert "-onlyUsePackageVersionsFromResolvedFile" in package_prewarm
     assert "-skipPackageUpdates" in package_prewarm
-    assert "needs: [changes, swift-package-prewarm, kernel-apple, ios-ui-build, macos-app-build]" in app_unit
+    assert "needs: [changes, swift-package-prewarm, kernel-apple, ios-ui-build, macos-app-build, voice-runtime]" in app_unit
     assert app_unit.count(cache_action) == 1
     assert app_unit.count(package_cache_key) == 1
     assert "fail-on-cache-miss: true" in app_unit
     assert "build-for-testing" not in app_unit
     assert "test-without-building" in app_unit
-    assert "needs: [changes, swift-package-prewarm, ios-ui-build, macos-app-build, kernel-apple]" in first_login
+    assert "needs: [changes, swift-package-prewarm, ios-ui-build, macos-app-build, kernel-apple, voice-runtime]" in first_login
     assert first_login.count(cache_action) == 1
     assert first_login.count(package_cache_key) == 1
     assert "fail-on-cache-miss: true" in first_login
@@ -1008,6 +1008,7 @@ def test_native_ci_is_active_and_uses_standalone_paths() -> None:
         "kernel-apple",
         "swift-lint",
         "core-tests",
+        "voice-runtime",
         "voice-packages",
         "core-ios-tests",
         "app-unit-tests",
@@ -1848,7 +1849,7 @@ def test_ios_ui_build_transport_is_required_and_bound_to_the_current_run():
     consumer = _job_block(apple, "first-login-ui")
     aggregate = _job_block(apple, "apple-required")
     assert "--cov=scripts.ci_apple_ui_products" in _job_block((ACTIVE / "ci.yml").read_text(), "python")
-    assert "needs: [changes, swift-package-prewarm, kernel-apple]" in producer
+    assert "needs: [changes, swift-package-prewarm, kernel-apple, voice-runtime]" in producer
     assert "if: needs.changes.outputs.apple == 'true'" in producer
     assert "timeout-minutes: 20" in producer
     assert "-scheme AstralApp" in producer and "-only-testing:" not in producer
@@ -1858,7 +1859,7 @@ def test_ios_ui_build_transport_is_required_and_bound_to_the_current_run():
     assert "scripts/ci_apple_ui_products.py pack" in producer
     assert "test-without-building" not in producer
     assert "xcrun simctl boot" not in producer
-    assert "needs: [changes, swift-package-prewarm, kernel-apple]" in macos_producer
+    assert "needs: [changes, swift-package-prewarm, kernel-apple, voice-runtime]" in macos_producer
     assert "timeout-minutes: 20" in macos_producer
     assert "-scheme AstralApp" in macos_producer and "-only-testing:" not in macos_producer
     assert "-destination 'platform=macOS,arch=arm64'" in macos_producer

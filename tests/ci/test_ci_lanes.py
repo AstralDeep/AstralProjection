@@ -179,12 +179,13 @@ def test_workflow_guard_mutants_cannot_hide_failed_or_skipped_native_work():
         for job in jobs:
             block = re.split(r"(?m)^  [\w-]+:\s*$", text.split(f"  {job}:\n", 1)[1], maxsplit=1)[0]
             expected_needs = {
-                ("apple", "first-login-ui"): "    needs: [changes, swift-package-prewarm, ios-ui-build, macos-app-build, kernel-apple]\n",
-                ("apple", "ios-ui-build"): "    needs: [changes, swift-package-prewarm, kernel-apple]\n",
-                ("apple", "app-unit-tests"): "    needs: [changes, swift-package-prewarm, kernel-apple, ios-ui-build, macos-app-build]\n",
-                ("apple", "macos-app-build"): "    needs: [changes, swift-package-prewarm, kernel-apple]\n",
-                ("apple", "watch-continuity"): "    needs: [changes, kernel-apple]\n",
+                ("apple", "first-login-ui"): "    needs: [changes, swift-package-prewarm, ios-ui-build, macos-app-build, kernel-apple, voice-runtime]\n",
+                ("apple", "ios-ui-build"): "    needs: [changes, swift-package-prewarm, kernel-apple, voice-runtime]\n",
+                ("apple", "app-unit-tests"): "    needs: [changes, swift-package-prewarm, kernel-apple, ios-ui-build, macos-app-build, voice-runtime]\n",
+                ("apple", "macos-app-build"): "    needs: [changes, swift-package-prewarm, kernel-apple, voice-runtime]\n",
+                ("apple", "watch-continuity"): "    needs: [changes, kernel-apple, voice-runtime]\n",
                 ("apple", "kernel-apple"): "    needs: [changes, kernel-slices]\n",
+                ("apple", "voice-packages"): "    needs: [changes, voice-runtime]\n",
             }.get((lane, job), "    needs: [changes]\n")
             assert expected_needs in block
             assert f"if: needs.changes.outputs.{lane} == 'true'" in block

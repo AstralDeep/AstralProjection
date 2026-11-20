@@ -12,13 +12,15 @@ The package commits no build products. From `apple-clients/`:
 Scripts/build-voice-runtime.sh
 ```
 
-The script fetches that exact revision, stops if the checkout is at any other commit, builds static libraries for three arm64 slices and writes `AstralVoiceRuntime/Artifacts/LlamaRuntime.xcframework`. Git ignores `Artifacts/`. Reruns reuse the cached source and build directories under `Artifacts/work`.
+The script fetches that exact revision, stops if the checkout is at any other commit, builds static libraries for three slices and writes `AstralVoiceRuntime/Artifacts/LlamaRuntime.xcframework`. Git ignores `Artifacts/`. Reruns reuse the cached source and build directories under `Artifacts/work`.
 
-| Slice | Deployment target | GPU |
-| --- | --- | --- |
-| iPhone | iOS 17.0 | Metal, shaders embedded |
-| iPhone simulator | iOS 17.0 | none, CPU only |
-| macOS | macOS 14.0 | Metal, shaders embedded |
+| Slice | Architectures | Deployment target | GPU |
+| --- | --- | --- | --- |
+| iPhone | arm64 | iOS 17.0 | Metal, shaders embedded |
+| iPhone simulator | arm64, x86_64 | iOS 17.0 | none, CPU only |
+| macOS | arm64, x86_64 | macOS 14.0 | Metal, shaders embedded |
+
+The app's Release build links both architectures on Mac and in the simulator, so those two slices are universal. `Scripts/build-voice-runtime.sh --arm64-only` builds arm64 only in every slice for a quick local test run, and `--slices macos` limits the build to the Mac slice. `Scripts/verify-voice-runtime.sh` checks the pinned revision and every slice's architectures.
 
 There are no shared libraries, no curl, no OpenMP and no server or examples. It needs `git`, `cmake`, `ninja` and Xcode.
 

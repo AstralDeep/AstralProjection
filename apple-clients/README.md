@@ -173,6 +173,11 @@ committing icon changes.
 
 ## Build & test — all three schemes
 
+The app links `AstralVoiceRuntime`, whose llama.cpp xcframework Git ignores. Run
+`apple-clients/Scripts/build-voice-runtime.sh` once per checkout before the first
+build or `swift test`, and `apple-clients/Scripts/build-voice-runtime.sh --arm64-only`
+is the quick variant for a local run on an Apple silicon Mac.
+
 ```bash
 # AstralCore package (any Mac, no Xcode project needed):
 swift test --package-path apple-clients/AstralCore    # includes the ui_protocol.json drift guard
