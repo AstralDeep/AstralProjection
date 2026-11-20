@@ -1,5 +1,5 @@
 // Streams microphone audio through any VoiceRecognizing as growing-segment partials and one final transcript per segment, in the language the owner chose for the conversation.
-// VoicePipeline drives it as a VoiceStreamingTranscriber and MLXVoiceTranscriber is a thin subclass of it; a segment that has ended or been cancelled never delivers a result.
+// VoicePipeline drives it as a VoiceStreamingTranscriber; a segment that has ended or been cancelled never delivers a result.
 
 import AVFoundation
 import AstralVoiceRuntime

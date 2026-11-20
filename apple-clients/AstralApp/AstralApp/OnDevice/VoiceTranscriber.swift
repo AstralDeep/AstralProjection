@@ -1,4 +1,4 @@
-// Defines streaming transcription events and the interface implemented by the downloaded MLX voice model.
+// Defines streaming transcription events and the interface implemented by the Rumble recognizer.
 // VoicePipeline feeds microphone buffers through this interface without a platform recognizer fallback.
 
 import AVFoundation
@@ -11,7 +11,6 @@ nonisolated enum VoiceRecognizerEvent: Equatable, Sendable {
 }
 
 nonisolated enum VoiceTranscriberKind: String, Equatable, Sendable {
-    case mlx
     case rumble
     case speechAnalyzer = "speech_analyzer"
     case onDeviceRecognizer = "on_device_recognizer"

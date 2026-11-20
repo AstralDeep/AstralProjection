@@ -1,5 +1,5 @@
 // Defines the three seams the voice pipeline calls its models through: recognition, speech and local text.
-// MLXVoiceInference conforms to all three today, and each seam can be backed by a different engine because none of them names an engine type.
+// Each seam is backed by its own engine because none of them names an engine type, and the voice pipeline sees only these three.
 
 import AstralVoiceRuntime
 import AstralVoiceSpeech
@@ -16,8 +16,6 @@ nonisolated protocol VoiceSpeaking: Sendable {
 nonisolated protocol VoiceTextGenerating: Sendable {
     func generate(_ request: OnDeviceRequest) -> AsyncThrowingStream<String, Error>
 }
-
-typealias VoiceModelInference = VoiceRecognizing & VoiceSpeaking & VoiceTextGenerating
 
 extension AsyncThrowingStream where Element == String, Failure == Error {
     nonisolated func collected() async throws -> String {

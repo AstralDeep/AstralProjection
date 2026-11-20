@@ -1,4 +1,4 @@
-// Runs paired-Watch voice through the phone's installed model and existing scoped kernel link.
+// Runs paired-Watch voice through the phone's installed models and existing scoped kernel link.
 // Every activation and packet remains bound to a verified owner and current conversation; companion text can never approve an action.
 
 import AstralCore
@@ -8,10 +8,8 @@ import Foundation
 final class PairedWatchVoiceRelay {
     typealias Prepare = @MainActor (CompanionVoiceOwner) async throws -> PairedWatchVoiceContext
     typealias IsCurrent = @MainActor (PairedWatchVoiceContext) async -> Bool
-    typealias Inference = @Sendable (URL) async throws -> any VoiceModelInference
     private let controller: OnDeviceVoiceController
     private let channel: any CompanionVoiceChannel
-    private let inference: Inference
     private var prepare: Prepare?
     private var isCurrent: IsCurrent?
     private var session: UUID?
@@ -29,13 +27,9 @@ final class PairedWatchVoiceRelay {
     private var candidate: UUID?
     private var candidateGate: CompanionVoiceSequenceGate?
 
-    init(
-        controller: OnDeviceVoiceController, channel: any CompanionVoiceChannel,
-        inference: @escaping Inference = { try await VoiceInferenceCache.shared.inference(directory: $0) }
-    ) {
+    init(controller: OnDeviceVoiceController, channel: any CompanionVoiceChannel) {
         self.controller = controller
         self.channel = channel
-        self.inference = inference
         channel.onPacket = { [weak self] packet in
             guard let self else { throw CompanionVoiceError.notReachable }
             do { try await self.receive(packet) } catch {
@@ -211,7 +205,7 @@ final class PairedWatchVoiceRelay {
                     self.session == packet.session
                 else { throw CompanionVoiceError.rejected }
                 try Task.checkCancellation()
-                guard self.controller.store?.state == .installed else {
+                guard self.controller.store?.state.canStartVoice == true else {
                     await self.fail("phone_model_required", session: packet.session)
                     return
                 }
@@ -221,16 +215,12 @@ final class PairedWatchVoiceRelay {
                             final ? .finalTranscript : .partialTranscript, Data(text.utf8), session: packet.session)
                     }
                 }
-                await self.controller.activateForPairedWatch { [weak self] directory, base in
+                await self.controller.activateForPairedWatch { [weak self] parts, base in
                     guard let self, await self.current(context), self.session == packet.session else {
                         throw CompanionVoiceError.rejected
                     }
-                    let inference = try await self.inference(directory)
                     try Task.checkCancellation()
-                    guard await self.current(context), self.session == packet.session else {
-                        throw CompanionVoiceError.rejected
-                    }
-                    let audio = PairedWatchVoiceAudio(voice: inference) { [weak self] kind, payload in
+                    let audio = PairedWatchVoiceAudio(voice: parts.speech) { [weak self] kind, payload in
                         guard let self else { throw CompanionVoiceError.notReachable }
                         try await self.send(kind, payload, session: packet.session)
                     }
@@ -255,9 +245,8 @@ final class PairedWatchVoiceRelay {
                     self.audio = audio
                     self.inputLink = link
                     return VoicePipeline(
-                        audio: audio, transcriber: MLXVoiceTranscriber(inference: inference),
-                        fastPath: VoiceFastPath(model: MLXVoiceAcknowledgementModel(inference: inference)),
-                        link: link, source: .pairedWatchMicrophone)
+                        audio: audio, transcriber: parts.transcriber(), fastPath: parts.fastPath(), link: link,
+                        source: .pairedWatchMicrophone)
                 }
                 try Task.checkCancellation()
                 guard self.controller.isRunning, await self.current(context), self.session == packet.session else {

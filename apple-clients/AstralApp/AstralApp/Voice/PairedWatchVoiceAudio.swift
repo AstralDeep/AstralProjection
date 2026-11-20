@@ -1,4 +1,4 @@
-// Adapts paired-Watch PCM to the same on-device recognizer and sends locally synthesized PCM back for Watch playback.
+// Adapts paired-Watch PCM to the same on-device recognizer and sends locally synthesized PCM, resampled to 24 kHz, back for Watch playback.
 // Speech is recorded as finished only after the Watch acknowledges its actual audio completion.
 
 import AVFoundation
@@ -97,12 +97,11 @@ final class PairedWatchVoiceAudio: VoiceDuplexAudio {
         synthesis = Task { [weak self] in
             do {
                 let buffer = PairedWatchSpeechBuffer()
+                let resampler = SpeechResampler(targetRate: 24_000)
                 for try await piece in try await voice.speak(text) {
-                    guard piece.sampleRate == 24_000 else {
-                        throw SpeechSynthesisError.synthesisFailed("unsupported sample rate \(piece.sampleRate)")
-                    }
-                    buffer.append(piece.samples)
+                    buffer.append(try resampler.resample(piece))
                 }
+                buffer.append(try resampler.finish())
                 try Task.checkCancellation()
                 let samples = try buffer.take()
                 guard let self, self.running, self.generation == token else { return }

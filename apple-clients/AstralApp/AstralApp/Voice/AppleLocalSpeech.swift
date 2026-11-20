@@ -1,5 +1,5 @@
 // Keeps legacy speech observation and transcript validation without a platform-speech fallback.
-// The retired engine reports unavailability; active Apple speech belongs to the downloaded MLX model.
+// The retired engine reports unavailability; active Apple speech belongs to the installed voice pack.
 
 import AstralCore
 import Foundation
