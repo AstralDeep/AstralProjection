@@ -2,6 +2,7 @@
 // VoicePipeline reads cleaned microphone buffers and voice activity from it and plays sentences through it so the echo canceller hears the reference signal.
 
 import AVFoundation
+import AstralVoiceSpeech
 import Foundation
 import OSLog
 
@@ -97,7 +98,7 @@ final class VoiceDuplexEngine: VoiceDuplexAudio {
 
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
-    private let inference: any VoiceModelInference
+    private let speech: any VoiceSpeaking
     private let activity = VoiceActivityBox()
     private let playbackFormat: AVAudioFormat
     private var playback: Playback?
@@ -109,8 +110,8 @@ final class VoiceDuplexEngine: VoiceDuplexAudio {
     private var playerAttached = false
     private var configurationObserver: (any NSObjectProtocol)?
 
-    init(inference: any VoiceModelInference) {
-        self.inference = inference
+    init(speech: any VoiceSpeaking) {
+        self.speech = speech
         playbackFormat = AVAudioFormat(standardFormatWithSampleRate: 24_000, channels: 1)!
     }
 
@@ -253,10 +254,15 @@ final class VoiceDuplexEngine: VoiceDuplexAudio {
             index: index, text: text, audio: VoiceSentenceAudio(player: player, format: playbackFormat))
         playback = current
         let (stream, continuation) = AsyncStream<SynthesisEvent>.makeStream()
-        let inference = inference
+        let speech = speech
         synthesis = Task.detached {
             do {
-                try await inference.synthesize(text) { samples in continuation.yield(.audio(samples)) }
+                for try await buffer in try await speech.speak(text) {
+                    guard buffer.sampleRate == 24_000 else {
+                        throw SpeechSynthesisError.synthesisFailed("unsupported sample rate \(buffer.sampleRate)")
+                    }
+                    continuation.yield(.audio(buffer.samples))
+                }
                 if !Task.isCancelled { continuation.yield(.finished) }
             } catch {
                 if !Task.isCancelled { continuation.yield(.failed) }

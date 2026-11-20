@@ -3,33 +3,58 @@
 
 import AVFoundation
 import AstralVoiceModel
+import AstralVoiceRuntime
+import AstralVoiceSpeech
 import Foundation
 
-nonisolated protocol VoiceModelInference: Sendable {
-    func transcribe(_ audio: [Float], onText: @escaping @Sendable (String) -> Void) async throws -> String
-    func synthesize(_ text: String, onAudio: @escaping @Sendable ([Float]) -> Void) async throws
-    func acknowledgement(_ request: OnDeviceRequest) async throws -> String
-}
-
-nonisolated struct MLXVoiceInference: VoiceModelInference {
+nonisolated struct MLXVoiceInference: VoiceRecognizing, VoiceSpeaking, VoiceTextGenerating {
     let engine: LFM3AudioEngine
 
-    func transcribe(_ audio: [Float], onText: @escaping @Sendable (String) -> Void) async throws -> String {
+    func recognize(_ audio: [Float], language: RecognitionLanguage) async throws -> String {
+        // LFM3 detects the spoken language itself, so the requested language is unused here.
         var options = LFM3Sampling()
         options.maxNewTokens = 256
-        return try await engine.transcribe(audio: audio, options: options, handlers: LFM3Handlers(onText: onText)).text
+        return try await engine.transcribe(audio: audio, options: options, handlers: LFM3Handlers()).text
     }
 
-    func synthesize(_ text: String, onAudio: @escaping @Sendable ([Float]) -> Void) async throws {
-        let result = try await engine.synthesize(text: text, handlers: LFM3Handlers(onAudio: onAudio))
-        guard !result.stoppedByLength else { throw LFM3Error.invalidInput("speech exceeded its token limit") }
+    func speak(_ sentence: String) async throws -> AsyncThrowingStream<SpeechAudioBuffer, Error> {
+        let engine = engine
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    let handlers = LFM3Handlers(onAudio: {
+                        continuation.yield(SpeechAudioBuffer(samples: $0, sampleRate: 24_000))
+                    })
+                    let result = try await engine.synthesize(text: sentence, handlers: handlers)
+                    guard !result.stoppedByLength else {
+                        throw LFM3Error.invalidInput("speech exceeded its token limit")
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
     }
 
-    func acknowledgement(_ request: OnDeviceRequest) async throws -> String {
+    func generate(_ request: OnDeviceRequest) -> AsyncThrowingStream<String, Error> {
+        let engine = engine
+        let messages = Self.messages(for: request)
         var options = LFM3Sampling()
         options.maxNewTokens = request.maxTokens
-        let messages = Self.messages(for: request)
-        return try await engine.chat(messages: messages, options: options).text
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    let text = try await engine.chat(messages: messages, options: options).text
+                    continuation.yield(text)
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
     }
 
     static func messages(for request: OnDeviceRequest) -> [LFM3Message] {
@@ -45,7 +70,7 @@ nonisolated struct MLXVoiceInference: VoiceModelInference {
 }
 
 nonisolated struct MLXVoiceAcknowledgementModel: AstralOnDeviceModel {
-    let inference: any VoiceModelInference
+    let inference: any VoiceTextGenerating
 
     func available() -> Bool { true }
 
@@ -54,7 +79,7 @@ nonisolated struct MLXVoiceAcknowledgementModel: AstralOnDeviceModel {
         guard !request.messages.isEmpty else { return .failed(.emptyRequest) }
         do {
             try Task.checkCancellation()
-            let text = try await inference.acknowledgement(request)
+            let text = try await inference.generate(request).collected()
             try Task.checkCancellation()
             return .text(text)
         } catch is CancellationError {
@@ -75,7 +100,8 @@ nonisolated final class MLXVoiceTranscriber: VoiceStreamingTranscriber, @uncheck
     }
 
     let kind = VoiceTranscriberKind.mlx
-    private let inference: any VoiceModelInference
+    private let inference: any VoiceRecognizing
+    private let language: RecognitionLanguage
     private let lock = NSLock()
     private var handler: (@Sendable (VoiceRecognizerEvent) -> Void)?
     private var current: Segment?
@@ -85,7 +111,10 @@ nonisolated final class MLXVoiceTranscriber: VoiceStreamingTranscriber, @uncheck
     private let maximumSamples = 30 * 16_000
     private let partialInterval = 8_000
 
-    init(inference: any VoiceModelInference) { self.inference = inference }
+    init(inference: any VoiceRecognizing, language: RecognitionLanguage = .english) {
+        self.inference = inference
+        self.language = language
+    }
 
     var segmentID: UUID? { lock.withLock { current?.id } }
 
@@ -135,9 +164,10 @@ nonisolated final class MLXVoiceTranscriber: VoiceStreamingTranscriber, @uncheck
         let audio = segment.samples
         let id = segment.id
         let inference = inference
+        let language = language
         segment.partial = Task { [weak self] in
             do {
-                let text = try await inference.transcribe(audio, onText: { _ in })
+                let text = try await inference.recognize(audio, language: language)
                 guard !Task.isCancelled else { return }
                 self?.partialFinished(id: id, text: text)
             } catch {
@@ -156,7 +186,7 @@ nonisolated final class MLXVoiceTranscriber: VoiceStreamingTranscriber, @uncheck
             let inference = inference
             finals[id] = Task { [weak self] in
                 do {
-                    let text = audio.isEmpty ? "" : try await inference.transcribe(audio, onText: { _ in })
+                    let text = audio.isEmpty ? "" : try await inference.recognize(audio, language: language)
                     guard !Task.isCancelled else { return }
                     self?.finalFinished(id: id, event: .final(text, segmentID: id))
                 } catch {
@@ -237,7 +267,7 @@ enum MLXVoiceRuntime {
         let inference = try await VoiceInferenceCache.shared.inference(directory: directory)
         try Task.checkCancellation()
         return VoicePipeline(
-            audio: VoiceDuplexEngine(inference: inference), transcriber: MLXVoiceTranscriber(inference: inference),
+            audio: VoiceDuplexEngine(speech: inference), transcriber: MLXVoiceTranscriber(inference: inference),
             fastPath: VoiceFastPath(model: MLXVoiceAcknowledgementModel(inference: inference)), link: link)
     }
 }

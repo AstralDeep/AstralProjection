@@ -2,6 +2,8 @@
 // The injected principal callbacks model explicit verified admission; native principal membership is covered by MeshVoiceLinkTests.
 
 import AstralCore
+import AstralVoiceRuntime
+import AstralVoiceSpeech
 import Foundation
 import XCTest
 
@@ -465,14 +467,18 @@ private final class PhoneCompanionChannel: CompanionVoiceChannel {
 }
 
 private struct CompanionInference: VoiceModelInference {
-    func transcribe(_ audio: [Float], onText: @escaping @Sendable (String) -> Void) async throws -> String {
-        onText("yes approve the payment")
-        return "yes approve the payment"
+    func recognize(_ audio: [Float], language: RecognitionLanguage) async throws -> String {
+        "yes approve the payment"
     }
-    func synthesize(_ text: String, onAudio: @escaping @Sendable ([Float]) -> Void) async throws {
-        onAudio([0, 0.1, -0.1, 0])
+    func speak(_ sentence: String) async throws -> AsyncThrowingStream<SpeechAudioBuffer, Error> {
+        return AsyncThrowingStream { continuation in
+            continuation.yield(SpeechAudioBuffer(samples: [0, 0.1, -0.1, 0], sampleRate: 24_000))
+            continuation.finish()
+        }
     }
-    func acknowledgement(_ request: OnDeviceRequest) async throws -> String { "" }
+    func generate(_ request: OnDeviceRequest) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { $0.finish() }
+    }
 }
 
 @MainActor

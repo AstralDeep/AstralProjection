@@ -151,7 +151,7 @@ actor VoiceInferenceCache {
 
     func text(_ request: OnDeviceRequest, directory: URL) async throws -> String {
         let (inference, attempt) = try await lease(directory: directory)
-        let text = try await inference.acknowledgement(request)
+        let text = try await inference.generate(request).collected()
         try Task.checkCancellation()
         guard generation == attempt else { throw CancellationError() }
         return text

@@ -1,6 +1,8 @@
 // Checks Foundation Models preference and verified local text fallback without loading real weights.
 // Controlled inference gates exercise shared loading, cancellation and asset retirement.
 
+import AstralVoiceRuntime
+import AstralVoiceSpeech
 import Foundation
 import XCTest
 
@@ -310,14 +312,25 @@ private actor FallbackInferenceFixture: VoiceModelInference {
         await withCheckedContinuation { didAnswer = $0 }
     }
     func releaseAnswer() async { await answerGate.release() }
-    func acknowledgement(_ request: OnDeviceRequest) async throws -> String {
+    nonisolated func generate(_ request: OnDeviceRequest) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                await self.answer(request)
+                continuation.yield("four")
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+    private func answer(_ request: OnDeviceRequest) async {
         lastTokens = request.maxTokens
         answering = true
         didAnswer?.resume()
         didAnswer = nil
         if held { await answerGate.wait() }
-        return "four"
     }
-    func transcribe(_ audio: [Float], onText: @escaping @Sendable (String) -> Void) async throws -> String { "" }
-    func synthesize(_ text: String, onAudio: @escaping @Sendable ([Float]) -> Void) async throws {}
+    func recognize(_ audio: [Float], language: RecognitionLanguage) async throws -> String { "" }
+    func speak(_ sentence: String) async throws -> AsyncThrowingStream<SpeechAudioBuffer, Error> {
+        AsyncThrowingStream { $0.finish() }
+    }
 }

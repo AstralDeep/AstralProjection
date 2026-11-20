@@ -3,6 +3,8 @@
 
 import AVFoundation
 import AstralVoiceModel
+import AstralVoiceRuntime
+import AstralVoiceSpeech
 import XCTest
 
 @testable import AstralDeep
@@ -172,20 +174,27 @@ private actor VoiceInferenceFixture: VoiceModelInference {
         hold?.resume()
         hold = nil
     }
-    func transcribe(_ audio: [Float], onText: @escaping @Sendable (String) -> Void) async throws -> String {
+    func recognize(_ audio: [Float], language: RecognitionLanguage) async throws -> String {
         count = audio.count
         samples = audio
         called?.resume()
         called = nil
         if paused { await withCheckedContinuation { hold = $0 } }
-        onText("The patient is stable.")
         hasReturned = true
         returned?.resume()
         returned = nil
         return "The patient is stable."
     }
-    func synthesize(_ text: String, onAudio: @escaping @Sendable ([Float]) -> Void) async throws {
-        onAudio([0, 0.1, 0])
+    func speak(_ sentence: String) async throws -> AsyncThrowingStream<SpeechAudioBuffer, Error> {
+        return AsyncThrowingStream { continuation in
+            continuation.yield(SpeechAudioBuffer(samples: [0, 0.1, 0], sampleRate: 24_000))
+            continuation.finish()
+        }
     }
-    func acknowledgement(_ request: OnDeviceRequest) async throws -> String { "I heard you." }
+    nonisolated func generate(_ request: OnDeviceRequest) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.yield("I heard you.")
+            continuation.finish()
+        }
+    }
 }

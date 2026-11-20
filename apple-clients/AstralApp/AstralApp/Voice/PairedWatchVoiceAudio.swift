@@ -3,6 +3,7 @@
 
 import AVFoundation
 import AstralCore
+import AstralVoiceSpeech
 import Foundation
 
 private nonisolated final class PairedWatchSpeechBuffer: @unchecked Sendable {
@@ -39,7 +40,7 @@ final class PairedWatchVoiceAudio: VoiceDuplexAudio {
     var onVoiceActivity: ((Bool) -> Void)?
     var onFailure: ((String) -> Void)?
     var onPlaybackFinished: (() -> Void)?
-    private let inference: any VoiceModelInference
+    private let voice: any VoiceSpeaking
     private let send: Send
     private let format = AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1)!
     private var detector = EnergyVoiceActivityDetector()
@@ -50,8 +51,8 @@ final class PairedWatchVoiceAudio: VoiceDuplexAudio {
     private var pendingSpeechId: UUID?
     private var started = false
 
-    init(inference: any VoiceModelInference, send: @escaping Send) {
-        self.inference = inference
+    init(voice: any VoiceSpeaking, send: @escaping Send) {
+        self.voice = voice
         self.send = send
     }
 
@@ -92,11 +93,16 @@ final class PairedWatchVoiceAudio: VoiceDuplexAudio {
         let token = generation
         let speechId = UUID()
         pendingSpeechId = speechId
-        let inference = inference
+        let voice = voice
         synthesis = Task { [weak self] in
             do {
                 let buffer = PairedWatchSpeechBuffer()
-                try await inference.synthesize(text) { buffer.append($0) }
+                for try await piece in try await voice.speak(text) {
+                    guard piece.sampleRate == 24_000 else {
+                        throw SpeechSynthesisError.synthesisFailed("unsupported sample rate \(piece.sampleRate)")
+                    }
+                    buffer.append(piece.samples)
+                }
                 try Task.checkCancellation()
                 let samples = try buffer.take()
                 guard let self, self.running, self.generation == token else { return }

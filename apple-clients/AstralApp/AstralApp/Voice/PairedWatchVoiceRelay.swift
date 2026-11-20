@@ -230,7 +230,7 @@ final class PairedWatchVoiceRelay {
                     guard await self.current(context), self.session == packet.session else {
                         throw CompanionVoiceError.rejected
                     }
-                    let audio = PairedWatchVoiceAudio(inference: inference) { [weak self] kind, payload in
+                    let audio = PairedWatchVoiceAudio(voice: inference) { [weak self] kind, payload in
                         guard let self else { throw CompanionVoiceError.notReachable }
                         try await self.send(kind, payload, session: packet.session)
                     }
